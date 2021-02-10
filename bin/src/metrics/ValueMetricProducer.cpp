@@ -18,11 +18,13 @@
 #include "Log.h"
 
 #include "ValueMetricProducer.h"
-#include "../guardrail/StatsdStats.h"
-#include "../stats_log_util.h"
 
 #include <limits.h>
 #include <stdlib.h>
+
+#include "../guardrail/StatsdStats.h"
+#include "../stats_log_util.h"
+#include "metrics/parsing_utils/metrics_manager_util.h"
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
@@ -79,16 +81,17 @@ const Value ZERO_DOUBLE((int64_t)0);
 ValueMetricProducer::ValueMetricProducer(
         const ConfigKey& key, const ValueMetric& metric, const int conditionIndex,
         const vector<ConditionState>& initialConditionCache,
-        const sp<ConditionWizard>& conditionWizard, const int whatMatcherIndex,
-        const sp<EventMatcherWizard>& matcherWizard, const int pullTagId, const int64_t timeBaseNs,
-        const int64_t startTimeNs, const sp<StatsPullerManager>& pullerManager,
+        const sp<ConditionWizard>& conditionWizard, const uint64_t protoHash,
+        const int whatMatcherIndex, const sp<EventMatcherWizard>& matcherWizard,
+        const int pullTagId, const int64_t timeBaseNs, const int64_t startTimeNs,
+        const sp<StatsPullerManager>& pullerManager,
         const unordered_map<int, shared_ptr<Activation>>& eventActivationMap,
         const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap,
         const vector<int>& slicedStateAtoms,
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache,
-                     conditionWizard, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap),
+                     conditionWizard, protoHash, eventActivationMap, eventDeactivationMap,
+                     slicedStateAtoms, stateGroupMap),
       mWhatMatcherIndex(whatMatcherIndex),
       mEventMatcherWizard(matcherWizard),
       mPullerManager(pullerManager),
@@ -181,6 +184,48 @@ ValueMetricProducer::~ValueMetricProducer() {
     if (mIsPulled) {
         mPullerManager->UnRegisterReceiver(mPullTagId, mConfigKey, this);
     }
+}
+
+bool ValueMetricProducer::onConfigUpdatedLocked(
+        const StatsdConfig& config, const int configIndex, const int metricIndex,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
+        const sp<EventMatcherWizard>& matcherWizard,
+        const vector<sp<ConditionTracker>>& allConditionTrackers,
+        const unordered_map<int64_t, int>& conditionTrackerMap, const sp<ConditionWizard>& wizard,
+        const unordered_map<int64_t, int>& metricToActivationMap,
+        unordered_map<int, vector<int>>& trackerToMetricMap,
+        unordered_map<int, vector<int>>& conditionToMetricMap,
+        unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
+        unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
+        vector<int>& metricsWithActivation) {
+    if (!MetricProducer::onConfigUpdatedLocked(
+                config, configIndex, metricIndex, allAtomMatchingTrackers,
+                oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                allConditionTrackers, conditionTrackerMap, wizard, metricToActivationMap,
+                trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                deactivationAtomTrackerToMetricMap, metricsWithActivation)) {
+        return false;
+    }
+
+    const ValueMetric& metric = config.value_metric(configIndex);
+    // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
+    if (!handleMetricWithAtomMatchingTrackers(metric.what(), metricIndex, /*enforceOneAtom=*/false,
+                                              allAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                                              trackerToMetricMap, mWhatMatcherIndex)) {
+        return false;
+    }
+
+    if (metric.has_condition() &&
+        !handleMetricWithConditions(metric.condition(), metricIndex, conditionTrackerMap,
+                                    metric.links(), allConditionTrackers, mConditionTrackerIndex,
+                                    conditionToMetricMap)) {
+        return false;
+    }
+    sp<EventMatcherWizard> tmpEventWizard = mEventMatcherWizard;
+    mEventMatcherWizard = matcherWizard;
+    return true;
 }
 
 void ValueMetricProducer::onStateChanged(int64_t eventTimeNs, int32_t atomId,
@@ -378,7 +423,7 @@ void ValueMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     }
     protoOutput->end(protoToken);
 
-    VLOG("metric %lld dump report now...", (long long)mMetricId);
+    VLOG("metric %lld done with dump report...", (long long)mMetricId);
     if (erase_data) {
         mPastBuckets.clear();
         mSkippedBuckets.clear();
