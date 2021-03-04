@@ -461,6 +461,22 @@ CountMetric createCountMetric(const string& name, const int64_t what,
     return metric;
 }
 
+DurationMetric createDurationMetric(const string& name, const int64_t what,
+                                    const optional<int64_t>& condition,
+                                    const vector<int64_t>& states) {
+    DurationMetric metric;
+    metric.set_id(StringToId(name));
+    metric.set_what(what);
+    metric.set_bucket(TEN_MINUTES);
+    if (condition) {
+        metric.set_condition(condition.value());
+    }
+    for (const int64_t state : states) {
+        metric.add_slice_by_state(state);
+    }
+    return metric;
+}
+
 GaugeMetric createGaugeMetric(const string& name, const int64_t what,
                               const GaugeMetric::SamplingType samplingType,
                               const optional<int64_t>& condition,
@@ -495,6 +511,26 @@ ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const
         metric.add_slice_by_state(state);
     }
     return metric;
+}
+
+Alert createAlert(const string& name, const int64_t metricId, const int buckets,
+                  const int64_t triggerSum) {
+    Alert alert;
+    alert.set_id(StringToId(name));
+    alert.set_metric_id(metricId);
+    alert.set_num_buckets(buckets);
+    alert.set_trigger_if_sum_gt(triggerSum);
+    return alert;
+}
+
+Subscription createSubscription(const string& name, const Subscription_RuleType type,
+                                const int64_t ruleId) {
+    Subscription subscription;
+    subscription.set_id(StringToId(name));
+    subscription.set_rule_type(type);
+    subscription.set_rule_id(ruleId);
+    subscription.mutable_broadcast_subscriber_details();
+    return subscription;
 }
 
 // START: get primary key functions
@@ -1085,6 +1121,27 @@ sp<EventMatcherWizard> createEventMatcherWizard(
             matcherId, matcherIndex, matcherHash, atomMatcher, uidMap)});
 }
 
+StatsDimensionsValueParcel CreateAttributionUidDimensionsValueParcel(const int atomId,
+                                                                     const int uid) {
+    StatsDimensionsValueParcel root;
+    root.field = atomId;
+    root.valueType = STATS_DIMENSIONS_VALUE_TUPLE_TYPE;
+    StatsDimensionsValueParcel attrNode;
+    attrNode.field = 1;
+    attrNode.valueType = STATS_DIMENSIONS_VALUE_TUPLE_TYPE;
+    StatsDimensionsValueParcel posInAttrChain;
+    posInAttrChain.field = 1;
+    posInAttrChain.valueType = STATS_DIMENSIONS_VALUE_TUPLE_TYPE;
+    StatsDimensionsValueParcel uidNode;
+    uidNode.field = 1;
+    uidNode.valueType = STATS_DIMENSIONS_VALUE_INT_TYPE;
+    uidNode.intValue = uid;
+    posInAttrChain.tupleValue.push_back(uidNode);
+    attrNode.tupleValue.push_back(posInAttrChain);
+    root.tupleValue.push_back(attrNode);
+    return root;
+}
+
 void ValidateUidDimension(const DimensionsValue& value, int atomId, int uid) {
     EXPECT_EQ(value.field(), atomId);
     ASSERT_EQ(value.value_tuple().dimensions_value_size(), 1);
@@ -1194,6 +1251,13 @@ void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs
     EXPECT_EQ(countBucket.count(), count);
 }
 
+void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,
+                            int64_t endTimeNs, int64_t durationNs) {
+    EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
+    EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
+    EXPECT_EQ(bucket.duration_nanos(), durationNs);
+}
+
 void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
                               int64_t endTimeNs, vector<int64_t> eventTimesNs) {
     EXPECT_EQ(gaugeBucket.start_bucket_elapsed_nanos(), startTimeNs);
@@ -1214,7 +1278,9 @@ void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int
     } else {
         EXPECT_EQ(bucket.values(0).value_long(), value);
     }
-    EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
+    if (conditionTrueNs > 0) {
+        EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
+    }
 }
 
 bool EqualsTo(const DimensionsValue& s1, const DimensionsValue& s2) {

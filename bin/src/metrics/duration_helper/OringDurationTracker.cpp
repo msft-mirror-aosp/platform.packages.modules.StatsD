@@ -132,7 +132,7 @@ void OringDurationTracker::noteStopAll(const int64_t timestamp) {
 }
 
 bool OringDurationTracker::flushCurrentBucket(
-        const int64_t& eventTimeNs,
+        const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
         std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) {
     VLOG("OringDurationTracker Flushing.............");
 
@@ -143,7 +143,8 @@ bool OringDurationTracker::flushCurrentBucket(
     int64_t fullBucketEnd = getCurrentBucketEndTimeNs();
     int64_t currentBucketEndTimeNs;
 
-    if (eventTimeNs >= fullBucketEnd) {
+    bool isFullBucket = eventTimeNs >= fullBucketEnd;
+    if (isFullBucket) {
         numBucketsForward = 1 + (eventTimeNs - fullBucketEnd) / mBucketSizeNs;
         currentBucketEndTimeNs = fullBucketEnd;
     } else {
@@ -163,7 +164,7 @@ bool OringDurationTracker::flushCurrentBucket(
     // store durations for each stateKey, so we need to flush the bucket by creating a
     // DurationBucket for each stateKey.
     for (auto& durationIt : mStateKeyDurationMap) {
-        if (durationIt.second.mDuration > 0) {
+        if (durationPassesThreshold(uploadThreshold, durationIt.second.mDuration)) {
             DurationBucket current_info;
             current_info.mBucketStartNs = mCurrentBucketStartTimeNs;
             current_info.mBucketEndNs = currentBucketEndTimeNs;
@@ -173,9 +174,11 @@ bool OringDurationTracker::flushCurrentBucket(
 
             durationIt.second.mDurationFullBucket += durationIt.second.mDuration;
             VLOG("  duration: %lld", (long long)current_info.mDuration);
+        } else {
+            VLOG("  duration: %lld does not pass set threshold", (long long)mDuration);
         }
 
-        if (eventTimeNs > fullBucketEnd) {
+        if (isFullBucket) {
             // End of full bucket, can send to anomaly tracker now.
             addPastBucketToAnomalyTrackers(
                     MetricDimensionKey(mEventKey.getDimensionKeyInWhat(), durationIt.first),
@@ -212,16 +215,21 @@ bool OringDurationTracker::flushCurrentBucket(
     }
     mLastStartTime = mCurrentBucketStartTimeNs;
 
-    // if all stopped, then tell owner it's safe to remove this tracker.
-    return mStarted.empty() && mPaused.empty();
+    // If all stopped, then tell owner it's safe to remove this tracker on a full bucket.
+    // On a partial bucket, only clear if no anomaly trackers, as full bucket duration is used
+    // for anomaly detection.
+    // Note: Anomaly trackers can be added on config updates, in which case mAnomalyTrackers > 0 and
+    // the full bucket duration could be used, but this is very rare so it is okay to clear.
+    return mStarted.empty() && mPaused.empty() && (isFullBucket || mAnomalyTrackers.size() == 0);
 }
 
 bool OringDurationTracker::flushIfNeeded(
-        int64_t eventTimeNs, unordered_map<MetricDimensionKey, vector<DurationBucket>>* output) {
+        int64_t eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+        unordered_map<MetricDimensionKey, vector<DurationBucket>>* output) {
     if (eventTimeNs < getCurrentBucketEndTimeNs()) {
         return false;
     }
-    return flushCurrentBucket(eventTimeNs, output);
+    return flushCurrentBucket(eventTimeNs, uploadThreshold, output);
 }
 
 void OringDurationTracker::onSlicedConditionMayChange(bool overallCondition,

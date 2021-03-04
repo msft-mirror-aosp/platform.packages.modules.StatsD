@@ -15,18 +15,18 @@
  */
 
 #pragma once
-
 #include <aidl/android/os/IPendingIntentRef.h>
+#include <gtest/gtest_prod.h>
 #include <utils/RefBase.h>
 #include <utils/String16.h>
-
-#include "config/ConfigKey.h"
-#include "packages/modules/StatsD/bin/src/statsd_config.pb.h"  // subscription
-#include "HashableDimensionKey.h"
 
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+
+#include "HashableDimensionKey.h"
+#include "config/ConfigKey.h"
+#include "packages/modules/StatsD/bin/src/statsd_config.pb.h"  // subscription
 
 using aidl::android::os::IPendingIntentRef;
 using std::mutex;
@@ -74,9 +74,6 @@ public:
                                   const Subscription& subscription,
                                   const MetricDimensionKey& dimKey) const;
 
-    shared_ptr<IPendingIntentRef> getBroadcastSubscriber(const ConfigKey& configKey,
-                                                         int64_t subscriberId);
-
 private:
     SubscriberReporter();
 
@@ -99,9 +96,15 @@ private:
 
     /**
      * Death recipient callback that is called when a broadcast subscriber dies.
-     * The cookie is a pointer to a BroadcastSubscriberDeathCookie.
+     * The cookie is a raw pointer to a PendingIntentReference. It is only used for identifying
+     * which binder has died and must not be dereferenced.
      */
     static void broadcastSubscriberDied(void* cookie);
+
+    friend class SubscriberReporterTest;
+    FRIEND_TEST(SubscriberReporterTest, TestBroadcastSubscriberDeathRemovesPir);
+    FRIEND_TEST(SubscriberReporterTest, TestBroadcastSubscriberDeathRemovesPirAndConfigKey);
+    FRIEND_TEST(SubscriberReporterTest, TestBroadcastSubscriberDeathKeepsReplacedPir);
 };
 
 }  // namespace statsd
