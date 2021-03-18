@@ -15,6 +15,8 @@
 #include "statsd_test_util.h"
 
 #include <aidl/android/util/StatsEventParcel.h>
+
+#include "matchers/SimpleAtomMatchingTracker.h"
 #include "stats_event.h"
 
 using aidl::android::util::StatsEventParcel;
@@ -441,6 +443,73 @@ FieldMatcher CreateAttributionUidAndOtherDimensions(const int atomId,
         dimensions.add_child()->set_field(field);
     }
     return dimensions;
+}
+
+CountMetric createCountMetric(const string& name, const int64_t what,
+                              const optional<int64_t>& condition, const vector<int64_t>& states) {
+    CountMetric metric;
+    metric.set_id(StringToId(name));
+    metric.set_what(what);
+    metric.set_bucket(TEN_MINUTES);
+    if (condition) {
+        metric.set_condition(condition.value());
+    }
+    for (const int64_t state : states) {
+        metric.add_slice_by_state(state);
+    }
+    return metric;
+}
+
+DurationMetric createDurationMetric(const string& name, const int64_t what,
+                                    const optional<int64_t>& condition,
+                                    const vector<int64_t>& states) {
+    DurationMetric metric;
+    metric.set_id(StringToId(name));
+    metric.set_what(what);
+    metric.set_bucket(TEN_MINUTES);
+    if (condition) {
+        metric.set_condition(condition.value());
+    }
+    for (const int64_t state : states) {
+        metric.add_slice_by_state(state);
+    }
+    return metric;
+}
+
+GaugeMetric createGaugeMetric(const string& name, const int64_t what,
+                              const GaugeMetric::SamplingType samplingType,
+                              const optional<int64_t>& condition,
+                              const optional<int64_t>& triggerEvent) {
+    GaugeMetric metric;
+    metric.set_id(StringToId(name));
+    metric.set_what(what);
+    metric.set_bucket(TEN_MINUTES);
+    metric.set_sampling_type(samplingType);
+    if (condition) {
+        metric.set_condition(condition.value());
+    }
+    if (triggerEvent) {
+        metric.set_trigger_event(triggerEvent.value());
+    }
+    metric.mutable_gauge_fields_filter()->set_include_all(true);
+    return metric;
+}
+
+ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const int valueField,
+                              const optional<int64_t>& condition, const vector<int64_t>& states) {
+    ValueMetric metric;
+    metric.set_id(StringToId(name));
+    metric.set_what(what.id());
+    metric.set_bucket(TEN_MINUTES);
+    metric.mutable_value_field()->set_field(what.simple_atom_matcher().atom_id());
+    metric.mutable_value_field()->add_child()->set_field(valueField);
+    if (condition) {
+        metric.set_condition(condition.value());
+    }
+    for (const int64_t state : states) {
+        metric.add_slice_by_state(state);
+    }
+    return metric;
 }
 
 // START: get primary key functions
@@ -960,6 +1029,27 @@ std::unique_ptr<LogEvent> CreateOverlayStateChangedEvent(int64_t timestampNs, co
     return logEvent;
 }
 
+std::unique_ptr<LogEvent> CreateAppStartOccurredEvent(
+        uint64_t timestampNs, const int uid, const string& pkgName,
+        AppStartOccurred::TransitionType type, const string& activityName,
+        const string& callingPkgName, const bool isInstantApp, int64_t activityStartMs) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, util::APP_START_OCCURRED);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+
+    AStatsEvent_writeInt32(statsEvent, uid);
+    AStatsEvent_writeString(statsEvent, pkgName.c_str());
+    AStatsEvent_writeInt32(statsEvent, type);
+    AStatsEvent_writeString(statsEvent, activityName.c_str());
+    AStatsEvent_writeString(statsEvent, callingPkgName.c_str());
+    AStatsEvent_writeInt32(statsEvent, isInstantApp);
+    AStatsEvent_writeInt32(statsEvent, activityStartMs);
+
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
 sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const int64_t currentTimeNs,
                                               const StatsdConfig& config, const ConfigKey& key,
                                               const shared_ptr<IPullAtomCallback>& puller,
@@ -994,6 +1084,27 @@ void sortLogEventsByTimestamp(std::vector<std::unique_ptr<LogEvent>> *events) {
 
 int64_t StringToId(const string& str) {
     return static_cast<int64_t>(std::hash<std::string>()(str));
+}
+
+sp<EventMatcherWizard> createEventMatcherWizard(
+        int tagId, int matcherIndex, const vector<FieldValueMatcher>& fieldValueMatchers) {
+    sp<UidMap> uidMap = new UidMap();
+    SimpleAtomMatcher atomMatcher;
+    atomMatcher.set_atom_id(tagId);
+    for (const FieldValueMatcher& fvm : fieldValueMatchers) {
+        *atomMatcher.add_field_value_matcher() = fvm;
+    }
+    uint64_t matcherHash = 0x12345678;
+    int64_t matcherId = 678;
+    return new EventMatcherWizard({new SimpleAtomMatchingTracker(
+            matcherId, matcherIndex, matcherHash, atomMatcher, uidMap)});
+}
+
+void ValidateUidDimension(const DimensionsValue& value, int atomId, int uid) {
+    EXPECT_EQ(value.field(), atomId);
+    ASSERT_EQ(value.value_tuple().dimensions_value_size(), 1);
+    EXPECT_EQ(value.value_tuple().dimensions_value(0).field(), 1);
+    EXPECT_EQ(value.value_tuple().dimensions_value(0).value_int(), uid);
 }
 
 void ValidateWakelockAttributionUidAndTagDimension(const DimensionsValue& value, const int atomId,
@@ -1073,6 +1184,61 @@ void ValidateAttributionUidAndTagDimension(
         .value_tuple().dimensions_value(1).field(), 2);
     EXPECT_EQ(value.value_tuple().dimensions_value(0)
         .value_tuple().dimensions_value(1).value_str(), tag);
+}
+
+void ValidateStateValue(const google::protobuf::RepeatedPtrField<StateValue>& stateValues,
+                        int atomId, int64_t value) {
+    ASSERT_EQ(stateValues.size(), 1);
+    ASSERT_EQ(stateValues[0].atom_id(), atomId);
+    switch (stateValues[0].contents_case()) {
+        case StateValue::ContentsCase::kValue:
+            EXPECT_EQ(stateValues[0].value(), (int32_t)value);
+            break;
+        case StateValue::ContentsCase::kGroupId:
+            EXPECT_EQ(stateValues[0].group_id(), value);
+            break;
+        default:
+            FAIL() << "State value should have either a value or a group id";
+    }
+}
+
+void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs, int64_t endTimeNs,
+                         int64_t count) {
+    EXPECT_EQ(countBucket.start_bucket_elapsed_nanos(), startTimeNs);
+    EXPECT_EQ(countBucket.end_bucket_elapsed_nanos(), endTimeNs);
+    EXPECT_EQ(countBucket.count(), count);
+}
+
+void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,
+                            int64_t endTimeNs, int64_t durationNs) {
+    EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
+    EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
+    EXPECT_EQ(bucket.duration_nanos(), durationNs);
+}
+
+void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
+                              int64_t endTimeNs, vector<int64_t> eventTimesNs) {
+    EXPECT_EQ(gaugeBucket.start_bucket_elapsed_nanos(), startTimeNs);
+    EXPECT_EQ(gaugeBucket.end_bucket_elapsed_nanos(), endTimeNs);
+    EXPECT_EQ(gaugeBucket.elapsed_timestamp_nanos_size(), eventTimesNs.size());
+    for (int i = 0; i < eventTimesNs.size(); i++) {
+        EXPECT_EQ(gaugeBucket.elapsed_timestamp_nanos(i), eventTimesNs[i]);
+    }
+}
+
+void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
+                         int64_t value, int64_t conditionTrueNs) {
+    EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
+    EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
+    ASSERT_EQ(bucket.values_size(), 1);
+    if (bucket.values(0).has_value_double()) {
+        EXPECT_EQ((int64_t)bucket.values(0).value_double(), value);
+    } else {
+        EXPECT_EQ(bucket.values(0).value_long(), value);
+    }
+    if (conditionTrueNs > 0) {
+        EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
+    }
 }
 
 bool EqualsTo(const DimensionsValue& s1, const DimensionsValue& s2) {
@@ -1372,7 +1538,7 @@ Status FakeSubsystemSleepCallback::onPullAtom(int atomTag,
         AStatsEvent_writeString(event, subsystemName.c_str());
         AStatsEvent_writeString(event, "subsystem_subname foo");
         AStatsEvent_writeInt64(event, /*count= */ i);
-        AStatsEvent_writeInt64(event, /*time_millis= */ i * 100);
+        AStatsEvent_writeInt64(event, /*time_millis= */ pullNum * pullNum * 100 + i);
         AStatsEvent_build(event);
         size_t size;
         uint8_t* buffer = AStatsEvent_getBuffer(event, &size);
@@ -1384,6 +1550,7 @@ Status FakeSubsystemSleepCallback::onPullAtom(int atomTag,
         parcels.push_back(std::move(p));
         AStatsEvent_release(event);
     }
+    pullNum++;
     resultReceiver->pullFinished(atomTag, /*success=*/true, parcels);
     return Status::ok();
 }

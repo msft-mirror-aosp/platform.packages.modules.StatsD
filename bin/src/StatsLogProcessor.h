@@ -48,7 +48,7 @@ public:
     void OnLogEvent(LogEvent* event);
 
     void OnConfigUpdated(const int64_t timestampNs, const ConfigKey& key,
-                         const StatsdConfig& config);
+                         const StatsdConfig& config, bool modularUpdate = true);
     void OnConfigRemoved(const ConfigKey& key);
 
     size_t GetMetricsSize(const ConfigKey& key) const;
@@ -72,8 +72,8 @@ public:
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
 
     /* Flushes data to disk. Data on memory will be gone after written to disk. */
-    void WriteDataToDisk(const DumpReportReason dumpReportReason,
-                         const DumpLatency dumpLatency);
+    void WriteDataToDisk(const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
+                         const int64_t elapsedRealtimeNs);
 
     /* Persist configs containing metrics with active activations to disk. */
     void SaveActiveConfigsToDisk(int64_t currentTimeNs);
@@ -185,10 +185,10 @@ private:
 
     void OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs);
 
-    void resetIfConfigTtlExpiredLocked(const int64_t timestampNs);
+    void resetIfConfigTtlExpiredLocked(const int64_t eventTimeNs);
 
-    void OnConfigUpdatedLocked(
-        const int64_t currentTimestampNs, const ConfigKey& key, const StatsdConfig& config);
+    void OnConfigUpdatedLocked(const int64_t currentTimestampNs, const ConfigKey& key,
+                               const StatsdConfig& config, bool modularUpdate);
 
     void GetActiveConfigsLocked(const int uid, vector<int64_t>& outActiveConfigs);
 
@@ -207,7 +207,7 @@ private:
                                     metadata::StatsMetadataList* metadataList);
 
     void WriteDataToDiskLocked(const DumpReportReason dumpReportReason,
-                               const DumpLatency dumpLatency);
+                               const DumpLatency dumpLatency, const int64_t elapsedRealtimeNs);
 
     void WriteDataToDiskLocked(const ConfigKey& key, const int64_t timestampNs,
                                const DumpReportReason dumpReportReason,
@@ -337,6 +337,12 @@ private:
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithTwoDeactivations);
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithSameDeactivation);
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations);
+
+    FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
+    FRIEND_TEST(ConfigUpdateE2eTest, TestValueMetric);
+    FRIEND_TEST(ConfigUpdateE2eAbTest, TestHashStrings);
+    FRIEND_TEST(ConfigUpdateE2eAbTest, TestUidMapVersionStringInstaller);
+    FRIEND_TEST(ConfigUpdateE2eAbTest, TestConfigTtl);
 
     FRIEND_TEST(CountMetricE2eTest, TestInitialConditionChanges);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedState);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2020 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,20 @@
 
 #pragma once
 
-#include "AtomMatchingTracker.h"
+#include <string>
 
 namespace android {
 namespace os {
 namespace statsd {
 
-class EventMatcherWizard : public virtual android::RefBase {
-public:
-    EventMatcherWizard(){};  // for testing
-    EventMatcherWizard(const std::vector<sp<AtomMatchingTracker>>& eventTrackers)
-        : mAllEventMatchers(eventTrackers){};
+const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 
-    virtual ~EventMatcherWizard(){};
+const std::string PARTIAL_CONFIG_UPDATE_FLAG = "partial_config_update";
 
-    MatchingState matchLogEvent(const LogEvent& event, int matcher_index);
+std::string getFlagString(const std::string& flagName, const std::string& defaultValue);
 
-private:
-    std::vector<sp<AtomMatchingTracker>> mAllEventMatchers;
-};
+// Returns true IFF flagName has a value of "true".
+bool getFlagBool(const std::string& flagName, const std::string& defaultValue);
 
 }  // namespace statsd
 }  // namespace os
