@@ -88,6 +88,11 @@ cc_library {
     },
 }
 
+cc_library_headers {
+    name: "libstatspull_headers",
+    export_include_dirs: ["include"],
+}
+
 // ONLY USE IN TESTS.
 cc_library_static {
     name: "libstatspull_private",
@@ -114,7 +119,7 @@ cc_test {
         "libstatspull",
         "libstatssocket",
     ],
-    test_suites: ["general-tests", "mts"],
+    test_suites: ["general-tests", "mts-statsd"],
     test_config: "libstatspull_test.xml",
 
     //TODO(b/153588990): Remove when the build system properly separates 
@@ -137,4 +142,31 @@ cc_test {
         "-Wno-unused-parameter",
     ],
     require_root: true,
+}
+
+// =============
+// Rust bindings
+// =============
+
+rust_bindgen {
+    name: "libstatspull_bindgen",
+    wrapper_src: "rust/statslog.h",
+    crate_name: "statspull_bindgen",
+    source_stem: "bindings",
+    local_include_dirs: ["include"],
+    bindgen_flags: [
+        "--size_t-is-usize",
+        "--whitelist-function=AStatsEventList_addStatsEvent",
+        "--whitelist-function=AStatsEvent_.*",
+        "--whitelist-function=AStatsManager_.*",
+        "--whitelist-var=AStatsManager_.*",
+    ],
+    target: {
+        android: {
+            shared_libs: ["libstatssocket"],
+        },
+        host: {
+            static_libs: ["libstatssocket"],
+        },
+    },
 }

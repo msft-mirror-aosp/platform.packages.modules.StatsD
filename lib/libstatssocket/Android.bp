@@ -89,8 +89,10 @@ cc_test_library {
 cc_library_headers {
     name: "libstatssocket_headers",
     export_include_dirs: ["include"],
-    host_supported: true,
-    apex_available: ["com.android.resolv"],
+    apex_available: [
+        "com.android.resolv",
+        "//apex_available:platform",
+    ],
     min_sdk_version: "29",
 }
 
@@ -111,7 +113,7 @@ cc_test {
     shared_libs: [
         "libutils",
     ],
-    test_suites: ["device-tests", "mts"],
+    test_suites: ["device-tests", "mts-statsd"],
     test_config: "libstatssocket_test.xml",
     //TODO(b/153588990): Remove when the build system properly separates.
     //32bit and 64bit architectures.
