@@ -118,26 +118,6 @@ bool initConfig(const StatsdConfig& config) {
             tmpDeactivationAtomTrackerToMetricMap, oldAlertTrackerMap, metricsWithActivation,
             oldStateHashes, noReportMetricIds);
 }
-
-EventMetric createEventMetric(string name, int64_t what, optional<int64_t> condition) {
-    EventMetric metric;
-    metric.set_id(StringToId(name));
-    metric.set_what(what);
-    if (condition) {
-        metric.set_condition(condition.value());
-    }
-    return metric;
-}
-
-
-
-Alarm createAlarm(string name, int64_t offsetMillis, int64_t periodMillis) {
-    Alarm alarm;
-    alarm.set_id(StringToId(name));
-    alarm.set_offset_millis(offsetMillis);
-    alarm.set_period_millis(periodMillis);
-    return alarm;
-}
 }  // anonymous namespace
 
 TEST_F(ConfigUpdateTest, TestSimpleMatcherPreserve) {
