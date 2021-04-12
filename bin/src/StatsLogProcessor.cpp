@@ -24,12 +24,13 @@
 #include <packages/modules/StatsD/bin/src/active_config_list.pb.h>
 #include <packages/modules/StatsD/bin/src/experiment_ids.pb.h>
 
+#include "StatsService.h"
 #include "android-base/stringprintf.h"
 #include "external/StatsPullerManager.h"
+#include "flags/flags.h"
 #include "guardrail/StatsdStats.h"
 #include "logd/LogEvent.h"
 #include "metrics/CountMetricProducer.h"
-#include "StatsService.h"
 #include "state/StateManager.h"
 #include "stats_log_util.h"
 #include "stats_util.h"
@@ -520,25 +521,39 @@ void StatsLogProcessor::GetActiveConfigsLocked(const int uid, vector<int64_t>& o
 }
 
 void StatsLogProcessor::OnConfigUpdated(const int64_t timestampNs, const ConfigKey& key,
-                                        const StatsdConfig& config) {
+                                        const StatsdConfig& config, bool modularUpdate) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     WriteDataToDiskLocked(key, timestampNs, CONFIG_UPDATED, NO_TIME_CONSTRAINTS);
-    OnConfigUpdatedLocked(timestampNs, key, config);
+    OnConfigUpdatedLocked(timestampNs, key, config, modularUpdate);
 }
 
-void StatsLogProcessor::OnConfigUpdatedLocked(
-        const int64_t timestampNs, const ConfigKey& key, const StatsdConfig& config) {
+void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const ConfigKey& key,
+                                              const StatsdConfig& config, bool modularUpdate) {
     VLOG("Updated configuration for key %s", key.ToString().c_str());
-    sp<MetricsManager> newMetricsManager =
-            new MetricsManager(key, config, mTimeBaseNs, timestampNs, mUidMap, mPullerManager,
-                               mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
-    if (newMetricsManager->isConfigValid()) {
-        newMetricsManager->init();
-        mUidMap->OnConfigUpdated(key);
-        newMetricsManager->refreshTtl(timestampNs);
-        mMetricsManagers[key] = newMetricsManager;
-        VLOG("StatsdConfig valid");
+    // Create new config if this is not a modular update or if this is a new config.
+    const auto& it = mMetricsManagers.find(key);
+    bool configValid = false;
+    if (!modularUpdate || it == mMetricsManagers.end()) {
+        sp<MetricsManager> newMetricsManager =
+                new MetricsManager(key, config, mTimeBaseNs, timestampNs, mUidMap, mPullerManager,
+                                   mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
+        configValid = newMetricsManager->isConfigValid();
+        if (configValid) {
+            newMetricsManager->init();
+            mUidMap->OnConfigUpdated(key);
+            newMetricsManager->refreshTtl(timestampNs);
+            mMetricsManagers[key] = newMetricsManager;
+            VLOG("StatsdConfig valid");
+        }
     } else {
+        // Preserve the existing MetricsManager, update necessary components and metadata in place.
+        configValid = it->second->updateConfig(config, mTimeBaseNs, timestampNs,
+                                               mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
+        if (configValid) {
+            mUidMap->OnConfigUpdated(key);
+        }
+    }
+    if (!configValid) {
         // If there is any error in the config, don't use it.
         // Remove any existing config with the same key.
         ALOGE("StatsdConfig NOT valid");
@@ -704,7 +719,8 @@ void StatsLogProcessor::resetConfigsLocked(const int64_t timestampNs,
     for (const auto& key : configs) {
         StatsdConfig config;
         if (StorageManager::readConfigFromDisk(key, &config)) {
-            OnConfigUpdatedLocked(timestampNs, key, config);
+            // Force a full update when resetting a config.
+            OnConfigUpdatedLocked(timestampNs, key, config, /*modularUpdate=*/false);
             StatsdStats::getInstance().noteConfigReset(key);
         } else {
             ALOGE("Failed to read backup config from disk for : %s", key.ToString().c_str());
@@ -716,16 +732,16 @@ void StatsLogProcessor::resetConfigsLocked(const int64_t timestampNs,
     }
 }
 
-void StatsLogProcessor::resetIfConfigTtlExpiredLocked(const int64_t timestampNs) {
+void StatsLogProcessor::resetIfConfigTtlExpiredLocked(const int64_t eventTimeNs) {
     std::vector<ConfigKey> configKeysTtlExpired;
     for (auto it = mMetricsManagers.begin(); it != mMetricsManagers.end(); it++) {
-        if (it->second != nullptr && !it->second->isInTtl(timestampNs)) {
+        if (it->second != nullptr && !it->second->isInTtl(eventTimeNs)) {
             configKeysTtlExpired.push_back(it->first);
         }
     }
     if (configKeysTtlExpired.size() > 0) {
-        WriteDataToDiskLocked(CONFIG_RESET, NO_TIME_CONSTRAINTS);
-        resetConfigsLocked(timestampNs, configKeysTtlExpired);
+        WriteDataToDiskLocked(CONFIG_RESET, NO_TIME_CONSTRAINTS, getElapsedRealtimeNs());
+        resetConfigsLocked(eventTimeNs, configKeysTtlExpired);
     }
 }
 
@@ -1024,27 +1040,28 @@ void StatsLogProcessor::SetConfigsActiveStateLocked(const ActiveConfigList& acti
 }
 
 void StatsLogProcessor::WriteDataToDiskLocked(const DumpReportReason dumpReportReason,
-                                              const DumpLatency dumpLatency) {
-    const int64_t timeNs = getElapsedRealtimeNs();
+                                              const DumpLatency dumpLatency,
+                                              const int64_t elapsedRealtimeNs) {
     // Do not write to disk if we already have in the last few seconds.
     // This is to avoid overwriting files that would have the same name if we
     //   write twice in the same second.
-    if (static_cast<unsigned long long> (timeNs) <
-            mLastWriteTimeNs + WRITE_DATA_COOL_DOWN_SEC * NS_PER_SEC) {
+    if (static_cast<unsigned long long>(elapsedRealtimeNs) <
+        mLastWriteTimeNs + WRITE_DATA_COOL_DOWN_SEC * NS_PER_SEC) {
         ALOGI("Statsd skipping writing data to disk. Already wrote data in last %d seconds",
                 WRITE_DATA_COOL_DOWN_SEC);
         return;
     }
-    mLastWriteTimeNs = timeNs;
+    mLastWriteTimeNs = elapsedRealtimeNs;
     for (auto& pair : mMetricsManagers) {
-        WriteDataToDiskLocked(pair.first, timeNs, dumpReportReason, dumpLatency);
+        WriteDataToDiskLocked(pair.first, elapsedRealtimeNs, dumpReportReason, dumpLatency);
     }
 }
 
 void StatsLogProcessor::WriteDataToDisk(const DumpReportReason dumpReportReason,
-                                        const DumpLatency dumpLatency) {
+                                        const DumpLatency dumpLatency,
+                                        const int64_t elapsedRealtimeNs) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
-    WriteDataToDiskLocked(dumpReportReason, dumpLatency);
+    WriteDataToDiskLocked(dumpReportReason, dumpLatency, elapsedRealtimeNs);
 }
 
 void StatsLogProcessor::informPullAlarmFired(const int64_t timestampNs) {
