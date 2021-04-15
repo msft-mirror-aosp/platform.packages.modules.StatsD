@@ -32,6 +32,7 @@ android_test {
     ],
     test_suites: [
         "device-tests",
-        "mts",
+        "mts-statsd",
     ],
+    min_sdk_version: "30",
 }

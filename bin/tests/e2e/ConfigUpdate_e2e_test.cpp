@@ -43,23 +43,6 @@ using namespace std;
 namespace {
 // Setup for test fixture.
 class ConfigUpdateE2eTest : public ::testing::Test {
-private:
-    string originalFlagValue;
-public:
-    void SetUp() override {
-        originalFlagValue = getFlagBool(PARTIAL_CONFIG_UPDATE_FLAG, "");
-        string rawFlagName =
-                StringPrintf("persist.device_config.%s.%s", STATSD_NATIVE_NAMESPACE.c_str(),
-                             PARTIAL_CONFIG_UPDATE_FLAG.c_str());
-        SetProperty(rawFlagName, "true");
-    }
-
-    void TearDown() override {
-        string rawFlagName =
-                StringPrintf("persist.device_config.%s.%s", STATSD_NATIVE_NAMESPACE.c_str(),
-                             PARTIAL_CONFIG_UPDATE_FLAG.c_str());
-        SetProperty(rawFlagName, originalFlagValue);
-    }
 };
 
 void ValidateSubsystemSleepDimension(const DimensionsValue& value, string name) {
@@ -70,6 +53,227 @@ void ValidateSubsystemSleepDimension(const DimensionsValue& value, string name) 
 }
 
 }  // Anonymous namespace.
+
+TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+
+    AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
+    *config.add_atom_matcher() = syncStartMatcher;
+    AtomMatcher wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
+    *config.add_atom_matcher() = wakelockAcquireMatcher;
+    AtomMatcher screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
+    *config.add_atom_matcher() = screenOnMatcher;
+    AtomMatcher screenOffMatcher = CreateScreenTurnedOffAtomMatcher();
+    *config.add_atom_matcher() = screenOffMatcher;
+    AtomMatcher batteryPluggedUsbMatcher = CreateBatteryStateUsbMatcher();
+    *config.add_atom_matcher() = batteryPluggedUsbMatcher;
+    AtomMatcher unpluggedMatcher = CreateBatteryStateNoneMatcher();
+    *config.add_atom_matcher() = unpluggedMatcher;
+
+    AtomMatcher* combinationMatcher = config.add_atom_matcher();
+    combinationMatcher->set_id(StringToId("SyncOrWakelockMatcher"));
+    combinationMatcher->mutable_combination()->set_operation(LogicalOperation::OR);
+    addMatcherToMatcherCombination(syncStartMatcher, combinationMatcher);
+    addMatcherToMatcherCombination(wakelockAcquireMatcher, combinationMatcher);
+
+    Predicate screenOnPredicate = CreateScreenIsOnPredicate();
+    *config.add_predicate() = screenOnPredicate;
+    Predicate unpluggedPredicate = CreateDeviceUnpluggedPredicate();
+    *config.add_predicate() = unpluggedPredicate;
+
+    Predicate* combinationPredicate = config.add_predicate();
+    combinationPredicate->set_id(StringToId("ScreenOnOrUnpluggedPred)"));
+    combinationPredicate->mutable_combination()->set_operation(LogicalOperation::OR);
+    addPredicateToPredicateCombination(screenOnPredicate, combinationPredicate);
+    addPredicateToPredicateCombination(unpluggedPredicate, combinationPredicate);
+
+    EventMetric eventPersist =
+            createEventMetric("SyncOrWlWhileScreenOnOrUnplugged", combinationMatcher->id(),
+                              combinationPredicate->id());
+    EventMetric eventChange = createEventMetric(
+            "WakelockWhileScreenOn", wakelockAcquireMatcher.id(), screenOnPredicate.id());
+    EventMetric eventRemove = createEventMetric("Syncs", syncStartMatcher.id(), nullopt);
+
+    *config.add_event_metric() = eventRemove;
+    *config.add_event_metric() = eventPersist;
+    *config.add_event_metric() = eventChange;
+
+    ConfigKey key(123, 987);
+    uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+
+    int app1Uid = 123;
+    vector<int> attributionUids1 = {app1Uid};
+    vector<string> attributionTags1 = {"App1"};
+
+    // Initialize log events before update.
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateAcquireWakelockEvent(bucketStartTimeNs + 5 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl1"));  // Not kept.
+    events.push_back(CreateScreenStateChangedEvent(
+            bucketStartTimeNs + 10 * NS_PER_SEC,
+            android::view::DISPLAY_STATE_ON));  // Condition true for change.
+    events.push_back(CreateSyncStartEvent(bucketStartTimeNs + 15 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1,
+                                          "sync1"));  // Kept for persist & remove.
+    events.push_back(CreateBatteryStateChangedEvent(
+            bucketStartTimeNs + 20 * NS_PER_SEC,
+            BatteryPluggedStateEnum::BATTERY_PLUGGED_NONE));  // Condition true for preserve.
+    events.push_back(CreateAcquireWakelockEvent(bucketStartTimeNs + 25 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl2"));  // Kept by persist and change.
+    events.push_back(CreateScreenStateChangedEvent(
+            bucketStartTimeNs + 30 * NS_PER_SEC,
+            android::view::DISPLAY_STATE_OFF));  // Condition false for change.
+    events.push_back(CreateSyncStartEvent(bucketStartTimeNs + 35 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1,
+                                          "sync2"));  // Kept for persist & remove.
+    events.push_back(CreateAcquireWakelockEvent(bucketStartTimeNs + 40 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl3"));  // Kept by persist.
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Do update. Add matchers/conditions in different order to force indices to change.
+    StatsdConfig newConfig;
+    newConfig.add_allowed_log_source("AID_ROOT");
+
+    *newConfig.add_atom_matcher() = screenOnMatcher;
+    *newConfig.add_atom_matcher() = batteryPluggedUsbMatcher;
+    *newConfig.add_atom_matcher() = syncStartMatcher;
+    *newConfig.add_atom_matcher() = *combinationMatcher;
+    *newConfig.add_atom_matcher() = wakelockAcquireMatcher;
+    *newConfig.add_atom_matcher() = screenOffMatcher;
+    *newConfig.add_atom_matcher() = unpluggedMatcher;
+    *newConfig.add_predicate() = *combinationPredicate;
+    *newConfig.add_predicate() = unpluggedPredicate;
+    *newConfig.add_predicate() = screenOnPredicate;
+
+    // Add metrics. Note that the condition of eventChange will go from false to true.
+    eventChange.set_condition(unpluggedPredicate.id());
+    *newConfig.add_event_metric() = eventChange;
+    EventMetric eventNew = createEventMetric("ScreenOn", screenOnMatcher.id(), nullopt);
+    *newConfig.add_event_metric() = eventNew;
+    *newConfig.add_event_metric() = eventPersist;
+
+    int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
+    processor->OnConfigUpdated(updateTimeNs, key, newConfig);
+
+    // Send events after the update.
+    events.clear();
+    events.push_back(CreateAcquireWakelockEvent(bucketStartTimeNs + 65 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl4"));  // Kept by preserve & change.
+    events.push_back(CreateBatteryStateChangedEvent(
+            bucketStartTimeNs + 70 * NS_PER_SEC,
+            BatteryPluggedStateEnum::BATTERY_PLUGGED_USB));  // All conditions are false.
+    events.push_back(CreateAcquireWakelockEvent(bucketStartTimeNs + 75 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl5"));  // Not kept.
+    events.push_back(CreateScreenStateChangedEvent(
+            bucketStartTimeNs + 80 * NS_PER_SEC,
+            android::view::DISPLAY_STATE_ON));  // Condition true for preserve, event kept by new.
+    events.push_back(CreateAcquireWakelockEvent(bucketStartTimeNs + 85 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl6"));  // Kept by preserve.
+    events.push_back(CreateSyncStartEvent(bucketStartTimeNs + 90 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync3"));  // Kept by preserve.
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+    uint64_t dumpTimeNs = bucketStartTimeNs + 100 * NS_PER_SEC;
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    ASSERT_EQ(reports.reports_size(), 2);
+
+    // Report from before update.
+    ConfigMetricsReport report = reports.reports(0);
+    ASSERT_EQ(report.metrics_size(), 3);
+    // Event remove. Captured sync events. There were 2 syncs before the update.
+    StatsLogReport eventRemoveBefore = report.metrics(0);
+    EXPECT_EQ(eventRemoveBefore.metric_id(), eventRemove.id());
+    EXPECT_TRUE(eventRemoveBefore.has_event_metrics());
+    ASSERT_EQ(eventRemoveBefore.event_metrics().data_size(), 2);
+    auto data = eventRemoveBefore.event_metrics().data(0);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 15 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().sync_state_changed().sync_name(), "sync1");
+    data = eventRemoveBefore.event_metrics().data(1);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 35 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().sync_state_changed().sync_name(), "sync2");
+
+    // Captured wakelocks & syncs while screen on or unplugged. There were 2 wakelocks and 2 syncs.
+    StatsLogReport eventPersistBefore = report.metrics(1);
+    EXPECT_EQ(eventPersistBefore.metric_id(), eventPersist.id());
+    EXPECT_TRUE(eventPersistBefore.has_event_metrics());
+    ASSERT_EQ(eventPersistBefore.event_metrics().data_size(), 3);
+    data = eventPersistBefore.event_metrics().data(0);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 25 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().wakelock_state_changed().tag(), "wl2");
+    data = eventPersistBefore.event_metrics().data(1);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 35 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().sync_state_changed().sync_name(), "sync2");
+    data = eventPersistBefore.event_metrics().data(2);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 40 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().wakelock_state_changed().tag(), "wl3");
+
+    // Captured wakelock events while screen on. There was 1 before the update.
+    StatsLogReport eventChangeBefore = report.metrics(2);
+    EXPECT_EQ(eventChangeBefore.metric_id(), eventChange.id());
+    EXPECT_TRUE(eventChangeBefore.has_event_metrics());
+    ASSERT_EQ(eventChangeBefore.event_metrics().data_size(), 1);
+    data = eventChangeBefore.event_metrics().data(0);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 25 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().wakelock_state_changed().tag(), "wl2");
+
+    // Report from after update.
+    report = reports.reports(1);
+    ASSERT_EQ(report.metrics_size(), 3);
+    // Captured wakelocks while unplugged. There was 1 after the update.
+    StatsLogReport eventChangeAfter = report.metrics(0);
+    EXPECT_EQ(eventChangeAfter.metric_id(), eventChange.id());
+    EXPECT_TRUE(eventChangeAfter.has_event_metrics());
+    ASSERT_EQ(eventChangeAfter.event_metrics().data_size(), 1);
+    data = eventChangeAfter.event_metrics().data(0);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 65 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().wakelock_state_changed().tag(), "wl4");
+
+    // Captured screen on events. There was 1 after the update.
+    StatsLogReport eventNewAfter = report.metrics(1);
+    EXPECT_EQ(eventNewAfter.metric_id(), eventNew.id());
+    EXPECT_TRUE(eventNewAfter.has_event_metrics());
+    ASSERT_EQ(eventNewAfter.event_metrics().data_size(), 1);
+    data = eventNewAfter.event_metrics().data(0);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 80 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().screen_state_changed().state(), android::view::DISPLAY_STATE_ON);
+
+    // There were 2 wakelocks and 1 sync after the update while the condition was true.
+    StatsLogReport eventPersistAfter = report.metrics(2);
+    EXPECT_EQ(eventPersistAfter.metric_id(), eventPersist.id());
+    EXPECT_TRUE(eventPersistAfter.has_event_metrics());
+    ASSERT_EQ(eventPersistAfter.event_metrics().data_size(), 3);
+    data = eventPersistAfter.event_metrics().data(0);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 65 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().wakelock_state_changed().tag(), "wl4");
+    data = eventPersistAfter.event_metrics().data(1);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 85 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().wakelock_state_changed().tag(), "wl6");
+    data = eventPersistAfter.event_metrics().data(2);
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 90 * NS_PER_SEC);
+    EXPECT_EQ(data.atom().sync_state_changed().sync_name(), "sync3");
+}
 
 TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     StatsdConfig config;
@@ -2214,6 +2418,174 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     vector<uint8_t> buffer;
     processor->onDumpReport(key, bucket2StartTimeNs + 100 * NS_PER_SEC, true, true, ADB_DUMP, FAST,
                             &buffer);
+    SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, preserveSubId);
+    SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, replaceSubId);
+    SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, removeSubId);
+    SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, newSubId);
+}
+
+TEST_F(ConfigUpdateE2eTest, TestAlarms) {
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    Alarm alarmPreserve = createAlarm("AlarmPreserve", /*offset*/ 5 * MS_PER_SEC,
+                                      /*period*/ TimeUnitToBucketSizeInMillis(ONE_MINUTE));
+    Alarm alarmReplace = createAlarm("AlarmReplace", /*offset*/ 1,
+                                     /*period*/ TimeUnitToBucketSizeInMillis(FIVE_MINUTES));
+    Alarm alarmRemove = createAlarm("AlarmRemove", /*offset*/ 1,
+                                    /*period*/ TimeUnitToBucketSizeInMillis(ONE_MINUTE));
+    *config.add_alarm() = alarmReplace;
+    *config.add_alarm() = alarmPreserve;
+    *config.add_alarm() = alarmRemove;
+
+    int preserveSubId = 1, replaceSubId = 2, removeSubId = 3;
+    Subscription preserveSub = createSubscription("S1", Subscription::ALARM, alarmPreserve.id());
+    preserveSub.mutable_broadcast_subscriber_details()->set_subscriber_id(preserveSubId);
+    Subscription replaceSub = createSubscription("S2", Subscription::ALARM, alarmReplace.id());
+    replaceSub.mutable_broadcast_subscriber_details()->set_subscriber_id(replaceSubId);
+    Subscription removeSub = createSubscription("S3", Subscription::ALARM, alarmRemove.id());
+    removeSub.mutable_broadcast_subscriber_details()->set_subscriber_id(removeSubId);
+    *config.add_subscription() = preserveSub;
+    *config.add_subscription() = removeSub;
+    *config.add_subscription() = replaceSub;
+
+    int64_t configUid = 123, configId = 987;
+    ConfigKey key(configUid, configId);
+
+    int alarmPreserveCount = 0, alarmReplaceCount = 0, alarmRemoveCount = 0;
+
+    // The binder calls here will happen synchronously because they are in-process.
+    shared_ptr<MockPendingIntentRef> preserveBroadcast =
+            SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*preserveBroadcast, sendSubscriberBroadcast(configUid, configId, preserveSub.id(),
+                                                            alarmPreserve.id(), _, _))
+            .Times(4)
+            .WillRepeatedly([&alarmPreserveCount](int64_t, int64_t, int64_t, int64_t,
+                                                  const vector<string>&,
+                                                  const StatsDimensionsValueParcel&) {
+                alarmPreserveCount++;
+                return Status::ok();
+            });
+
+    shared_ptr<MockPendingIntentRef> replaceBroadcast =
+            SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*replaceBroadcast, sendSubscriberBroadcast(configUid, configId, replaceSub.id(),
+                                                           alarmReplace.id(), _, _))
+            .Times(2)
+            .WillRepeatedly([&alarmReplaceCount](int64_t, int64_t, int64_t, int64_t,
+                                                 const vector<string>&,
+                                                 const StatsDimensionsValueParcel&) {
+                alarmReplaceCount++;
+                return Status::ok();
+            });
+
+    shared_ptr<MockPendingIntentRef> removeBroadcast =
+            SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*removeBroadcast, sendSubscriberBroadcast(configUid, configId, removeSub.id(),
+                                                          alarmRemove.id(), _, _))
+            .Times(1)
+            .WillRepeatedly([&alarmRemoveCount](int64_t, int64_t, int64_t, int64_t,
+                                                const vector<string>&,
+                                                const StatsDimensionsValueParcel&) {
+                alarmRemoveCount++;
+                return Status::ok();
+            });
+
+    SubscriberReporter::getInstance().setBroadcastSubscriber(key, preserveSubId, preserveBroadcast);
+    SubscriberReporter::getInstance().setBroadcastSubscriber(key, replaceSubId, replaceBroadcast);
+    SubscriberReporter::getInstance().setBroadcastSubscriber(key, removeSubId, removeBroadcast);
+
+    int64_t startTimeSec = 10;
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            startTimeSec * NS_PER_SEC, startTimeSec * NS_PER_SEC, config, key);
+
+    sp<AlarmMonitor> alarmMonitor = processor->getPeriodicAlarmMonitor();
+    // First alarm is for alarm preserve's offset of 5 seconds.
+    EXPECT_EQ(alarmMonitor->getRegisteredAlarmTimeSec(), startTimeSec + 5);
+
+    // Alarm fired at 5. AlarmPreserve should fire.
+    int32_t alarmFiredTimestampSec = startTimeSec + 5;
+    auto alarmSet = alarmMonitor->popSoonerThan(static_cast<uint32_t>(alarmFiredTimestampSec));
+    processor->onPeriodicAlarmFired(alarmFiredTimestampSec * NS_PER_SEC, alarmSet);
+    EXPECT_EQ(alarmPreserveCount, 1);
+    EXPECT_EQ(alarmReplaceCount, 0);
+    EXPECT_EQ(alarmRemoveCount, 0);
+    EXPECT_EQ(alarmMonitor->getRegisteredAlarmTimeSec(), startTimeSec + 60);
+
+    // Alarm fired at 75. AlarmPreserve and AlarmRemove should fire.
+    alarmFiredTimestampSec = startTimeSec + 75;
+    alarmSet = alarmMonitor->popSoonerThan(static_cast<uint32_t>(alarmFiredTimestampSec));
+    processor->onPeriodicAlarmFired(alarmFiredTimestampSec * NS_PER_SEC, alarmSet);
+    EXPECT_EQ(alarmPreserveCount, 2);
+    EXPECT_EQ(alarmReplaceCount, 0);
+    EXPECT_EQ(alarmRemoveCount, 1);
+    EXPECT_EQ(alarmMonitor->getRegisteredAlarmTimeSec(), startTimeSec + 120);
+
+    // Do config update.
+    StatsdConfig newConfig;
+    newConfig.add_allowed_log_source("AID_ROOT");
+
+    // Change alarm replace's definition.
+    alarmReplace.set_period_millis(TimeUnitToBucketSizeInMillis(ONE_MINUTE));
+    Alarm alarmNew = createAlarm("AlarmNew", /*offset*/ 1,
+                                 /*period*/ TimeUnitToBucketSizeInMillis(FIVE_MINUTES));
+    *newConfig.add_alarm() = alarmNew;
+    *newConfig.add_alarm() = alarmPreserve;
+    *newConfig.add_alarm() = alarmReplace;
+
+    int newSubId = 4;
+    Subscription newSub = createSubscription("S4", Subscription::ALARM, alarmNew.id());
+    newSub.mutable_broadcast_subscriber_details()->set_subscriber_id(newSubId);
+    *newConfig.add_subscription() = newSub;
+    *newConfig.add_subscription() = replaceSub;
+    *newConfig.add_subscription() = preserveSub;
+
+    int alarmNewCount = 0;
+    shared_ptr<MockPendingIntentRef> newBroadcast =
+            SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*newBroadcast,
+                sendSubscriberBroadcast(configUid, configId, newSub.id(), alarmNew.id(), _, _))
+            .Times(1)
+            .WillRepeatedly([&alarmNewCount](int64_t, int64_t, int64_t, int64_t,
+                                             const vector<string>&,
+                                             const StatsDimensionsValueParcel&) {
+                alarmNewCount++;
+                return Status::ok();
+            });
+    SubscriberReporter::getInstance().setBroadcastSubscriber(key, newSubId, newBroadcast);
+
+    processor->OnConfigUpdated((startTimeSec + 90) * NS_PER_SEC, key, newConfig);
+    // After the update, the alarm time should remain unchanged since alarm replace now fires every
+    // minute with no offset.
+    EXPECT_EQ(alarmMonitor->getRegisteredAlarmTimeSec(), startTimeSec + 120);
+
+    // Alarm fired at 120. AlermReplace should fire.
+    alarmFiredTimestampSec = startTimeSec + 120;
+    alarmSet = alarmMonitor->popSoonerThan(static_cast<uint32_t>(alarmFiredTimestampSec));
+    processor->onPeriodicAlarmFired(alarmFiredTimestampSec * NS_PER_SEC, alarmSet);
+    EXPECT_EQ(alarmPreserveCount, 2);
+    EXPECT_EQ(alarmReplaceCount, 1);
+    EXPECT_EQ(alarmNewCount, 0);
+    EXPECT_EQ(alarmMonitor->getRegisteredAlarmTimeSec(), startTimeSec + 125);
+
+    // Alarm fired at 130. AlarmPreserve should fire.
+    alarmFiredTimestampSec = startTimeSec + 130;
+    alarmSet = alarmMonitor->popSoonerThan(static_cast<uint32_t>(alarmFiredTimestampSec));
+    processor->onPeriodicAlarmFired(alarmFiredTimestampSec * NS_PER_SEC, alarmSet);
+    EXPECT_EQ(alarmPreserveCount, 3);
+    EXPECT_EQ(alarmReplaceCount, 1);
+    EXPECT_EQ(alarmNewCount, 0);
+    EXPECT_EQ(alarmMonitor->getRegisteredAlarmTimeSec(), startTimeSec + 180);
+
+    // Alarm fired late at 310. All alerms should fire.
+    alarmFiredTimestampSec = startTimeSec + 310;
+    alarmSet = alarmMonitor->popSoonerThan(static_cast<uint32_t>(alarmFiredTimestampSec));
+    processor->onPeriodicAlarmFired(alarmFiredTimestampSec * NS_PER_SEC, alarmSet);
+    EXPECT_EQ(alarmPreserveCount, 4);
+    EXPECT_EQ(alarmReplaceCount, 2);
+    EXPECT_EQ(alarmNewCount, 1);
+    EXPECT_EQ(alarmMonitor->getRegisteredAlarmTimeSec(), startTimeSec + 360);
+
+    // Clear subscribers
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, preserveSubId);
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, replaceSubId);
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, removeSubId);

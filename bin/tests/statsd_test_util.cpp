@@ -241,6 +241,10 @@ AtomMatcher CreateProcessCrashAtomMatcher() {
         "Crashed", ProcessLifeCycleStateChanged::CRASHED);
 }
 
+void addMatcherToMatcherCombination(const AtomMatcher& matcher, AtomMatcher* combinationMatcher) {
+    combinationMatcher->mutable_combination()->add_matcher(matcher.id());
+}
+
 Predicate CreateScheduledJobPredicate() {
     Predicate predicate;
     predicate.set_id(StringToId("ScheduledJobRunningPredicate"));
@@ -446,6 +450,17 @@ FieldMatcher CreateAttributionUidAndOtherDimensions(const int atomId,
     return dimensions;
 }
 
+EventMetric createEventMetric(const string& name, const int64_t what,
+                              const optional<int64_t>& condition) {
+    EventMetric metric;
+    metric.set_id(StringToId(name));
+    metric.set_what(what);
+    if (condition) {
+        metric.set_condition(condition.value());
+    }
+    return metric;
+}
+
 CountMetric createCountMetric(const string& name, const int64_t what,
                               const optional<int64_t>& condition, const vector<int64_t>& states) {
     CountMetric metric;
@@ -521,6 +536,14 @@ Alert createAlert(const string& name, const int64_t metricId, const int buckets,
     alert.set_num_buckets(buckets);
     alert.set_trigger_if_sum_gt(triggerSum);
     return alert;
+}
+
+Alarm createAlarm(const string& name, const int64_t offsetMillis, const int64_t periodMillis) {
+    Alarm alarm;
+    alarm.set_id(StringToId(name));
+    alarm.set_offset_millis(offsetMillis);
+    alarm.set_period_millis(periodMillis);
+    return alarm;
 }
 
 Subscription createSubscription(const string& name, const Subscription_RuleType type,
