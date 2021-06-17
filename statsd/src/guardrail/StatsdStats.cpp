@@ -459,9 +459,12 @@ void StatsdStats::notePullExceedMaxDelay(int pullAtomId) {
 void StatsdStats::noteAtomLogged(int atomId, int32_t timeSec) {
     lock_guard<std::mutex> lock(mLock);
 
-    if (atomId <= kMaxPushedAtomId) {
+    if (atomId >= 0 && atomId <= kMaxPushedAtomId) {
         mPushedAtomStats[atomId]++;
     } else {
+        if (atomId < 0) {
+            android_errorWriteLog(0x534e4554, "187957589");
+        }
         if (mNonPlatformPushedAtomStats.size() < kMaxNonPlatformPushedAtoms) {
             mNonPlatformPushedAtomStats[atomId]++;
         }
@@ -1094,6 +1097,13 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
     }
 
     VLOG("reset=%d, returned proto size %lu", reset, (unsigned long)bufferSize);
+}
+
+std::pair<size_t, size_t> StatsdStats::getAtomDimensionKeySizeLimits(const int atomId) {
+    return kAtomDimensionKeySizeLimitMap.find(atomId) != kAtomDimensionKeySizeLimitMap.end()
+                   ? kAtomDimensionKeySizeLimitMap.at(atomId)
+                   : std::make_pair<size_t, size_t>(kDimensionKeySizeSoftLimit,
+                                                    kDimensionKeySizeHardLimit);
 }
 
 }  // namespace statsd

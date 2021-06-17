@@ -1455,7 +1455,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     EXPECT_FALSE(data.has_dimensions_in_what());
     EXPECT_EQ(data.slice_by_state_size(), 0);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, 20, 0);
+    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {20}, 0);
 
     // Min screen brightness while screen on. Bucket skipped due to condition unknown.
     StatsLogReport valuePushPersistBefore = report.metrics(2);
@@ -1479,11 +1479,11 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     data = valueMetrics.data(0);
     ValidateSubsystemSleepDimension(data.dimensions_in_what(), "subsystem_name_1");
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, 800, 0);
+    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {800}, 0);
     data = valueMetrics.data(1);
     ValidateSubsystemSleepDimension(data.dimensions_in_what(), "subsystem_name_2");
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, 800, 0);
+    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {800}, 0);
 
     // Report from after update.
     report = reports.reports(1);
@@ -1500,13 +1500,13 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     data = valueMetrics.data(0);
     ValidateSubsystemSleepDimension(data.dimensions_in_what(), "subsystem_name_1");
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, 3500,
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {3500},
                         conditionTrueNs);
     ASSERT_EQ(valueMetrics.data_size(), 2);
     data = valueMetrics.data(1);
     ValidateSubsystemSleepDimension(data.dimensions_in_what(), "subsystem_name_2");
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, 3500,
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {3500},
                         conditionTrueNs);
 
     ASSERT_EQ(valueChangeAfter.value_metrics().skipped_size(), 1);
@@ -1525,8 +1525,8 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ASSERT_EQ(valueMetrics.data_size(), 1);
     data = valueMetrics.data(0);
     ASSERT_EQ(data.bucket_info_size(), 2);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, 40, 0);
-    ValidateValueBucket(data.bucket_info(1), roundedBucketEndNs, roundedDumpTimeNs, 50, 0);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {40}, 0);
+    ValidateValueBucket(data.bucket_info(1), roundedBucketEndNs, roundedDumpTimeNs, {50}, 0);
 
     // Min screen brightness when screen on. Val is 30 in first bucket, 50 in second.
     StatsLogReport valuePushPersistAfter = report.metrics(2);
@@ -1538,9 +1538,9 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     data = valueMetrics.data(0);
     ASSERT_EQ(data.bucket_info_size(), 2);
     conditionTrueNs = bucketSizeNs - 60 * NS_PER_SEC + 10 * NS_PER_SEC;
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, 30,
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {30},
                         conditionTrueNs);
-    ValidateValueBucket(data.bucket_info(1), roundedBucketEndNs, roundedDumpTimeNs, 50,
+    ValidateValueBucket(data.bucket_info(1), roundedBucketEndNs, roundedDumpTimeNs, {50},
                         10 * NS_PER_SEC);
 
     // TODO(b/179725160): fix assertions.
@@ -1558,7 +1558,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateStateValue(data.slice_by_state(), util::SCREEN_STATE_CHANGED,
                        android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, 900, -1);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {900}, -1);
     // Name 1, screen ON. Pull#4 (1600) - pull#3 (900) + pull#8 (6400) - pull#7 (4900).
     data = valueMetrics.data(1);
     conditionTrueNs = 10 * NS_PER_SEC + bucketSizeNs - 65 * NS_PER_SEC;
@@ -1566,7 +1566,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateStateValue(data.slice_by_state(), util::SCREEN_STATE_CHANGED,
                        android::view::DisplayStateEnum::DISPLAY_STATE_ON);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, 2200, -1);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {2200}, -1);
     // Name 2, screen OFF. Pull#5 (2500) - pull#4 (1600).
     data = valueMetrics.data(2);
     conditionTrueNs = 10 * NS_PER_SEC;
@@ -1574,7 +1574,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateStateValue(data.slice_by_state(), util::SCREEN_STATE_CHANGED,
                        android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, 900, -1);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {900}, -1);
     // Name 2, screen ON. Pull#4 (1600) - pull#3 (900) + pull#8 (6400) - pull#7 (4900).
     data = valueMetrics.data(3);
     conditionTrueNs = 10 * NS_PER_SEC + bucketSizeNs - 65 * NS_PER_SEC;
@@ -1582,7 +1582,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateStateValue(data.slice_by_state(), util::SCREEN_STATE_CHANGED,
                        android::view::DisplayStateEnum::DISPLAY_STATE_ON);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, 2200, -1);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {2200}, -1);
 
     ASSERT_EQ(valuePullPersistAfter.value_metrics().skipped_size(), 1);
     skipBucket = valuePullPersistAfter.value_metrics().skipped(0);
@@ -1974,14 +1974,14 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
                                   .get());
     EXPECT_EQ(alertPreserveCount, 0);
     EXPECT_EQ(alertRemoveCount, 1);
-//    EXPECT_EQ(alertRemoveDims, wlUid1);
+    EXPECT_EQ(alertRemoveDims, wlUid1);
 
     processor->OnLogEvent(CreateAcquireWakelockEvent(bucketStartTimeNs + 20 * NS_PER_SEC,
                                                      attributionUids2, attributionTags2, "wl2")
                                   .get());
     EXPECT_EQ(alertPreserveCount, 0);
     EXPECT_EQ(alertRemoveCount, 2);
-//    EXPECT_EQ(alertRemoveDims, wlUid2);
+    EXPECT_EQ(alertRemoveDims, wlUid2);
 
     processor->OnLogEvent(CreateSyncStartEvent(bucket2StartTimeNs + 5 * NS_PER_SEC,
                                                attributionUids1, attributionTags1, "sync1")
@@ -1994,9 +1994,9 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
                                                      attributionUids2, attributionTags2, "wl2")
                                   .get());
     EXPECT_EQ(alertPreserveCount, 1);
-//    EXPECT_EQ(alertPreserveDims, wlUid2);
+    EXPECT_EQ(alertPreserveDims, wlUid2);
     EXPECT_EQ(alertRemoveCount, 3);
-//    EXPECT_EQ(alertRemoveDims, wlUid2);
+    EXPECT_EQ(alertRemoveDims, wlUid2);
 
     // Do config update.
     StatsdConfig newConfig;
@@ -2048,14 +2048,14 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
                                   .get());
     EXPECT_EQ(alertPreserveCount, 1);
     EXPECT_EQ(alertNewCount, 1);
-//    EXPECT_EQ(alertNewDims, wlUid2);
+    EXPECT_EQ(alertNewDims, wlUid2);
 
     // Wakelock for uid1 fired in first bucket, alert preserve should keep the history and fire.
     processor->OnLogEvent(CreateAcquireWakelockEvent(bucket2StartTimeNs + 25 * NS_PER_SEC,
                                                      attributionUids1, attributionTags1, "wl1")
                                   .get());
     EXPECT_EQ(alertPreserveCount, 2);
-//    EXPECT_EQ(alertPreserveDims, wlUid1);
+    EXPECT_EQ(alertPreserveDims, wlUid1);
     EXPECT_EQ(alertNewCount, 1);
 
     processor->OnLogEvent(CreateSyncStartEvent(bucket2StartTimeNs + 30 * NS_PER_SEC,
@@ -2219,7 +2219,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
             eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 0);
     EXPECT_EQ(alertRemoveCount, 1);
-//    EXPECT_EQ(alertRemoveDims, wlUid1);
+    EXPECT_EQ(alertRemoveDims, wlUid1);
 
     // 20 seconds accumulated in bucket #1.
     eventTimeNs = bucketStartTimeNs + 40 * NS_PER_SEC;
@@ -2254,7 +2254,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
                           eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 0);
     EXPECT_EQ(alertRemoveCount, 2);
-//    EXPECT_EQ(alertRemoveDims, wlUid4);
+    EXPECT_EQ(alertRemoveDims, wlUid4);
 
     // Uid3 will be pending at the update.
     // Also acts as the alarm for alert remove for uid 2.
@@ -2265,7 +2265,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
             eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 0);
     EXPECT_EQ(alertRemoveCount, 3);
-//    EXPECT_EQ(alertRemoveDims, wlUid2);
+    EXPECT_EQ(alertRemoveDims, wlUid2);
 
     // Alarm for alert preserve for uid 4, enters 5 min refractory period.
     eventTimeNs = bucket2StartTimeNs + 33 * NS_PER_SEC;
@@ -2274,7 +2274,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
                                   .get(),
                           eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 1);
-//    EXPECT_EQ(alertPreserveDims, wlUid4);
+    EXPECT_EQ(alertPreserveDims, wlUid4);
     EXPECT_EQ(alertRemoveCount, 3);
 
     // Uid 2 accumulates 32 seconds in partial bucket before the update. Alert preserve fires.
@@ -2286,9 +2286,9 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
                     .get(),
             eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 2);
-//    EXPECT_EQ(alertPreserveDims, wlUid2);
+    EXPECT_EQ(alertPreserveDims, wlUid2);
     EXPECT_EQ(alertRemoveCount, 4);
-//    EXPECT_EQ(alertRemoveDims, wlUid2);
+    EXPECT_EQ(alertRemoveDims, wlUid2);
 
     // Alarm for alert remove for uid 3.
     eventTimeNs = bucket2StartTimeNs + 41 * NS_PER_SEC;
@@ -2298,7 +2298,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
                           eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 2);
     EXPECT_EQ(alertRemoveCount, 5);
-//    EXPECT_EQ(alertRemoveDims, wlUid3);
+    EXPECT_EQ(alertRemoveDims, wlUid3);
 
     // Release wl for uid 4, has accumulated 41 seconds in partial bucket before update.
     // Acts as alarm for uid3 of alert remove.
@@ -2309,7 +2309,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
             eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 2);
     EXPECT_EQ(alertRemoveCount, 6);
-//    EXPECT_EQ(alertRemoveDims, wlUid4);
+    EXPECT_EQ(alertRemoveDims, wlUid4);
 
     // Starts the timer for screen on.
     eventTimeNs = bucket2StartTimeNs + 46 * NS_PER_SEC;
@@ -2378,7 +2378,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
             eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 2);
     EXPECT_EQ(alertNewCount, 1);
-//    EXPECT_EQ(alertNewDims, wlUid4);
+    EXPECT_EQ(alertNewDims, wlUid4);
 
     eventTimeNs = bucket2StartTimeNs + 60 * NS_PER_SEC;
     // Alert replace doesn't fire because it has lost history.
@@ -2398,9 +2398,9 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
                     .get(),
             eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 3);
-//    EXPECT_EQ(alertPreserveDims, wlUid3);
+    EXPECT_EQ(alertPreserveDims, wlUid3);
     EXPECT_EQ(alertNewCount, 2);
-//    EXPECT_EQ(alertNewDims, wlUid2);
+    EXPECT_EQ(alertNewDims, wlUid2);
 
     // Release wakelock for uid1, causing alert preserve to fire for uid1.
     // Also serves as alarm for alert new for uid3.
@@ -2410,9 +2410,9 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
                     .get(),
             eventTimeNs);
     EXPECT_EQ(alertPreserveCount, 4);
-//    EXPECT_EQ(alertPreserveDims, wlUid1);
+    EXPECT_EQ(alertPreserveDims, wlUid1);
     EXPECT_EQ(alertNewCount, 3);
-//    EXPECT_EQ(alertNewDims, wlUid3);
+    EXPECT_EQ(alertNewDims, wlUid3);
 
     // Clear data so it doesn't stay on disk.
     vector<uint8_t> buffer;
