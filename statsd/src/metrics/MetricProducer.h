@@ -94,6 +94,7 @@ enum MetricType {
     METRIC_TYPE_DURATION = 3,
     METRIC_TYPE_GAUGE = 4,
     METRIC_TYPE_VALUE = 5,
+    METRIC_TYPE_KLL = 6,
 };
 struct Activation {
     Activation(const ActivationType& activationType, const int64_t ttlNs)
@@ -426,7 +427,7 @@ protected:
 
     bool evaluateActiveStateLocked(int64_t elapsedTimestampNs);
 
-    virtual void onActiveStateChangedLocked(const int64_t& eventTimeNs) {
+    virtual void onActiveStateChangedLocked(const int64_t eventTimeNs) {
         if (!mIsActive) {
             flushLocked(eventTimeNs);
         }
@@ -494,6 +495,7 @@ protected:
 
     int mConditionTrackerIndex;
 
+    // TODO(b/185770739): use !mMetric2ConditionLinks.empty()
     bool mConditionSliced;
 
     sp<ConditionWizard> mWizard;
