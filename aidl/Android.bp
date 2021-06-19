@@ -13,6 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 filegroup {
     name: "framework-statsd-aidl-sources",
     srcs: ["**/*.aidl"],
@@ -30,6 +34,7 @@ aidl_interface {
         "android/os/StatsDimensionsValueParcel.aidl",
         "android/util/StatsEventParcel.aidl",
     ],
+    host_supported: true,
     backend: {
         java: {
             enabled: false, // framework-statsd and service-statsd use framework-statsd-aidl-sources
@@ -46,6 +51,7 @@ aidl_interface {
                 "com.android.os.statsd",
                 "test_com.android.os.statsd",
             ],
+            min_sdk_version: "30",
         },
     }
 }
