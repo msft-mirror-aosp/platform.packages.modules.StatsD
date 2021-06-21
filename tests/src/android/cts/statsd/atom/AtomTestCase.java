@@ -79,6 +79,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
+import java.util.StringTokenizer;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -128,7 +129,7 @@ public class AtomTestCase extends BaseTestCase {
     public static final int PHONE_TYPE_CDMA = 2;
     public static final int PHONE_TYPE_CDMA_LTE = 6;
 
-    protected static final int WAIT_TIME_SHORT = 500;
+    protected static final int WAIT_TIME_SHORT = 1000;
     protected static final int WAIT_TIME_LONG = 2_000;
 
     protected static final long SCREEN_STATE_CHANGE_TIMEOUT = 4000;
@@ -209,6 +210,12 @@ public class AtomTestCase extends BaseTestCase {
         builder.setDurationMs(10000);
         builder.setAllowUserBuildTracing(true);
 
+        TraceConfig.IncidentReportConfig incident = TraceConfig.IncidentReportConfig
+            .newBuilder()
+            .setDestinationPackage("foo.bar.baz")
+            .build();
+        builder.setIncidentReportConfig(incident);
+
         // To avoid being hit with guardrails firing in multiple test runs back
         // to back, we set a unique session key for each config.
         Random random = new Random();
@@ -266,6 +273,7 @@ public class AtomTestCase extends BaseTestCase {
           .addAllowedLogSource("AID_RADIO")
           .addAllowedLogSource("AID_ROOT")
           .addAllowedLogSource("AID_STATSD")
+          .addAllowedLogSource("com.android.systemui")
           .addAllowedLogSource(DeviceAtomTestCase.DEVICE_SIDE_TEST_PACKAGE)
           .addDefaultPullPackages("AID_RADIO")
           .addDefaultPullPackages("AID_SYSTEM")
@@ -1026,7 +1034,16 @@ public class AtomTestCase extends BaseTestCase {
      */
     protected boolean hasFeature(String featureName, boolean requiredAnswer) throws Exception {
         final String features = getDevice().executeShellCommand("pm list features");
-        boolean hasIt = features.contains(featureName);
+        StringTokenizer featureToken = new StringTokenizer(features, "\n");
+        boolean hasIt = false;
+
+        while (featureToken.hasMoreTokens()) {
+            if (("feature:" + featureName).equals(featureToken.nextToken())) {
+                 hasIt = true;
+                 break;
+            }
+        }
+
         if (hasIt != requiredAnswer) {
             LogUtil.CLog.w("Device does " + (requiredAnswer ? "not " : "") + "have feature "
                     + featureName);
