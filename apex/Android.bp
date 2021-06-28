@@ -72,19 +72,7 @@ prebuilt_etc {
 // ==========================================================
 sdk {
     name: "statsd-module-sdk",
-    java_sdk_libs: [
-        "framework-statsd",
-    ],
-    native_shared_libs: [
-        "libstatssocket",
-    ],
-}
-
-// TODO(b/180769414): ART should be able to use the statsd-module-sdk entry,
-// but unfortunately that conflicts with internal builds. Make a special copy
-// for ART for the time being.
-sdk {
-    name: "statsd-module-sdk-for-art",
+    bootclasspath_fragments: ["com.android.os.statsd-bootclasspath-fragment"],
     native_shared_libs: [
         "libstatssocket",
     ],
