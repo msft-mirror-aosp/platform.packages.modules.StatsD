@@ -129,7 +129,7 @@ public class AtomTestCase extends BaseTestCase {
     public static final int PHONE_TYPE_CDMA = 2;
     public static final int PHONE_TYPE_CDMA_LTE = 6;
 
-    protected static final int WAIT_TIME_SHORT = 1000;
+    protected static final int WAIT_TIME_SHORT = 500;
     protected static final int WAIT_TIME_LONG = 2_000;
 
     protected static final long SCREEN_STATE_CHANGE_TIMEOUT = 4000;
@@ -991,6 +991,19 @@ public class AtomTestCase extends BaseTestCase {
     protected void turnBatterySaverOff() throws Exception {
         getDevice().executeShellCommand("settings put global low_power 0");
         getDevice().executeShellCommand("cmd battery reset");
+    }
+
+    protected void turnBatteryStatsAutoResetOn() throws Exception {
+        getDevice().executeShellCommand("dumpsys batterystats enable no-auto-reset");
+    }
+
+    protected void turnBatteryStatsAutoResetOff() throws Exception {
+        getDevice().executeShellCommand("dumpsys batterystats enable no-auto-reset");
+    }
+
+    protected void flushBatteryStatsHandlers() throws Exception {
+        // Dumping batterystats will flush everything in the batterystats handler threads.
+        getDevice().executeShellCommand(DUMP_BATTERYSTATS_CMD);
     }
 
     protected void rebootDevice() throws Exception {
