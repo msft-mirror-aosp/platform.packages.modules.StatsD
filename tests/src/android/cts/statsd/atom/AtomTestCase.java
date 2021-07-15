@@ -79,6 +79,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Random;
 import java.util.Set;
+import java.util.StringTokenizer;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -209,6 +210,12 @@ public class AtomTestCase extends BaseTestCase {
         builder.setDurationMs(10000);
         builder.setAllowUserBuildTracing(true);
 
+        TraceConfig.IncidentReportConfig incident = TraceConfig.IncidentReportConfig
+            .newBuilder()
+            .setDestinationPackage("foo.bar.baz")
+            .build();
+        builder.setIncidentReportConfig(incident);
+
         // To avoid being hit with guardrails firing in multiple test runs back
         // to back, we set a unique session key for each config.
         Random random = new Random();
@@ -266,6 +273,7 @@ public class AtomTestCase extends BaseTestCase {
           .addAllowedLogSource("AID_RADIO")
           .addAllowedLogSource("AID_ROOT")
           .addAllowedLogSource("AID_STATSD")
+          .addAllowedLogSource("com.android.systemui")
           .addAllowedLogSource(DeviceAtomTestCase.DEVICE_SIDE_TEST_PACKAGE)
           .addDefaultPullPackages("AID_RADIO")
           .addDefaultPullPackages("AID_SYSTEM")
@@ -985,6 +993,19 @@ public class AtomTestCase extends BaseTestCase {
         getDevice().executeShellCommand("cmd battery reset");
     }
 
+    protected void turnBatteryStatsAutoResetOn() throws Exception {
+        getDevice().executeShellCommand("dumpsys batterystats enable no-auto-reset");
+    }
+
+    protected void turnBatteryStatsAutoResetOff() throws Exception {
+        getDevice().executeShellCommand("dumpsys batterystats enable no-auto-reset");
+    }
+
+    protected void flushBatteryStatsHandlers() throws Exception {
+        // Dumping batterystats will flush everything in the batterystats handler threads.
+        getDevice().executeShellCommand(DUMP_BATTERYSTATS_CMD);
+    }
+
     protected void rebootDevice() throws Exception {
         getDevice().rebootUntilOnline();
     }
@@ -1026,7 +1047,16 @@ public class AtomTestCase extends BaseTestCase {
      */
     protected boolean hasFeature(String featureName, boolean requiredAnswer) throws Exception {
         final String features = getDevice().executeShellCommand("pm list features");
-        boolean hasIt = features.contains(featureName);
+        StringTokenizer featureToken = new StringTokenizer(features, "\n");
+        boolean hasIt = false;
+
+        while (featureToken.hasMoreTokens()) {
+            if (("feature:" + featureName).equals(featureToken.nextToken())) {
+                 hasIt = true;
+                 break;
+            }
+        }
+
         if (hasIt != requiredAnswer) {
             LogUtil.CLog.w("Device does " + (requiredAnswer ? "not " : "") + "have feature "
                     + featureName);
