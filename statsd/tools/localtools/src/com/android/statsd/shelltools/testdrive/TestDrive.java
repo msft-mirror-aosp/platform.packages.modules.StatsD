@@ -41,6 +41,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Scanner;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.logging.Level;
@@ -70,10 +71,14 @@ public class TestDrive {
             "AID_MEDIA",
             "AID_NETWORK_STACK",
             "com.google.android.providers.media.module",
+            "com.android.imsserviceentitlement",
+            "com.google.android.cellbroadcastreceiver",
+            "AID_KEYSTORE",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
+            "AID_KEYSTORE",
+            "AID_RADIO",
             "AID_SYSTEM",
-            "AID_RADIO"
     };
     private static final Logger LOGGER = Logger.getLogger(TestDrive.class.getName());
 
@@ -81,6 +86,7 @@ public class TestDrive {
     String mDeviceSerial = null;
     @VisibleForTesting
     Dumper mDumper = new BasicDumper();
+    boolean mPressToContinue = false;
 
     public static void main(String[] args) {
         final Configuration configuration = new Configuration();
@@ -125,6 +131,8 @@ public class TestDrive {
                 configuration.mAdditionalAllowedPackage = args[++first_arg];
             } else if (remaining_args >= 3 && arg.equals("-s")) {
                 mDeviceSerial = args[++first_arg];
+            } else if (remaining_args >= 2 && arg.equals("-e")) {
+                mPressToContinue = true;
             } else {
                 break;  // Found the atom list
             }
@@ -164,9 +172,15 @@ public class TestDrive {
                 LOGGER.info("Now please play with the device to trigger the event.");
             }
             if (!hasPulledAtoms) {
-                LOGGER.info(
-                        "All events should be dumped after 1 min ...");
-                Thread.sleep(60_000);
+                if (mPressToContinue) {
+                    LOGGER.info("Press enter after you finish playing with the device...");
+                    Scanner scanner = new Scanner(System.in);
+                    scanner.nextLine();
+                } else {
+                    LOGGER.info(
+                            "All events should be dumped after 1 min ...");
+                    Thread.sleep(60_000);
+                }
             } else {
                 LOGGER.info("All events should be dumped after 1.5 minutes ...");
                 Thread.sleep(15_000);
@@ -333,6 +347,9 @@ public class TestDrive {
             return StatsdConfig.newBuilder()
                     .addAllAllowedLogSource(allowedSources)
                     .addAllDefaultPullPackages(Arrays.asList(DEFAULT_PULL_SOURCES))
+                    .addPullAtomPackages(PullAtomPackages.newBuilder()
+                            .setAtomId(Atom.MEDIA_DRM_ACTIVITY_INFO_FIELD_NUMBER)
+                            .addPackages("AID_MEDIA"))
                     .addPullAtomPackages(PullAtomPackages.newBuilder()
                             .setAtomId(Atom.GPU_STATS_GLOBAL_INFO_FIELD_NUMBER)
                             .addPackages("AID_GPU_SERVICE"))
