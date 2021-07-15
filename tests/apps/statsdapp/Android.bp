@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 cc_library_shared {
     name: "liblmkhelper",
     srcs: ["jni/alloc_stress_activity.cpp"],
@@ -19,6 +23,7 @@ cc_library_shared {
         "-Wall",
         "-Werror",
     ],
+    header_libs: ["jni_headers"],
     shared_libs: ["liblog"],
     stl: "c++_static",
     sdk_version: "current",
@@ -34,7 +39,7 @@ android_test_helper_app {
         ":statslog-statsd-cts-java-gen",
     ],
     libs: [
-        "android.test.runner.stubs",
+        "android.test.runner",
         "junit",
         "org.apache.http.legacy",
     ],
