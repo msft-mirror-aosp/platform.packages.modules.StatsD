@@ -17,6 +17,10 @@
 // =========================================================================
 // Native library to write stats log to statsd socket on Android R and later
 // =========================================================================
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 cc_defaults {
     name: "libstatssocket_defaults",
     srcs: [
@@ -26,9 +30,7 @@ cc_defaults {
         "statsd_writer.c",
     ],
     export_include_dirs: ["include"],
-    static_libs: [
-        "libcutils", // does not expose a stable C API
-    ],
+    header_libs: ["liblog_headers"],
     cflags: [
         "-Wall",
         "-Werror",
@@ -67,6 +69,7 @@ cc_library {
         "com.android.os.statsd",
         "test_com.android.os.statsd",
     ],
+    min_sdk_version: "30",
 }
 
 //TODO (b/149842105): Figure out if there is a better solution for this.
@@ -76,18 +79,18 @@ cc_test_library {
         "libstatssocket_defaults",
     ],
     visibility: [
-        "//frameworks/base/apex/statsd/tests/libstatspull",
-        "//frameworks/base/cmds/statsd",
         "//packages/modules/StatsD/apex/tests/libstatspull",
-        "//packages/modules/StatsD/bin",
+        "//packages/modules/StatsD/statsd",
     ],
 }
 
 cc_library_headers {
     name: "libstatssocket_headers",
     export_include_dirs: ["include"],
-    host_supported: true,
-    apex_available: ["com.android.resolv"],
+    apex_available: [
+        "com.android.resolv",
+        "//apex_available:platform",
+    ],
     min_sdk_version: "29",
 }
 
@@ -106,7 +109,6 @@ cc_test {
         "libstatssocket_private",
     ],
     shared_libs: [
-        "libcutils",
         "libutils",
     ],
     test_suites: ["device-tests", "mts-statsd"],
