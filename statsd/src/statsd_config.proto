@@ -131,7 +131,10 @@ message SimplePredicate {
     UNKNOWN = 0;
     FALSE = 1;
   }
-  optional InitialValue initial_value = 5 [default = UNKNOWN];
+
+  // If unspecified, the default value will be UNKNOWN for conditions without dimensions, and
+  // FALSE for conditions with dimensions.
+  optional InitialValue initial_value = 5;
 
   optional FieldMatcher dimensions = 6;
 }
@@ -233,6 +236,8 @@ message CountMetric {
 
   optional UploadThreshold threshold = 10;
 
+  optional bool split_bucket_for_app_upgrade = 11 [default = true];
+
   optional FieldMatcher dimensions_in_condition = 7 [deprecated = true];
 
   reserved 100;
@@ -264,6 +269,8 @@ message DurationMetric {
   optional TimeUnit bucket = 7;
 
   optional UploadThreshold threshold = 11;
+
+  optional bool split_bucket_for_app_upgrade = 12 [default = true];
 
   optional FieldMatcher dimensions_in_condition = 8 [deprecated = true];
 
