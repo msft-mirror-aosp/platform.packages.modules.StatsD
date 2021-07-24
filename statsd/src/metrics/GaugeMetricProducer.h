@@ -45,6 +45,9 @@ struct GaugeBucket {
     int64_t mBucketStartNs;
     int64_t mBucketEndNs;
     std::vector<GaugeAtom> mGaugeAtoms;
+
+    // Maps the field/value pairs of an atom to a list of timestamps used to deduplicate atoms.
+    std::unordered_map<AtomDimensionKey, std::vector<int64_t>> mAggregatedAtoms;
 };
 
 typedef std::unordered_map<MetricDimensionKey, std::vector<GaugeAtom>>
@@ -214,7 +217,7 @@ private:
 
     const size_t mGaugeAtomsPerDimensionLimit;
 
-    const bool mSplitBucketForAppUpgrade;
+    bool mUseAtomAggregation;
 
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition);

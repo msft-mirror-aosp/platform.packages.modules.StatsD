@@ -456,6 +456,14 @@ void backfillStringInReport(ConfigMetricsReportList *config_report_list);
 void backfillStringInDimension(const std::map<uint64_t, string>& str_map,
                                DimensionsValue* dimension);
 
+void backfillAggregatedAtoms(ConfigMetricsReportList* config_report_list);
+void backfillAggregatedAtoms(ConfigMetricsReport* config_report);
+void backfillAggregatedAtoms(StatsLogReport* report);
+void backfillAggregatedAtomsInEventMetric(StatsLogReport::EventMetricDataWrapper* wrapper);
+void backfillAggregatedAtomsInGaugeMetric(StatsLogReport::GaugeMetricDataWrapper* wrapper);
+
+vector<pair<Atom, int64_t>> unnestGaugeAtomData(const GaugeBucketInfo& bucketInfo);
+
 template <typename T>
 void backfillStringInDimension(const std::map<uint64_t, string>& str_map,
                                T* metrics) {
@@ -606,6 +614,8 @@ inline std::string getServerFlagFuncFalse(const std::string& flagNamespace,
 }
 
 void writeFlag(const std::string& flagName, const std::string& flagValue);
+
+void writeBootFlag(const std::string& flagName, const std::string& flagValue);
 
 }  // namespace statsd
 }  // namespace os
