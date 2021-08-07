@@ -1317,7 +1317,8 @@ void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startT
 }
 
 void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
-                         const vector<int64_t>& values, int64_t conditionTrueNs) {
+                         const vector<int64_t>& values, int64_t conditionTrueNs,
+                         int64_t conditionCorrectionNs) {
     EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
     ASSERT_EQ(bucket.values_size(), values.size());
@@ -1330,6 +1331,9 @@ void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int
     }
     if (conditionTrueNs > 0) {
         EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
+        if (conditionCorrectionNs > 0) {
+            EXPECT_EQ(bucket.condition_correction_nanos(), conditionCorrectionNs);
+        }
     }
 }
 
@@ -1766,6 +1770,10 @@ void writeBootFlag(const string& flagName, const string& flagValue) {
     SetProperty(StringPrintf("persist.device_config.%s.%s", STATSD_NATIVE_BOOT_NAMESPACE.c_str(),
                              flagName.c_str()),
                 flagValue);
+}
+
+bool getAppUpgradeBucketDefault() {
+    return FlagProvider::getInstance().getFlagBool(APP_UPGRADE_BUCKET_SPLIT_FLAG, FLAG_TRUE);
 }
 }  // namespace statsd
 }  // namespace os
