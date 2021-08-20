@@ -36,7 +36,7 @@ namespace os {
 namespace statsd {
 
 // A MetricsManager is responsible for managing metrics from one single config source.
-class MetricsManager : public virtual android::RefBase, public virtual PullUidProvider {
+class MetricsManager : public virtual RefBase, public virtual PullUidProvider {
 public:
     MetricsManager(const ConfigKey& configKey, const StatsdConfig& config, const int64_t timeBaseNs,
                    const int64_t currentTimeNs, const sp<UidMap>& uidMap,
@@ -68,9 +68,10 @@ public:
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     void notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
-                          const int64_t version);
+                          const int64_t version, const bool bucketSplitDefault);
 
-    void notifyAppRemoved(const int64_t& eventTimeNs, const string& apk, const int uid);
+    void notifyAppRemoved(const int64_t& eventTimeNs, const string& apk, const int uid,
+                          const bool bucketSplitDefault);
 
     void onUidMapReceived(const int64_t& eventTimeNs);
 
@@ -316,12 +317,12 @@ private:
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
-    FRIEND_TEST(GaugeMetricE2eTest, TestMultipleFieldsForPushedEvent);
-    FRIEND_TEST(GaugeMetricE2eTest, TestRandomSamplePulledEvents);
-    FRIEND_TEST(GaugeMetricE2eTest, TestRandomSamplePulledEvent_LateAlarm);
-    FRIEND_TEST(GaugeMetricE2eTest, TestRandomSamplePulledEventsWithActivation);
-    FRIEND_TEST(GaugeMetricE2eTest, TestRandomSamplePulledEventsNoCondition);
-    FRIEND_TEST(GaugeMetricE2eTest, TestConditionChangeToTrueSamplePulledEvents);
+    FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents);
 
     FRIEND_TEST(AnomalyDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
