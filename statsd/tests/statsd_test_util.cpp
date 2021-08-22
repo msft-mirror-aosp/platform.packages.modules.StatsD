@@ -14,14 +14,21 @@
 
 #include "statsd_test_util.h"
 
+#include <aggregator.pb.h>
 #include <aidl/android/util/StatsEventParcel.h>
+#include <android-base/properties.h>
+#include <android-base/stringprintf.h>
 
 #include "matchers/SimpleAtomMatchingTracker.h"
 #include "stats_annotations.h"
 #include "stats_event.h"
+#include "stats_util.h"
 
 using aidl::android::util::StatsEventParcel;
+using android::base::SetProperty;
+using android::base::StringPrintf;
 using std::shared_ptr;
+using zetasketch::android::AggregatorStateProto;
 
 namespace android {
 namespace os {
@@ -239,6 +246,10 @@ AtomMatcher CreateProcessLifeCycleStateChangedAtomMatcher(
 AtomMatcher CreateProcessCrashAtomMatcher() {
     return CreateProcessLifeCycleStateChangedAtomMatcher(
         "Crashed", ProcessLifeCycleStateChanged::CRASHED);
+}
+
+AtomMatcher CreateAppStartOccurredAtomMatcher() {
+    return CreateSimpleAtomMatcher("AppStartOccurredMatcher", util::APP_START_OCCURRED);
 }
 
 void addMatcherToMatcherCombination(const AtomMatcher& matcher, AtomMatcher* combinationMatcher) {
@@ -524,6 +535,20 @@ ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const
     }
     for (const int64_t state : states) {
         metric.add_slice_by_state(state);
+    }
+    return metric;
+}
+
+KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int valueField,
+                          const optional<int64_t>& condition) {
+    KllMetric metric;
+    metric.set_id(StringToId(name));
+    metric.set_what(what.id());
+    metric.set_bucket(TEN_MINUTES);
+    metric.mutable_kll_field()->set_field(what.simple_atom_matcher().atom_id());
+    metric.mutable_kll_field()->add_child()->set_field(valueField);
+    if (condition) {
+        metric.set_condition(condition.value());
     }
     return metric;
 }
@@ -1292,7 +1317,8 @@ void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startT
 }
 
 void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
-                         const vector<int64_t>& values, int64_t conditionTrueNs) {
+                         const vector<int64_t>& values, int64_t conditionTrueNs,
+                         int64_t conditionCorrectionNs) {
     EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
     ASSERT_EQ(bucket.values_size(), values.size());
@@ -1302,6 +1328,24 @@ void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int
         } else {
             EXPECT_EQ(bucket.values(i).value_long(), values[i]);
         }
+    }
+    if (conditionTrueNs > 0) {
+        EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
+        if (conditionCorrectionNs > 0) {
+            EXPECT_EQ(bucket.condition_correction_nanos(), conditionCorrectionNs);
+        }
+    }
+}
+
+void ValidateKllBucket(const KllBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
+                       const vector<int64_t> sketchSizes, int64_t conditionTrueNs) {
+    EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
+    EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
+    ASSERT_EQ(bucket.sketches_size(), sketchSizes.size());
+    for (int i = 0; i < sketchSizes.size(); ++i) {
+        AggregatorStateProto aggProto;
+        EXPECT_TRUE(aggProto.ParseFromString(bucket.sketches(i).kll_sketch()));
+        EXPECT_EQ(aggProto.num_values(), sketchSizes[i]);
     }
     if (conditionTrueNs > 0) {
         EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
@@ -1579,6 +1623,12 @@ void backfillStartEndTimestamp(StatsLogReport *report) {
             backfillStartEndTimestampForSkippedBuckets(
                 timeBaseNs, report->mutable_value_metrics());
         }
+    } else if (report->has_kll_metrics()) {
+        backfillStartEndTimestampForMetrics(timeBaseNs, bucketSizeNs,
+                                            report->mutable_kll_metrics());
+        if (report->kll_metrics().skipped_size() > 0) {
+            backfillStartEndTimestampForSkippedBuckets(timeBaseNs, report->mutable_kll_metrics());
+        }
     }
 }
 
@@ -1592,6 +1642,93 @@ void backfillStartEndTimestamp(ConfigMetricsReportList *config_report_list) {
     for (int i = 0; i < config_report_list->reports_size(); ++i) {
         backfillStartEndTimestamp(config_report_list->mutable_reports(i));
     }
+}
+
+void backfillAggregatedAtoms(ConfigMetricsReportList* config_report_list) {
+    for (int i = 0; i < config_report_list->reports_size(); ++i) {
+        backfillAggregatedAtoms(config_report_list->mutable_reports(i));
+    }
+}
+
+void backfillAggregatedAtoms(ConfigMetricsReport* config_report) {
+    for (int i = 0; i < config_report->metrics_size(); ++i) {
+        backfillAggregatedAtoms(config_report->mutable_metrics(i));
+    }
+}
+
+void backfillAggregatedAtoms(StatsLogReport* report) {
+    if (report->has_event_metrics()) {
+        backfillAggregatedAtomsInEventMetric(report->mutable_event_metrics());
+    }
+    if (report->has_gauge_metrics()) {
+        backfillAggregatedAtomsInGaugeMetric(report->mutable_gauge_metrics());
+    }
+}
+
+void backfillAggregatedAtomsInEventMetric(StatsLogReport::EventMetricDataWrapper* wrapper) {
+    std::vector<EventMetricData> metricData;
+    for (int i = 0; i < wrapper->data_size(); ++i) {
+        AggregatedAtomInfo* atomInfo = wrapper->mutable_data(i)->mutable_aggregated_atom_info();
+        for (int j = 0; j < atomInfo->elapsed_timestamp_nanos_size(); j++) {
+            EventMetricData data;
+            *(data.mutable_atom()) = atomInfo->atom();
+            data.set_elapsed_timestamp_nanos(atomInfo->elapsed_timestamp_nanos(j));
+            metricData.push_back(data);
+        }
+    }
+
+    if (metricData.size() == 0) {
+        return;
+    }
+
+    sort(metricData.begin(), metricData.end(),
+         [](const EventMetricData& lhs, const EventMetricData& rhs) {
+             return lhs.elapsed_timestamp_nanos() < rhs.elapsed_timestamp_nanos();
+         });
+
+    wrapper->clear_data();
+    for (int i = 0; i < metricData.size(); ++i) {
+        *(wrapper->add_data()) = metricData[i];
+    }
+}
+
+void backfillAggregatedAtomsInGaugeMetric(StatsLogReport::GaugeMetricDataWrapper* wrapper) {
+    for (int i = 0; i < wrapper->data_size(); ++i) {
+        for (int j = 0; j < wrapper->data(i).bucket_info_size(); ++j) {
+            GaugeBucketInfo* bucketInfo = wrapper->mutable_data(i)->mutable_bucket_info(j);
+            vector<pair<Atom, int64_t>> atomData = unnestGaugeAtomData(*bucketInfo);
+
+            if (atomData.size() == 0) {
+                return;
+            }
+
+            bucketInfo->clear_aggregated_atom_info();
+            ASSERT_EQ(bucketInfo->atom_size(), 0);
+            ASSERT_EQ(bucketInfo->elapsed_timestamp_nanos_size(), 0);
+
+            for (int k = 0; k < atomData.size(); ++k) {
+                *(bucketInfo->add_atom()) = atomData[k].first;
+                bucketInfo->add_elapsed_timestamp_nanos(atomData[k].second);
+            }
+        }
+    }
+}
+
+vector<pair<Atom, int64_t>> unnestGaugeAtomData(const GaugeBucketInfo& bucketInfo) {
+    vector<pair<Atom, int64_t>> atomData;
+    for (int k = 0; k < bucketInfo.aggregated_atom_info_size(); ++k) {
+        const AggregatedAtomInfo& atomInfo = bucketInfo.aggregated_atom_info(k);
+        for (int l = 0; l < atomInfo.elapsed_timestamp_nanos_size(); ++l) {
+            atomData.push_back(make_pair(atomInfo.atom(), atomInfo.elapsed_timestamp_nanos(l)));
+        }
+    }
+
+    sort(atomData.begin(), atomData.end(),
+         [](const pair<Atom, int64_t>& lhs, const pair<Atom, int64_t>& rhs) {
+             return lhs.second < rhs.second;
+         });
+
+    return atomData;
 }
 
 Status FakeSubsystemSleepCallback::onPullAtom(int atomTag,
@@ -1623,6 +1760,21 @@ Status FakeSubsystemSleepCallback::onPullAtom(int atomTag,
     return Status::ok();
 }
 
+void writeFlag(const string& flagName, const string& flagValue) {
+    SetProperty(StringPrintf("persist.device_config.%s.%s", STATSD_NATIVE_NAMESPACE.c_str(),
+                             flagName.c_str()),
+                flagValue);
+}
+
+void writeBootFlag(const string& flagName, const string& flagValue) {
+    SetProperty(StringPrintf("persist.device_config.%s.%s", STATSD_NATIVE_BOOT_NAMESPACE.c_str(),
+                             flagName.c_str()),
+                flagValue);
+}
+
+bool getAppUpgradeBucketDefault() {
+    return FlagProvider::getInstance().getFlagBool(APP_UPGRADE_BUCKET_SPLIT_FLAG, FLAG_TRUE);
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

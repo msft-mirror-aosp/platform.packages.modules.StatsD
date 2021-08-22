@@ -27,7 +27,7 @@
 #include "StatsService.h"
 #include "android-base/stringprintf.h"
 #include "external/StatsPullerManager.h"
-#include "flags/flags.h"
+#include "flags/FlagProvider.h"
 #include "guardrail/StatsdStats.h"
 #include "logd/LogEvent.h"
 #include "metrics/CountMetricProducer.h"
@@ -82,7 +82,7 @@ constexpr const char* kPermissionUsage = "android.permission.PACKAGE_USAGE_STATS
 #define STATS_METADATA_DIR "/data/misc/stats-metadata"
 
 // Cool down period for writing data to disk to avoid overwriting files.
-#define WRITE_DATA_COOL_DOWN_SEC 5
+#define WRITE_DATA_COOL_DOWN_SEC 15
 
 StatsLogProcessor::StatsLogProcessor(const sp<UidMap>& uidMap,
                                      const sp<StatsPullerManager>& pullerManager,
@@ -1083,8 +1083,10 @@ void StatsLogProcessor::notifyAppUpgrade(const int64_t& eventTimeNs, const strin
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received app upgrade");
     StateManager::getInstance().notifyAppChanged(apk, mUidMap);
+    bool splitBucketDefault =
+            FlagProvider::getInstance().getFlagBool(APP_UPGRADE_BUCKET_SPLIT_FLAG, FLAG_TRUE);
     for (const auto& it : mMetricsManagers) {
-        it.second->notifyAppUpgrade(eventTimeNs, apk, uid, version);
+        it.second->notifyAppUpgrade(eventTimeNs, apk, uid, version, splitBucketDefault);
     }
 }
 
@@ -1093,8 +1095,10 @@ void StatsLogProcessor::notifyAppRemoved(const int64_t& eventTimeNs, const strin
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received app removed");
     StateManager::getInstance().notifyAppChanged(apk, mUidMap);
+    const bool splitBucketDefault =
+            FlagProvider::getInstance().getFlagBool(APP_UPGRADE_BUCKET_SPLIT_FLAG, FLAG_TRUE);
     for (const auto& it : mMetricsManagers) {
-        it.second->notifyAppRemoved(eventTimeNs, apk, uid);
+        it.second->notifyAppRemoved(eventTimeNs, apk, uid, splitBucketDefault);
     }
 }
 

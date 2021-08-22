@@ -96,7 +96,7 @@ public:
     ~StatsdStats(){};
 
     const static int kDimensionKeySizeSoftLimit = 500;
-    const static int kDimensionKeySizeHardLimit = 800;
+    static constexpr int kDimensionKeySizeHardLimit = 800;
 
     // Per atom dimension key size limit
     static const std::map<int, std::pair<size_t, size_t>> kAtomDimensionKeySizeLimitMap;
@@ -497,6 +497,11 @@ public:
      * Output statsd stats in human readable format to [out] file descriptor.
      */
     void dumpStats(int outFd) const;
+
+    /**
+     * Return soft and hard atom key dimension size limits as an std::pair.
+     */
+    static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(const int atomId = -1);
 
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
