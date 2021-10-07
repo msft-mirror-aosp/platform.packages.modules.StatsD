@@ -36,7 +36,7 @@ import com.android.internal.os.StatsdConfigProto.ValueMetric;
 import com.android.os.AtomsProto.AnomalyDetected;
 import com.android.os.AtomsProto.AppBreadcrumbReported;
 import com.android.os.AtomsProto.Atom;
-import com.android.os.AtomsProto.KernelWakelock;
+import com.android.os.AtomsProto.CpuActiveTime;
 import com.android.os.StatsLog.EventMetricData;
 import com.android.tradefed.log.LogUtil.CLog;
 import java.util.List;
@@ -171,6 +171,7 @@ public class AnomalyDetectionTests extends AtomTestCase {
         // Test that alarm does fire when it is supposed to (after 4s, plus up to 5s alarm delay).
         doAppBreadcrumbReportedStart(1);
         Thread.sleep(9_000);  // Recorded duration at end: 13s
+        doAppBreadcrumbReported(2);
         List<EventMetricData> data = getEventMetricDataList();
         assertWithMessage("Expected anomaly").that(data).hasSize(1);
         assertThat(data.get(0).getAtom().getAnomalyDetected().getAlertId()).isEqualTo(ALERT_ID);
@@ -189,6 +190,7 @@ public class AnomalyDetectionTests extends AtomTestCase {
         doAppBreadcrumbReportedStart(1);
         Thread.sleep(15_000);  // Recorded duration at end: 15s
         // We can do an incidentd test now that all the timing issues are done.
+        doAppBreadcrumbReported(2);
         data = getEventMetricDataList();
         assertWithMessage("Expected anomaly").that(data).hasSize(1);
         assertThat(data.get(0).getAtom().getAnomalyDetected().getAlertId()).isEqualTo(ALERT_ID);
@@ -368,9 +370,10 @@ public class AnomalyDetectionTests extends AtomTestCase {
 
     // Test that anomaly detection for pulled metrics work.
     public void testPulledAnomalyDetection() throws Exception {
-        final int ATOM_ID = Atom.KERNEL_WAKELOCK_FIELD_NUMBER;  // A pulled atom
-        final int SLICE_BY_FIELD = KernelWakelock.NAME_FIELD_NUMBER;
-        final int VALUE_FIELD = KernelWakelock.VERSION_FIELD_NUMBER;  // Something that will be > 0.
+        final int ATOM_ID = Atom.CPU_ACTIVE_TIME_FIELD_NUMBER; // A pulled atom
+        final int SLICE_BY_FIELD = CpuActiveTime.UID_FIELD_NUMBER;
+        final int VALUE_FIELD =
+                CpuActiveTime.TIME_MILLIS_FIELD_NUMBER; // Something that will be > 0.
         final int ATOM_MATCHER_ID = 300;
 
         StatsdConfig.Builder config = getBaseConfig(10, 20, 0 /* threshold: value > 0 */)

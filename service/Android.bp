@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
 filegroup {
     name: "service-statsd-sources",
     srcs: [
@@ -27,9 +31,16 @@ java_library {
         "framework-annotations-lib",
         "framework-statsd",
     ],
+    static_libs: [
+        "modules-utils-build",
+    ],
     plugins: ["java_api_finder"],
+    lint: {
+        strict_updatability_linting: true
+    },
     apex_available: [
         "com.android.os.statsd",
         "test_com.android.os.statsd",
     ],
+    min_sdk_version: "30",
 }
