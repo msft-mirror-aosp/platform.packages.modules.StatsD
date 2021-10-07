@@ -77,7 +77,7 @@ DurationMetricProducer::DurationMetricProducer(
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap),
+                     stateGroupMap, getAppUpgradeBucketSplit(metric)),
       mAggregationType(metric.aggregation_type()),
       mStartIndex(startIndex),
       mStopIndex(stopIndex),
