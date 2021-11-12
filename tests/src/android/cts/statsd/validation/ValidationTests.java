@@ -69,12 +69,14 @@ public class ValidationTests extends DeviceAtomTestCase {
     @Override
     protected void setUp() throws Exception {
         super.setUp();
+        turnBatteryStatsAutoResetOff(); // Turn off Battery Stats auto resetting
     }
 
     @Override
     protected void tearDown() throws Exception {
         resetBatteryStatus(); // Undo any unplugDevice().
         turnScreenOn(); // Reset screen to on state
+        turnBatteryStatsAutoResetOn(); // Turn Battery Stats auto resetting back on
         super.tearDown();
     }
 
@@ -82,6 +84,7 @@ public class ValidationTests extends DeviceAtomTestCase {
         if (!hasFeature(FEATURE_AUTOMOTIVE, false)) return;
         resetBatteryStats();
         unplugDevice();
+        flushBatteryStatsHandlers();
         // AoD needs to be turned off because the screen should go into an off state. But, if AoD is
         // on and the device doesn't support STATE_DOZE, the screen sadly goes back to STATE_ON.
         String aodState = getAodState();
@@ -108,8 +111,6 @@ public class ValidationTests extends DeviceAtomTestCase {
         // Sorted list of events in order in which they occurred.
         List<EventMetricData> data = getEventMetricDataList();
 
-        BatteryStatsProto batterystatsProto = getBatteryStatsProto();
-
         //=================== verify that statsd is correct ===============//
         // Assert that the events happened in the expected order.
         assertStatesOccurred(stateSet, data, WAIT_TIME_SHORT,
@@ -121,18 +122,6 @@ public class ValidationTests extends DeviceAtomTestCase {
             assertThat(tag).isEqualTo(EXPECTED_TAG);
             assertThat(type).isEqualTo(EXPECTED_LEVEL);
         }
-
-        //=================== verify that batterystats is correct ===============//
-        int uid = getUid();
-        android.os.TimerProto wl =
-                getBatteryStatsPartialWakelock(batterystatsProto, uid, EXPECTED_TAG);
-
-        assertThat(wl).isNotNull();
-        assertThat(wl.getDurationMs()).isGreaterThan(0L);
-        assertThat(wl.getMaxDurationMs()).isIn(Range.closedOpen(400L, 700L));
-        assertThat(wl.getTotalDurationMs()).isIn(Range.closedOpen(400L, 700L));
-
-        setAodState(aodState); // restores AOD to initial state.
     }
 
     @RestrictedBuildTest
