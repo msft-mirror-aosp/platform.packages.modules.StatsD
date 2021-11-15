@@ -18,6 +18,8 @@
 
 #include <gtest/gtest_prod.h>
 
+#include <optional>
+
 #include "FieldValue.h"
 #include "HashableDimensionKey.h"
 #include "MetricProducer.h"
@@ -41,9 +43,19 @@ struct PastBucket {
     int64_t mBucketEndNs;
     std::vector<int> aggIndex;
     std::vector<AggregatedValue> aggregates;
-    // If the metric has no condition, then this field is just wasted.
-    // When we tune statsd memory usage in the future, this is a candidate to optimize.
+
+    /**
+     * If the metric has no condition, then this field is just wasted.
+     * When we tune statsd memory usage in the future, this is a candidate to optimize.
+     */
     int64_t mConditionTrueNs;
+
+    /**
+     * The semantic is the value which needs to be applied to mConditionTrueNs for correction
+     * to be performed prior normalization calculation on the user (read server) side. Applied only
+     * to ValueMetrics with pulled atoms.
+     */
+    int64_t mConditionCorrectionNs;
 };
 
 // Aggregates values within buckets.
@@ -65,7 +77,8 @@ public:
         const int64_t startTimeNs;
         const int64_t bucketSizeNs;
         const int64_t minBucketSizeNs;
-        const bool splitBucketForAppUpgrade;
+        const optional<int64_t> conditionCorrectionThresholdNs;
+        const optional<bool> splitBucketForAppUpgrade;
     };
 
     struct WhatOptions {
@@ -108,7 +121,6 @@ public:
                               int64_t originalPullTimeNs) override {
     }
 
-    void notifyAppUpgrade(const int64_t& eventTimeNs) override;
 
     // ValueMetric needs special logic if it's a pulled atom.
     void onStatsdInitCompleted(const int64_t& eventTimeNs) override;
@@ -134,6 +146,8 @@ protected:
             const MetricDimensionKey& eventKey, bool condition, int64_t eventTimeNs,
             const std::map<int, HashableDimensionKey>& statePrimaryKeys) const = 0;
 
+    void notifyAppUpgradeInternalLocked(const int64_t eventTimeNs) override;
+
     void onDumpReportLocked(const int64_t dumpTimeNs, const bool includeCurrentPartialBucket,
                             const bool eraseData, const DumpLatency dumpLatency,
                             std::set<string>* strSet,
@@ -145,6 +159,7 @@ protected:
         const int startBucketMsFieldId;
         const int endBucketMsFieldId;
         const int conditionTrueNsFieldId;
+        const optional<int> conditionCorrectionNsFieldId;
     };
 
     virtual DumpProtoFields getDumpProtoFields() const = 0;
@@ -334,6 +349,9 @@ protected:
     bool mCurrentBucketIsSkipped;
 
     ConditionTimer mConditionTimer;
+
+    /** Stores condition correction threshold from the ValueMetric configuration */
+    optional<int64_t> mConditionCorrectionThresholdNs;
 
     inline bool isEventLateLocked(const int64_t eventTimeNs) const {
         return eventTimeNs < mCurrentBucketStartTimeNs;

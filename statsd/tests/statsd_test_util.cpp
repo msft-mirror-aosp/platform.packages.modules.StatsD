@@ -731,8 +731,7 @@ shared_ptr<LogEvent> CreateNoValuesLogEvent(int atomId, int64_t eventTimeNs) {
     return logEvent;
 }
 
-shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
-                                     int data2) {
+AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1, int data2) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
@@ -741,6 +740,26 @@ shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, i
     AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeInt32(statsEvent, data1);
     AStatsEvent_writeInt32(statsEvent, data2);
+
+    return statsEvent;
+}
+
+shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
+                                     int data2) {
+    AStatsEvent* statsEvent = makeUidStatsEvent(atomId, eventTimeNs, uid, data1, data2);
+
+    shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+shared_ptr<LogEvent> makeExtraUidsLogEvent(int atomId, int64_t eventTimeNs, int uid1, int data1,
+                                           int data2, const vector<int>& extraUids) {
+    AStatsEvent* statsEvent = makeUidStatsEvent(atomId, eventTimeNs, uid1, data1, data2);
+    for (const int extraUid : extraUids) {
+        AStatsEvent_writeInt32(statsEvent, extraUid);
+        AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    }
 
     shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -763,11 +782,13 @@ shared_ptr<LogEvent> makeAttributionLogEvent(int atomId, int64_t eventTimeNs,
     return logEvent;
 }
 
-sp<MockUidMap> makeMockUidMapForOneHost(int hostUid, const vector<int>& isolatedUids) {
+sp<MockUidMap> makeMockUidMapForHosts(const map<int, vector<int>>& hostUidToIsolatedUidsMap) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     EXPECT_CALL(*uidMap, getHostUidOrSelf(_)).WillRepeatedly(ReturnArg<0>());
-    for (const int isolatedUid : isolatedUids) {
-        EXPECT_CALL(*uidMap, getHostUidOrSelf(isolatedUid)).WillRepeatedly(Return(hostUid));
+    for (const auto& [hostUid, isolatedUids] : hostUidToIsolatedUidsMap) {
+        for (const int isolatedUid : isolatedUids) {
+            EXPECT_CALL(*uidMap, getHostUidOrSelf(isolatedUid)).WillRepeatedly(Return(hostUid));
+        }
     }
 
     return uidMap;
@@ -1317,7 +1338,8 @@ void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startT
 }
 
 void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
-                         const vector<int64_t>& values, int64_t conditionTrueNs) {
+                         const vector<int64_t>& values, int64_t conditionTrueNs,
+                         int64_t conditionCorrectionNs) {
     EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
     ASSERT_EQ(bucket.values_size(), values.size());
@@ -1330,6 +1352,9 @@ void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int
     }
     if (conditionTrueNs > 0) {
         EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
+        if (conditionCorrectionNs > 0) {
+            EXPECT_EQ(bucket.condition_correction_nanos(), conditionCorrectionNs);
+        }
     }
 }
 
@@ -1640,6 +1665,93 @@ void backfillStartEndTimestamp(ConfigMetricsReportList *config_report_list) {
     }
 }
 
+void backfillAggregatedAtoms(ConfigMetricsReportList* config_report_list) {
+    for (int i = 0; i < config_report_list->reports_size(); ++i) {
+        backfillAggregatedAtoms(config_report_list->mutable_reports(i));
+    }
+}
+
+void backfillAggregatedAtoms(ConfigMetricsReport* config_report) {
+    for (int i = 0; i < config_report->metrics_size(); ++i) {
+        backfillAggregatedAtoms(config_report->mutable_metrics(i));
+    }
+}
+
+void backfillAggregatedAtoms(StatsLogReport* report) {
+    if (report->has_event_metrics()) {
+        backfillAggregatedAtomsInEventMetric(report->mutable_event_metrics());
+    }
+    if (report->has_gauge_metrics()) {
+        backfillAggregatedAtomsInGaugeMetric(report->mutable_gauge_metrics());
+    }
+}
+
+void backfillAggregatedAtomsInEventMetric(StatsLogReport::EventMetricDataWrapper* wrapper) {
+    std::vector<EventMetricData> metricData;
+    for (int i = 0; i < wrapper->data_size(); ++i) {
+        AggregatedAtomInfo* atomInfo = wrapper->mutable_data(i)->mutable_aggregated_atom_info();
+        for (int j = 0; j < atomInfo->elapsed_timestamp_nanos_size(); j++) {
+            EventMetricData data;
+            *(data.mutable_atom()) = atomInfo->atom();
+            data.set_elapsed_timestamp_nanos(atomInfo->elapsed_timestamp_nanos(j));
+            metricData.push_back(data);
+        }
+    }
+
+    if (metricData.size() == 0) {
+        return;
+    }
+
+    sort(metricData.begin(), metricData.end(),
+         [](const EventMetricData& lhs, const EventMetricData& rhs) {
+             return lhs.elapsed_timestamp_nanos() < rhs.elapsed_timestamp_nanos();
+         });
+
+    wrapper->clear_data();
+    for (int i = 0; i < metricData.size(); ++i) {
+        *(wrapper->add_data()) = metricData[i];
+    }
+}
+
+void backfillAggregatedAtomsInGaugeMetric(StatsLogReport::GaugeMetricDataWrapper* wrapper) {
+    for (int i = 0; i < wrapper->data_size(); ++i) {
+        for (int j = 0; j < wrapper->data(i).bucket_info_size(); ++j) {
+            GaugeBucketInfo* bucketInfo = wrapper->mutable_data(i)->mutable_bucket_info(j);
+            vector<pair<Atom, int64_t>> atomData = unnestGaugeAtomData(*bucketInfo);
+
+            if (atomData.size() == 0) {
+                return;
+            }
+
+            bucketInfo->clear_aggregated_atom_info();
+            ASSERT_EQ(bucketInfo->atom_size(), 0);
+            ASSERT_EQ(bucketInfo->elapsed_timestamp_nanos_size(), 0);
+
+            for (int k = 0; k < atomData.size(); ++k) {
+                *(bucketInfo->add_atom()) = atomData[k].first;
+                bucketInfo->add_elapsed_timestamp_nanos(atomData[k].second);
+            }
+        }
+    }
+}
+
+vector<pair<Atom, int64_t>> unnestGaugeAtomData(const GaugeBucketInfo& bucketInfo) {
+    vector<pair<Atom, int64_t>> atomData;
+    for (int k = 0; k < bucketInfo.aggregated_atom_info_size(); ++k) {
+        const AggregatedAtomInfo& atomInfo = bucketInfo.aggregated_atom_info(k);
+        for (int l = 0; l < atomInfo.elapsed_timestamp_nanos_size(); ++l) {
+            atomData.push_back(make_pair(atomInfo.atom(), atomInfo.elapsed_timestamp_nanos(l)));
+        }
+    }
+
+    sort(atomData.begin(), atomData.end(),
+         [](const pair<Atom, int64_t>& lhs, const pair<Atom, int64_t>& rhs) {
+             return lhs.second < rhs.second;
+         });
+
+    return atomData;
+}
+
 Status FakeSubsystemSleepCallback::onPullAtom(int atomTag,
         const shared_ptr<IPullAtomResultReceiver>& resultReceiver) {
     // Convert stats_events into StatsEventParcels.
@@ -1675,6 +1787,15 @@ void writeFlag(const string& flagName, const string& flagValue) {
                 flagValue);
 }
 
+void writeBootFlag(const string& flagName, const string& flagValue) {
+    SetProperty(StringPrintf("persist.device_config.%s.%s", STATSD_NATIVE_BOOT_NAMESPACE.c_str(),
+                             flagName.c_str()),
+                flagValue);
+}
+
+bool getAppUpgradeBucketDefault() {
+    return FlagProvider::getInstance().getFlagBool(APP_UPGRADE_BUCKET_SPLIT_FLAG, FLAG_TRUE);
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

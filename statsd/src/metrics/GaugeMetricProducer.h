@@ -45,6 +45,9 @@ struct GaugeBucket {
     int64_t mBucketStartNs;
     int64_t mBucketEndNs;
     std::vector<GaugeAtom> mGaugeAtoms;
+
+    // Maps the field/value pairs of an atom to a list of timestamps used to deduplicate atoms.
+    std::unordered_map<AtomDimensionKey, std::vector<int64_t>> mAggregatedAtoms;
 };
 
 typedef std::unordered_map<MetricDimensionKey, std::vector<GaugeAtom>>
@@ -77,12 +80,7 @@ public:
                       bool pullSuccess, int64_t originalPullTimeNs) override;
 
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
-    void notifyAppUpgrade(const int64_t& eventTimeNs) override {
-        std::lock_guard<std::mutex> lock(mMutex);
-
-        if (!mSplitBucketForAppUpgrade) {
-            return;
-        }
+    void notifyAppUpgradeInternalLocked(const int64_t eventTimeNs) override {
         flushLocked(eventTimeNs);
         if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
             pullAndMatchEventsLocked(eventTimeNs);
@@ -213,6 +211,8 @@ private:
     const size_t mDimensionHardLimit;
 
     const size_t mGaugeAtomsPerDimensionLimit;
+
+    bool mUseAtomAggregation;
 
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition);

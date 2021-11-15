@@ -301,14 +301,19 @@ std::shared_ptr<LogEvent> CreateNoValuesLogEvent(int atomId, int64_t eventTimeNs
 
 void CreateNoValuesLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs);
 
+AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1, int data2);
+
 std::shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
                                           int data2);
+
+shared_ptr<LogEvent> makeExtraUidsLogEvent(int atomId, int64_t eventTimeNs, int uid1, int data1,
+                                           int data2, const std::vector<int>& extraUids);
 
 std::shared_ptr<LogEvent> makeAttributionLogEvent(int atomId, int64_t eventTimeNs,
                                                   const vector<int>& uids,
                                                   const vector<string>& tags, int data1, int data2);
 
-sp<MockUidMap> makeMockUidMapForOneHost(int hostUid, const vector<int>& isolatedUids);
+sp<MockUidMap> makeMockUidMapForHosts(const map<int, vector<int>>& hostUidToIsolatedUidsMap);
 
 sp<MockUidMap> makeMockUidMapForPackage(const string& pkg, const set<int32_t>& uids);
 
@@ -432,7 +437,8 @@ void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeN
 void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
                               int64_t endTimeNs, vector<int64_t> eventTimesNs);
 void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
-                         const vector<int64_t>& values, int64_t conditionTrueNs);
+                         const vector<int64_t>& values, int64_t conditionTrueNs,
+                         int64_t conditionCorrectionNs);
 void ValidateKllBucket(const KllBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
                        const std::vector<int64_t> sketchSizes, int64_t conditionTrueNs);
 
@@ -455,6 +461,14 @@ void backfillStartEndTimestamp(ConfigMetricsReportList *config_report_list);
 void backfillStringInReport(ConfigMetricsReportList *config_report_list);
 void backfillStringInDimension(const std::map<uint64_t, string>& str_map,
                                DimensionsValue* dimension);
+
+void backfillAggregatedAtoms(ConfigMetricsReportList* config_report_list);
+void backfillAggregatedAtoms(ConfigMetricsReport* config_report);
+void backfillAggregatedAtoms(StatsLogReport* report);
+void backfillAggregatedAtomsInEventMetric(StatsLogReport::EventMetricDataWrapper* wrapper);
+void backfillAggregatedAtomsInGaugeMetric(StatsLogReport::GaugeMetricDataWrapper* wrapper);
+
+vector<pair<Atom, int64_t>> unnestGaugeAtomData(const GaugeBucketInfo& bucketInfo);
 
 template <typename T>
 void backfillStringInDimension(const std::map<uint64_t, string>& str_map,
@@ -606,6 +620,10 @@ inline std::string getServerFlagFuncFalse(const std::string& flagNamespace,
 }
 
 void writeFlag(const std::string& flagName, const std::string& flagValue);
+
+void writeBootFlag(const std::string& flagName, const std::string& flagValue);
+
+bool getAppUpgradeBucketDefault();
 
 }  // namespace statsd
 }  // namespace os
