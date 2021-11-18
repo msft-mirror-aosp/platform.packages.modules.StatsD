@@ -139,7 +139,7 @@ public:
         return new KllMetricProducer(
                 kConfigKey, metric, protoHash, {/*pullAtomId=*/-1, /*pullerManager=*/nullptr},
                 {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
-                 metric.split_bucket_for_app_upgrade()},
+                 /*conditionCorrectionThresholdNs=*/nullopt, metric.split_bucket_for_app_upgrade()},
                 {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, logEventMatcherIndex,
                  /*eventMatcherWizard=*/nullptr, metric.dimensions_in_what(), fieldMatchers},
                 {conditionIndex, metric.links(), initialConditionCache, wizard},
@@ -154,6 +154,7 @@ public:
         metric.set_bucket(ONE_MINUTE);
         metric.mutable_kll_field()->set_field(atomId);
         metric.mutable_kll_field()->add_child()->set_field(2);
+        metric.set_split_bucket_for_app_upgrade(true);
         return metric;
     }
 
@@ -183,7 +184,7 @@ TEST_P(KllMetricProducerTest_PartialBucket, TestPushedEventsMultipleBuckets) {
     const int64_t partialBucketSplitTimeNs = bucketStartTimeNs + 150;
     switch (GetParam()) {
         case APP_UPGRADE:
-            kllProducer->notifyAppUpgrade(partialBucketSplitTimeNs);
+            kllProducer->notifyAppUpgrade(partialBucketSplitTimeNs, getAppUpgradeBucketDefault());
             break;
         case BOOT_COMPLETE:
             kllProducer->onStatsdInitCompleted(partialBucketSplitTimeNs);
@@ -411,7 +412,7 @@ TEST(KllMetricProducerTest, TestForcedBucketSplitWhenConditionUnknownSkipsBucket
 
     // App update event.
     int64_t appUpdateTimeNs = bucketStartTimeNs + 1000;
-    kllProducer->notifyAppUpgrade(appUpdateTimeNs);
+    kllProducer->notifyAppUpgrade(appUpdateTimeNs, getAppUpgradeBucketDefault());
 
     // Check dump report.
     ProtoOutputStream output;

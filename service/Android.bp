@@ -29,12 +29,17 @@ java_library {
     sdk_version: "system_server_current",
     libs: [
         "framework-annotations-lib",
-        "framework-statsd",
+        // Use the implementation library directly.
+        // TODO(b/204183608): Remove when no longer necessary.
+        "framework-statsd.impl",
     ],
     static_libs: [
         "modules-utils-build",
     ],
     plugins: ["java_api_finder"],
+    lint: {
+        strict_updatability_linting: true
+    },
     apex_available: [
         "com.android.os.statsd",
         "test_com.android.os.statsd",
