@@ -307,10 +307,10 @@ bool MetricsManager::isConfigValid() const {
 }
 
 void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
-                                      const int64_t version, const bool bucketSplitDefault) {
+                                      const int64_t version) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
-        it->notifyAppUpgrade(eventTimeNs, bucketSplitDefault);
+        it->notifyAppUpgrade(eventTimeNs);
     }
     // check if we care this package
     if (std::find(mAllowedPkg.begin(), mAllowedPkg.end(), apk) != mAllowedPkg.end()) {
@@ -327,11 +327,11 @@ void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& 
     }
 }
 
-void MetricsManager::notifyAppRemoved(const int64_t& eventTimeNs, const string& apk, const int uid,
-                                      const bool bucketSplitDefault) {
+void MetricsManager::notifyAppRemoved(const int64_t& eventTimeNs, const string& apk,
+                                      const int uid) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
-        it->notifyAppRemoved(eventTimeNs, bucketSplitDefault);
+        it->notifyAppRemoved(eventTimeNs);
     }
     // check if we care this package
     if (std::find(mAllowedPkg.begin(), mAllowedPkg.end(), apk) != mAllowedPkg.end()) {
@@ -404,11 +404,9 @@ void MetricsManager::dropData(const int64_t dropTimeNs) {
     }
 }
 
-void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs,
-                                  const bool include_current_partial_bucket,
-                                  const bool erase_data,
-                                  const DumpLatency dumpLatency,
-                                  std::set<string> *str_set,
+void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t wallClockNs,
+                                  const bool include_current_partial_bucket, const bool erase_data,
+                                  const DumpLatency dumpLatency, std::set<string>* str_set,
                                   ProtoOutputStream* protoOutput) {
     VLOG("=========================Metric Reports Start==========================");
     // one StatsLogReport per MetricProduer
@@ -441,11 +439,10 @@ void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs,
     // misaligned.
     if (erase_data) {
         mLastReportTimeNs = dumpTimeStampNs;
-        mLastReportWallClockNs = getWallClockNs();
+        mLastReportWallClockNs = wallClockNs;
     }
     VLOG("=========================Metric Reports End==========================");
 }
-
 
 bool MetricsManager::checkLogCredentials(const LogEvent& event) {
     if (mWhitelistedAtomIds.find(event.GetTagId()) != mWhitelistedAtomIds.end()) {

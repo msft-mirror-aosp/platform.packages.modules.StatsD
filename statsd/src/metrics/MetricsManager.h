@@ -68,10 +68,9 @@ public:
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     void notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
-                          const int64_t version, const bool bucketSplitDefault);
+                          const int64_t version);
 
-    void notifyAppRemoved(const int64_t& eventTimeNs, const string& apk, const int uid,
-                          const bool bucketSplitDefault);
+    void notifyAppRemoved(const int64_t& eventTimeNs, const string& apk, const int uid);
 
     void onUidMapReceived(const int64_t& eventTimeNs);
 
@@ -129,11 +128,9 @@ public:
 
     virtual void dropData(const int64_t dropTimeNs);
 
-    virtual void onDumpReport(const int64_t dumpTimeNs,
-                              const bool include_current_partial_bucket,
-                              const bool erase_data,
-                              const DumpLatency dumpLatency,
-                              std::set<string> *str_set,
+    virtual void onDumpReport(const int64_t dumpTimeNs, const int64_t wallClockNs,
+                              const bool include_current_partial_bucket, const bool erase_data,
+                              const DumpLatency dumpLatency, std::set<string>* str_set,
                               android::util::ProtoOutputStream* protoOutput);
 
     // Computes the total byte size of all metrics managed by a single config source.
