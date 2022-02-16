@@ -24,7 +24,6 @@ apex {
 
 apex_defaults {
     bootclasspath_fragments: ["com.android.os.statsd-bootclasspath-fragment"],
-    systemserverclasspath_fragments: ["com.android.os.statsd-systemserverclasspath-fragment"],
     jni_libs: [
         "libstats_jni",
     ],
@@ -33,6 +32,9 @@ apex_defaults {
         "libstatssocket",
     ],
     binaries: ["statsd"],
+    java_libs: [
+        "service-statsd",
+    ],
     compile_multilib: "both",
     prebuilts: [
         "com.android.os.statsd.init.rc",
@@ -71,7 +73,6 @@ prebuilt_etc {
 sdk {
     name: "statsd-module-sdk",
     bootclasspath_fragments: ["com.android.os.statsd-bootclasspath-fragment"],
-    systemserverclasspath_fragments: ["com.android.os.statsd-systemserverclasspath-fragment"],
     native_shared_libs: [
         "libstatssocket",
     ],
@@ -100,10 +101,4 @@ bootclasspath_fragment {
     hidden_api: {
         max_target_o_low_priority: ["hiddenapi/hiddenapi-max-target-o-low-priority.txt"],
     },
-}
-
-systemserverclasspath_fragment {
-    name: "com.android.os.statsd-systemserverclasspath-fragment",
-    standalone_contents: ["service-statsd"],
-    apex_available: ["com.android.os.statsd"],
 }
