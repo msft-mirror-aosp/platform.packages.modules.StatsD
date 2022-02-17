@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,16 @@
  * limitations under the License.
  */
 
-#define STATSD_DEBUG false  // STOPSHIP if true
-#include "Log.h"
+package android.cts.statsd.validation;
 
-#include "statscompanion_util.h"
-#include <android/binder_auto_utils.h>
-#include <android/binder_manager.h>
+import android.cts.statsd.atom.DeviceAtomTestCase;
 
-namespace android {
-namespace os {
-namespace statsd {
+public class StatsFrameworkInitializerTest extends DeviceAtomTestCase {
 
-shared_ptr<IStatsCompanionService> getStatsCompanionService() {
-    ::ndk::SpAIBinder binder(AServiceManager_getService("statscompanion"));
-    return IStatsCompanionService::fromBinder(binder);
+    public void testStatsFrameworkInitializer_failsWhenCalledOutsideOfSystemServiceRegistry()
+            throws Exception {
+        runDeviceTests(DEVICE_SIDE_TEST_PACKAGE,
+                ".StatsFrameworkInitializerTests", "testRegisterServiceWrappers_expectFail");
+    }
+
 }
-
-}  // namespace statsd
-}  // namespace os
-}  // namespace android
