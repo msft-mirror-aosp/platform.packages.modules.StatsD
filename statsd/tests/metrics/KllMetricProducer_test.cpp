@@ -121,7 +121,7 @@ public:
                 TimeUnitToBucketSizeInMillisGuardrailed(kConfigKey.GetUid(), metric.bucket()));
         const bool containsAnyPositionInDimensionsInWhat =
                 HasPositionANY(metric.dimensions_in_what());
-        const bool containsRepeatedFieldDimension = HasPosition(metric.dimensions_in_what());
+        const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
 
         vector<Matcher> fieldMatchers;
         translateFieldMatcher(metric.kll_field(), &fieldMatchers);
@@ -139,8 +139,7 @@ public:
                 kConfigKey, metric, protoHash, {/*pullAtomId=*/-1, /*pullerManager=*/nullptr},
                 {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
                  /*conditionCorrectionThresholdNs=*/nullopt, metric.split_bucket_for_app_upgrade()},
-                {containsAnyPositionInDimensionsInWhat, containsRepeatedFieldDimension,
-                 logEventMatcherIndex,
+                {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, logEventMatcherIndex,
                  /*eventMatcherWizard=*/nullptr, metric.dimensions_in_what(), fieldMatchers},
                 {conditionIndex, metric.links(), initialConditionCache, wizard},
                 {metric.state_link(), slicedStateAtoms, stateGroupMap},
