@@ -484,12 +484,12 @@ bool HasPositionANY(const FieldMatcher& matcher) {
     return false;
 }
 
-bool HasPosition(const FieldMatcher& matcher) {
-    if (matcher.has_position()) {
+bool HasPositionALL(const FieldMatcher& matcher) {
+    if (matcher.has_position() && matcher.position() == Position::ALL) {
         return true;
     }
     for (const auto& child : matcher.child()) {
-        if (HasPosition(child)) {
+        if (HasPositionALL(child)) {
             return true;
         }
     }
