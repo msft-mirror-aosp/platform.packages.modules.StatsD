@@ -252,6 +252,35 @@ AtomMatcher CreateAppStartOccurredAtomMatcher() {
     return CreateSimpleAtomMatcher("AppStartOccurredMatcher", util::APP_START_OCCURRED);
 }
 
+AtomMatcher CreateTestAtomRepeatedStateAtomMatcher(const string& name,
+                                                   TestAtomReported::State state,
+                                                   Position position) {
+    AtomMatcher atom_matcher;
+    atom_matcher.set_id(StringToId(name));
+    auto simple_atom_matcher = atom_matcher.mutable_simple_atom_matcher();
+    simple_atom_matcher->set_atom_id(util::TEST_ATOM_REPORTED);
+    auto field_value_matcher = simple_atom_matcher->add_field_value_matcher();
+    field_value_matcher->set_field(14);  // Repeated enum field.
+    field_value_matcher->set_eq_int(state);
+    field_value_matcher->set_position(position);
+    return atom_matcher;
+}
+
+AtomMatcher CreateTestAtomRepeatedStateFirstOffAtomMatcher() {
+    return CreateTestAtomRepeatedStateAtomMatcher("TestFirstStateOff", TestAtomReported::OFF,
+                                                  Position::FIRST);
+}
+
+AtomMatcher CreateTestAtomRepeatedStateFirstOnAtomMatcher() {
+    return CreateTestAtomRepeatedStateAtomMatcher("TestFirstStateOn", TestAtomReported::ON,
+                                                  Position::FIRST);
+}
+
+AtomMatcher CreateTestAtomRepeatedStateAnyOnAtomMatcher() {
+    return CreateTestAtomRepeatedStateAtomMatcher("TestAnyStateOn", TestAtomReported::ON,
+                                                  Position::ANY);
+}
+
 void addMatcherToMatcherCombination(const AtomMatcher& matcher, AtomMatcher* combinationMatcher) {
     combinationMatcher->mutable_combination()->add_matcher(matcher.id());
 }
@@ -317,6 +346,14 @@ Predicate CreateIsInBackgroundPredicate() {
     predicate.set_id(StringToId("IsInBackground"));
     predicate.mutable_simple_predicate()->set_start(StringToId("Background"));
     predicate.mutable_simple_predicate()->set_stop(StringToId("Foreground"));
+    return predicate;
+}
+
+Predicate CreateTestAtomRepeatedStateFirstOffPredicate() {
+    Predicate predicate;
+    predicate.set_id(StringToId("TestFirstStateIsOff"));
+    predicate.mutable_simple_predicate()->set_start(StringToId("TestFirstStateOff"));
+    predicate.mutable_simple_predicate()->set_stop(StringToId("TestFirstStateOn"));
     return predicate;
 }
 
@@ -446,6 +483,22 @@ FieldMatcher CreateDimensions(const int atomId, const std::vector<int>& fields) 
     dimensions.set_field(atomId);
     for (const int field : fields) {
         dimensions.add_child()->set_field(field);
+    }
+    return dimensions;
+}
+
+FieldMatcher CreateRepeatedDimensions(const int atomId, const std::vector<int>& fields,
+                                      const std::vector<Position>& positions) {
+    FieldMatcher dimensions;
+    if (fields.size() != positions.size()) {
+        return dimensions;
+    }
+
+    dimensions.set_field(atomId);
+    for (size_t i = 0; i < fields.size(); i++) {
+        auto child = dimensions.add_child();
+        child->set_field(fields[i]);
+        child->set_position(positions[i]);
     }
     return dimensions;
 }
@@ -766,6 +819,20 @@ shared_ptr<LogEvent> makeExtraUidsLogEvent(int atomId, int64_t eventTimeNs, int 
     return logEvent;
 }
 
+shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
+                                             const vector<int>& uids, const size_t numElements) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomId);
+    AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
+    AStatsEvent_writeInt32Array(statsEvent, uids.data(), numElements);
+    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+
+    shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+
+    return logEvent;
+}
+
 shared_ptr<LogEvent> makeAttributionLogEvent(int atomId, int64_t eventTimeNs,
                                              const vector<int>& uids, const vector<string>& tags,
                                              int data1, int data2) {
@@ -896,6 +963,57 @@ std::unique_ptr<LogEvent> CreateFinishScheduledJobEvent(uint64_t timestampNs,
                                                         const string& jobName) {
     return CreateScheduledJobStateChangedEvent(attributionUids, attributionTags, jobName,
                                                ScheduledJobStateChanged::FINISHED, timestampNs);
+}
+
+std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
+        uint64_t timestampNs, const vector<int>& repeatedIntField,
+        const vector<int64_t>& repeatedLongField, const vector<float>& repeatedFloatField,
+        const vector<string>& repeatedStringField, const bool* repeatedBoolField,
+        const size_t repeatedBoolFieldLength, const vector<int>& repeatedEnumField) {
+    return CreateTestAtomReportedEvent(timestampNs, {1001, 1002}, {"app1", "app2"}, 5, 1000l, 21.9f,
+                                       "string", 1, TestAtomReported::ON, {8, 1, 8, 2, 8, 3},
+                                       repeatedIntField, repeatedLongField, repeatedFloatField,
+                                       repeatedStringField, repeatedBoolField,
+                                       repeatedBoolFieldLength, repeatedEnumField);
+}
+
+std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
+        uint64_t timestampNs, const vector<int>& attributionUids,
+        const vector<string>& attributionTags, const int intField, const long longField,
+        const float floatField, const string& stringField, const bool boolField,
+        const TestAtomReported::State enumField, const vector<uint8_t>& bytesField,
+        const vector<int>& repeatedIntField, const vector<int64_t>& repeatedLongField,
+        const vector<float>& repeatedFloatField, const vector<string>& repeatedStringField,
+        const bool* repeatedBoolField, const size_t repeatedBoolFieldLength,
+        const vector<int>& repeatedEnumField) {
+    vector<const char*> cRepeatedStringField(repeatedStringField.size());
+    for (int i = 0; i < cRepeatedStringField.size(); i++) {
+        cRepeatedStringField[i] = repeatedStringField[i].c_str();
+    }
+
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, util::TEST_ATOM_REPORTED);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+
+    writeAttribution(statsEvent, attributionUids, attributionTags);
+    AStatsEvent_writeInt32(statsEvent, intField);
+    AStatsEvent_writeInt64(statsEvent, longField);
+    AStatsEvent_writeFloat(statsEvent, floatField);
+    AStatsEvent_writeString(statsEvent, stringField.c_str());
+    AStatsEvent_writeBool(statsEvent, boolField);
+    AStatsEvent_writeInt32(statsEvent, enumField);
+    AStatsEvent_writeByteArray(statsEvent, bytesField.data(), bytesField.size());
+    AStatsEvent_writeInt32Array(statsEvent, repeatedIntField.data(), repeatedIntField.size());
+    AStatsEvent_writeInt64Array(statsEvent, repeatedLongField.data(), repeatedLongField.size());
+    AStatsEvent_writeFloatArray(statsEvent, repeatedFloatField.data(), repeatedFloatField.size());
+    AStatsEvent_writeStringArray(statsEvent, cRepeatedStringField.data(),
+                                 repeatedStringField.size());
+    AStatsEvent_writeBoolArray(statsEvent, repeatedBoolField, repeatedBoolFieldLength);
+    AStatsEvent_writeInt32Array(statsEvent, repeatedEnumField.data(), repeatedEnumField.size());
+
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
 }
 
 std::unique_ptr<LogEvent> CreateWakelockStateChangedEvent(uint64_t timestampNs,
@@ -1563,14 +1681,13 @@ void backfillStringInReport(ConfigMetricsReportList *config_report_list) {
 
 bool backfillDimensionPath(const DimensionsValue& path,
                            const google::protobuf::RepeatedPtrField<DimensionsValue>& leafValues,
-                           int* leafIndex,
-                           DimensionsValue* dimension) {
+                           int* leafIndex, DimensionsValue* dimension) {
     dimension->set_field(path.field());
     if (path.has_value_tuple()) {
         for (int i = 0; i < path.value_tuple().dimensions_value_size(); ++i) {
-            if (!backfillDimensionPath(
-                path.value_tuple().dimensions_value(i), leafValues, leafIndex,
-                dimension->mutable_value_tuple()->add_dimensions_value())) {
+            if (!backfillDimensionPath(path.value_tuple().dimensions_value(i), leafValues,
+                                       leafIndex,
+                                       dimension->mutable_value_tuple()->add_dimensions_value())) {
                 return false;
             }
         }
