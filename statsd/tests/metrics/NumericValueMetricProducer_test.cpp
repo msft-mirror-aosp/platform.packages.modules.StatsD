@@ -186,7 +186,7 @@ public:
                 TimeUnitToBucketSizeInMillisGuardrailed(kConfigKey.GetUid(), metric.bucket()));
         const bool containsAnyPositionInDimensionsInWhat =
                 HasPositionANY(metric.dimensions_in_what());
-        const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
+        const bool containsRepeatedFieldDimension = HasPosition(metric.dimensions_in_what());
 
         vector<Matcher> fieldMatchers;
         translateFieldMatcher(metric.value_field(), &fieldMatchers);
@@ -210,8 +210,9 @@ public:
                 kConfigKey, metric, protoHash, {pullAtomId, pullerManager},
                 {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
                  conditionCorrectionThresholdNs, metric.split_bucket_for_app_upgrade()},
-                {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, logEventMatcherIndex,
-                 eventMatcherWizard, metric.dimensions_in_what(), fieldMatchers},
+                {containsAnyPositionInDimensionsInWhat, containsRepeatedFieldDimension,
+                 logEventMatcherIndex, eventMatcherWizard, metric.dimensions_in_what(),
+                 fieldMatchers},
                 {conditionIndex, metric.links(), initialConditionCache, wizard},
                 {metric.state_link(), slicedStateAtoms, stateGroupMap},
                 {/*eventActivationMap=*/{}, /*eventDeactivationMap=*/{}},
@@ -2915,36 +2916,6 @@ TEST(NumericValueMetricProducerTest, TestBucketInvalidIfGlobalBaseIsNotSet) {
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {}, {}, {}, {}, {});
 }
 
-TEST(NumericValueMetricProducerTest, TestPullNeededFastDump) {
-    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetric();
-
-    sp<EventMatcherWizard> eventMatcherWizard =
-            createEventMatcherWizard(tagId, logEventMatcherIndex);
-    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
-    EXPECT_CALL(*pullerManager, Pull(tagId, kConfigKey, bucketStartTimeNs, _))
-            // Initial pull.
-            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t,
-                                vector<std::shared_ptr<LogEvent>>* data) {
-                data->clear();
-                data->push_back(CreateThreeValueLogEvent(tagId, bucketStartTimeNs, tagId, 1, 1));
-                return true;
-            }));
-
-    sp<NumericValueMetricProducer> valueProducer =
-            NumericValueMetricProducerTestHelper::createValueProducerNoConditions(pullerManager,
-                                                                                  metric);
-
-    ProtoOutputStream output;
-    std::set<string> strSet;
-    valueProducer->onDumpReport(bucketStartTimeNs + 10, true /* include recent buckets */, true,
-                                FAST, &strSet, &output);
-
-    StatsLogReport report = outputStreamToProto(&output);
-    // Bucket is invalid since we did not pull when dump report was called.
-    ASSERT_EQ(0, report.value_metrics().data_size());
-}
-
 TEST(NumericValueMetricProducerTest, TestFastDumpWithoutCurrentBucket) {
     ValueMetric metric = NumericValueMetricProducerTestHelper::createMetric();
 
@@ -2976,9 +2947,10 @@ TEST(NumericValueMetricProducerTest, TestFastDumpWithoutCurrentBucket) {
                                 &strSet, &output);
 
     StatsLogReport report = outputStreamToProto(&output);
-    // Previous bucket is part of the report.
+    // Previous bucket is part of the report, and the current bucket is not skipped.
     ASSERT_EQ(1, report.value_metrics().data_size());
     EXPECT_EQ(0, report.value_metrics().data(0).bucket_info(0).bucket_num());
+    ASSERT_EQ(0, report.value_metrics().skipped_size());
 }
 
 TEST(NumericValueMetricProducerTest, TestPullNeededNoTimeConstraints) {
