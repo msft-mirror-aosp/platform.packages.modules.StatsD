@@ -51,7 +51,7 @@ void mapAndMergeIsolatedUidsToHostUid(vector<shared_ptr<LogEvent>>& data, const 
                                       int tagId, const vector<int>& additiveFieldsVec) {
     // Check the first LogEvent for attribution chain or a uid field as either all atoms with this
     // tagId have them or none of them do.
-    std::pair<int, int> attrIndexRange;
+    std::pair<size_t, size_t> attrIndexRange;
     const bool hasAttributionChain = data[0]->hasAttributionChain(&attrIndexRange);
     const uint8_t numUidFields = data[0]->getNumUidFields();
 
@@ -68,7 +68,7 @@ void mapAndMergeIsolatedUidsToHostUid(vector<shared_ptr<LogEvent>>& data, const 
         }
         if (hasAttributionChain) {
             vector<FieldValue>* const fieldValues = event->getMutableValues();
-            for (int i = attrIndexRange.first; i <= attrIndexRange.second; i++) {
+            for (size_t i = attrIndexRange.first; i <= attrIndexRange.second; i++) {
                 FieldValue& fieldValue = fieldValues->at(i);
                 if (isAttributionUidField(fieldValue)) {
                     const int hostUid = uidMap->getHostUidOrSelf(fieldValue.mValue.int_value);
@@ -118,7 +118,9 @@ void mapAndMergeIsolatedUidsToHostUid(vector<shared_ptr<LogEvent>>& data, const 
             if ((*lhsValues)[p] != (*rhsValues)[p]) {
                 int pos = (*lhsValues)[p].mField.getPosAtDepth(0);
                 // Differ on non-additive field, abort.
-                if (additiveFields.find(pos) == additiveFields.end()) {
+                // Repeated additive fields are treated as non-additive fields.
+                if (isPrimitiveRepeatedField((*lhsValues)[p].mField) ||
+                    (additiveFields.find(pos) == additiveFields.end())) {
                     needMerge = false;
                     break;
                 }
@@ -131,7 +133,9 @@ void mapAndMergeIsolatedUidsToHostUid(vector<shared_ptr<LogEvent>>& data, const 
         // This should be infrequent operation.
         for (int p = 0; p < (int)lhsValues->size(); p++) {
             int pos = (*lhsValues)[p].mField.getPosAtDepth(0);
-            if (additiveFields.find(pos) != additiveFields.end()) {
+            // Don't merge repeated fields.
+            if (!isPrimitiveRepeatedField((*lhsValues)[p].mField) &&
+                (additiveFields.find(pos) != additiveFields.end())) {
                 (*rhsValues)[p].mValue += (*lhsValues)[p].mValue;
             }
         }

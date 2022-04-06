@@ -137,6 +137,10 @@ bool isUidField(const FieldValue& fieldValue) {
     return fieldValue.mAnnotations.isUidField();
 }
 
+bool isPrimitiveRepeatedField(const Field& field) {
+    return field.getDepth() == 1;
+}
+
 Value::Value(const Value& from) {
     type = from.getType();
     switch (type) {
@@ -484,12 +488,12 @@ bool HasPositionANY(const FieldMatcher& matcher) {
     return false;
 }
 
-bool HasPositionALL(const FieldMatcher& matcher) {
-    if (matcher.has_position() && matcher.position() == Position::ALL) {
+bool HasPosition(const FieldMatcher& matcher) {
+    if (matcher.has_position()) {
         return true;
     }
     for (const auto& child : matcher.child()) {
-        if (HasPositionALL(child)) {
+        if (HasPosition(child)) {
             return true;
         }
     }
