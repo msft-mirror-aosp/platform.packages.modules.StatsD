@@ -100,7 +100,7 @@ MetricDimensionKey dimensionKey2(
 void sendConfig(shared_ptr<StatsService>& service, const StatsdConfig& config) {
     string str;
     config.SerializeToString(&str);
-    std::vector<uint8_t> configAsVec(str.begin(), str.end());
+    std::vector<int8_t> configAsVec(str.begin(), str.end());
     service->addConfiguration(kConfigKey, configAsVec, kCallingUid);
 }
 

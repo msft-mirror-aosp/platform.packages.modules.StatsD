@@ -1,7 +1,3 @@
-package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
-}
-
 java_binary_host {
     name: "statsd_localdrive",
     manifest: "localdrive_manifest.txt",
@@ -38,6 +34,7 @@ java_binary_host {
 
 java_test_host {
     name: "statsd_testdrive_test",
+    test_suites: ["general-tests"],
     srcs: ["test/com/android/statsd/shelltools/testdrive/*.java"],
     static_libs: [
         "statsd_testdrive_lib",
@@ -46,3 +43,4 @@ java_test_host {
         "guava",
     ],
 }
+

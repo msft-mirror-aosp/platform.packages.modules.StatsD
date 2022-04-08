@@ -21,15 +21,14 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "src/stats_log.pb.h"
+#include "src/statsd_config.pb.h"
 #include "src/StatsLogProcessor.h"
-#include "src/flags/FlagProvider.h"
 #include "src/hash.h"
 #include "src/logd/LogEvent.h"
 #include "src/matchers/EventMatcherWizard.h"
 #include "src/packages/UidMap.h"
-#include "src/stats_log.pb.h"
 #include "src/stats_log_util.h"
-#include "src/statsd_config.pb.h"
 #include "stats_event.h"
 #include "statslog_statsdtest.h"
 
@@ -44,25 +43,6 @@ using ::aidl::android::os::IPullAtomResultReceiver;
 using android::util::ProtoReader;
 using google::protobuf::RepeatedPtrField;
 using Status = ::ndk::ScopedAStatus;
-
-// Wrapper for assertion helpers called from tests to keep track of source location of failures.
-// Example usage:
-//      static void myTestVerificationHelper(Foo foo) {
-//          EXPECT_EQ(...);
-//          ASSERT_EQ(...);
-//      }
-//
-//      TEST_F(MyTest, TestFoo) {
-//          ...
-//          TRACE_CALL(myTestVerificationHelper, foo);
-//          ...
-//      }
-//
-#define TRACE_CALL(function, ...) \
-    do {                          \
-        SCOPED_TRACE("");         \
-        (function)(__VA_ARGS__);  \
-    } while (false)
 
 const int SCREEN_STATE_ATOM_ID = util::SCREEN_STATE_CHANGED;
 const int UID_PROCESS_STATE_ATOM_ID = util::UID_PROCESS_STATE_CHANGED;
@@ -146,10 +126,7 @@ AtomMatcher CreateMoveToBackgroundAtomMatcher();
 AtomMatcher CreateMoveToForegroundAtomMatcher();
 
 // Create AtomMatcher proto for process crashes
-AtomMatcher CreateProcessCrashAtomMatcher();
-
-// Create AtomMatcher proto for app launches.
-AtomMatcher CreateAppStartOccurredAtomMatcher();
+AtomMatcher CreateProcessCrashAtomMatcher() ;
 
 // Add an AtomMatcher to a combination AtomMatcher.
 void addMatcherToMatcherCombination(const AtomMatcher& matcher, AtomMatcher* combinationMatcher);
@@ -247,9 +224,6 @@ GaugeMetric createGaugeMetric(const string& name, const int64_t what,
 ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const int valueField,
                               const optional<int64_t>& condition, const vector<int64_t>& states);
 
-KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int valueField,
-                          const optional<int64_t>& condition);
-
 Alert createAlert(const string& name, const int64_t metricId, const int buckets,
                   const int64_t triggerSum);
 
@@ -301,19 +275,14 @@ std::shared_ptr<LogEvent> CreateNoValuesLogEvent(int atomId, int64_t eventTimeNs
 
 void CreateNoValuesLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs);
 
-AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1, int data2);
-
 std::shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
                                           int data2);
-
-shared_ptr<LogEvent> makeExtraUidsLogEvent(int atomId, int64_t eventTimeNs, int uid1, int data1,
-                                           int data2, const std::vector<int>& extraUids);
 
 std::shared_ptr<LogEvent> makeAttributionLogEvent(int atomId, int64_t eventTimeNs,
                                                   const vector<int>& uids,
                                                   const vector<string>& tags, int data1, int data2);
 
-sp<MockUidMap> makeMockUidMapForHosts(const map<int, vector<int>>& hostUidToIsolatedUidsMap);
+sp<MockUidMap> makeMockUidMapForOneHost(int hostUid, const vector<int>& isolatedUids);
 
 sp<MockUidMap> makeMockUidMapForPackage(const string& pkg, const set<int32_t>& uids);
 
@@ -437,10 +406,7 @@ void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeN
 void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
                               int64_t endTimeNs, vector<int64_t> eventTimesNs);
 void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
-                         const vector<int64_t>& values, int64_t conditionTrueNs,
-                         int64_t conditionCorrectionNs);
-void ValidateKllBucket(const KllBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
-                       const std::vector<int64_t> sketchSizes, int64_t conditionTrueNs);
+                         int64_t value, int64_t conditionTrueNs);
 
 struct DimensionsPair {
     DimensionsPair(DimensionsValue m1, google::protobuf::RepeatedPtrField<StateValue> m2)
@@ -454,21 +420,13 @@ bool LessThan(const StateValue& s1, const StateValue& s2);
 bool LessThan(const DimensionsValue& s1, const DimensionsValue& s2);
 bool LessThan(const DimensionsPair& s1, const DimensionsPair& s2);
 
-void backfillStartEndTimestamp(StatsLogReport* report);
+
 void backfillStartEndTimestamp(ConfigMetricsReport *config_report);
 void backfillStartEndTimestamp(ConfigMetricsReportList *config_report_list);
 
 void backfillStringInReport(ConfigMetricsReportList *config_report_list);
 void backfillStringInDimension(const std::map<uint64_t, string>& str_map,
                                DimensionsValue* dimension);
-
-void backfillAggregatedAtoms(ConfigMetricsReportList* config_report_list);
-void backfillAggregatedAtoms(ConfigMetricsReport* config_report);
-void backfillAggregatedAtoms(StatsLogReport* report);
-void backfillAggregatedAtomsInEventMetric(StatsLogReport::EventMetricDataWrapper* wrapper);
-void backfillAggregatedAtomsInGaugeMetric(StatsLogReport::GaugeMetricDataWrapper* wrapper);
-
-vector<pair<Atom, int64_t>> unnestGaugeAtomData(const GaugeBucketInfo& bucketInfo);
 
 template <typename T>
 void backfillStringInDimension(const std::map<uint64_t, string>& str_map,
@@ -484,8 +442,6 @@ void backfillStringInDimension(const std::map<uint64_t, string>& str_map,
     }
 }
 
-void backfillDimensionPath(StatsLogReport* report);
-void backfillDimensionPath(ConfigMetricsReport* config_report);
 void backfillDimensionPath(ConfigMetricsReportList* config_report_list);
 
 bool backfillDimensionPath(const DimensionsValue& path,
@@ -540,20 +496,6 @@ void sortMetricDataByDimensionsValue(const T& metricData, T* sortedMetricData) {
 }
 
 template <typename T>
-void sortMetricDataByFirstDimensionLeafValue(const T& metricData, T* sortedMetricData) {
-    std::map<DimensionsPair, int, DimensionCompare> dimensionIndexMap;
-    for (int i = 0; i < metricData.data_size(); ++i) {
-        dimensionIndexMap.insert(
-                std::make_pair(DimensionsPair(metricData.data(i).dimension_leaf_values_in_what()[0],
-                                              metricData.data(i).slice_by_state()),
-                               i));
-    }
-    for (const auto& itr : dimensionIndexMap) {
-        *sortedMetricData->add_data() = metricData.data(itr.second);
-    }
-}
-
-template <typename T>
 void backfillStartEndTimestampForFullBucket(
     const int64_t timeBaseNs, const int64_t bucketSizeNs, T* bucket) {
     bucket->set_start_bucket_elapsed_nanos(timeBaseNs + bucketSizeNs * bucket->bucket_num());
@@ -598,33 +540,6 @@ void backfillStartEndTimestampForSkippedBuckets(const int64_t timeBaseNs, T* met
         backfillStartEndTimestampForPartialBucket(timeBaseNs, metrics->mutable_skipped(i));
     }
 }
-
-inline bool isAtLeastSFuncTrue() {
-    return true;
-}
-
-inline bool isAtLeastSFuncFalse() {
-    return false;
-}
-
-inline std::string getServerFlagFuncTrue(const std::string& flagNamespace,
-                                         const std::string& flagName,
-                                         const std::string& defaultValue) {
-    return FLAG_TRUE;
-}
-
-inline std::string getServerFlagFuncFalse(const std::string& flagNamespace,
-                                          const std::string& flagName,
-                                          const std::string& defaultValue) {
-    return FLAG_FALSE;
-}
-
-void writeFlag(const std::string& flagName, const std::string& flagValue);
-
-void writeBootFlag(const std::string& flagName, const std::string& flagValue);
-
-bool getAppUpgradeBucketDefault();
-
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

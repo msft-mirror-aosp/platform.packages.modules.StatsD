@@ -71,20 +71,7 @@ StatsdConfig CreateStatsdConfigForPushedEvent(const GaugeMetric::SamplingType sa
 
 }  // namespace
 
-// Setup for test fixture.
-class GaugeMetricE2ePushedTest : public ::testing::Test {
-    void SetUp() override {
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
-        FlagProvider::getInstance().overrideFlag(AGGREGATE_ATOMS_FLAG, FLAG_TRUE,
-                                                 /*isBootFlag=*/true);
-    }
-
-    void TearDown() override {
-        FlagProvider::getInstance().resetOverrides();
-    }
-};
-
-TEST_F(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent) {
+TEST(GaugeMetricE2eTest, TestMultipleFieldsForPushedEvent) {
     for (const auto& sampling_type :
          {GaugeMetric::FIRST_N_SAMPLES, GaugeMetric::RANDOM_ONE_SAMPLE}) {
         auto config = CreateStatsdConfigForPushedEvent(sampling_type);
@@ -152,7 +139,6 @@ TEST_F(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent) {
         backfillDimensionPath(&reports);
         backfillStringInReport(&reports);
         backfillStartEndTimestamp(&reports);
-        backfillAggregatedAtoms(&reports);
         ASSERT_EQ(1, reports.reports_size());
         ASSERT_EQ(1, reports.reports(0).metrics_size());
         StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;

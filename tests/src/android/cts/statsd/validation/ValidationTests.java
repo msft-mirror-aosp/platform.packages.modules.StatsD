@@ -69,14 +69,12 @@ public class ValidationTests extends DeviceAtomTestCase {
     @Override
     protected void setUp() throws Exception {
         super.setUp();
-        turnBatteryStatsAutoResetOff(); // Turn off Battery Stats auto resetting
     }
 
     @Override
     protected void tearDown() throws Exception {
         resetBatteryStatus(); // Undo any unplugDevice().
         turnScreenOn(); // Reset screen to on state
-        turnBatteryStatsAutoResetOn(); // Turn Battery Stats auto resetting back on
         super.tearDown();
     }
 
@@ -84,7 +82,6 @@ public class ValidationTests extends DeviceAtomTestCase {
         if (!hasFeature(FEATURE_AUTOMOTIVE, false)) return;
         resetBatteryStats();
         unplugDevice();
-        flushBatteryStatsHandlers();
         // AoD needs to be turned off because the screen should go into an off state. But, if AoD is
         // on and the device doesn't support STATE_DOZE, the screen sadly goes back to STATE_ON.
         String aodState = getAodState();
@@ -146,6 +143,7 @@ public class ValidationTests extends DeviceAtomTestCase {
         // ADB disconnection causes failure of getUid(). Move up here before turnScreenOff().
         final int EXPECTED_UID = getUid();
 
+
         turnScreenOn(); // To ensure that the ScreenOff later gets logged.
         // AoD needs to be turned off because the screen should go into an off state. But, if AoD is
         // on and the device doesn't support STATE_DOZE, the screen sadly goes back to STATE_ON.
@@ -178,7 +176,7 @@ public class ValidationTests extends DeviceAtomTestCase {
         long statsdDurationMs = statsdWakelockData.get(EXPECTED_UID)
                 .get(EXPECTED_TAG_HASH) / 1_000_000;
         assertWithMessage(
-                "Wakelock in statsd with uid %s and tag %s was too short or too long",
+                "Wakelock in statsd with uid %s and tag %s was too short or too long", 
                 EXPECTED_UID, EXPECTED_TAG
         ).that(statsdDurationMs).isIn(Range.closed((long) MIN_DURATION, (long) MAX_DURATION));
 

@@ -24,6 +24,8 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::RefBase;
+
 /**
  * Callback for different subsystems inside statsd to implement to find out
  * when a configuration has been added, updated or removed.

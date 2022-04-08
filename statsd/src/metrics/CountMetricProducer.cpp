@@ -77,7 +77,7 @@ CountMetricProducer::CountMetricProducer(
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap, getAppUpgradeBucketSplit(metric)) {
+                     stateGroupMap) {
     if (metric.has_bucket()) {
         mBucketSizeNs =
                 TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), metric.bucket()) * 1000000;
@@ -109,10 +109,6 @@ CountMetricProducer::CountMetricProducer(
         translateFieldMatcher(stateLink.fields_in_what(), &ms.metricFields);
         translateFieldMatcher(stateLink.fields_in_state(), &ms.stateFields);
         mMetric2StateLinks.push_back(ms);
-    }
-
-    if (metric.has_threshold()) {
-        mUploadThreshold = metric.threshold();
     }
 
     flushIfNeededLocked(startTimeNs);
@@ -378,26 +374,6 @@ void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
          (long long)mCurrentBucketStartTimeNs);
 }
 
-bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
-    if (mUploadThreshold == nullopt) {
-        return true;
-    }
-
-    switch (mUploadThreshold->value_comparison_case()) {
-        case UploadThreshold::kLtInt:
-            return count < mUploadThreshold->lt_int();
-        case UploadThreshold::kGtInt:
-            return count > mUploadThreshold->gt_int();
-        case UploadThreshold::kLteInt:
-            return count <= mUploadThreshold->lte_int();
-        case UploadThreshold::kGteInt:
-            return count >= mUploadThreshold->gte_int();
-        default:
-            ALOGE("Count metric incorrect upload threshold type used");
-            return false;
-    }
-}
-
 void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
                                                    const int64_t& nextBucketStartTimeNs) {
     int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
@@ -409,13 +385,12 @@ void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
         info.mBucketEndNs = fullBucketEndTimeNs;
     }
     for (const auto& counter : *mCurrentSlicedCounter) {
-        if (countPassesThreshold(counter.second)) {
-            info.mCount = counter.second;
-            auto& bucketList = mPastBuckets[counter.first];
-            bucketList.push_back(info);
-            VLOG("metric %lld, dump key value: %s -> %lld", (long long)mMetricId,
-                 counter.first.toString().c_str(), (long long)counter.second);
-        }
+        info.mCount = counter.second;
+        auto& bucketList = mPastBuckets[counter.first];
+        bucketList.push_back(info);
+        VLOG("metric %lld, dump key value: %s -> %lld", (long long)mMetricId,
+             counter.first.toString().c_str(),
+             (long long)counter.second);
     }
 
     // If we have finished a full bucket, then send this to anomaly tracker.

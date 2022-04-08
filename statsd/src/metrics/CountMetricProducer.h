@@ -126,15 +126,12 @@ private:
 
     bool hitGuardRailLocked(const MetricDimensionKey& newKey);
 
-    bool countPassesThreshold(const int64_t& count);
-
     FRIEND_TEST(CountMetricProducerTest, TestNonDimensionalEvents);
     FRIEND_TEST(CountMetricProducerTest, TestEventsWithNonSlicedCondition);
     FRIEND_TEST(CountMetricProducerTest, TestEventsWithSlicedCondition);
     FRIEND_TEST(CountMetricProducerTest, TestAnomalyDetectionUnSliced);
     FRIEND_TEST(CountMetricProducerTest, TestFirstBucket);
     FRIEND_TEST(CountMetricProducerTest, TestOneWeekTimeUnit);
-    FRIEND_TEST(CountMetricProducerTest, TestSplitOnAppUpgradeDisabled);
 
     FRIEND_TEST(CountMetricProducerTest_PartialBucket, TestSplitInCurrentBucket);
     FRIEND_TEST(CountMetricProducerTest_PartialBucket, TestSplitInNextBucket);

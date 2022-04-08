@@ -266,9 +266,11 @@ void StatsService::dumpIncidentSection(int out) {
         // Don't include the current bucket to avoid skipping buckets.
         // If we need to include the current bucket later, consider changing to NO_TIME_CONSTRAINTS
         // or other alternatives to avoid skipping buckets for pulled metrics.
-        mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(), getWallClockNs(),
-                                 false /* includeCurrentBucket */, false /* erase_data */, ADB_DUMP,
-                                 FAST, &proto);
+        mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(),
+                                 false /* includeCurrentBucket */, false /* erase_data */,
+                                 ADB_DUMP,
+                                 FAST,
+                                 &proto);
         proto.end(reportsListToken);
         proto.flush(out);
         proto.clear();
@@ -679,8 +681,9 @@ status_t StatsService::cmd_dump_report(int out, const Vector<String8>& args) {
         if (good) {
             vector<uint8_t> data;
             mProcessor->onDumpReport(ConfigKey(uid, StrToInt64(name)), getElapsedRealtimeNs(),
-                                     getWallClockNs(), includeCurrentBucket, eraseData, ADB_DUMP,
-                                     NO_TIME_CONSTRAINTS, &data);
+                                     includeCurrentBucket, eraseData, ADB_DUMP,
+                                     NO_TIME_CONSTRAINTS,
+                                     &data);
             if (proto) {
                 for (size_t i = 0; i < data.size(); i ++) {
                     dprintf(out, "%c", data[i]);
@@ -744,8 +747,7 @@ status_t StatsService::cmd_print_uid_map(int out, const Vector<String8>& args) {
 
 status_t StatsService::cmd_write_data_to_disk(int out) {
     dprintf(out, "Writing data to disk\n");
-    mProcessor->WriteDataToDisk(ADB_DUMP, NO_TIME_CONSTRAINTS, getElapsedRealtimeNs(),
-                                getWallClockNs());
+    mProcessor->WriteDataToDisk(ADB_DUMP, NO_TIME_CONSTRAINTS, getElapsedRealtimeNs());
     return NO_ERROR;
 }
 
@@ -1015,10 +1017,9 @@ Status StatsService::informDeviceShutdown() {
     ENFORCE_UID(AID_SYSTEM);
     VLOG("StatsService::informDeviceShutdown");
     int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
-    int64_t wallClockNs = getWallClockNs();
-    mProcessor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST, elapsedRealtimeNs, wallClockNs);
+    mProcessor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST, elapsedRealtimeNs);
     mProcessor->SaveActiveConfigsToDisk(elapsedRealtimeNs);
-    mProcessor->SaveMetadataToDisk(wallClockNs, elapsedRealtimeNs);
+    mProcessor->SaveMetadataToDisk(getWallClockNs(), elapsedRealtimeNs);
     return Status::ok();
 }
 
@@ -1068,11 +1069,9 @@ void StatsService::Terminate() {
     ALOGI("StatsService::Terminating");
     if (mProcessor != nullptr) {
         int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
-        int64_t wallClockNs = getWallClockNs();
-        mProcessor->WriteDataToDisk(TERMINATION_SIGNAL_RECEIVED, FAST, elapsedRealtimeNs,
-                                    wallClockNs);
+        mProcessor->WriteDataToDisk(TERMINATION_SIGNAL_RECEIVED, FAST, elapsedRealtimeNs);
         mProcessor->SaveActiveConfigsToDisk(elapsedRealtimeNs);
-        mProcessor->SaveMetadataToDisk(wallClockNs, elapsedRealtimeNs);
+        mProcessor->SaveMetadataToDisk(getWallClockNs(), elapsedRealtimeNs);
     }
 }
 
@@ -1084,27 +1083,36 @@ void StatsService::OnLogEvent(LogEvent* event) {
     }
 }
 
-Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8_t>* output) {
+Status StatsService::getData(int64_t key, const int32_t callingUid, vector<int8_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::getData with Uid %i", callingUid);
     ConfigKey configKey(callingUid, key);
+    // TODO(b/149254662): Since libbinder_ndk uses int8_t instead of uint8_t,
+    // there are inconsistencies with internal statsd logic. Instead of
+    // modifying lots of files, we create a temporary output array of int8_t and
+    // copy its data into output. This is a bad hack, but hopefully
+    // libbinder_ndk will transition to using uint8_t soon: progress is tracked
+    // in b/144957764. Same applies to StatsService::getMetadata.
+    vector<uint8_t> unsignedOutput;
     // The dump latency does not matter here since we do not include the current bucket, we do not
     // need to pull any new data anyhow.
-    mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(), getWallClockNs(),
-                             false /* include_current_bucket*/, true /* erase_data */,
-                             GET_DATA_CALLED, FAST, output);
+    mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(), false /* include_current_bucket*/,
+                             true /* erase_data */, GET_DATA_CALLED, FAST, &unsignedOutput);
+    *output = vector<int8_t>(unsignedOutput.begin(), unsignedOutput.end());
     return Status::ok();
 }
 
-Status StatsService::getMetadata(vector<uint8_t>* output) {
+Status StatsService::getMetadata(vector<int8_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
 
-    StatsdStats::getInstance().dumpStats(output, false); // Don't reset the counters.
+    vector<uint8_t> unsignedOutput;
+    StatsdStats::getInstance().dumpStats(&unsignedOutput, false); // Don't reset the counters.
+    *output = vector<int8_t>(unsignedOutput.begin(), unsignedOutput.end());
     return Status::ok();
 }
 
-Status StatsService::addConfiguration(int64_t key, const vector <uint8_t>& config,
+Status StatsService::addConfiguration(int64_t key, const vector <int8_t>& config,
                                       const int32_t callingUid) {
     ENFORCE_UID(AID_SYSTEM);
 
@@ -1115,7 +1123,7 @@ Status StatsService::addConfiguration(int64_t key, const vector <uint8_t>& confi
     }
 }
 
-bool StatsService::addConfigurationChecked(int uid, int64_t key, const vector<uint8_t>& config) {
+bool StatsService::addConfigurationChecked(int uid, int64_t key, const vector<int8_t>& config) {
     ConfigKey configKey(uid, key);
     StatsdConfig cfg;
     if (config.size() > 0) {  // If the config is empty, skip parsing.
@@ -1294,13 +1302,13 @@ void StatsService::statsCompanionServiceDiedImpl() {
     if (mProcessor != nullptr) {
         ALOGW("Reset statsd upon system server restarts.");
         int64_t systemServerRestartNs = getElapsedRealtimeNs();
-        int64_t wallClockNs = getWallClockNs();
         ProtoOutputStream activeConfigsProto;
         mProcessor->WriteActiveConfigsToProtoOutputStream(systemServerRestartNs,
                 STATSCOMPANION_DIED, &activeConfigsProto);
         metadata::StatsMetadataList metadataList;
-        mProcessor->WriteMetadataToProto(wallClockNs, systemServerRestartNs, &metadataList);
-        mProcessor->WriteDataToDisk(STATSCOMPANION_DIED, FAST, systemServerRestartNs, wallClockNs);
+        mProcessor->WriteMetadataToProto(getWallClockNs(),
+                systemServerRestartNs, &metadataList);
+        mProcessor->WriteDataToDisk(STATSCOMPANION_DIED, FAST, systemServerRestartNs);
         mProcessor->resetConfigs();
 
         std::string serializedActiveConfigs;
@@ -1310,7 +1318,7 @@ void StatsService::statsCompanionServiceDiedImpl() {
                 mProcessor->SetConfigsActiveState(activeConfigs, systemServerRestartNs);
             }
         }
-        mProcessor->SetMetadataState(metadataList, wallClockNs, systemServerRestartNs);
+        mProcessor->SetMetadataState(metadataList, getWallClockNs(), systemServerRestartNs);
     }
     mAnomalyAlarmMonitor->setStatsCompanionService(nullptr);
     mPeriodicAlarmMonitor->setStatsCompanionService(nullptr);

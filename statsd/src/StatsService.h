@@ -96,13 +96,13 @@ public:
      */
     virtual Status getData(int64_t key,
                            const int32_t callingUid,
-                           vector<uint8_t>* output) override;
+                           vector<int8_t>* output) override;
 
 
     /**
      * Binder call for clients to get metadata across all configs in statsd.
      */
-    virtual Status getMetadata(vector<uint8_t>* output) override;
+    virtual Status getMetadata(vector<int8_t>* output) override;
 
 
     /**
@@ -110,7 +110,7 @@ public:
      * should requestData for this configuration.
      */
     virtual Status addConfiguration(int64_t key,
-                                    const vector<uint8_t>& config,
+                                    const vector<int8_t>& config,
                                     const int32_t callingUid) override;
 
     /**
@@ -320,7 +320,7 @@ private:
     /**
      * Adds a configuration after checking permissions and obtaining UID from binder call.
      */
-    bool addConfigurationChecked(int uid, int64_t key, const vector<uint8_t>& config);
+    bool addConfigurationChecked(int uid, int64_t key, const vector<int8_t>& config);
 
     /**
      * Update a configuration.
@@ -398,15 +398,12 @@ private:
     FRIEND_TEST(PartialBucketE2eTest, TestCountMetricSplitOnUpgrade);
     FRIEND_TEST(PartialBucketE2eTest, TestCountMetricSplitOnRemoval);
     FRIEND_TEST(PartialBucketE2eTest, TestCountMetricWithoutSplit);
-    FRIEND_TEST(PartialBucketE2eTest, TestCountMetricNoSplitOnUpgradeWhenDisabled);
     FRIEND_TEST(PartialBucketE2eTest, TestValueMetricOnBootWithoutMinPartialBucket);
     FRIEND_TEST(PartialBucketE2eTest, TestValueMetricWithoutMinPartialBucket);
     FRIEND_TEST(PartialBucketE2eTest, TestValueMetricWithMinPartialBucket);
     FRIEND_TEST(PartialBucketE2eTest, TestGaugeMetricOnBootWithoutMinPartialBucket);
     FRIEND_TEST(PartialBucketE2eTest, TestGaugeMetricWithoutMinPartialBucket);
     FRIEND_TEST(PartialBucketE2eTest, TestGaugeMetricWithMinPartialBucket);
-    FRIEND_TEST(PartialBucketE2e_AppUpgradeDefaultTest, TestCountMetricDefaultFalse);
-    FRIEND_TEST(PartialBucketE2e_AppUpgradeDefaultTest, TestCountMetricDefaultTrue);
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestAnomalyDurationMetric);
 

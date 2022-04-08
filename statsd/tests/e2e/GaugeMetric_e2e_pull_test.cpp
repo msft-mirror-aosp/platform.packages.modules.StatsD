@@ -66,20 +66,7 @@ StatsdConfig CreateStatsdConfig(const GaugeMetric::SamplingType sampling_type,
 
 }  // namespaces
 
-// Setup for test fixture.
-class GaugeMetricE2ePulledTest : public ::testing::Test {
-    void SetUp() override {
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
-        FlagProvider::getInstance().overrideFlag(AGGREGATE_ATOMS_FLAG, FLAG_TRUE,
-                                                 /*isBootFlag=*/true);
-    }
-
-    void TearDown() override {
-        FlagProvider::getInstance().resetOverrides();
-    }
-};
-
-TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
+TEST(GaugeMetricE2eTest, TestRandomSamplePulledEvents) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -154,7 +141,6 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
-    backfillAggregatedAtoms(&reports);
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
     StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;
@@ -219,7 +205,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
     EXPECT_GT(data.bucket_info(5).atom(0).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_F(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
+TEST(GaugeMetricE2eTest, TestConditionChangeToTrueSamplePulledEvents) {
     auto config = CreateStatsdConfig(GaugeMetric::CONDITION_CHANGE_TO_TRUE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -273,7 +259,6 @@ TEST_F(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
-    backfillAggregatedAtoms(&reports);
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
     StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;
@@ -317,7 +302,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
     EXPECT_GT(data.bucket_info(2).atom(1).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
+TEST(GaugeMetricE2eTest, TestRandomSamplePulledEvent_LateAlarm) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -374,7 +359,6 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
-    backfillAggregatedAtoms(&reports);
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
     StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;
@@ -415,7 +399,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
     EXPECT_GT(data.bucket_info(2).atom(0).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
+TEST(GaugeMetricE2eTest, TestRandomSamplePulledEventsWithActivation) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE, /*useCondition=*/false);
 
     int64_t baseTimeNs = getElapsedRealtimeNs();
@@ -495,7 +479,6 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
-    backfillAggregatedAtoms(&reports);
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
     StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;
@@ -543,10 +526,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     EXPECT_GT(bucketInfo.atom(0).subsystem_sleep_state().time_millis(), 0);
 }
 
-// TODO(b/193493895): Delete the flag false override when the new feature is launched. The flag
-// is false here because we still want to test the previous dump format.
-TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition) {
-    FlagProvider::getInstance().overrideFlag(AGGREGATE_ATOMS_FLAG, FLAG_FALSE, /*isBootFlag=*/true);
+TEST(GaugeMetricE2eTest, TestRandomSamplePulledEventsNoCondition) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE, /*useCondition=*/false);
 
     int64_t baseTimeNs = getElapsedRealtimeNs();
@@ -592,7 +572,6 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition) {
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
-    backfillAggregatedAtoms(&reports);
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
     StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;

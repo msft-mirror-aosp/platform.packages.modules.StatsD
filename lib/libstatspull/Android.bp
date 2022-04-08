@@ -17,10 +17,6 @@
 // ==========================================================
 // Native library to register a pull atom callback with statsd
 // ==========================================================
-package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
-}
-
 cc_defaults {
     name: "libstatspull_defaults",
     srcs: [
@@ -34,39 +30,18 @@ cc_defaults {
     shared_libs: [
         "libbinder_ndk",
         "liblog",
+        "libstatssocket",
     ],
     static_libs: [
         "libutils",
-        "statsd-aidl-ndk",
+        "statsd-aidl-ndk_platform",
     ],
-    target: {
-        android: {
-            shared_libs: ["libstatssocket"],
-        },
-        host: {
-            static_libs: ["libstatssocket"],
-        },
-    },
 }
-cc_library {
+cc_library_shared {
     name: "libstatspull",
     defaults: [
-        "libstatspull_defaults",
-        "libbinder_ndk_host_user",
+        "libstatspull_defaults"
     ],
-    host_supported: true,
-    target: {
-        android: {
-            static: {
-                enabled: false,
-            },
-        },
-        host: {
-            shared: {
-                enabled: false,
-            },
-        },
-    },
     // enumerate stable entry points for APEX use
     stubs: {
         symbol_file: "libstatspull.map.txt",
@@ -78,7 +53,6 @@ cc_library {
         "com.android.os.statsd",
         "test_com.android.os.statsd",
     ],
-    min_sdk_version: "30",
 
     stl: "libc++_static",
 
@@ -88,19 +62,11 @@ cc_library {
     },
 }
 
-cc_library_headers {
-    name: "libstatspull_headers",
-    export_include_dirs: ["include"],
-}
-
 // ONLY USE IN TESTS.
 cc_library_static {
     name: "libstatspull_private",
     defaults: [
         "libstatspull_defaults",
-    ],
-    cflags: [
-        "-DLIB_STATS_PULL_TESTS_FLAG",
     ],
     visibility: [
         "//packages/modules/StatsD/apex/tests/libstatspull",

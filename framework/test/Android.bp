@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
-}
-
 android_test {
     name: "FrameworkStatsdTest",
-    sdk_version: "module_current",
-    srcs: [ "**/*.java" ],
+    platform_apis: true,
+    srcs: [
+        // TODO(b/147705194): Use framework-statsd as a lib dependency instead.
+        ":framework-statsd-sources",
+        "**/*.java",
+    ],
     manifest: "AndroidManifest.xml",
     static_libs: [
         "androidx.test.rules",
@@ -28,11 +28,9 @@ android_test {
     libs: [
         "android.test.runner.stubs",
         "android.test.base.stubs",
-        "framework-statsd.impl",
     ],
     test_suites: [
-        "general-tests",
+        "device-tests",
         "mts-statsd",
     ],
-    min_sdk_version: "30",
 }

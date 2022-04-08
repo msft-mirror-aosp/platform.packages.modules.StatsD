@@ -13,15 +13,14 @@
 // limitations under the License.
 
 package {
-    default_visibility: [ ":__pkg__" ],
-    default_applicable_licenses: ["Android-Apache-2.0"],
+    default_visibility: [ ":__pkg__" ]
 }
 
 genrule {
     name: "statslog-statsd-java-gen",
     tools: ["stats-log-api-gen"],
     cmd: "$(location stats-log-api-gen) --java $(out) --module statsd" +
-         " --javaPackage com.android.internal.statsd --javaClass StatsdStatsLog --minApiLevel 30",
+         " --javaPackage com.android.internal.statsd --javaClass StatsdStatsLog",
     out: ["com/android/internal/statsd/StatsdStatsLog.java"],
 }
 
@@ -32,8 +31,7 @@ java_library_static {
     ],
     visibility: [
         "//cts/hostsidetests/statsd/apps:__subpackages__",
-        "//vendor:__subpackages__",
-    ],
+    ]
 }
 
 filegroup {
@@ -74,10 +72,6 @@ java_sdk_library {
 
     hostdex: true, // for hiddenapi check
 
-    lint: {
-        strict_updatability_linting: true
-    },
-
     impl_library_visibility: [
         "//frameworks/base/apex/statsd/framework/test:__subpackages__",
         "//packages/modules/StatsD/framework/test:__subpackages__",
@@ -87,7 +81,6 @@ java_sdk_library {
         "com.android.os.statsd",
         "test_com.android.os.statsd",
     ],
-    min_sdk_version: "30",
 }
 
 // JNI library for StatsLog.write
@@ -110,8 +103,8 @@ cc_library_shared {
         "com.android.os.statsd",
         "test_com.android.os.statsd",
     ],
-    min_sdk_version: "30",
     visibility: [
         "//packages/modules/StatsD/apex:__subpackages__",
     ],
 }
+

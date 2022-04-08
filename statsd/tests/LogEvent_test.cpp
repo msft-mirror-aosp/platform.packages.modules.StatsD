@@ -289,11 +289,9 @@ TEST(LogEventTest, TestAnnotationIdIsUid) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
     createIntWithBoolAnnotationLogEvent(&event, ANNOTATION_ID_IS_UID, true);
 
-    ASSERT_EQ(event.getNumUidFields(), 1);
-
     const vector<FieldValue>& values = event.getValues();
     ASSERT_EQ(values.size(), 1);
-    EXPECT_TRUE(isUidField(values.at(0)));
+    EXPECT_EQ(event.getUidFieldIndex(), 0);
 }
 
 TEST(LogEventTest, TestAnnotationIdStateNested) {
@@ -420,7 +418,7 @@ TEST(LogEventTest, TestUidAnnotationAfterTooManyFields) {
 
     LogEvent logEvent(/*uid=*/1000, /*pid=*/1001);
     EXPECT_FALSE(logEvent.parseBuffer(buf, size));
-    EXPECT_EQ(0, logEvent.getNumUidFields());
+    EXPECT_EQ(-1, logEvent.getUidFieldIndex());
 
     AStatsEvent_release(event);
 }

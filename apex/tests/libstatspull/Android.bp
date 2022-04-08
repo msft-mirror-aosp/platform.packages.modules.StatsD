@@ -12,10 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
-}
-
 android_test {
     name: "LibStatsPullTests",
     static_libs: [
@@ -54,11 +50,12 @@ cc_library_shared {
     ],
     shared_libs: [
         "libbinder_ndk",
-        "statsd-aidl-ndk",
+        "statsd-aidl-ndk_platform",
     ],
     static_libs: [
         "libstatspull_private",
         "libstatssocket_private",
+        "libutils",
         "libcutils",
     ],
 }

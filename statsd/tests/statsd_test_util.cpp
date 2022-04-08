@@ -14,21 +14,13 @@
 
 #include "statsd_test_util.h"
 
-#include <aggregator.pb.h>
 #include <aidl/android/util/StatsEventParcel.h>
-#include <android-base/properties.h>
-#include <android-base/stringprintf.h>
 
 #include "matchers/SimpleAtomMatchingTracker.h"
-#include "stats_annotations.h"
 #include "stats_event.h"
-#include "stats_util.h"
 
 using aidl::android::util::StatsEventParcel;
-using android::base::SetProperty;
-using android::base::StringPrintf;
 using std::shared_ptr;
-using zetasketch::android::AggregatorStateProto;
 
 namespace android {
 namespace os {
@@ -246,10 +238,6 @@ AtomMatcher CreateProcessLifeCycleStateChangedAtomMatcher(
 AtomMatcher CreateProcessCrashAtomMatcher() {
     return CreateProcessLifeCycleStateChangedAtomMatcher(
         "Crashed", ProcessLifeCycleStateChanged::CRASHED);
-}
-
-AtomMatcher CreateAppStartOccurredAtomMatcher() {
-    return CreateSimpleAtomMatcher("AppStartOccurredMatcher", util::APP_START_OCCURRED);
 }
 
 void addMatcherToMatcherCombination(const AtomMatcher& matcher, AtomMatcher* combinationMatcher) {
@@ -539,20 +527,6 @@ ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const
     return metric;
 }
 
-KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int valueField,
-                          const optional<int64_t>& condition) {
-    KllMetric metric;
-    metric.set_id(StringToId(name));
-    metric.set_what(what.id());
-    metric.set_bucket(TEN_MINUTES);
-    metric.mutable_kll_field()->set_field(what.simple_atom_matcher().atom_id());
-    metric.mutable_kll_field()->add_child()->set_field(valueField);
-    if (condition) {
-        metric.set_condition(condition.value());
-    }
-    return metric;
-}
-
 Alert createAlert(const string& name, const int64_t metricId, const int buckets,
                   const int64_t triggerSum) {
     Alert alert;
@@ -731,7 +705,8 @@ shared_ptr<LogEvent> CreateNoValuesLogEvent(int atomId, int64_t eventTimeNs) {
     return logEvent;
 }
 
-AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1, int data2) {
+shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
+                                     int data2) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
@@ -740,26 +715,6 @@ AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int dat
     AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeInt32(statsEvent, data1);
     AStatsEvent_writeInt32(statsEvent, data2);
-
-    return statsEvent;
-}
-
-shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
-                                     int data2) {
-    AStatsEvent* statsEvent = makeUidStatsEvent(atomId, eventTimeNs, uid, data1, data2);
-
-    shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
-    parseStatsEventToLogEvent(statsEvent, logEvent.get());
-    return logEvent;
-}
-
-shared_ptr<LogEvent> makeExtraUidsLogEvent(int atomId, int64_t eventTimeNs, int uid1, int data1,
-                                           int data2, const vector<int>& extraUids) {
-    AStatsEvent* statsEvent = makeUidStatsEvent(atomId, eventTimeNs, uid1, data1, data2);
-    for (const int extraUid : extraUids) {
-        AStatsEvent_writeInt32(statsEvent, extraUid);
-        AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
-    }
 
     shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -782,13 +737,11 @@ shared_ptr<LogEvent> makeAttributionLogEvent(int atomId, int64_t eventTimeNs,
     return logEvent;
 }
 
-sp<MockUidMap> makeMockUidMapForHosts(const map<int, vector<int>>& hostUidToIsolatedUidsMap) {
+sp<MockUidMap> makeMockUidMapForOneHost(int hostUid, const vector<int>& isolatedUids) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     EXPECT_CALL(*uidMap, getHostUidOrSelf(_)).WillRepeatedly(ReturnArg<0>());
-    for (const auto& [hostUid, isolatedUids] : hostUidToIsolatedUidsMap) {
-        for (const int isolatedUid : isolatedUids) {
-            EXPECT_CALL(*uidMap, getHostUidOrSelf(isolatedUid)).WillRepeatedly(Return(hostUid));
-        }
+    for (const int isolatedUid : isolatedUids) {
+        EXPECT_CALL(*uidMap, getHostUidOrSelf(isolatedUid)).WillRepeatedly(Return(hostUid));
     }
 
     return uidMap;
@@ -809,8 +762,8 @@ std::unique_ptr<LogEvent> CreateScreenStateChangedEvent(uint64_t timestampNs,
     AStatsEvent_setAtomId(statsEvent, util::SCREEN_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(loggerUid, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -822,8 +775,8 @@ std::unique_ptr<LogEvent> CreateBatterySaverOnEvent(uint64_t timestampNs) {
     AStatsEvent_setAtomId(statsEvent, util::BATTERY_SAVER_MODE_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, BatterySaverModeStateChanged::ON);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -835,8 +788,8 @@ std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs) {
     AStatsEvent_setAtomId(statsEvent, util::BATTERY_SAVER_MODE_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, BatterySaverModeStateChanged::OFF);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -908,14 +861,14 @@ std::unique_ptr<LogEvent> CreateWakelockStateChangedEvent(uint64_t timestampNs,
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     writeAttribution(statsEvent, attributionUids, attributionTags);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
     AStatsEvent_writeInt32(statsEvent, android::os::WakeLockLevelEnum::PARTIAL_WAKE_LOCK);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeString(statsEvent, wakelockName.c_str());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_STATE_NESTED, true);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1054,11 +1007,11 @@ std::unique_ptr<LogEvent> CreateUidProcessStateChangedEvent(
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     AStatsEvent_writeInt32(statsEvent, uid);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1076,20 +1029,20 @@ std::unique_ptr<LogEvent> CreateBleScanStateChangedEvent(uint64_t timestampNs,
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     writeAttribution(statsEvent, attributionUids, attributionTags);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_STATE_NESTED, true);
     if (state == util::BLE_SCAN_STATE_CHANGED__STATE__RESET) {
         AStatsEvent_addInt32Annotation(statsEvent, ANNOTATION_ID_TRIGGER_STATE_RESET,
                                        util::BLE_SCAN_STATE_CHANGED__STATE__OFF);
     }
     AStatsEvent_writeBool(statsEvent, filtered);  // filtered
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeBool(statsEvent, firstMatch);  // first match
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeBool(statsEvent, opportunistic);  // opportunistic
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD, true);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1105,14 +1058,14 @@ std::unique_ptr<LogEvent> CreateOverlayStateChangedEvent(int64_t timestampNs, co
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     AStatsEvent_writeInt32(statsEvent, uid);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeString(statsEvent, packageName.c_str());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeBool(statsEvent, usingAlertWindow);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, util::ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1338,35 +1291,14 @@ void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startT
 }
 
 void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
-                         const vector<int64_t>& values, int64_t conditionTrueNs,
-                         int64_t conditionCorrectionNs) {
+                         int64_t value, int64_t conditionTrueNs) {
     EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
-    ASSERT_EQ(bucket.values_size(), values.size());
-    for (int i = 0; i < values.size(); ++i) {
-        if (bucket.values(i).has_value_double()) {
-            EXPECT_EQ((int64_t)bucket.values(i).value_double(), values[i]);
-        } else {
-            EXPECT_EQ(bucket.values(i).value_long(), values[i]);
-        }
-    }
-    if (conditionTrueNs > 0) {
-        EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
-        if (conditionCorrectionNs > 0) {
-            EXPECT_EQ(bucket.condition_correction_nanos(), conditionCorrectionNs);
-        }
-    }
-}
-
-void ValidateKllBucket(const KllBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
-                       const vector<int64_t> sketchSizes, int64_t conditionTrueNs) {
-    EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
-    EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
-    ASSERT_EQ(bucket.sketches_size(), sketchSizes.size());
-    for (int i = 0; i < sketchSizes.size(); ++i) {
-        AggregatorStateProto aggProto;
-        EXPECT_TRUE(aggProto.ParseFromString(bucket.sketches(i).kll_sketch()));
-        EXPECT_EQ(aggProto.num_values(), sketchSizes[i]);
+    ASSERT_EQ(bucket.values_size(), 1);
+    if (bucket.values(0).has_value_double()) {
+        EXPECT_EQ((int64_t)bucket.values(0).value_double(), value);
+    } else {
+        EXPECT_EQ(bucket.values(0).value_long(), value);
     }
     if (conditionTrueNs > 0) {
         EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
@@ -1591,33 +1523,32 @@ bool backfillDimensionPath(const DimensionsValue& path,
     return backfillDimensionPath(path, leafValues, &leafIndex, dimension);
 }
 
-void backfillDimensionPath(StatsLogReport* report) {
-    if (report->has_dimensions_path_in_what() || report->has_dimensions_path_in_condition()) {
-        auto whatPath = report->dimensions_path_in_what();
-        auto conditionPath = report->dimensions_path_in_condition();
-        if (report->has_count_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_count_metrics());
-        } else if (report->has_duration_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_duration_metrics());
-        } else if (report->has_gauge_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_gauge_metrics());
-        } else if (report->has_value_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_value_metrics());
-        }
-        report->clear_dimensions_path_in_what();
-        report->clear_dimensions_path_in_condition();
-    }
-}
-
-void backfillDimensionPath(ConfigMetricsReport* config_report) {
-    for (int i = 0; i < config_report->metrics_size(); ++i) {
-        backfillDimensionPath(config_report->mutable_metrics(i));
-    }
-}
-
-void backfillDimensionPath(ConfigMetricsReportList* config_report_list) {
+void backfillDimensionPath(ConfigMetricsReportList *config_report_list) {
     for (int i = 0; i < config_report_list->reports_size(); ++i) {
-        backfillDimensionPath(config_report_list->mutable_reports(i));
+        auto report = config_report_list->mutable_reports(i);
+        for (int j = 0; j < report->metrics_size(); ++j) {
+            auto metric_report = report->mutable_metrics(j);
+            if (metric_report->has_dimensions_path_in_what() ||
+                metric_report->has_dimensions_path_in_condition()) {
+                auto whatPath = metric_report->dimensions_path_in_what();
+                auto conditionPath = metric_report->dimensions_path_in_condition();
+                if (metric_report->has_count_metrics()) {
+                    backfillDimensionPath(whatPath, conditionPath,
+                                          metric_report->mutable_count_metrics());
+                } else if (metric_report->has_duration_metrics()) {
+                    backfillDimensionPath(whatPath, conditionPath,
+                                          metric_report->mutable_duration_metrics());
+                } else if (metric_report->has_gauge_metrics()) {
+                    backfillDimensionPath(whatPath, conditionPath,
+                                          metric_report->mutable_gauge_metrics());
+                } else if (metric_report->has_value_metrics()) {
+                    backfillDimensionPath(whatPath, conditionPath,
+                                          metric_report->mutable_value_metrics());
+                }
+                metric_report->clear_dimensions_path_in_what();
+                metric_report->clear_dimensions_path_in_condition();
+            }
+        }
     }
 }
 
@@ -1644,12 +1575,6 @@ void backfillStartEndTimestamp(StatsLogReport *report) {
             backfillStartEndTimestampForSkippedBuckets(
                 timeBaseNs, report->mutable_value_metrics());
         }
-    } else if (report->has_kll_metrics()) {
-        backfillStartEndTimestampForMetrics(timeBaseNs, bucketSizeNs,
-                                            report->mutable_kll_metrics());
-        if (report->kll_metrics().skipped_size() > 0) {
-            backfillStartEndTimestampForSkippedBuckets(timeBaseNs, report->mutable_kll_metrics());
-        }
     }
 }
 
@@ -1663,93 +1588,6 @@ void backfillStartEndTimestamp(ConfigMetricsReportList *config_report_list) {
     for (int i = 0; i < config_report_list->reports_size(); ++i) {
         backfillStartEndTimestamp(config_report_list->mutable_reports(i));
     }
-}
-
-void backfillAggregatedAtoms(ConfigMetricsReportList* config_report_list) {
-    for (int i = 0; i < config_report_list->reports_size(); ++i) {
-        backfillAggregatedAtoms(config_report_list->mutable_reports(i));
-    }
-}
-
-void backfillAggregatedAtoms(ConfigMetricsReport* config_report) {
-    for (int i = 0; i < config_report->metrics_size(); ++i) {
-        backfillAggregatedAtoms(config_report->mutable_metrics(i));
-    }
-}
-
-void backfillAggregatedAtoms(StatsLogReport* report) {
-    if (report->has_event_metrics()) {
-        backfillAggregatedAtomsInEventMetric(report->mutable_event_metrics());
-    }
-    if (report->has_gauge_metrics()) {
-        backfillAggregatedAtomsInGaugeMetric(report->mutable_gauge_metrics());
-    }
-}
-
-void backfillAggregatedAtomsInEventMetric(StatsLogReport::EventMetricDataWrapper* wrapper) {
-    std::vector<EventMetricData> metricData;
-    for (int i = 0; i < wrapper->data_size(); ++i) {
-        AggregatedAtomInfo* atomInfo = wrapper->mutable_data(i)->mutable_aggregated_atom_info();
-        for (int j = 0; j < atomInfo->elapsed_timestamp_nanos_size(); j++) {
-            EventMetricData data;
-            *(data.mutable_atom()) = atomInfo->atom();
-            data.set_elapsed_timestamp_nanos(atomInfo->elapsed_timestamp_nanos(j));
-            metricData.push_back(data);
-        }
-    }
-
-    if (metricData.size() == 0) {
-        return;
-    }
-
-    sort(metricData.begin(), metricData.end(),
-         [](const EventMetricData& lhs, const EventMetricData& rhs) {
-             return lhs.elapsed_timestamp_nanos() < rhs.elapsed_timestamp_nanos();
-         });
-
-    wrapper->clear_data();
-    for (int i = 0; i < metricData.size(); ++i) {
-        *(wrapper->add_data()) = metricData[i];
-    }
-}
-
-void backfillAggregatedAtomsInGaugeMetric(StatsLogReport::GaugeMetricDataWrapper* wrapper) {
-    for (int i = 0; i < wrapper->data_size(); ++i) {
-        for (int j = 0; j < wrapper->data(i).bucket_info_size(); ++j) {
-            GaugeBucketInfo* bucketInfo = wrapper->mutable_data(i)->mutable_bucket_info(j);
-            vector<pair<Atom, int64_t>> atomData = unnestGaugeAtomData(*bucketInfo);
-
-            if (atomData.size() == 0) {
-                return;
-            }
-
-            bucketInfo->clear_aggregated_atom_info();
-            ASSERT_EQ(bucketInfo->atom_size(), 0);
-            ASSERT_EQ(bucketInfo->elapsed_timestamp_nanos_size(), 0);
-
-            for (int k = 0; k < atomData.size(); ++k) {
-                *(bucketInfo->add_atom()) = atomData[k].first;
-                bucketInfo->add_elapsed_timestamp_nanos(atomData[k].second);
-            }
-        }
-    }
-}
-
-vector<pair<Atom, int64_t>> unnestGaugeAtomData(const GaugeBucketInfo& bucketInfo) {
-    vector<pair<Atom, int64_t>> atomData;
-    for (int k = 0; k < bucketInfo.aggregated_atom_info_size(); ++k) {
-        const AggregatedAtomInfo& atomInfo = bucketInfo.aggregated_atom_info(k);
-        for (int l = 0; l < atomInfo.elapsed_timestamp_nanos_size(); ++l) {
-            atomData.push_back(make_pair(atomInfo.atom(), atomInfo.elapsed_timestamp_nanos(l)));
-        }
-    }
-
-    sort(atomData.begin(), atomData.end(),
-         [](const pair<Atom, int64_t>& lhs, const pair<Atom, int64_t>& rhs) {
-             return lhs.second < rhs.second;
-         });
-
-    return atomData;
 }
 
 Status FakeSubsystemSleepCallback::onPullAtom(int atomTag,
@@ -1781,21 +1619,6 @@ Status FakeSubsystemSleepCallback::onPullAtom(int atomTag,
     return Status::ok();
 }
 
-void writeFlag(const string& flagName, const string& flagValue) {
-    SetProperty(StringPrintf("persist.device_config.%s.%s", STATSD_NATIVE_NAMESPACE.c_str(),
-                             flagName.c_str()),
-                flagValue);
-}
-
-void writeBootFlag(const string& flagName, const string& flagValue) {
-    SetProperty(StringPrintf("persist.device_config.%s.%s", STATSD_NATIVE_BOOT_NAMESPACE.c_str(),
-                             flagName.c_str()),
-                flagValue);
-}
-
-bool getAppUpgradeBucketDefault() {
-    return FlagProvider::getInstance().getFlagBool(APP_UPGRADE_BUCKET_SPLIT_FLAG, FLAG_TRUE);
-}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

@@ -90,7 +90,6 @@ bool StateManager::getStateValue(const int32_t atomId, const HashableDimensionKe
     if (it != mStateTrackers.end()) {
         return it->second->getStateValue(key, output);
     }
-    ALOGE("StateManager cannot get state value, no StateTracker for atom %d", atomId);
     return false;
 }
 
