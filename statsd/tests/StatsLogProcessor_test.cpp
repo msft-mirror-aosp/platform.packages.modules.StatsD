@@ -163,7 +163,8 @@ TEST(StatsLogProcessorTest, TestUidMapHasSnapshot) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -194,7 +195,8 @@ TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -325,11 +327,11 @@ TEST(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate) {
 
 TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
     // Setup simple config key corresponding to empty config.
-    StatsdStats::getInstance().reset();
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
@@ -337,6 +339,9 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
                         [](const int&, const vector<int64_t>&) {return true;});
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(true);
+    // Remove the config mConfigStats so that the Icebox starts at 0 configs.
+    p.OnConfigRemoved(key);
+    StatsdStats::getInstance().reset();
     p.OnConfigUpdated(0, key, config);
     EXPECT_EQ(1, p.mMetricsManagers.size());
     EXPECT_NE(p.mMetricsManagers.find(key), p.mMetricsManagers.end());
@@ -354,7 +359,6 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
               StatsdStats::getInstance().mConfigStats.find(key));
     // Both "config" and "invalidConfig" should be in the icebox.
     EXPECT_EQ(2, StatsdStats::getInstance().mIceBox.size());
-
 }
 
 
@@ -1892,14 +1896,14 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField) {
             CreateStatsLogProcessor(1, 1, config, cfgKey, nullptr, 0, mockUidMap);
 
     // Empty repeated uid field.
-    shared_ptr<LogEvent> logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {}, 0);
+    shared_ptr<LogEvent> logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {});
     processor->OnLogEvent(logEvent.get());
 
     const vector<FieldValue>* actualFieldValues = &logEvent->getValues();
     ASSERT_EQ(0, actualFieldValues->size());
 
     // Single host uid.
-    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {hostUid1}, 1);
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {hostUid1});
     processor->OnLogEvent(logEvent.get());
 
     actualFieldValues = &logEvent->getValues();
@@ -1907,7 +1911,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField) {
     EXPECT_EQ(hostUid1, actualFieldValues->at(0).mValue.int_value);
 
     // Single isolated uid.
-    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {isolatedUid1}, 1);
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {isolatedUid1});
     processor->OnLogEvent(logEvent.get());
 
     actualFieldValues = &logEvent->getValues();
@@ -1915,7 +1919,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField) {
     EXPECT_EQ(hostUid1, actualFieldValues->at(0).mValue.int_value);
 
     // Multiple host uids.
-    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {hostUid1, hostUid2}, 2);
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {hostUid1, hostUid2});
     processor->OnLogEvent(logEvent.get());
 
     actualFieldValues = &logEvent->getValues();
@@ -1924,7 +1928,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField) {
     EXPECT_EQ(hostUid2, actualFieldValues->at(1).mValue.int_value);
 
     // Multiple isolated uids.
-    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {isolatedUid1, isolatedUid2}, 2);
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {isolatedUid1, isolatedUid2});
     processor->OnLogEvent(logEvent.get());
 
     actualFieldValues = &logEvent->getValues();
@@ -1934,7 +1938,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField) {
 
     // Multiple host and isolated uids.
     logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs,
-                                       {isolatedUid1, hostUid2, isolatedUid2, hostUid1}, 4);
+                                       {isolatedUid1, hostUid2, isolatedUid2, hostUid1});
     processor->OnLogEvent(logEvent.get());
 
     actualFieldValues = &logEvent->getValues();
