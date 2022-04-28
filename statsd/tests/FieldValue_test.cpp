@@ -34,6 +34,7 @@ namespace os {
 namespace statsd {
 
 namespace {
+
 void makeLogEvent(LogEvent* logEvent, const int32_t atomId, const int64_t timestamp,
                   const vector<int>& attributionUids, const vector<string>& attributionTags,
                   const string& name) {
@@ -308,21 +309,25 @@ TEST(AtomMatcherTest, TestMetric2ConditionLink) {
 }
 
 TEST(AtomMatcherTest, TestWriteDimensionPath) {
-    for (auto position : {Position::ANY, Position::ALL, Position::FIRST, Position::LAST}) {
+    for (auto position : {Position::ALL, Position::FIRST, Position::LAST}) {
         FieldMatcher matcher1;
         matcher1.set_field(10);
+
+        // Repeated nested fields (attribution chain).
         FieldMatcher* child = matcher1.add_child();
         child->set_field(2);
         child->set_position(position);
         child->add_child()->set_field(1);
         child->add_child()->set_field(3);
 
+        // Primitive field.
         child = matcher1.add_child();
         child->set_field(4);
 
+        // Repeated primitive field.
         child = matcher1.add_child();
         child->set_field(6);
-        child->add_child()->set_field(2);
+        child->set_position(position);
 
         vector<Matcher> matchers;
         translateFieldMatcher(matcher1, &matchers);
@@ -363,9 +368,6 @@ TEST(AtomMatcherTest, TestWriteDimensionPath) {
 
         const auto& dim3 = result.value_tuple().dimensions_value(2);
         EXPECT_EQ(6, dim3.field());
-        ASSERT_EQ(1, dim3.value_tuple().dimensions_value_size());
-        const auto& dim31 = dim3.value_tuple().dimensions_value(0);
-        EXPECT_EQ(2, dim31.field());
     }
 }
 
@@ -600,6 +602,7 @@ TEST(AtomMatcherTest, TestWriteAtomWithRepeatedFieldsToProto) {
     bool boolArray[boolArrayLength];
     boolArray[0] = 1;
     boolArray[1] = 0;
+    vector<bool> boolArrayVector = {1, 0};
     vector<int> enumArray = {TestAtomReported::ON, TestAtomReported::OFF};
 
     unique_ptr<LogEvent> event = CreateTestAtomReportedEventVariableRepeatedFields(
@@ -624,29 +627,12 @@ TEST(AtomMatcherTest, TestWriteAtomWithRepeatedFieldsToProto) {
     ASSERT_EQ(true, result.ParseFromArray(&outData[0], outData.size()));
     EXPECT_EQ(Atom::PushedCase::kTestAtomReported, result.pushed_case());
     TestAtomReported atom = result.test_atom_reported();
-    ASSERT_EQ(atom.repeated_int_field_size(), 2);
-    EXPECT_EQ(atom.repeated_int_field(0), 3);
-    EXPECT_EQ(atom.repeated_int_field(1), 6);
-
-    ASSERT_EQ(atom.repeated_long_field_size(), 2);
-    EXPECT_EQ(atom.repeated_long_field(0), 1000L);
-    EXPECT_EQ(atom.repeated_long_field(1), 10002L);
-
-    ASSERT_EQ(atom.repeated_float_field_size(), 2);
-    EXPECT_EQ(atom.repeated_float_field(0), 0.3f);
-    EXPECT_EQ(atom.repeated_float_field(1), 0.09f);
-
-    ASSERT_EQ(atom.repeated_string_field_size(), 2);
-    EXPECT_EQ(atom.repeated_string_field(0), "str1");
-    EXPECT_EQ(atom.repeated_string_field(1), "str2");
-
-    ASSERT_EQ(atom.repeated_boolean_field_size(), 2);
-    EXPECT_EQ(atom.repeated_boolean_field(0), 1);
-    EXPECT_EQ(atom.repeated_boolean_field(1), 0);
-
-    ASSERT_EQ(atom.repeated_enum_field_size(), 2);
-    EXPECT_EQ(atom.repeated_enum_field(0), TestAtomReported::ON);
-    EXPECT_EQ(atom.repeated_enum_field(1), TestAtomReported::OFF);
+    EXPECT_THAT(atom.repeated_int_field(), ElementsAreArray(intArray));
+    EXPECT_THAT(atom.repeated_long_field(), ElementsAreArray(longArray));
+    EXPECT_THAT(atom.repeated_float_field(), ElementsAreArray(floatArray));
+    EXPECT_THAT(atom.repeated_string_field(), ElementsAreArray(stringArray));
+    EXPECT_THAT(atom.repeated_boolean_field(), ElementsAreArray(boolArrayVector));
+    EXPECT_THAT(atom.repeated_enum_field(), ElementsAreArray(enumArray));
 }
 
 /*
@@ -779,6 +765,31 @@ TEST(AtomMatcherTest, TestSubsetDimensions4) {
 
     EXPECT_TRUE(subsetDimensions(matchers1, matchers2));
     EXPECT_FALSE(subsetDimensions(matchers2, matchers1));
+}
+
+TEST(AtomMatcherTest, TestIsPrimitiveRepeatedField) {
+    int pos1[] = {1, 1, 1};  // attribution uid
+    int pos2[] = {1, 1, 2};  // attribution tag
+    int pos3[] = {1, 2, 1};  // attribution uid - second node
+    int pos4[] = {1, 2, 2};  // attribution tag - second node
+    int pos5[] = {2, 1, 1};  // repeated field first element
+    int pos6[] = {2, 2, 1};  // repeated field second element
+    int pos7[] = {3, 1, 1};  // top-level field
+    Field field1(10, pos1, 2);
+    Field field2(10, pos2, 2);
+    Field field3(10, pos3, 2);
+    Field field4(10, pos4, 2);
+    Field field5(10, pos5, 1);
+    Field field6(10, pos6, 1);
+    Field field7(10, pos7, 0);
+
+    EXPECT_FALSE(isPrimitiveRepeatedField(field1));
+    EXPECT_FALSE(isPrimitiveRepeatedField(field2));
+    EXPECT_FALSE(isPrimitiveRepeatedField(field3));
+    EXPECT_FALSE(isPrimitiveRepeatedField(field4));
+    EXPECT_TRUE(isPrimitiveRepeatedField(field5));
+    EXPECT_TRUE(isPrimitiveRepeatedField(field6));
+    EXPECT_FALSE(isPrimitiveRepeatedField(field7));
 }
 
 }  // namespace statsd
