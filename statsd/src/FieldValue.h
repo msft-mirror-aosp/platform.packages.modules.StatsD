@@ -440,7 +440,8 @@ struct FieldValue {
 };
 
 bool HasPositionANY(const FieldMatcher& matcher);
-bool HasPositionALL(const FieldMatcher& matcher);
+bool HasPrimitiveRepeatedField(const FieldMatcher& matcher);
+bool ShouldUseNestedDimensions(const FieldMatcher& matcher);
 
 bool isAttributionUidField(const FieldValue& value);
 
@@ -451,6 +452,7 @@ void translateFieldMatcher(const FieldMatcher& matcher, std::vector<Matcher>* ou
 
 bool isAttributionUidField(const Field& field, const Value& value);
 bool isUidField(const FieldValue& fieldValue);
+bool isPrimitiveRepeatedField(const Field& field);
 
 bool equalDimensions(const std::vector<Matcher>& dimension_a,
                      const std::vector<Matcher>& dimension_b);
