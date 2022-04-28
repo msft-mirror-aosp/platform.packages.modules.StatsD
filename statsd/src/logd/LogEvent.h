@@ -16,17 +16,48 @@
 
 #pragma once
 
-#include "FieldValue.h"
-
 #include <android/util/ProtoOutputStream.h>
 #include <private/android_logger.h>
 
+#include <optional>
 #include <string>
 #include <vector>
+
+#include "FieldValue.h"
 
 namespace android {
 namespace os {
 namespace statsd {
+
+// stats_event.h socket types. Keep in sync.
+/* ERRORS */
+#define ERROR_NO_TIMESTAMP 0x1
+#define ERROR_NO_ATOM_ID 0x2
+#define ERROR_OVERFLOW 0x4
+#define ERROR_ATTRIBUTION_CHAIN_TOO_LONG 0x8
+#define ERROR_TOO_MANY_KEY_VALUE_PAIRS 0x10
+#define ERROR_ANNOTATION_DOES_NOT_FOLLOW_FIELD 0x20
+#define ERROR_INVALID_ANNOTATION_ID 0x40
+#define ERROR_ANNOTATION_ID_TOO_LARGE 0x80
+#define ERROR_TOO_MANY_ANNOTATIONS 0x100
+#define ERROR_TOO_MANY_FIELDS 0x200
+#define ERROR_INVALID_VALUE_TYPE 0x400
+#define ERROR_STRING_NOT_NULL_TERMINATED 0x800
+#define ERROR_ATOM_ID_INVALID_POSITION 0x2000
+#define ERROR_LIST_TOO_LONG 0x4000
+
+/* TYPE IDS */
+#define INT32_TYPE 0x00
+#define INT64_TYPE 0x01
+#define STRING_TYPE 0x02
+#define LIST_TYPE 0x03
+#define FLOAT_TYPE 0x04
+#define BOOL_TYPE 0x05
+#define BYTE_ARRAY_TYPE 0x06
+#define OBJECT_TYPE 0x07
+#define KEY_VALUE_PAIRS_TYPE 0x08
+#define ATTRIBUTION_CHAIN_TYPE 0x09
+#define ERROR_TYPE 0x0F
 
 struct InstallTrainInfo {
     int64_t trainVersionCode;
@@ -156,20 +187,20 @@ public:
     // Returns whether this LogEvent has an AttributionChain.
     // If it does and indexRange is not a nullptr, populate indexRange with the start and end index
     // of the AttributionChain within mValues.
-    bool hasAttributionChain(std::pair<int, int>* indexRange = nullptr) const;
+    bool hasAttributionChain(std::pair<size_t, size_t>* indexRange = nullptr) const;
 
     // Returns the index of the exclusive state field within the FieldValues vector if
     // an exclusive state exists. If there is no exclusive state field, returns -1.
     //
     // If the index within the atom definition is desired, do the following:
-    //    int vectorIndex = LogEvent.getExclusiveStateFieldIndex();
-    //    if (vectorIndex != -1) {
-    //        FieldValue& v = LogEvent.getValues()[vectorIndex];
+    //    const std::optional<size_t>& vectorIndex = LogEvent.getExclusiveStateFieldIndex();
+    //    if (!vectorIndex) {
+    //        FieldValue& v = LogEvent.getValues()[vectorIndex.value()];
     //        int atomIndex = v.mField.getPosAtDepth(0);
     //    }
     // Note that atomIndex is 1-indexed.
-    inline int getExclusiveStateFieldIndex() const {
-        return static_cast<int>(mExclusiveStateFieldIndex);
+    inline std::optional<size_t> getExclusiveStateFieldIndex() const {
+        return mExclusiveStateFieldIndex;
     }
 
     // If a reset state is not sent in the StatsEvent, returns -1. Note that a
@@ -214,15 +245,18 @@ private:
     void parseAttributionChain(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
     void parseArray(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
 
-    void skipAnnotations(uint8_t numAnnotations);
-    void parseAnnotations(uint8_t numAnnotations, int firstUidInChainIndex = -1);
-    void parseIsUidAnnotation(uint8_t annotationType);
+    void parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> numElements = std::nullopt,
+                          std::optional<size_t> firstUidInChainIndex = std::nullopt);
+    void parseIsUidAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements);
     void parseTruncateTimestampAnnotation(uint8_t annotationType);
-    void parsePrimaryFieldAnnotation(uint8_t annotationType);
-    void parsePrimaryFieldFirstUidAnnotation(uint8_t annotationType, int firstUidInChainIndex);
-    void parseExclusiveStateAnnotation(uint8_t annotationType);
-    void parseTriggerStateResetAnnotation(uint8_t annotationType);
-    void parseStateNestedAnnotation(uint8_t annotationType);
+    void parsePrimaryFieldAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements,
+                                     std::optional<size_t> firstUidInChainIndex);
+    void parsePrimaryFieldFirstUidAnnotation(uint8_t annotationType,
+                                             std::optional<size_t> firstUidInChainIndex);
+    void parseExclusiveStateAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements);
+    void parseTriggerStateResetAnnotation(uint8_t annotationType,
+                                          std::optional<uint8_t> numElements);
+    void parseStateNestedAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements);
     bool checkPreviousValueType(Type expected);
 
     /**
@@ -302,13 +336,11 @@ private:
     bool mTruncateTimestamp = false;
     int mResetState = -1;
 
-    uint8_t mNumUidFields = 0;
+    size_t mNumUidFields = 0;
 
-    // Indexes within the FieldValue vector can be stored in 7 bits because
-    // that's the assumption enforced by the encoding used in FieldValue.
-    int8_t mAttributionChainStartIndex = -1;
-    int8_t mAttributionChainEndIndex = -1;
-    int8_t mExclusiveStateFieldIndex = -1;
+    std::optional<size_t> mAttributionChainStartIndex;
+    std::optional<size_t> mAttributionChainEndIndex;
+    std::optional<size_t> mExclusiveStateFieldIndex;
 };
 
 void writeExperimentIdsToProto(const std::vector<int64_t>& experimentIds, std::vector<uint8_t>* protoOut);
