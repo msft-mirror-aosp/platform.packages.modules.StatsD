@@ -39,15 +39,6 @@ class EventMetricE2eTest : public ::testing::Test {
     }
 };
 
-template <class T>
-vector<T> AsVector(const google::protobuf::RepeatedField<T>& container) {
-    return vector<T>(container.begin(), container.end());
-}
-
-vector<string> AsStringVector(const google::protobuf::RepeatedPtrField<string>& container) {
-    return vector<string>(container.begin(), container.end());
-}
-
 TEST_F(EventMetricE2eTest, TestEventMetricDataAggregated) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
@@ -146,6 +137,8 @@ TEST_F(EventMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
             boolArray, boolArrayLength, enumArray));
     events.push_back(CreateTestAtomReportedEventVariableRepeatedFields(
             bucketStartTimeNs + 20 * NS_PER_SEC, {}, {}, {}, {}, {}, 0, {}));
+    events.push_back(CreateTestAtomReportedEventVariableRepeatedFields(
+            bucketStartTimeNs + 30 * NS_PER_SEC, {}, {}, {}, {}, {}, 0, enumArray));
 
     // Send log events to StatsLogProcessor.
     for (auto& event : events) {
@@ -167,17 +160,17 @@ TEST_F(EventMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
     StatsLogReport testAtomEventMetricReport = report.metrics(0);
     EXPECT_EQ(testAtomEventMetricReport.metric_id(), testAtomReportedEventMetric.id());
     EXPECT_TRUE(testAtomEventMetricReport.has_event_metrics());
-    ASSERT_EQ(testAtomEventMetricReport.event_metrics().data_size(), 2);
+    ASSERT_EQ(testAtomEventMetricReport.event_metrics().data_size(), 3);
 
     EventMetricData data = testAtomEventMetricReport.event_metrics().data(0);
     EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 10 * NS_PER_SEC);
     TestAtomReported atom = data.atom().test_atom_reported();
-    EXPECT_EQ(AsVector<int>(atom.repeated_int_field()), intArray);
-    EXPECT_EQ(AsVector<int64_t>(atom.repeated_long_field()), longArray);
-    EXPECT_EQ(AsVector<float>(atom.repeated_float_field()), floatArray);
-    EXPECT_EQ(AsStringVector(atom.repeated_string_field()), stringArray);
-    EXPECT_EQ(AsVector<bool>(atom.repeated_boolean_field()), boolArrayVector);
-    EXPECT_EQ(AsVector<int>(atom.repeated_enum_field()), enumArray);
+    EXPECT_THAT(atom.repeated_int_field(), ElementsAreArray(intArray));
+    EXPECT_THAT(atom.repeated_long_field(), ElementsAreArray(longArray));
+    EXPECT_THAT(atom.repeated_float_field(), ElementsAreArray(floatArray));
+    EXPECT_THAT(atom.repeated_string_field(), ElementsAreArray(stringArray));
+    EXPECT_THAT(atom.repeated_boolean_field(), ElementsAreArray(boolArrayVector));
+    EXPECT_THAT(atom.repeated_enum_field(), ElementsAreArray(enumArray));
 
     data = testAtomEventMetricReport.event_metrics().data(1);
     atom = data.atom().test_atom_reported();
@@ -188,6 +181,16 @@ TEST_F(EventMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
     EXPECT_EQ(atom.repeated_string_field_size(), 0);
     EXPECT_EQ(atom.repeated_boolean_field_size(), 0);
     EXPECT_EQ(atom.repeated_enum_field_size(), 0);
+
+    data = testAtomEventMetricReport.event_metrics().data(2);
+    atom = data.atom().test_atom_reported();
+    EXPECT_EQ(data.elapsed_timestamp_nanos(), bucketStartTimeNs + 30 * NS_PER_SEC);
+    EXPECT_EQ(atom.repeated_int_field_size(), 0);
+    EXPECT_EQ(atom.repeated_long_field_size(), 0);
+    EXPECT_EQ(atom.repeated_float_field_size(), 0);
+    EXPECT_EQ(atom.repeated_string_field_size(), 0);
+    EXPECT_EQ(atom.repeated_boolean_field_size(), 0);
+    EXPECT_THAT(atom.repeated_enum_field(), ElementsAreArray(enumArray));
 }
 
 TEST_F(EventMetricE2eTest, TestMatchRepeatedFieldPositionFirst) {
@@ -210,13 +213,16 @@ TEST_F(EventMetricE2eTest, TestMatchRepeatedFieldPositionFirst) {
     // Initialize log events before update.
     std::vector<std::unique_ptr<LogEvent>> events;
 
-    vector<int> enumArray1 = {TestAtomReported::OFF, TestAtomReported::ON};
-    vector<int> enumArray2 = {TestAtomReported::ON, TestAtomReported::OFF};
+    vector<int> enumArrayNoMatch = {TestAtomReported::OFF, TestAtomReported::ON};
+    vector<int> enumArrayMatch = {TestAtomReported::ON, TestAtomReported::OFF};
 
     events.push_back(CreateTestAtomReportedEventVariableRepeatedFields(
-            bucketStartTimeNs + 10 * NS_PER_SEC, {}, {}, {}, {}, {}, 0, enumArray1));
+            bucketStartTimeNs + 10 * NS_PER_SEC, {}, {}, {}, {}, {}, 0, enumArrayNoMatch));
     events.push_back(CreateTestAtomReportedEventVariableRepeatedFields(
-            bucketStartTimeNs + 20 * NS_PER_SEC, {}, {}, {}, {}, {}, 0, enumArray2));
+            bucketStartTimeNs + 20 * NS_PER_SEC, {}, {}, {}, {}, {}, 0, enumArrayMatch));
+    // No matching is done on an empty array.
+    events.push_back(CreateTestAtomReportedEventVariableRepeatedFields(
+            bucketStartTimeNs + 30 * NS_PER_SEC, {}, {}, {}, {}, {}, 0, {}));
 
     // Send log events to StatsLogProcessor.
     for (auto& event : events) {
@@ -248,9 +254,7 @@ TEST_F(EventMetricE2eTest, TestMatchRepeatedFieldPositionFirst) {
     ASSERT_EQ(atom.repeated_float_field_size(), 0);
     ASSERT_EQ(atom.repeated_string_field_size(), 0);
     ASSERT_EQ(atom.repeated_boolean_field_size(), 0);
-    ASSERT_EQ(atom.repeated_enum_field_size(), 2);
-    EXPECT_EQ(atom.repeated_enum_field(0), TestAtomReported::ON);
-    EXPECT_EQ(atom.repeated_enum_field(1), TestAtomReported::OFF);
+    EXPECT_THAT(atom.repeated_enum_field(), ElementsAreArray(enumArrayMatch));
 }
 
 #else
