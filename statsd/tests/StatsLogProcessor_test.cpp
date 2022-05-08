@@ -14,6 +14,7 @@
 
 #include "StatsLogProcessor.h"
 
+#include <android-base/stringprintf.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
@@ -38,9 +39,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::base::StringPrintf;
 using android::util::ProtoOutputStream;
 
 #ifdef __ANDROID__
+#define STATS_DATA_DIR "/data/misc/stats-data"
 
 /**
  * Mock MetricsManager (ByteSize() is called).
@@ -163,7 +166,8 @@ TEST(StatsLogProcessorTest, TestUidMapHasSnapshot) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -194,7 +198,8 @@ TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -325,11 +330,11 @@ TEST(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate) {
 
 TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
     // Setup simple config key corresponding to empty config.
-    StatsdStats::getInstance().reset();
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
@@ -337,6 +342,9 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
                         [](const int&, const vector<int64_t>&) {return true;});
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(true);
+    // Remove the config mConfigStats so that the Icebox starts at 0 configs.
+    p.OnConfigRemoved(key);
+    StatsdStats::getInstance().reset();
     p.OnConfigUpdated(0, key, config);
     EXPECT_EQ(1, p.mMetricsManagers.size());
     EXPECT_NE(p.mMetricsManagers.find(key), p.mMetricsManagers.end());
@@ -354,7 +362,8 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
               StatsdStats::getInstance().mConfigStats.find(key));
     // Both "config" and "invalidConfig" should be in the icebox.
     EXPECT_EQ(2, StatsdStats::getInstance().mIceBox.size());
-
+    string suffix = StringPrintf("%d_%lld", key.GetUid(), (long long)key.GetId());
+    StorageManager::deleteSuffixedFiles(STATS_DATA_DIR, suffix.c_str());
 }
 
 
