@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "ValueMetricProducer.h"
@@ -80,7 +80,7 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
                      conditionOptions.initialConditionCache, conditionOptions.conditionWizard,
                      protoHash, activationOptions.eventActivationMap,
                      activationOptions.eventDeactivationMap, stateOptions.slicedStateAtoms,
-                     stateOptions.stateGroupMap),
+                     stateOptions.stateGroupMap, bucketOptions.splitBucketForAppUpgrade),
       mWhatMatcherIndex(whatOptions.whatMatcherIndex),
       mEventMatcherWizard(whatOptions.matcherWizard),
       mPullerManager(pullOptions.pullerManager),
@@ -90,9 +90,9 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
       mDimensionSoftLimit(guardrailOptions.dimensionSoftLimit),
       mDimensionHardLimit(guardrailOptions.dimensionHardLimit),
       mCurrentBucketIsSkipped(false),
-      mSplitBucketForAppUpgrade(bucketOptions.splitBucketForAppUpgrade),
       // Condition timer will be set later within the constructor after pulling events
-      mConditionTimer(false, bucketOptions.timeBaseNs) {
+      mConditionTimer(false, bucketOptions.timeBaseNs),
+      mConditionCorrectionThresholdNs(bucketOptions.conditionCorrectionThresholdNs) {
     // TODO(b/185722221): inject directly via initializer list in MetricProducer.
     mBucketSizeNs = bucketOptions.bucketSizeNs;
 
@@ -101,7 +101,7 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
         translateFieldMatcher(whatOptions.dimensionsInWhat, &mDimensionsInWhat);
     }
     mContainANYPositionInDimensionsInWhat = whatOptions.containsAnyPositionInDimensionsInWhat;
-    mSliceByPositionALL = whatOptions.sliceByPositionAll;
+    mShouldUseNestedDimensions = whatOptions.shouldUseNestedDimensions;
 
     if (conditionOptions.conditionLinks.size() > 0) {
         for (const auto& link : conditionOptions.conditionLinks) {
@@ -138,7 +138,7 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
     // flushIfNeeded to adjust start and end to bucket boundaries.
     // Adjust start for partial bucket
     mCurrentBucketStartTimeNs = bucketOptions.startTimeNs;
-    mConditionTimer.newBucketStart(mCurrentBucketStartTimeNs);
+    mConditionTimer.newBucketStart(mCurrentBucketStartTimeNs, mCurrentBucketStartTimeNs);
 
     // Now that activations are processed, start the condition timer if needed.
     mConditionTimer.onConditionChanged(mIsActive && mCondition == ConditionState::kTrue,
@@ -167,14 +167,9 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onStatsdInitCompleted(
 }
 
 template <typename AggregatedValue, typename DimExtras>
-void ValueMetricProducer<AggregatedValue, DimExtras>::notifyAppUpgrade(const int64_t& eventTimeNs) {
-    lock_guard<mutex> lock(mMutex);
-
+void ValueMetricProducer<AggregatedValue, DimExtras>::notifyAppUpgradeInternalLocked(
+        const int64_t eventTimeNs) {
     // TODO(b/188837487): Add mIsActive check
-
-    if (!mSplitBucketForAppUpgrade) {
-        return;
-    }
     if (isPulled() && mCondition == ConditionState::kTrue) {
         pullAndMatchEventsLocked(eventTimeNs);
     }
@@ -329,8 +324,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
     }
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
-    // Fills the dimension path if not slicing by ALL.
-    if (!mSliceByPositionALL) {
+    // Fills the dimension path if not slicing by a primitive repeated field or position ALL.
+    if (!mShouldUseNestedDimensions) {
         if (!mDimensionsInWhat.empty()) {
             uint64_t dimenPathToken =
                     protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_PATH_IN_WHAT);
@@ -340,7 +335,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
     }
 
     const auto& [metricTypeFieldId, bucketNumFieldId, startBucketMsFieldId, endBucketMsFieldId,
-                 conditionTrueNsFieldId] = getDumpProtoFields();
+                 conditionTrueNsFieldId,
+                 conditionCorrectionNsFieldId] = getDumpProtoFields();
 
     uint64_t protoToken = protoOutput->start(FIELD_TYPE_MESSAGE | metricTypeFieldId);
 
@@ -368,7 +364,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
                 protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_DATA);
 
         // First fill dimension.
-        if (mSliceByPositionALL) {
+        if (mShouldUseNestedDimensions) {
             uint64_t dimensionToken =
                     protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_IN_WHAT);
             writeDimensionToProto(metricDimensionKey.getDimensionKeyInWhat(), strSet, protoOutput);
@@ -408,6 +404,21 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
                 protoOutput->write(FIELD_TYPE_INT64 | conditionTrueNsFieldId,
                                    (long long)bucket.mConditionTrueNs);
             }
+
+            if (conditionCorrectionNsFieldId) {
+                // We write the condition correction value when below conditions are true:
+                // - if metric is pulled
+                // - if it is enabled by metric configuration via dedicated field,
+                //   see condition_correction_threshold_nanos
+                // - if the abs(value) >= condition_correction_threshold_nanos
+
+                if (isPulled() && mConditionCorrectionThresholdNs &&
+                    (abs(bucket.mConditionCorrectionNs) >= mConditionCorrectionThresholdNs)) {
+                    protoOutput->write(FIELD_TYPE_INT64 | conditionCorrectionNsFieldId.value(),
+                                       (long long)bucket.mConditionCorrectionNs);
+                }
+            }
+
             for (int i = 0; i < (int)bucket.aggIndex.size(); i++) {
                 VLOG("\t bucket [%lld - %lld]", (long long)bucket.mBucketStartNs,
                      (long long)bucket.mBucketEndNs);
@@ -442,7 +453,7 @@ template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::skipCurrentBucket(
         const int64_t dropTimeNs, const BucketDropReason reason) {
     if (!maxDropEventsReached()) {
-        mCurrentSkippedBucket.dropEvents.emplace_back(buildDropEvent(dropTimeNs, reason));
+        mCurrentSkippedBucket.dropEvents.push_back(buildDropEvent(dropTimeNs, reason));
     }
     mCurrentBucketIsSkipped = true;
 }
@@ -677,7 +688,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onMatchedLogEventInternalL
     dimensionsInWhatInfo.hasCurrentState = true;
     dimensionsInWhatInfo.currentState = stateKey;
 
-    aggregateFields(eventTimeNs, eventKey, event, intervals, dimensionsInWhatInfo.dimExtras);
+    dimensionsInWhatInfo.seenNewData |= aggregateFields(eventTimeNs, eventKey, event, intervals,
+                                                        dimensionsInWhatInfo.dimExtras);
 
     // State change.
     if (!mSlicedStateAtoms.empty() && stateChange) {
@@ -732,13 +744,13 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::flushCurrentBucketLocked(
     initNextSlicedBucket(nextBucketStartTimeNs);
 
     // Update the condition timer again, in case we skipped buckets.
-    mConditionTimer.newBucketStart(nextBucketStartTimeNs);
+    mConditionTimer.newBucketStart(eventTimeNs, nextBucketStartTimeNs);
 
     // NOTE: Update the condition timers in `mCurrentSlicedBucket` only when slicing
     // by state. Otherwise, the "global" condition timer will be used.
     if (!mSlicedStateAtoms.empty()) {
         for (auto& [metricDimensionKey, currentBucket] : mCurrentSlicedBucket) {
-            currentBucket.conditionTimer.newBucketStart(nextBucketStartTimeNs);
+            currentBucket.conditionTimer.newBucketStart(eventTimeNs, nextBucketStartTimeNs);
         }
     }
     mCurrentBucketNum += calcBucketsForwardCount(eventTimeNs);
@@ -747,7 +759,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::flushCurrentBucketLocked(
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
         const int64_t eventTimeNs, const int64_t nextBucketStartTimeNs) {
-    int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
+    const int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
     int64_t bucketEndTimeNs = fullBucketEndTimeNs;
     int64_t numBucketsForward = calcBucketsForwardCount(eventTimeNs);
 
@@ -764,8 +776,10 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
         bucketEndTimeNs = eventTimeNs;
     }
 
-    // Close the current bucket.
-    int64_t conditionTrueDurationNs = mConditionTimer.newBucketStart(bucketEndTimeNs);
+    // Close the current bucket
+    const auto [globalConditionDurationNs, globalConditionCorrectionNs] =
+            mConditionTimer.newBucketStart(eventTimeNs, bucketEndTimeNs);
+
     bool isBucketLargeEnough = bucketEndTimeNs - mCurrentBucketStartTimeNs >= mMinBucketSizeNs;
     if (!isBucketLargeEnough) {
         skipCurrentBucket(eventTimeNs, BucketDropReason::BUCKET_TOO_SMALL);
@@ -781,11 +795,15 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
             }
             bucketHasData = true;
             if (!mSlicedStateAtoms.empty()) {
-                bucket.mConditionTrueNs =
-                        currentBucket.conditionTimer.newBucketStart(bucketEndTimeNs);
+                const auto [conditionDurationNs, conditionCorrectionNs] =
+                        currentBucket.conditionTimer.newBucketStart(eventTimeNs, bucketEndTimeNs);
+                bucket.mConditionTrueNs = conditionDurationNs;
+                bucket.mConditionCorrectionNs = conditionCorrectionNs;
             } else {
-                bucket.mConditionTrueNs = conditionTrueDurationNs;
+                bucket.mConditionTrueNs = globalConditionDurationNs;
+                bucket.mConditionCorrectionNs = globalConditionCorrectionNs;
             }
+
             auto& bucketList = mPastBuckets[metricDimensionKey];
             bucketList.push_back(std::move(bucket));
         }
@@ -797,7 +815,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
     if (mCurrentBucketIsSkipped) {
         mCurrentSkippedBucket.bucketStartTimeNs = mCurrentBucketStartTimeNs;
         mCurrentSkippedBucket.bucketEndTimeNs = bucketEndTimeNs;
-        mSkippedBuckets.emplace_back(mCurrentSkippedBucket);
+        mSkippedBuckets.push_back(mCurrentSkippedBucket);
     }
 
     // This means that the current bucket was not flushed before a forced bucket split.
@@ -817,18 +835,15 @@ template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
         int64_t nextBucketStartTimeNs) {
     StatsdStats::getInstance().noteBucketCount(mMetricId);
-    // Cleanup data structure to aggregate values.
-    for (auto it = mCurrentSlicedBucket.begin(); it != mCurrentSlicedBucket.end();) {
-        bool obsolete = true;
-        for (auto& interval : it->second.intervals) {
-            interval.sampleSize = 0;
-            if (interval.seenNewData) {
-                obsolete = false;
+    if (mSlicedStateAtoms.empty()) {
+        mCurrentSlicedBucket.clear();
+    } else {
+        for (auto it = mCurrentSlicedBucket.begin(); it != mCurrentSlicedBucket.end();) {
+            bool obsolete = true;
+            for (auto& interval : it->second.intervals) {
+                interval.sampleSize = 0;
             }
-            interval.seenNewData = false;
-        }
 
-        if (obsolete && !mSlicedStateAtoms.empty()) {
             // When slicing by state, only delete the MetricDimensionKey when the
             // state key in the MetricDimensionKey is not the current state key.
             const HashableDimensionKey& dimensionInWhatKey = it->first.getDimensionKeyInWhat();
@@ -838,13 +853,20 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
                 (it->first.getStateValuesKey() == currentDimInfoItr->second.currentState)) {
                 obsolete = false;
             }
+            if (obsolete) {
+                it = mCurrentSlicedBucket.erase(it);
+            } else {
+                it++;
+            }
         }
-        if (obsolete) {
-            it = mCurrentSlicedBucket.erase(it);
+    }
+    for (auto it = mDimInfos.begin(); it != mDimInfos.end();) {
+        if (!it->second.seenNewData) {
+            it = mDimInfos.erase(it);
         } else {
+            it->second.seenNewData = false;
             it++;
         }
-        // TODO(b/157655103): remove mDimInfos entries when obsolete
     }
 
     mCurrentBucketIsSkipped = false;

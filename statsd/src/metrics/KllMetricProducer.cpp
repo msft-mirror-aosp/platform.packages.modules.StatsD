@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "KllMetricProducer.h"
@@ -32,6 +32,7 @@ using android::util::FIELD_TYPE_INT32;
 using android::util::FIELD_TYPE_MESSAGE;
 using android::util::ProtoOutputStream;
 using std::map;
+using std::nullopt;
 using std::optional;
 using std::shared_ptr;
 using std::string;
@@ -66,8 +67,12 @@ KllMetricProducer::KllMetricProducer(const ConfigKey& key, const KllMetric& metr
 }
 
 KllMetricProducer::DumpProtoFields KllMetricProducer::getDumpProtoFields() const {
-    return {FIELD_ID_KLL_METRICS, FIELD_ID_BUCKET_NUM, FIELD_ID_START_BUCKET_ELAPSED_MILLIS,
-            FIELD_ID_END_BUCKET_ELAPSED_MILLIS, FIELD_ID_CONDITION_TRUE_NS};
+    return {FIELD_ID_KLL_METRICS,
+            FIELD_ID_BUCKET_NUM,
+            FIELD_ID_START_BUCKET_ELAPSED_MILLIS,
+            FIELD_ID_END_BUCKET_ELAPSED_MILLIS,
+            FIELD_ID_CONDITION_TRUE_NS,
+            /*conditionCorrectionNsFieldId=*/nullopt};
 }
 
 void KllMetricProducer::writePastBucketAggregateToProto(
@@ -104,9 +109,10 @@ optional<int64_t> getInt64ValueFromEvent(const LogEvent& event, const Matcher& m
     return nullopt;
 }
 
-void KllMetricProducer::aggregateFields(const int64_t eventTimeNs,
+bool KllMetricProducer::aggregateFields(const int64_t eventTimeNs,
                                         const MetricDimensionKey& eventKey, const LogEvent& event,
                                         vector<Interval>& intervals, Empty& empty) {
+    bool seenNewData = false;
     for (size_t i = 0; i < mFieldMatchers.size(); i++) {
         const Matcher& matcher = mFieldMatchers[i];
         Interval& interval = intervals[i];
@@ -115,7 +121,7 @@ void KllMetricProducer::aggregateFields(const int64_t eventTimeNs,
         if (!valueOpt) {
             VLOG("Failed to get value %zu from event %s", i, event.ToString().c_str());
             StatsdStats::getInstance().noteBadValueType(mMetricId);
-            return;
+            return seenNewData;
         }
 
         // interval.aggregate can be nullptr from cases:
@@ -125,10 +131,11 @@ void KllMetricProducer::aggregateFields(const int64_t eventTimeNs,
         if (!interval.aggregate) {
             interval.aggregate = KllQuantile::Create();
         }
-        interval.seenNewData = true;
+        seenNewData = true;
         interval.aggregate->Add(valueOpt.value());
         interval.sampleSize += 1;
     }
+    return seenNewData;
 }
 
 PastBucket<unique_ptr<KllQuantile>> KllMetricProducer::buildPartialBucket(
