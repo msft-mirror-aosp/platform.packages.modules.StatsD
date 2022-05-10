@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "MetricProducer.h"
@@ -66,7 +66,7 @@ MetricProducer::MetricProducer(
       mConditionSliced(false),
       mWizard(wizard),
       mContainANYPositionInDimensionsInWhat(false),
-      mSliceByPositionALL(false),
+      mShouldUseNestedDimensions(false),
       mHasLinksToAllConditionDimensionsInTracker(false),
       mEventActivationMap(eventActivationMap),
       mEventDeactivationMap(eventDeactivationMap),
