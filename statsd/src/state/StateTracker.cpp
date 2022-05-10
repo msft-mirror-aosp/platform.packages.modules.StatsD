@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG true  // STOPSHIP if true
+#define STATSD_DEBUG true  // STOPSHIP if true
 #include "Log.h"
 
 #include "stats_util.h"
@@ -176,13 +176,13 @@ void StateTracker::notifyListeners(const int64_t eventTimeNs,
 }
 
 bool getStateFieldValueFromLogEvent(const LogEvent& event, FieldValue* output) {
-    const int exclusiveStateFieldIndex = event.getExclusiveStateFieldIndex();
-    if (-1 == exclusiveStateFieldIndex) {
+    const std::optional<size_t>& exclusiveStateFieldIndex = event.getExclusiveStateFieldIndex();
+    if (!exclusiveStateFieldIndex) {
         ALOGE("error extracting state from log event. Missing exclusive state field.");
         return false;
     }
 
-    *output = event.getValues()[exclusiveStateFieldIndex];
+    *output = event.getValues()[exclusiveStateFieldIndex.value()];
     return true;
 }
 
