@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 The Android Open Source Project
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,16 @@
  * limitations under the License.
  */
 
-#pragma once
+package android.cts.statsd.validation;
 
-#include <string>
+import android.cts.statsd.atom.DeviceAtomTestCase;
 
-namespace android {
-namespace os {
-namespace statsd {
+public class StatsFrameworkInitializerTest extends DeviceAtomTestCase {
 
-const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
+    public void testStatsFrameworkInitializer_failsWhenCalledOutsideOfSystemServiceRegistry()
+            throws Exception {
+        runDeviceTests(DEVICE_SIDE_TEST_PACKAGE,
+                ".StatsFrameworkInitializerTests", "testRegisterServiceWrappers_expectFail");
+    }
 
-const std::string PARTIAL_CONFIG_UPDATE_FLAG = "partial_config_update";
-
-std::string getFlagString(const std::string& flagName, const std::string& defaultValue);
-
-// Returns true IFF flagName has a value of "true".
-bool getFlagBool(const std::string& flagName, const std::string& defaultValue);
-
-}  // namespace statsd
-}  // namespace os
-}  // namespace android
+}

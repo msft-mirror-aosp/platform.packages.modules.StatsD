@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "NumericValueMetricProducer.h"
@@ -22,6 +22,7 @@
 #include <limits.h>
 #include <stdlib.h>
 
+#include "flags/FlagProvider.h"
 #include "guardrail/StatsdStats.h"
 #include "metrics/parsing_utils/metrics_manager_util.h"
 #include "stats_log_util.h"
@@ -55,6 +56,7 @@ const int FIELD_ID_BUCKET_NUM = 4;
 const int FIELD_ID_START_BUCKET_ELAPSED_MILLIS = 5;
 const int FIELD_ID_END_BUCKET_ELAPSED_MILLIS = 6;
 const int FIELD_ID_CONDITION_TRUE_NS = 10;
+const int FIELD_ID_CONDITION_CORRECTION_NS = 11;
 
 const Value ZERO_LONG((int64_t)0);
 const Value ZERO_DOUBLE(0.0);
@@ -209,6 +211,23 @@ void NumericValueMetricProducer::onDataPulled(const vector<shared_ptr<LogEvent>>
     flushIfNeededLocked(originalPullTimeNs);
 }
 
+void NumericValueMetricProducer::combineValueFields(pair<LogEvent, vector<int>>& eventValues,
+                                                    const LogEvent& newEvent,
+                                                    const vector<int>& newValueIndices) const {
+    if (eventValues.second.size() != newValueIndices.size()) {
+        ALOGE("NumericValueMetricProducer value indices sizes don't match");
+        return;
+    }
+    vector<FieldValue>* const aggregateFieldValues = eventValues.first.getMutableValues();
+    const vector<FieldValue>& newFieldValues = newEvent.getValues();
+    for (size_t i = 0; i < eventValues.second.size(); ++i) {
+        if (newValueIndices[i] != -1 && eventValues.second[i] != -1) {
+            (*aggregateFieldValues)[eventValues.second[i]].mValue +=
+                    newFieldValues[newValueIndices[i]].mValue;
+        }
+    }
+}
+
 // Process events retrieved from a pull.
 void NumericValueMetricProducer::accumulateEvents(const vector<shared_ptr<LogEvent>>& allData,
                                                   int64_t originalPullTimeNs,
@@ -235,32 +254,66 @@ void NumericValueMetricProducer::accumulateEvents(const vector<shared_ptr<LogEve
     }
 
     mMatchedMetricDimensionKeys.clear();
-    for (const auto& data : allData) {
-        LogEvent localCopy = data->makeCopy();
-        if (mEventMatcherWizard->matchLogEvent(localCopy, mWhatMatcherIndex) ==
-            MatchingState::kMatched) {
-            localCopy.setElapsedTimestampNs(eventElapsedTimeNs);
-            onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
+    if (FlagProvider::getInstance().getBootFlagBool(VALUE_METRIC_SUBSET_DIMENSION_AGGREGATION_FLAG,
+                                                    FLAG_FALSE) &&
+        mUseDiff) {
+        std::unordered_map<HashableDimensionKey, pair<LogEvent, vector<int>>> aggregateEvents;
+        for (const auto& data : allData) {
+            if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) !=
+                MatchingState::kMatched) {
+                continue;
+            }
+
+            // Get dimensions_in_what key and value indices.
+            HashableDimensionKey dimensionsInWhat;
+            vector<int> valueIndices(mFieldMatchers.size(), -1);
+            if (!filterValues(mDimensionsInWhat, mFieldMatchers, data->getValues(),
+                              dimensionsInWhat, valueIndices)) {
+                StatsdStats::getInstance().noteBadValueType(mMetricId);
+            }
+
+            // Store new event in map or combine values in existing event.
+            auto it = aggregateEvents.find(dimensionsInWhat);
+            if (it == aggregateEvents.end()) {
+                aggregateEvents.emplace(std::piecewise_construct,
+                                        std::forward_as_tuple(dimensionsInWhat),
+                                        std::forward_as_tuple(*data, valueIndices));
+            } else {
+                combineValueFields(it->second, *data, valueIndices);
+            }
+        }
+
+        for (auto& [dimKey, eventInfo] : aggregateEvents) {
+            eventInfo.first.setElapsedTimestampNs(eventElapsedTimeNs);
+            onMatchedLogEventLocked(mWhatMatcherIndex, eventInfo.first);
+        }
+    } else {
+        for (const auto& data : allData) {
+            LogEvent localCopy = *data;
+            if (mEventMatcherWizard->matchLogEvent(localCopy, mWhatMatcherIndex) ==
+                MatchingState::kMatched) {
+                localCopy.setElapsedTimestampNs(eventElapsedTimeNs);
+                onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
+            }
         }
     }
+
     // If a key that is:
     // 1. Tracked in mCurrentSlicedBucket and
     // 2. A superset of the current mStateChangePrimaryKey
     // was not found in the new pulled data (i.e. not in mMatchedDimensionInWhatKeys)
-    // then we need to reset the base.
+    // then we clear the data from mDimInfos to reset the base and current state key.
     for (auto& [metricDimensionKey, currentValueBucket] : mCurrentSlicedBucket) {
         const auto& whatKey = metricDimensionKey.getDimensionKeyInWhat();
         bool presentInPulledData =
                 mMatchedMetricDimensionKeys.find(whatKey) != mMatchedMetricDimensionKeys.end();
-        if (!presentInPulledData && whatKey.contains(mStateChangePrimaryKey.second)) {
+        if (!presentInPulledData &&
+            containsLinkedStateValues(whatKey, mStateChangePrimaryKey.second, mMetric2StateLinks,
+                                      mStateChangePrimaryKey.first)) {
             auto it = mDimInfos.find(whatKey);
-            for (optional<Value>& base : it->second.dimExtras) {
-                base.reset();
+            if (it != mDimInfos.end()) {
+                mDimInfos.erase(it);
             }
-            // Set to false when DimensionInWhat key is not present in a pull.
-            // Used in onMatchedLogEventInternalLocked() to ensure the condition
-            // timer is turned on the next pull when data is present.
-            it->second.hasCurrentState = false;
             // Turn OFF condition timer for keys not present in pulled data.
             currentValueBucket.conditionTimer.onConditionChanged(false, eventElapsedTimeNs);
         }
@@ -326,7 +379,7 @@ bool getDoubleOrLong(const LogEvent& event, const Matcher& matcher, Value& ret) 
     return false;
 }
 
-void NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
+bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                                                  const MetricDimensionKey& eventKey,
                                                  const LogEvent& event, vector<Interval>& intervals,
                                                  ValueBases& bases) {
@@ -342,6 +395,7 @@ void NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
     // Whoever next works on it should look into the cases where it is triggered in this function.
     // Discussion here: http://ag/6124370.
     bool useAnomalyDetection = true;
+    bool seenNewData = false;
     for (size_t i = 0; i < mFieldMatchers.size(); i++) {
         const Matcher& matcher = mFieldMatchers[i];
         Interval& interval = intervals[i];
@@ -351,11 +405,9 @@ void NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
         if (!getDoubleOrLong(event, matcher, value)) {
             VLOG("Failed to get value %zu from event %s", i, event.ToString().c_str());
             StatsdStats::getInstance().noteBadValueType(mMetricId);
-            return;
+            return seenNewData;
         }
-
-        interval.seenNewData = true;
-
+        seenNewData = true;
         if (mUseDiff) {
             if (!base.has_value()) {
                 if (mHasGlobalBase && mUseZeroDefaultBase) {
@@ -373,7 +425,6 @@ void NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                     continue;
                 }
             }
-
             Value diff;
             switch (mValueDirection) {
                 case ValueMetric::INCREASING:
@@ -450,6 +501,7 @@ void NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                                              wholeBucketVal);
         }
     }
+    return seenNewData;
 }
 
 PastBucket<Value> NumericValueMetricProducer::buildPartialBucket(int64_t bucketEndTimeNs,
@@ -481,7 +533,9 @@ PastBucket<Value> NumericValueMetricProducer::buildPartialBucket(int64_t bucketE
 void NumericValueMetricProducer::closeCurrentBucket(const int64_t eventTimeNs,
                                                     const int64_t nextBucketStartTimeNs) {
     ValueMetricProducer::closeCurrentBucket(eventTimeNs, nextBucketStartTimeNs);
-    appendToFullBucket(eventTimeNs > getCurrentBucketEndTimeNs());
+    if (mAnomalyTrackers.size() > 0) {
+        appendToFullBucket(eventTimeNs > getCurrentBucketEndTimeNs());
+    }
 }
 
 void NumericValueMetricProducer::initNextSlicedBucket(int64_t nextBucketStartTimeNs) {
@@ -605,8 +659,12 @@ Value NumericValueMetricProducer::getFinalValue(const Interval& interval) const 
 }
 
 NumericValueMetricProducer::DumpProtoFields NumericValueMetricProducer::getDumpProtoFields() const {
-    return {FIELD_ID_VALUE_METRICS, FIELD_ID_BUCKET_NUM, FIELD_ID_START_BUCKET_ELAPSED_MILLIS,
-            FIELD_ID_END_BUCKET_ELAPSED_MILLIS, FIELD_ID_CONDITION_TRUE_NS};
+    return {FIELD_ID_VALUE_METRICS,
+            FIELD_ID_BUCKET_NUM,
+            FIELD_ID_START_BUCKET_ELAPSED_MILLIS,
+            FIELD_ID_END_BUCKET_ELAPSED_MILLIS,
+            FIELD_ID_CONDITION_TRUE_NS,
+            FIELD_ID_CONDITION_CORRECTION_NS};
 }
 
 }  // namespace statsd

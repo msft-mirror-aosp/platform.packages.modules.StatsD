@@ -25,6 +25,7 @@
 
 #include "src/condition/CombinationConditionTracker.h"
 #include "src/condition/SimpleConditionTracker.h"
+#include "src/flags/FlagProvider.h"
 #include "src/matchers/CombinationAtomMatchingTracker.h"
 #include "src/metrics/DurationMetricProducer.h"
 #include "src/metrics/GaugeMetricProducer.h"
@@ -81,11 +82,20 @@ vector<int> metricsWithActivation;
 map<int64_t, uint64_t> oldStateHashes;
 std::set<int64_t> noReportMetricIds;
 
+bool initConfig(const StatsdConfig& config) {
+    return initStatsdConfig(
+            key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
+            timeBaseNs, timeBaseNs, allTagIds, oldAtomMatchingTrackers, oldAtomMatchingTrackerMap,
+            oldConditionTrackers, oldConditionTrackerMap, oldMetricProducers, oldMetricProducerMap,
+            oldAnomalyTrackers, oldAlarmTrackers, tmpConditionToMetricMap, tmpTrackerToMetricMap,
+            tmpTrackerToConditionMap, tmpActivationAtomTrackerToMetricMap,
+            tmpDeactivationAtomTrackerToMetricMap, oldAlertTrackerMap, metricsWithActivation,
+            oldStateHashes, noReportMetricIds);
+}
+}  // anonymous namespace
+
 class ConfigUpdateTest : public ::testing::Test {
 public:
-    ConfigUpdateTest() {
-    }
-
     void SetUp() override {
         allTagIds.clear();
         oldAtomMatchingTrackers.clear();
@@ -106,20 +116,13 @@ public:
         oldStateHashes.clear();
         noReportMetricIds.clear();
         StateManager::getInstance().clear();
+        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue, &getServerFlagFuncTrue);
+    }
+
+    void TearDown() override {
+        FlagProvider::getInstance().resetOverrides();
     }
 };
-
-bool initConfig(const StatsdConfig& config) {
-    return initStatsdConfig(
-            key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseNs, timeBaseNs, allTagIds, oldAtomMatchingTrackers, oldAtomMatchingTrackerMap,
-            oldConditionTrackers, oldConditionTrackerMap, oldMetricProducers, oldMetricProducerMap,
-            oldAnomalyTrackers, oldAlarmTrackers, tmpConditionToMetricMap, tmpTrackerToMetricMap,
-            tmpTrackerToConditionMap, tmpActivationAtomTrackerToMetricMap,
-            tmpDeactivationAtomTrackerToMetricMap, oldAlertTrackerMap, metricsWithActivation,
-            oldStateHashes, noReportMetricIds);
-}
-}  // anonymous namespace
 
 TEST_F(ConfigUpdateTest, TestSimpleMatcherPreserve) {
     StatsdConfig config;
@@ -2610,7 +2613,7 @@ TEST_F(ConfigUpdateTest, TestUpdateDurationMetrics) {
                                                   conditionCache));
     }
     // Predicate5 should be true since 2 uids have wakelocks
-    EXPECT_EQ(conditionCache, vector({kTrue, kUnknown, kUnknown, kUnknown, kUnknown}));
+    EXPECT_EQ(conditionCache, vector({kTrue, kFalse, kUnknown, kUnknown, kUnknown}));
 
     StatsdConfig newConfig;
     *newConfig.add_duration_metric() = duration6;
@@ -2713,7 +2716,7 @@ TEST_F(ConfigUpdateTest, TestUpdateDurationMetrics) {
             static_cast<DurationMetricProducer*>(newMetricProducers[duration1Index].get());
     EXPECT_EQ(durationProducer1->getMetricId(), duration1Id);
     EXPECT_EQ(durationProducer1->mConditionTrackerIndex, predicate4Index);
-    EXPECT_EQ(durationProducer1->mCondition, ConditionState::kUnknown);
+    EXPECT_EQ(durationProducer1->mCondition, ConditionState::kFalse);
     EXPECT_EQ(durationProducer1->mStartIndex, matcher3Index);
     EXPECT_EQ(durationProducer1->mStopIndex, matcher4Index);
     EXPECT_EQ(durationProducer1->mStopAllIndex, matcher7Index);

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "config_update_utils.h"
@@ -596,6 +596,7 @@ bool determineAllMetricUpdateStatuses(const StatsdConfig& config,
             return false;
         }
     }
+
     for (int i = 0; i < config.kll_metric_size(); i++, metricIndex++) {
         const KllMetric& metric = config.kll_metric(i);
         set<int64_t> conditionDependencies;
@@ -611,6 +612,7 @@ bool determineAllMetricUpdateStatuses(const StatsdConfig& config,
             return false;
         }
     }
+
     return true;
 }
 
@@ -918,7 +920,8 @@ bool updateMetrics(const ConfigKey& key, const StatsdConfig& config, const int64
             }
             case UPDATE_REPLACE:
                 replacedMetrics.insert(metric.id());
-                [[fallthrough]];  // Intentionally fallthrough to create the new metric producer.
+                [[fallthrough]];  // Intentionally fallthrough to create the new metric
+                                  // producer.
             case UPDATE_NEW: {
                 producer = createKllMetricProducerAndUpdateMetadata(
                         key, config, timeBaseNs, currentTimeNs, pullerManager, metric, metricIndex,
@@ -1122,6 +1125,12 @@ bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const 
     vector<ConditionState> conditionCache;
     unordered_map<int64_t, int> stateAtomIdMap;
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
+
+    if (config.package_certificate_hash_size_bytes() > UINT8_MAX) {
+        ALOGE("Invalid value for package_certificate_hash_size_bytes: %d",
+              config.package_certificate_hash_size_bytes());
+        return false;
+    }
 
     if (!updateAtomMatchingTrackers(config, uidMap, oldAtomMatchingTrackerMap,
                                     oldAtomMatchingTrackers, allTagIds, newAtomMatchingTrackerMap,

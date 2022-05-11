@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "metrics_manager_util.h"
@@ -655,6 +655,11 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         ALOGE("cannot find \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
         return nullopt;
     }
+    if (HasPositionALL(metric.value_field())) {
+        ALOGE("value field with position ALL is not supported. ValueMetric \"%lld\"",
+              (long long)metric.id());
+        return nullopt;
+    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.value_field(), &fieldMatchers);
     if (fieldMatchers.size() < 1) {
@@ -728,17 +733,23 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             MillisToNano(TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), bucketSizeTimeUnit));
 
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
-    const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
+    const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
             StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
 
+    // get the condition_correction_threshold_nanos value
+    const optional<int64_t> conditionCorrectionThresholdNs =
+            metric.has_condition_correction_threshold_nanos()
+                    ? optional<int64_t>(metric.condition_correction_threshold_nanos())
+                    : nullopt;
+
     return new NumericValueMetricProducer(
             key, metric, metricHash, {pullTagId, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
-             metric.split_bucket_for_app_upgrade()},
-            {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, trackerIndex, matcherWizard,
-             metric.dimensions_in_what(), fieldMatchers},
+             conditionCorrectionThresholdNs, getAppUpgradeBucketSplit(metric)},
+            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
@@ -768,6 +779,11 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     }
     if (!metric.has_kll_field()) {
         ALOGE("cannot find \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
+        return nullopt;
+    }
+    if (HasPositionALL(metric.kll_field())) {
+        ALOGE("kll field with position ALL is not supported. KllMetric \"%lld\"",
+              (long long)metric.id());
         return nullopt;
     }
     std::vector<Matcher> fieldMatchers;
@@ -839,7 +855,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             MillisToNano(TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), bucketSizeTimeUnit));
 
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
-    const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
+    const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
@@ -849,9 +865,9 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     return new KllMetricProducer(
             key, metric, metricHash, {/*pullTagId=*/-1, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
-             metric.split_bucket_for_app_upgrade()},
-            {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, trackerIndex, matcherWizard,
-             metric.dimensions_in_what(), fieldMatchers},
+             /*conditionCorrectionThresholdNs=*/nullopt, getAppUpgradeBucketSplit(metric)},
+            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
@@ -1356,6 +1372,12 @@ bool initStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const sp
     vector<ConditionState> initialConditionCache;
     unordered_map<int64_t, int> stateAtomIdMap;
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
+
+    if (config.package_certificate_hash_size_bytes() > UINT8_MAX) {
+        ALOGE("Invalid value for package_certificate_hash_size_bytes: %d",
+              config.package_certificate_hash_size_bytes());
+        return false;
+    }
 
     if (!initAtomMatchingTrackers(config, uidMap, atomMatchingTrackerMap, allAtomMatchingTrackers,
                                   allTagIds)) {

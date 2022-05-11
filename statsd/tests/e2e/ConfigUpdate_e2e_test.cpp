@@ -20,7 +20,6 @@
 
 #include <thread>
 
-#include "flags/flags.h"
 #include "src/StatsLogProcessor.h"
 #include "src/StatsService.h"
 #include "src/storage/StorageManager.h"
@@ -41,10 +40,6 @@ using namespace std;
 
 // Tests that only run with the partial config update feature turned on.
 namespace {
-// Setup for test fixture.
-class ConfigUpdateE2eTest : public ::testing::Test {
-};
-
 void ValidateSubsystemSleepDimension(const DimensionsValue& value, string name) {
     EXPECT_EQ(value.field(), util::SUBSYSTEM_SLEEP_STATE);
     ASSERT_EQ(value.value_tuple().dimensions_value_size(), 1);
@@ -53,6 +48,9 @@ void ValidateSubsystemSleepDimension(const DimensionsValue& value, string name) 
 }
 
 }  // Anonymous namespace.
+
+// Setup for test fixture.
+class ConfigUpdateE2eTest : public ::testing::Test {};
 
 TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
     StatsdConfig config;
@@ -197,6 +195,7 @@ TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
     ASSERT_EQ(reports.reports_size(), 2);
 
     // Report from before update.
@@ -1062,6 +1061,7 @@ TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
     ASSERT_EQ(reports.reports_size(), 2);
 
     int64_t roundedBucketStartNs = MillisToNano(NanoToMillis(bucketStartTimeNs));
@@ -1455,7 +1455,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     EXPECT_FALSE(data.has_dimensions_in_what());
     EXPECT_EQ(data.slice_by_state_size(), 0);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {20}, 0);
+    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {20}, 0, 0);
 
     // Min screen brightness while screen on. Bucket skipped due to condition unknown.
     StatsLogReport valuePushPersistBefore = report.metrics(2);
@@ -1479,11 +1479,13 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     data = valueMetrics.data(0);
     ValidateSubsystemSleepDimension(data.dimensions_in_what(), "subsystem_name_1");
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {800}, 0);
+    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {800}, 0,
+                        0);
     data = valueMetrics.data(1);
     ValidateSubsystemSleepDimension(data.dimensions_in_what(), "subsystem_name_2");
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {800}, 0);
+    ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {800}, 0,
+                        0);
 
     // Report from after update.
     report = reports.reports(1);
@@ -1501,13 +1503,13 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateSubsystemSleepDimension(data.dimensions_in_what(), "subsystem_name_1");
     ASSERT_EQ(data.bucket_info_size(), 1);
     ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {3500},
-                        conditionTrueNs);
+                        conditionTrueNs, 0);
     ASSERT_EQ(valueMetrics.data_size(), 2);
     data = valueMetrics.data(1);
     ValidateSubsystemSleepDimension(data.dimensions_in_what(), "subsystem_name_2");
     ASSERT_EQ(data.bucket_info_size(), 1);
     ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {3500},
-                        conditionTrueNs);
+                        conditionTrueNs, 0);
 
     ASSERT_EQ(valueChangeAfter.value_metrics().skipped_size(), 1);
     skipBucket = valueChangeAfter.value_metrics().skipped(0);
@@ -1525,8 +1527,8 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ASSERT_EQ(valueMetrics.data_size(), 1);
     data = valueMetrics.data(0);
     ASSERT_EQ(data.bucket_info_size(), 2);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {40}, 0);
-    ValidateValueBucket(data.bucket_info(1), roundedBucketEndNs, roundedDumpTimeNs, {50}, 0);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {40}, 0, 0);
+    ValidateValueBucket(data.bucket_info(1), roundedBucketEndNs, roundedDumpTimeNs, {50}, 0, 0);
 
     // Min screen brightness when screen on. Val is 30 in first bucket, 50 in second.
     StatsLogReport valuePushPersistAfter = report.metrics(2);
@@ -1539,9 +1541,9 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ASSERT_EQ(data.bucket_info_size(), 2);
     conditionTrueNs = bucketSizeNs - 60 * NS_PER_SEC + 10 * NS_PER_SEC;
     ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {30},
-                        conditionTrueNs);
+                        conditionTrueNs, 0);
     ValidateValueBucket(data.bucket_info(1), roundedBucketEndNs, roundedDumpTimeNs, {50},
-                        10 * NS_PER_SEC);
+                        10 * NS_PER_SEC, 0);
 
     // TODO(b/179725160): fix assertions.
     // Subsystem sleep state while unplugged slice screen.
@@ -1558,7 +1560,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateStateValue(data.slice_by_state(), util::SCREEN_STATE_CHANGED,
                        android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {900}, -1);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {900}, -1, 0);
     // Name 1, screen ON. Pull#4 (1600) - pull#3 (900) + pull#8 (6400) - pull#7 (4900).
     data = valueMetrics.data(1);
     conditionTrueNs = 10 * NS_PER_SEC + bucketSizeNs - 65 * NS_PER_SEC;
@@ -1566,7 +1568,8 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateStateValue(data.slice_by_state(), util::SCREEN_STATE_CHANGED,
                        android::view::DisplayStateEnum::DISPLAY_STATE_ON);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {2200}, -1);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {2200}, -1,
+                        0);
     // Name 2, screen OFF. Pull#5 (2500) - pull#4 (1600).
     data = valueMetrics.data(2);
     conditionTrueNs = 10 * NS_PER_SEC;
@@ -1574,7 +1577,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateStateValue(data.slice_by_state(), util::SCREEN_STATE_CHANGED,
                        android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {900}, -1);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {900}, -1, 0);
     // Name 2, screen ON. Pull#4 (1600) - pull#3 (900) + pull#8 (6400) - pull#7 (4900).
     data = valueMetrics.data(3);
     conditionTrueNs = 10 * NS_PER_SEC + bucketSizeNs - 65 * NS_PER_SEC;
@@ -1582,7 +1585,8 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ValidateStateValue(data.slice_by_state(), util::SCREEN_STATE_CHANGED,
                        android::view::DisplayStateEnum::DISPLAY_STATE_ON);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {2200}, -1);
+    ValidateValueBucket(data.bucket_info(0), roundedUpdateTimeNs, roundedBucketEndNs, {2200}, -1,
+                        0);
 
     ASSERT_EQ(valuePullPersistAfter.value_metrics().skipped_size(), 1);
     skipBucket = valuePullPersistAfter.value_metrics().skipped(0);
@@ -1806,6 +1810,7 @@ TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
 }
 
 TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
+    ALOGE("Start ConfigUpdateE2eTest#TestMetricActivation");
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
 
@@ -1944,7 +1949,7 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
 
     // Fake a reboot. Code is from StatsService::informDeviceShutdown.
     int64_t shutDownTimeNs = bucketStartTimeNs + 50 * NS_PER_SEC;
-    processor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST, shutDownTimeNs);
+    processor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST, shutDownTimeNs, getWallClockNs());
     processor->SaveActiveConfigsToDisk(shutDownTimeNs);
     processor->SaveMetadataToDisk(getWallClockNs(), shutDownTimeNs);
 
@@ -1978,6 +1983,7 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     vector<uint8_t> buffer;
     processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
     EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    sortReportsByElapsedTime(&reports);
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
@@ -1993,10 +1999,6 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     EXPECT_EQ(metricReport.metric_id(), immediateMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    auto data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, updateTimeNs, 3);
 
     // Boot metric. Count = 0.
     metricReport = report.metrics(1);
@@ -2009,10 +2011,6 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     EXPECT_EQ(metricReport.metric_id(), combinationMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, updateTimeNs, 2);
 
     // Report from after update, before boot.
     report = reports.reports(1);
@@ -2036,10 +2034,6 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     EXPECT_EQ(metricReport.metric_id(), immediateMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), updateTimeNs, shutDownTimeNs, 1);
 
     // Report from after reboot.
     report = reports.reports(2);
@@ -2051,30 +2045,19 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     EXPECT_EQ(metricReport.metric_id(), bootMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bootTimeNs, dumpTimeNs, 3);
 
     // Combination metric. Count = 1.
     metricReport = report.metrics(1);
     EXPECT_EQ(metricReport.metric_id(), combinationMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bootTimeNs, dumpTimeNs, 1);
 
     // Immediate metric. Count = 1.
     metricReport = report.metrics(2);
     EXPECT_EQ(metricReport.metric_id(), immediateMetric.id());
     EXPECT_FALSE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bootTimeNs, deactivationTimeNs, 1);
+    ALOGE("End ConfigUpdateE2eTest#TestMetricActivation");
 }
 
 TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
