@@ -1560,7 +1560,9 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
     metric2ActivationTrigger2->set_activation_type(ACTIVATE_IMMEDIATELY);
 
     // Send the config.
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    const shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     string serialized = config1.SerializeAsString();
     service->addConfigurationChecked(uid, configId, {serialized.begin(), serialized.end()});
 
