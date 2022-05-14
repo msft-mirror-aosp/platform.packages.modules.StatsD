@@ -13,14 +13,15 @@
 // limitations under the License.
 
 #include "StatsService.h"
-#include "config/ConfigKey.h"
-#include "src/statsd_config.pb.h"
 
 #include <android/binder_interface_utils.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-
 #include <stdio.h>
+
+#include "config/ConfigKey.h"
+#include "packages/UidMap.h"
+#include "src/statsd_config.pb.h"
 
 using namespace android;
 using namespace testing;
@@ -35,7 +36,9 @@ using ::ndk::SharedRefBase;
 #ifdef __ANDROID__
 
 TEST(StatsServiceTest, TestAddConfig_simple) {
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     StatsdConfig config;
     config.set_id(12345);
     string serialized = config.SerializeAsString();
@@ -45,7 +48,9 @@ TEST(StatsServiceTest, TestAddConfig_simple) {
 }
 
 TEST(StatsServiceTest, TestAddConfig_empty) {
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     string serialized = "";
 
     EXPECT_TRUE(
@@ -53,7 +58,9 @@ TEST(StatsServiceTest, TestAddConfig_empty) {
 }
 
 TEST(StatsServiceTest, TestAddConfig_invalid) {
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     string serialized = "Invalid config!";
 
     EXPECT_FALSE(
@@ -70,7 +77,9 @@ TEST(StatsServiceTest, TestGetUidFromArgs) {
 
     int32_t uid;
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     service->mEngBuild = true;
 
     // "-1"
