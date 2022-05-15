@@ -2374,7 +2374,9 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, replaceSubId, replaceBroadcast);
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, removeSubId, removeBroadcast);
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    const shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     sp<StatsLogProcessor> processor = service->mProcessor;
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
     int64_t bucketStartTimeNs = processor->mTimeBaseNs;
