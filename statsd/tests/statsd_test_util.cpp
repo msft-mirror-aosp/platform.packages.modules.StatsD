@@ -1972,6 +1972,72 @@ void writeBootFlag(const string& flagName, const string& flagValue) {
                              flagName.c_str()),
                 flagValue);
 }
+
+PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap) {
+    ProtoOutputStream protoOutputStream;
+    uidMap->writeUidMapSnapshot(/* timestamp */ 1, /* includeVersionStrings */ true,
+                                /* includeInstaller */ true, /* certificateHashSize */ UINT8_MAX,
+                                /* interestingUids */ {},
+                                /* installerIndices */ nullptr, /* str_set */ nullptr,
+                                &protoOutputStream);
+
+    PackageInfoSnapshot packageInfoSnapshot;
+    outputStreamToProto(&protoOutputStream, &packageInfoSnapshot);
+    return packageInfoSnapshot;
+}
+
+PackageInfo buildPackageInfo(const string& name, const int32_t uid, const int64_t version,
+                             const string& versionString, const optional<string> installer,
+                             const vector<uint8_t>& certHash, const bool deleted,
+                             const bool hashStrings, const optional<uint32_t> installerIndex) {
+    PackageInfo packageInfo;
+    packageInfo.set_version(version);
+    packageInfo.set_uid(uid);
+    packageInfo.set_deleted(deleted);
+    if (!certHash.empty()) {
+        packageInfo.set_truncated_certificate_hash(certHash.data(), certHash.size());
+    }
+    if (hashStrings) {
+        packageInfo.set_name_hash(Hash64(name));
+        packageInfo.set_version_string_hash(Hash64(versionString));
+    } else {
+        packageInfo.set_name(name);
+        packageInfo.set_version_string(versionString);
+    }
+    if (installer) {
+        if (installerIndex) {
+            packageInfo.set_installer_index(*installerIndex);
+        } else if (hashStrings) {
+            packageInfo.set_installer_hash(Hash64(*installer));
+        } else {
+            packageInfo.set_installer(*installer);
+        }
+    }
+    return packageInfo;
+}
+
+vector<PackageInfo> buildPackageInfos(
+        const vector<string>& names, const vector<int32_t>& uids, const vector<int64_t>& versions,
+        const vector<string>& versionStrings, const vector<string>& installers,
+        const vector<vector<uint8_t>>& certHashes, const vector<bool>& deleted,
+        const vector<uint32_t>& installerIndices, const bool hashStrings) {
+    vector<PackageInfo> packageInfos;
+    for (int i = 0; i < uids.size(); i++) {
+        const optional<uint32_t> installerIndex =
+                installerIndices.empty() ? nullopt : optional<uint32_t>(installerIndices[i]);
+        const optional<string> installer =
+                installers.empty() ? nullopt : optional<string>(installers[i]);
+        vector<uint8_t> certHash;
+        if (!certHashes.empty()) {
+            certHash = certHashes[i];
+        }
+        packageInfos.emplace_back(buildPackageInfo(names[i], uids[i], versions[i],
+                                                   versionStrings[i], installer, certHash,
+                                                   deleted[i], hashStrings, installerIndex));
+    }
+    return packageInfos;
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
