@@ -59,7 +59,6 @@ const int64_t bucket3StartTimeNs = bucketStartTimeNs + 2 * bucketSizeNs;
 const int64_t bucket4StartTimeNs = bucketStartTimeNs + 3 * bucketSizeNs;
 const int64_t bucket5StartTimeNs = bucketStartTimeNs + 4 * bucketSizeNs;
 const int64_t bucket6StartTimeNs = bucketStartTimeNs + 5 * bucketSizeNs;
-const double epsilon = 0.001;
 
 static void assertPastBucketsSingleKey(
         const std::unordered_map<MetricDimensionKey,
@@ -122,7 +121,8 @@ public:
                 TimeUnitToBucketSizeInMillisGuardrailed(kConfigKey.GetUid(), metric.bucket()));
         const bool containsAnyPositionInDimensionsInWhat =
                 HasPositionANY(metric.dimensions_in_what());
-        const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
+        const bool shouldUseNestedDimensions =
+                ShouldUseNestedDimensions(metric.dimensions_in_what());
 
         vector<Matcher> fieldMatchers;
         translateFieldMatcher(metric.kll_field(), &fieldMatchers);
@@ -140,7 +140,8 @@ public:
                 kConfigKey, metric, protoHash, {/*pullAtomId=*/-1, /*pullerManager=*/nullptr},
                 {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
                  /*conditionCorrectionThresholdNs=*/nullopt, metric.split_bucket_for_app_upgrade()},
-                {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, logEventMatcherIndex,
+                {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions,
+                 logEventMatcherIndex,
                  /*eventMatcherWizard=*/nullptr, metric.dimensions_in_what(), fieldMatchers},
                 {conditionIndex, metric.links(), initialConditionCache, wizard},
                 {metric.state_link(), slicedStateAtoms, stateGroupMap},
@@ -184,7 +185,7 @@ TEST_P(KllMetricProducerTest_PartialBucket, TestPushedEventsMultipleBuckets) {
     const int64_t partialBucketSplitTimeNs = bucketStartTimeNs + 150;
     switch (GetParam()) {
         case APP_UPGRADE:
-            kllProducer->notifyAppUpgrade(partialBucketSplitTimeNs, getAppUpgradeBucketDefault());
+            kllProducer->notifyAppUpgrade(partialBucketSplitTimeNs);
             break;
         case BOOT_COMPLETE:
             kllProducer->onStatsdInitCompleted(partialBucketSplitTimeNs);
@@ -412,7 +413,7 @@ TEST(KllMetricProducerTest, TestForcedBucketSplitWhenConditionUnknownSkipsBucket
 
     // App update event.
     int64_t appUpdateTimeNs = bucketStartTimeNs + 1000;
-    kllProducer->notifyAppUpgrade(appUpdateTimeNs, getAppUpgradeBucketDefault());
+    kllProducer->notifyAppUpgrade(appUpdateTimeNs);
 
     // Check dump report.
     ProtoOutputStream output;

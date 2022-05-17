@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "StatsLogProcessor.h"
@@ -139,9 +139,9 @@ void StatsLogProcessor::onPeriodicAlarmFired(
 }
 
 void StatsLogProcessor::mapIsolatedUidToHostUidIfNecessaryLocked(LogEvent* event) const {
-    if (std::pair<int, int> indexRange; event->hasAttributionChain(&indexRange)) {
+    if (std::pair<size_t, size_t> indexRange; event->hasAttributionChain(&indexRange)) {
         vector<FieldValue>* const fieldValues = event->getMutableValues();
-        for (int i = indexRange.first; i <= indexRange.second; i++) {
+        for (size_t i = indexRange.first; i <= indexRange.second; i++) {
             FieldValue& fieldValue = fieldValues->at(i);
             if (isAttributionUidField(fieldValue)) {
                 const int hostUid = mUidMap->getHostUidOrSelf(fieldValue.mValue.int_value);
@@ -693,9 +693,10 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     // This skips the uid map if it's an empty config.
     if (it->second->getNumMetrics() > 0) {
         uint64_t uidMapToken = tempProto.start(FIELD_TYPE_MESSAGE | FIELD_ID_UID_MAP);
-        mUidMap->appendUidMap(
-                dumpTimeStampNs, key, it->second->hashStringInReport() ? &str_set : nullptr,
-                it->second->versionStringsInReport(), it->second->installerInReport(), &tempProto);
+        mUidMap->appendUidMap(dumpTimeStampNs, key, it->second->versionStringsInReport(),
+                              it->second->installerInReport(),
+                              it->second->packageCertificateHashSizeBytes(),
+                              it->second->hashStringInReport() ? &str_set : nullptr, &tempProto);
         tempProto.end(uidMapToken);
     }
 
@@ -1099,10 +1100,8 @@ void StatsLogProcessor::notifyAppUpgrade(const int64_t& eventTimeNs, const strin
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received app upgrade");
     StateManager::getInstance().notifyAppChanged(apk, mUidMap);
-    bool splitBucketDefault =
-            FlagProvider::getInstance().getFlagBool(APP_UPGRADE_BUCKET_SPLIT_FLAG, FLAG_TRUE);
     for (const auto& it : mMetricsManagers) {
-        it.second->notifyAppUpgrade(eventTimeNs, apk, uid, version, splitBucketDefault);
+        it.second->notifyAppUpgrade(eventTimeNs, apk, uid, version);
     }
 }
 
@@ -1111,10 +1110,8 @@ void StatsLogProcessor::notifyAppRemoved(const int64_t& eventTimeNs, const strin
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received app removed");
     StateManager::getInstance().notifyAppChanged(apk, mUidMap);
-    const bool splitBucketDefault =
-            FlagProvider::getInstance().getFlagBool(APP_UPGRADE_BUCKET_SPLIT_FLAG, FLAG_TRUE);
     for (const auto& it : mMetricsManagers) {
-        it.second->notifyAppRemoved(eventTimeNs, apk, uid, splitBucketDefault);
+        it.second->notifyAppRemoved(eventTimeNs, apk, uid);
     }
 }
 

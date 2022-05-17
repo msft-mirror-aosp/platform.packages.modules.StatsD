@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "metrics_manager_util.h"
@@ -25,7 +25,6 @@
 #include "condition/CombinationConditionTracker.h"
 #include "condition/SimpleConditionTracker.h"
 #include "external/StatsPullerManager.h"
-#include "flags/FlagProvider.h"
 #include "guardrail/StatsdStats.h"
 #include "hash.h"
 #include "matchers/CombinationAtomMatchingTracker.h"
@@ -656,6 +655,11 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         ALOGE("cannot find \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
         return nullopt;
     }
+    if (HasPositionALL(metric.value_field())) {
+        ALOGE("value field with position ALL is not supported. ValueMetric \"%lld\"",
+              (long long)metric.id());
+        return nullopt;
+    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.value_field(), &fieldMatchers);
     if (fieldMatchers.size() < 1) {
@@ -729,7 +733,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             MillisToNano(TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), bucketSizeTimeUnit));
 
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
-    const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
+    const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
             StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
@@ -744,8 +748,8 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             key, metric, metricHash, {pullTagId, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              conditionCorrectionThresholdNs, getAppUpgradeBucketSplit(metric)},
-            {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, trackerIndex, matcherWizard,
-             metric.dimensions_in_what(), fieldMatchers},
+            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
@@ -775,6 +779,11 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     }
     if (!metric.has_kll_field()) {
         ALOGE("cannot find \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
+        return nullopt;
+    }
+    if (HasPositionALL(metric.kll_field())) {
+        ALOGE("kll field with position ALL is not supported. KllMetric \"%lld\"",
+              (long long)metric.id());
         return nullopt;
     }
     std::vector<Matcher> fieldMatchers;
@@ -846,7 +855,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             MillisToNano(TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), bucketSizeTimeUnit));
 
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
-    const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
+    const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
@@ -857,8 +866,8 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             key, metric, metricHash, {/*pullTagId=*/-1, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              /*conditionCorrectionThresholdNs=*/nullopt, getAppUpgradeBucketSplit(metric)},
-            {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, trackerIndex, matcherWizard,
-             metric.dimensions_in_what(), fieldMatchers},
+            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
@@ -1136,11 +1145,9 @@ bool initMetrics(const ConfigKey& key, const StatsdConfig& config, const int64_t
                  vector<int>& metricsWithActivation) {
     sp<ConditionWizard> wizard = new ConditionWizard(allConditionTrackers);
     sp<EventMatcherWizard> matcherWizard = new EventMatcherWizard(allAtomMatchingTrackers);
-    const bool kllEnabled = FlagProvider::getInstance().getFlagBool(KLL_METRIC_FLAG, FLAG_FALSE);
     const int allMetricsCount = config.count_metric_size() + config.duration_metric_size() +
                                 config.event_metric_size() + config.gauge_metric_size() +
-                                config.value_metric_size() +
-                                (kllEnabled ? config.kll_metric_size() : 0);
+                                config.value_metric_size() + config.kll_metric_size();
     allMetricProducers.reserve(allMetricsCount);
 
     // Construct map from metric id to metric activation index. The map will be used to determine
@@ -1230,25 +1237,21 @@ bool initMetrics(const ConfigKey& key, const StatsdConfig& config, const int64_t
     }
 
     // build KllMetricProducer
-    if (kllEnabled) {
-        for (int i = 0; i < config.kll_metric_size(); i++) {
-            int metricIndex = allMetricProducers.size();
-            const KllMetric& metric = config.kll_metric(i);
-            metricMap.insert({metric.id(), metricIndex});
-            optional<sp<MetricProducer>> producer = createKllMetricProducerAndUpdateMetadata(
-                    key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
-                    allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
-                    conditionTrackerMap, initialConditionCache, wizard, matcherWizard,
-                    stateAtomIdMap, allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
-                    conditionToMetricMap, activationAtomTrackerToMetricMap,
-                    deactivationAtomTrackerToMetricMap, metricsWithActivation);
-            if (!producer) {
-                return false;
-            }
-            allMetricProducers.push_back(producer.value());
+    for (int i = 0; i < config.kll_metric_size(); i++) {
+        int metricIndex = allMetricProducers.size();
+        const KllMetric& metric = config.kll_metric(i);
+        metricMap.insert({metric.id(), metricIndex});
+        optional<sp<MetricProducer>> producer = createKllMetricProducerAndUpdateMetadata(
+                key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
+                allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
+                conditionTrackerMap, initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
+                allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+                activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                metricsWithActivation);
+        if (!producer) {
+            return false;
         }
-    } else {
-        ALOGI("KllMetrics in config being ignored due to KLL flag being disabled.");
+        allMetricProducers.push_back(producer.value());
     }
 
     // Gauge metrics.
@@ -1369,6 +1372,12 @@ bool initStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const sp
     vector<ConditionState> initialConditionCache;
     unordered_map<int64_t, int> stateAtomIdMap;
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
+
+    if (config.package_certificate_hash_size_bytes() > UINT8_MAX) {
+        ALOGE("Invalid value for package_certificate_hash_size_bytes: %d",
+              config.package_certificate_hash_size_bytes());
+        return false;
+    }
 
     if (!initAtomMatchingTrackers(config, uidMap, atomMatchingTrackerMap, allAtomMatchingTrackers,
                                   allTagIds)) {

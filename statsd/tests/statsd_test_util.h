@@ -19,6 +19,7 @@
 #include <aidl/android/os/IPullAtomCallback.h>
 #include <aidl/android/os/IPullAtomResultReceiver.h>
 #include <gmock/gmock.h>
+#include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "src/StatsLogProcessor.h"
@@ -43,7 +44,10 @@ using ::aidl::android::os::IPullAtomCallback;
 using ::aidl::android::os::IPullAtomResultReceiver;
 using android::util::ProtoReader;
 using google::protobuf::RepeatedPtrField;
+using google::protobuf::util::MessageDifferencer;
 using Status = ::ndk::ScopedAStatus;
+using PackageInfoSnapshot = UidMapping_PackageInfoSnapshot;
+using PackageInfo = UidMapping_PackageInfoSnapshot_PackageInfo;
 
 // Wrapper for assertion helpers called from tests to keep track of source location of failures.
 // Example usage:
@@ -151,6 +155,20 @@ AtomMatcher CreateProcessCrashAtomMatcher();
 // Create AtomMatcher proto for app launches.
 AtomMatcher CreateAppStartOccurredAtomMatcher();
 
+// Create AtomMatcher proto for test atom repeated state.
+AtomMatcher CreateTestAtomRepeatedStateAtomMatcher(const string& name,
+                                                   TestAtomReported::State state,
+                                                   Position position);
+
+// Create AtomMatcher proto for test atom repeated state is off, first position.
+AtomMatcher CreateTestAtomRepeatedStateFirstOffAtomMatcher();
+
+// Create AtomMatcher proto for test atom repeated state is on, first position.
+AtomMatcher CreateTestAtomRepeatedStateFirstOnAtomMatcher();
+
+// Create AtomMatcher proto for test atom repeated state is on, any position.
+AtomMatcher CreateTestAtomRepeatedStateAnyOnAtomMatcher();
+
 // Add an AtomMatcher to a combination AtomMatcher.
 void addMatcherToMatcherCombination(const AtomMatcher& matcher, AtomMatcher* combinationMatcher);
 
@@ -177,6 +195,9 @@ Predicate CreateIsSyncingPredicate();
 
 // Create a Predicate proto for app is in background.
 Predicate CreateIsInBackgroundPredicate();
+
+// Create a Predicate proto for test atom repeated state field is off.
+Predicate CreateTestAtomRepeatedStateFirstOffPredicate();
 
 // Create State proto for screen state atom.
 State CreateScreenState();
@@ -216,6 +237,10 @@ void addPredicateToPredicateCombination(const Predicate& predicate, Predicate* c
 
 // Create dimensions from primitive fields.
 FieldMatcher CreateDimensions(const int atomId, const std::vector<int>& fields);
+
+// Create dimensions from repeated primitive fields.
+FieldMatcher CreateRepeatedDimensions(const int atomId, const std::vector<int>& fields,
+                                      const std::vector<Position>& positions);
 
 // Create dimensions by attribution uid and tag.
 FieldMatcher CreateAttributionUidAndTagDimensions(const int atomId,
@@ -303,11 +328,27 @@ void CreateNoValuesLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs)
 
 AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1, int data2);
 
+AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
+                               const vector<int>& data2);
+
 std::shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
                                           int data2);
 
+std::shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
+                                          const vector<int>& data2);
+
 shared_ptr<LogEvent> makeExtraUidsLogEvent(int atomId, int64_t eventTimeNs, int uid1, int data1,
                                            int data2, const std::vector<int>& extraUids);
+
+std::shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
+                                                  const std::vector<int>& uids);
+
+shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
+                                             const vector<int>& uids, int data1, int data2);
+
+shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
+                                             const vector<int>& uids, int data1,
+                                             const vector<int>& data2);
 
 std::shared_ptr<LogEvent> makeAttributionLogEvent(int atomId, int64_t eventTimeNs,
                                                   const vector<int>& uids,
@@ -400,6 +441,22 @@ std::unique_ptr<LogEvent> CreateAppStartOccurredEvent(
         AppStartOccurred::TransitionType type, const string& activity_name,
         const string& calling_pkg_name, const bool is_instant_app, int64_t activity_start_msec);
 
+std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
+        uint64_t timestampNs, const vector<int>& repeatedIntField,
+        const vector<int64_t>& repeatedLongField, const vector<float>& repeatedFloatField,
+        const vector<string>& repeatedStringField, const bool* repeatedBoolField,
+        const size_t repeatedBoolFieldLength, const vector<int>& repeatedEnumField);
+
+std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
+        uint64_t timestampNs, const vector<int>& attributionUids,
+        const vector<string>& attributionTags, const int intField, const long longField,
+        const float floatField, const string& stringField, const bool boolField,
+        const TestAtomReported::State enumField, const vector<uint8_t>& bytesField,
+        const vector<int>& repeatedIntField, const vector<int64_t>& repeatedLongField,
+        const vector<float>& repeatedFloatField, const vector<string>& repeatedStringField,
+        const bool* repeatedBoolField, const size_t repeatedBoolFieldLength,
+        const vector<int>& repeatedEnumField);
+
 // Create a statsd log event processor upon the start time in seconds, config and key.
 sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const int64_t currentTimeNs,
                                               const StatsdConfig& config, const ConfigKey& key,
@@ -491,6 +548,8 @@ void backfillDimensionPath(ConfigMetricsReportList* config_report_list);
 bool backfillDimensionPath(const DimensionsValue& path,
                            const google::protobuf::RepeatedPtrField<DimensionsValue>& leafValues,
                            DimensionsValue* dimension);
+
+void sortReportsByElapsedTime(ConfigMetricsReportList* configReportList);
 
 class FakeSubsystemSleepCallback : public BnPullAtomCallback {
 public:
@@ -599,6 +658,13 @@ void backfillStartEndTimestampForSkippedBuckets(const int64_t timeBaseNs, T* met
     }
 }
 
+template <typename P>
+void outputStreamToProto(ProtoOutputStream* outputStream, P* proto) {
+    vector<uint8_t> bytes;
+    outputStream->serializeToVector(&bytes);
+    proto->ParseFromArray(bytes.data(), bytes.size());
+}
+
 inline bool isAtLeastSFuncTrue() {
     return true;
 }
@@ -623,8 +689,38 @@ void writeFlag(const std::string& flagName, const std::string& flagValue);
 
 void writeBootFlag(const std::string& flagName, const std::string& flagValue);
 
-bool getAppUpgradeBucketDefault();
+PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap);
 
+PackageInfo buildPackageInfo(const std::string& name, const int32_t uid, const int64_t version,
+                             const std::string& versionString,
+                             const std::optional<std::string> installer,
+                             const std::vector<uint8_t>& certHash, const bool deleted,
+                             const bool hashStrings, const optional<uint32_t> installerIndex);
+
+std::vector<PackageInfo> buildPackageInfos(
+        const std::vector<string>& names, const std::vector<int32_t>& uids,
+        const std::vector<int64_t>& versions, const std::vector<std::string>& versionStrings,
+        const std::vector<std::string>& installers,
+        const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<bool>& deleted,
+        const std::vector<uint32_t>& installerIndices, const bool hashStrings);
+
+// Checks equality on explicitly set values.
+MATCHER(ProtoEq, "") {
+    return MessageDifferencer::Equals(std::get<0>(arg), std::get<1>(arg));
+}
+
+// Checks equality on explicitly and implicitly set values.
+// Implicitly set values comes from fields with a default value specifier.
+MATCHER(ProtoEquiv, "") {
+    return MessageDifferencer::Equivalent(std::get<0>(arg), std::get<1>(arg));
+}
+
+template <typename T>
+std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
+    vector<T> result(a);
+    result.insert(result.end(), b.begin(), b.end());
+    return result;
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

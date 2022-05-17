@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define DEBUG false  // STOPSHIP if true
+#define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
 #include "StatsService.h"
@@ -88,8 +88,9 @@ Status checkUid(uid_t expectedUid) {
     }                                                             \
 }
 
-StatsService::StatsService(const sp<Looper>& handlerLooper, shared_ptr<LogEventQueue> queue)
-    : mAnomalyAlarmMonitor(new AlarmMonitor(
+StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue)
+    : mUidMap(uidMap),
+      mAnomalyAlarmMonitor(new AlarmMonitor(
               MIN_DIFF_TO_UPDATE_REGISTERED_ALARM_SECS,
               [this](const shared_ptr<IStatsCompanionService>& /*sc*/, int64_t timeMillis) {
                   mProcessor->setAnomalyAlarm(timeMillis);
@@ -118,7 +119,6 @@ StatsService::StatsService(const sp<Looper>& handlerLooper, shared_ptr<LogEventQ
                            [this]() { mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs()); }),
       mStatsCompanionServiceDeathRecipient(
               AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)) {
-    mUidMap = UidMap::getInstance();
     mPullerManager = new StatsPullerManager();
     StatsPuller::SetUidMap(mUidMap);
     mConfigManager = new ConfigManager();
@@ -390,9 +390,13 @@ void StatsService::print_cmd_help(int out) {
     dprintf(out, "\n");
     dprintf(out, "\n");
     dprintf(out, "usage: adb shell cmd stats print-uid-map [PKG]\n");
+    dprintf(out, "usage: adb shell cmd stats print-uid-map --with_certificate_hash\n");
     dprintf(out, "\n");
     dprintf(out, "  Prints the UID, app name, version mapping.\n");
-    dprintf(out, "  PKG           Optional package name to print the uids of the package\n");
+    dprintf(out,
+            "  PKG                         Optional package name to print the uids of the "
+            "package\n");
+    dprintf(out, "  --with_certificate_hash     Print package certificate hash in hex\n");
     dprintf(out, "\n");
     dprintf(out, "\n");
     dprintf(out, "usage: adb shell cmd stats pull-source ATOM_TAG [PACKAGE] \n");
@@ -737,16 +741,20 @@ status_t StatsService::cmd_print_stats(int out, const Vector<String8>& args) {
 
 status_t StatsService::cmd_print_uid_map(int out, const Vector<String8>& args) {
     if (args.size() > 1) {
-        string pkg;
-        pkg.assign(args[1].c_str(), args[1].size());
-        auto uids = mUidMap->getAppUid(pkg);
-        dprintf(out, "%s -> [ ", pkg.c_str());
-        for (const auto& uid : uids) {
-            dprintf(out, "%d ", uid);
+        if (!std::strcmp("--with_certificate_hash", args[1].c_str())) {
+            mUidMap->printUidMap(out, /* includeCertificateHash */ true);
+        } else {
+            string pkg;
+            pkg.assign(args[1].c_str(), args[1].size());
+            auto uids = mUidMap->getAppUid(pkg);
+            dprintf(out, "%s -> [ ", pkg.c_str());
+            for (const auto& uid : uids) {
+                dprintf(out, "%d ", uid);
+            }
+            dprintf(out, "]\n");
         }
-        dprintf(out, "]\n");
     } else {
-        mUidMap->printUidMap(out);
+        mUidMap->printUidMap(out, /* includeCertificateHash */ false);
     }
     return NO_ERROR;
 }
@@ -928,6 +936,7 @@ Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
     vector<String16> packageNames;
     vector<int32_t> uids;
     vector<int64_t> versions;
+    vector<vector<uint8_t>> certificateHashes;
 
     const auto numEntries = uidData.app_info_size();
     versionStrings.reserve(numEntries);
@@ -935,6 +944,7 @@ Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
     packageNames.reserve(numEntries);
     uids.reserve(numEntries);
     versions.reserve(numEntries);
+    certificateHashes.reserve(numEntries);
 
     for (const auto& appInfo: uidData.app_info()) {
         packageNames.emplace_back(String16(appInfo.package_name().c_str()));
@@ -942,14 +952,13 @@ Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
         versions.push_back(appInfo.version());
         versionStrings.emplace_back(String16(appInfo.version_string().c_str()));
         installers.emplace_back(String16(appInfo.installer().c_str()));
+
+        const string& certHash = appInfo.certificate_hash();
+        certificateHashes.emplace_back(certHash.begin(), certHash.end());
     }
 
-    mUidMap->updateMap(getElapsedRealtimeNs(),
-                       uids,
-                       versions,
-                       versionStrings,
-                       packageNames,
-                       installers);
+    mUidMap->updateMap(getElapsedRealtimeNs(), uids, versions, versionStrings, packageNames,
+                       installers, certificateHashes);
 
     mBootCompleteTrigger.markComplete(kUidMapReceivedTag);
     VLOG("StatsService::informAllUidData UidData proto parsed successfully.");
@@ -957,7 +966,8 @@ Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
 }
 
 Status StatsService::informOnePackage(const string& app, int32_t uid, int64_t version,
-                                      const string& versionString, const string& installer) {
+                                      const string& versionString, const string& installer,
+                                      const vector<uint8_t>& certificateHash) {
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackage was called");
@@ -966,7 +976,7 @@ Status StatsService::informOnePackage(const string& app, int32_t uid, int64_t ve
     String16 utf16Installer = String16(installer.c_str());
 
     mUidMap->updateApp(getElapsedRealtimeNs(), utf16App, uid, version, utf16VersionString,
-                       utf16Installer);
+                       utf16Installer, certificateHash);
     return Status::ok();
 }
 
@@ -1288,6 +1298,17 @@ Status StatsService::getRegisteredExperimentIds(std::vector<int64_t>* experiment
         experimentIdsOut->insert(experimentIdsOut->end(),
                                  trainInfo.experimentIds.begin(),
                                  trainInfo.experimentIds.end());
+    }
+    return Status::ok();
+}
+
+Status StatsService::updateProperties(const vector<PropertyParcel>& properties) {
+    ENFORCE_UID(AID_SYSTEM);
+
+    for (const auto& [property, value] : properties) {
+        if (property == kIncludeCertificateHash) {
+            mUidMap->setIncludeCertificateHash(value == "true");
+        }
     }
     return Status::ok();
 }

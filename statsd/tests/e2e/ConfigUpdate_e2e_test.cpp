@@ -20,7 +20,6 @@
 
 #include <thread>
 
-#include "flags/FlagProvider.h"
 #include "src/StatsLogProcessor.h"
 #include "src/StatsService.h"
 #include "src/storage/StorageManager.h"
@@ -51,15 +50,7 @@ void ValidateSubsystemSleepDimension(const DimensionsValue& value, string name) 
 }  // Anonymous namespace.
 
 // Setup for test fixture.
-class ConfigUpdateE2eTest : public ::testing::Test {
-    void SetUp() override {
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue, &getServerFlagFuncTrue);
-    }
-
-    void TearDown() override {
-        FlagProvider::getInstance().resetOverrides();
-    }
-};
+class ConfigUpdateE2eTest : public ::testing::Test {};
 
 TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
     StatsdConfig config;
@@ -1818,52 +1809,8 @@ TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
     EXPECT_EQ(kllPersistAfter.kll_metrics().skipped_size(), 0);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestKllMetric_KllDisabledBeforeConfigUpdate) {
-    StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
-
-    AtomMatcher brightnessMatcher = CreateScreenBrightnessChangedAtomMatcher();
-    *config.add_atom_matcher() = brightnessMatcher;
-
-    KllMetric kllRemove = createKllMetric("ScreenBrightness", brightnessMatcher, 1, nullopt);
-
-    *config.add_kll_metric() = kllRemove;
-
-    ConfigKey key(123, 987);
-    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
-    uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
-
-    FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue, &getServerFlagFuncFalse);
-
-    StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
-
-    *newConfig.add_atom_matcher() = brightnessMatcher;
-
-    *newConfig.add_kll_metric() = kllRemove;
-
-    int64_t updateTimeNs = bucketStartTimeNs + 30 * NS_PER_SEC;
-    processor->OnConfigUpdated(updateTimeNs, key, newConfig);
-
-    uint64_t dumpTimeNs = bucketStartTimeNs + bucketSizeNs + 10 * NS_PER_SEC;
-    ConfigMetricsReportList reports;
-    vector<uint8_t> buffer;
-    processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
-    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
-    ASSERT_EQ(reports.reports_size(), 2);
-
-    // Report from before update. Report should have one metric.
-    ConfigMetricsReport report = reports.reports(0);
-    EXPECT_EQ(report.metrics_size(), 1);
-
-    // Report from after update. Report should not have any metrics.
-    report = reports.reports(1);
-    EXPECT_EQ(report.metrics_size(), 0);
-}
-
 TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
+    ALOGE("Start ConfigUpdateE2eTest#TestMetricActivation");
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
 
@@ -2036,6 +1983,7 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     vector<uint8_t> buffer;
     processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
     EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    sortReportsByElapsedTime(&reports);
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);
     backfillStartEndTimestamp(&reports);
@@ -2051,10 +1999,6 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     EXPECT_EQ(metricReport.metric_id(), immediateMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    auto data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, updateTimeNs, 3);
 
     // Boot metric. Count = 0.
     metricReport = report.metrics(1);
@@ -2067,10 +2011,6 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     EXPECT_EQ(metricReport.metric_id(), combinationMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, updateTimeNs, 2);
 
     // Report from after update, before boot.
     report = reports.reports(1);
@@ -2094,10 +2034,6 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     EXPECT_EQ(metricReport.metric_id(), immediateMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), updateTimeNs, shutDownTimeNs, 1);
 
     // Report from after reboot.
     report = reports.reports(2);
@@ -2109,30 +2045,19 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     EXPECT_EQ(metricReport.metric_id(), bootMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bootTimeNs, dumpTimeNs, 3);
 
     // Combination metric. Count = 1.
     metricReport = report.metrics(1);
     EXPECT_EQ(metricReport.metric_id(), combinationMetric.id());
     EXPECT_TRUE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bootTimeNs, dumpTimeNs, 1);
 
     // Immediate metric. Count = 1.
     metricReport = report.metrics(2);
     EXPECT_EQ(metricReport.metric_id(), immediateMetric.id());
     EXPECT_FALSE(metricReport.is_active());
     EXPECT_TRUE(metricReport.has_count_metrics());
-    ASSERT_EQ(metricReport.count_metrics().data_size(), 1);
-    data = metricReport.count_metrics().data(0);
-    ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bootTimeNs, deactivationTimeNs, 1);
+    ALOGE("End ConfigUpdateE2eTest#TestMetricActivation");
 }
 
 TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
@@ -2449,7 +2374,9 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, replaceSubId, replaceBroadcast);
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, removeSubId, removeBroadcast);
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    const shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     sp<StatsLogProcessor> processor = service->mProcessor;
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
     int64_t bucketStartTimeNs = processor->mTimeBaseNs;
