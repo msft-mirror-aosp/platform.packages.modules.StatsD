@@ -1024,7 +1024,7 @@ optional<sp<AnomalyTracker>> createAnomalyTracker(
 bool initAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidMap,
                               unordered_map<int64_t, int>& atomMatchingTrackerMap,
                               vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                              set<int>& allTagIds) {
+                              unordered_map<int, vector<int>>& allTagIdsToMatchersMap) {
     vector<AtomMatcher> matcherConfigs;
     const int atomMatcherCount = config.atom_matcher_size();
     matcherConfigs.reserve(atomMatcherCount);
@@ -1046,15 +1046,31 @@ bool initAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidM
     }
 
     vector<bool> stackTracker2(allAtomMatchingTrackers.size(), false);
-    for (auto& matcher : allAtomMatchingTrackers) {
+    for (size_t matcherIndex = 0; matcherIndex < allAtomMatchingTrackers.size(); matcherIndex++) {
+        auto& matcher = allAtomMatchingTrackers[matcherIndex];
         if (!matcher->init(matcherConfigs, allAtomMatchingTrackers, atomMatchingTrackerMap,
                            stackTracker2)) {
             return false;
         }
+
         // Collect all the tag ids that are interesting. TagIds exist in leaf nodes only.
         const set<int>& tagIds = matcher->getAtomIds();
-        allTagIds.insert(tagIds.begin(), tagIds.end());
+        for (int atomId : tagIds) {
+            auto& matchers = allTagIdsToMatchersMap[atomId];
+            // Performance note:
+            // For small amount of elements linear search in vector will be
+            // faster then look up in a set:
+            // - we do not expect matchers vector per atom id will have significant size (< 10)
+            // - iteration via vector is the fastest way compared to other containers (set, etc.)
+            //   in the hot path MetricsManager::onLogEvent()
+            // - vector<T> will have the smallest memory footprint compared to any other
+            //   std containers implementation
+            if (find(matchers.begin(), matchers.end(), matcherIndex) == matchers.end()) {
+                matchers.push_back(matcherIndex);
+            }
+        }
     }
+
     return true;
 }
 
@@ -1352,7 +1368,8 @@ bool initStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const sp
                       const sp<StatsPullerManager>& pullerManager,
                       const sp<AlarmMonitor>& anomalyAlarmMonitor,
                       const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
-                      const int64_t currentTimeNs, set<int>& allTagIds,
+                      const int64_t currentTimeNs,
+                      std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
                       vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
                       unordered_map<int64_t, int>& atomMatchingTrackerMap,
                       vector<sp<ConditionTracker>>& allConditionTrackers,
@@ -1380,7 +1397,7 @@ bool initStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const sp
     }
 
     if (!initAtomMatchingTrackers(config, uidMap, atomMatchingTrackerMap, allAtomMatchingTrackers,
-                                  allTagIds)) {
+                                  allTagIdsToMatchersMap)) {
         ALOGE("initAtomMatchingTrackers failed");
         return false;
     }
