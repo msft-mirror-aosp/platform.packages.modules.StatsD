@@ -58,14 +58,14 @@ bool determineMatcherUpdateStatus(
 // [oldAtomMatchingTrackerMap]: existing matcher id to index mapping
 // [oldAtomMatchingTrackers]: stores the existing AtomMatchingTrackers
 // output:
-// [allTagIds]: contains the set of all interesting tag ids to this config.
+// [allTagIdsToMatchersMap]: maps of tag ids to atom matchers
 // [newAtomMatchingTrackerMap]: new matcher id to index mapping
 // [newAtomMatchingTrackers]: stores the new AtomMatchingTrackers
 // [replacedMatchers]: set of matcher ids that changed and have been replaced
 bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidMap,
                                 const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
                                 const std::vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
-                                std::set<int>& allTagIds,
+                                std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
                                 std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
                                 std::vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
                                 std::set<int64_t>& replacedMatchers);
@@ -243,7 +243,7 @@ bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const 
                         const std::vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
                         const std::unordered_map<int64_t, int>& oldAlertTrackerMap,
                         const std::map<int64_t, uint64_t>& oldStateProtoHashes,
-                        std::set<int>& allTagIds,
+                        std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
                         std::vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
                         std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
                         std::vector<sp<ConditionTracker>>& newConditionTrackers,
