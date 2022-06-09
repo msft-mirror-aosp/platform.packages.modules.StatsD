@@ -14,6 +14,7 @@
 
 #include "StatsLogProcessor.h"
 
+#include <android-base/stringprintf.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
@@ -38,9 +39,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::base::StringPrintf;
 using android::util::ProtoOutputStream;
 
 #ifdef __ANDROID__
+#define STATS_DATA_DIR "/data/misc/stats-data"
 
 /**
  * Mock MetricsManager (ByteSize() is called).
@@ -359,6 +362,8 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
               StatsdStats::getInstance().mConfigStats.find(key));
     // Both "config" and "invalidConfig" should be in the icebox.
     EXPECT_EQ(2, StatsdStats::getInstance().mIceBox.size());
+    string suffix = StringPrintf("%d_%lld", key.GetUid(), (long long)key.GetId());
+    StorageManager::deleteSuffixedFiles(STATS_DATA_DIR, suffix.c_str());
 }
 
 
@@ -1555,7 +1560,9 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
     metric2ActivationTrigger2->set_activation_type(ACTIVATE_IMMEDIATELY);
 
     // Send the config.
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    const shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     string serialized = config1.SerializeAsString();
     service->addConfigurationChecked(uid, configId, {serialized.begin(), serialized.end()});
 

@@ -110,7 +110,7 @@ bool determineMatcherUpdateStatus(const StatsdConfig& config, const int matcherI
 bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidMap,
                                 const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
                                 const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
-                                set<int>& allTagIds,
+                                std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
                                 unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
                                 vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
                                 set<int64_t>& replacedMatchers) {
@@ -182,14 +182,29 @@ bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& ui
     }
 
     std::fill(cycleTracker.begin(), cycleTracker.end(), false);
-    for (auto& matcher : newAtomMatchingTrackers) {
+    for (size_t matcherIndex = 0; matcherIndex < newAtomMatchingTrackers.size(); matcherIndex++) {
+        auto& matcher = newAtomMatchingTrackers[matcherIndex];
         if (!matcher->init(matcherProtos, newAtomMatchingTrackers, newAtomMatchingTrackerMap,
                            cycleTracker)) {
             return false;
         }
+
         // Collect all the tag ids that are interesting. TagIds exist in leaf nodes only.
         const set<int>& tagIds = matcher->getAtomIds();
-        allTagIds.insert(tagIds.begin(), tagIds.end());
+        for (int atomId : tagIds) {
+            auto& matchers = allTagIdsToMatchersMap[atomId];
+            // Performance note:
+            // For small amount of elements linear search in vector will be
+            // faster then look up in a set:
+            // - we do not expect matchers vector per atom id will have significant size (< 10)
+            // - iteration via vector is the fastest way compared to other containers (set, etc.)
+            //   in the hot path MetricsManager::onLogEvent()
+            // - vector<T> will have the smallest memory footprint compared to any other
+            //   std containers implementation
+            if (find(matchers.begin(), matchers.end(), matcherIndex) == matchers.end()) {
+                matchers.push_back(matcherIndex);
+            }
+        }
     }
 
     return true;
@@ -1100,7 +1115,8 @@ bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const 
                         const unordered_map<int64_t, int>& oldMetricProducerMap,
                         const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
                         const unordered_map<int64_t, int>& oldAlertTrackerMap,
-                        const map<int64_t, uint64_t>& oldStateProtoHashes, set<int>& allTagIds,
+                        const map<int64_t, uint64_t>& oldStateProtoHashes,
+                        std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
                         vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
                         unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
                         vector<sp<ConditionTracker>>& newConditionTrackers,
@@ -1133,8 +1149,9 @@ bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const 
     }
 
     if (!updateAtomMatchingTrackers(config, uidMap, oldAtomMatchingTrackerMap,
-                                    oldAtomMatchingTrackers, allTagIds, newAtomMatchingTrackerMap,
-                                    newAtomMatchingTrackers, replacedMatchers)) {
+                                    oldAtomMatchingTrackers, allTagIdsToMatchersMap,
+                                    newAtomMatchingTrackerMap, newAtomMatchingTrackers,
+                                    replacedMatchers)) {
         ALOGE("updateAtomMatchingTrackers failed");
         return false;
     }
