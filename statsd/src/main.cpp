@@ -17,19 +17,19 @@
 #define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
-#include "StatsService.h"
-#include "flags/FlagProvider.h"
-#include "socket/StatsSocketListener.h"
-
 #include <android/binder_interface_utils.h>
-#include <android/binder_process.h>
 #include <android/binder_manager.h>
-#include <utils/Looper.h>
-
+#include <android/binder_process.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <utils/Looper.h>
+
+#include "StatsService.h"
+#include "flags/FlagProvider.h"
+#include "packages/UidMap.h"
+#include "socket/StatsSocketListener.h"
 
 using namespace android;
 using namespace android::os::statsd;
@@ -80,10 +80,12 @@ int main(int /*argc*/, char** /*argv*/) {
             std::make_shared<LogEventQueue>(4000 /*buffer limit. Buffer is NOT pre-allocated*/);
 
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags({VALUE_METRIC_SUBSET_DIMENSION_AGGREGATION_FLAG});
+    FlagProvider::getInstance().initBootFlags({OPTIMIZATION_ATOM_MATCHER_MAP_FLAG});
+
+    sp<UidMap> uidMap = UidMap::getInstance();
 
     // Create the service
-    gStatsService = SharedRefBase::make<StatsService>(looper, eventQueue);
+    gStatsService = SharedRefBase::make<StatsService>(uidMap, eventQueue);
     // TODO(b/149582373): Set DUMP_FLAG_PROTO once libbinder_ndk supports
     // setting dumpsys priorities.
     binder_status_t status = AServiceManager_addService(gStatsService->asBinder().get(), "stats");

@@ -21,6 +21,7 @@
 #include "src/StatsLogProcessor.h"
 #include "src/StatsService.h"
 #include "src/anomaly/DurationAnomalyTracker.h"
+#include "src/packages/UidMap.h"
 #include "src/stats_log_util.h"
 #include "tests/statsd_test_util.h"
 
@@ -113,7 +114,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_single_bucket) {
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
     sendConfig(service, config);
 
     auto processor = service->mProcessor;
@@ -296,7 +298,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets) {
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
     sendConfig(service, config);
 
     auto processor = service->mProcessor;
@@ -419,7 +422,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
     sendConfig(service, config);
 
     auto processor = service->mProcessor;
@@ -510,7 +514,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period) {
     const uint32_t refractory_period_sec = 3 * bucketSizeNs / NS_PER_SEC;
     config.mutable_alert(0)->set_refractory_period_secs(refractory_period_sec);
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
     sendConfig(service, config);
 
     auto processor = service->mProcessor;
