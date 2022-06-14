@@ -111,9 +111,8 @@ private:
     friend class FlagProviderTest_SPlus_RealValues;
     friend class KllMetricE2eAbTest;
     friend class MetricsManagerTest;
-    friend class PartialBucketE2e_AppUpgradeDefaultTest;
+    friend class StatsLogProcessorTest;
 
-    FRIEND_TEST(ConfigUpdateE2eTest, TestKllMetric_KllDisabledBeforeConfigUpdate);
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
     FRIEND_TEST(EventMetricE2eTest, TestEventMetricDataAggregated);
@@ -127,9 +126,8 @@ private:
     FRIEND_TEST(FlagProviderTest_SPlus, TestGetFlagBoolServerFlagEmptyDefaultTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagFalse);
-    FRIEND_TEST(NumericValueMetricProducerTest_SubsetDimensions, TestSubsetDimensions);
-    FRIEND_TEST(PartialBucketE2e_AppUpgradeDefaultTest, TestCountMetricDefaultFalse);
-    FRIEND_TEST(PartialBucketE2e_AppUpgradeDefaultTest, TestCountMetricDefaultTrue);
+    FRIEND_TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagFalse);
+    FRIEND_TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagTrue);
 };
 
 }  // namespace statsd
