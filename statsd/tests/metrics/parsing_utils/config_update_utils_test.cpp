@@ -63,57 +63,41 @@ sp<AlarmMonitor> periodicAlarmMonitor = new AlarmMonitor(
         /*minDiffToUpdateRegisteredAlarmTimeSec=*/0,
         [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
         [](const shared_ptr<IStatsCompanionService>&) {});
-unordered_map<int, vector<int>> allTagIdsToMatchersMap;
+set<int> allTagIds;
 vector<sp<AtomMatchingTracker>> oldAtomMatchingTrackers;
 unordered_map<int64_t, int> oldAtomMatchingTrackerMap;
 vector<sp<ConditionTracker>> oldConditionTrackers;
 unordered_map<int64_t, int> oldConditionTrackerMap;
 vector<sp<MetricProducer>> oldMetricProducers;
 unordered_map<int64_t, int> oldMetricProducerMap;
-vector<sp<AnomalyTracker>> oldAnomalyTrackers;
+std::vector<sp<AnomalyTracker>> oldAnomalyTrackers;
 unordered_map<int64_t, int> oldAlertTrackerMap;
-vector<sp<AlarmTracker>> oldAlarmTrackers;
-unordered_map<int, vector<int>> tmpConditionToMetricMap;
-unordered_map<int, vector<int>> tmpTrackerToMetricMap;
-unordered_map<int, vector<int>> tmpTrackerToConditionMap;
-unordered_map<int, vector<int>> tmpActivationAtomTrackerToMetricMap;
-unordered_map<int, vector<int>> tmpDeactivationAtomTrackerToMetricMap;
+std::vector<sp<AlarmTracker>> oldAlarmTrackers;
+unordered_map<int, std::vector<int>> tmpConditionToMetricMap;
+unordered_map<int, std::vector<int>> tmpTrackerToMetricMap;
+unordered_map<int, std::vector<int>> tmpTrackerToConditionMap;
+unordered_map<int, std::vector<int>> tmpActivationAtomTrackerToMetricMap;
+unordered_map<int, std::vector<int>> tmpDeactivationAtomTrackerToMetricMap;
 vector<int> metricsWithActivation;
 map<int64_t, uint64_t> oldStateHashes;
-set<int64_t> noReportMetricIds;
+std::set<int64_t> noReportMetricIds;
 
 bool initConfig(const StatsdConfig& config) {
     return initStatsdConfig(
             key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseNs, timeBaseNs, allTagIdsToMatchersMap, oldAtomMatchingTrackers,
-            oldAtomMatchingTrackerMap, oldConditionTrackers, oldConditionTrackerMap,
-            oldMetricProducers, oldMetricProducerMap, oldAnomalyTrackers, oldAlarmTrackers,
-            tmpConditionToMetricMap, tmpTrackerToMetricMap, tmpTrackerToConditionMap,
-            tmpActivationAtomTrackerToMetricMap, tmpDeactivationAtomTrackerToMetricMap,
-            oldAlertTrackerMap, metricsWithActivation, oldStateHashes, noReportMetricIds);
+            timeBaseNs, timeBaseNs, allTagIds, oldAtomMatchingTrackers, oldAtomMatchingTrackerMap,
+            oldConditionTrackers, oldConditionTrackerMap, oldMetricProducers, oldMetricProducerMap,
+            oldAnomalyTrackers, oldAlarmTrackers, tmpConditionToMetricMap, tmpTrackerToMetricMap,
+            tmpTrackerToConditionMap, tmpActivationAtomTrackerToMetricMap,
+            tmpDeactivationAtomTrackerToMetricMap, oldAlertTrackerMap, metricsWithActivation,
+            oldStateHashes, noReportMetricIds);
 }
-
-vector<int> filterMatcherIndexesById(const vector<sp<AtomMatchingTracker>>& atomMatchingTrackers,
-                                     const vector<int64_t>& ids) {
-    vector<int> result;
-
-    for (auto& id : ids) {
-        for (int i = 0; i < atomMatchingTrackers.size(); i++) {
-            if (atomMatchingTrackers[i]->getId() == id) {
-                result.push_back(i);
-            }
-        }
-    }
-
-    return result;
-}
-
 }  // anonymous namespace
 
 class ConfigUpdateTest : public ::testing::Test {
 public:
     void SetUp() override {
-        allTagIdsToMatchersMap.clear();
+        allTagIds.clear();
         oldAtomMatchingTrackers.clear();
         oldAtomMatchingTrackerMap.clear();
         oldConditionTrackers.clear();
@@ -398,7 +382,7 @@ TEST_F(ConfigUpdateTest, TestUpdateMatchers) {
     *newConfig.add_atom_matcher() = simple4;
     *newConfig.add_atom_matcher() = combination1;
 
-    unordered_map<int, vector<int>> newTagIds;
+    set<int> newTagIds;
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
     set<int64_t> replacedMatchers;
@@ -410,19 +394,6 @@ TEST_F(ConfigUpdateTest, TestUpdateMatchers) {
     EXPECT_EQ(newTagIds.count(10), 1);
     EXPECT_EQ(newTagIds.count(111), 1);
     EXPECT_EQ(newTagIds.count(13), 1);
-
-    EXPECT_EQ(newTagIds[10].size(), 3);  // simple1, combination1, combination2
-    EXPECT_THAT(newTagIds[10], UnorderedElementsAreArray(filterMatcherIndexesById(
-                                       newAtomMatchingTrackers,
-                                       {simple1.id(), combination1.id(), combination2.id()})));
-    EXPECT_EQ(newTagIds[111].size(), 3);  // simple2, combination2, combination3
-    EXPECT_THAT(newTagIds[111], UnorderedElementsAreArray(filterMatcherIndexesById(
-                                        newAtomMatchingTrackers,
-                                        {simple2.id(), combination2.id(), combination3.id()})));
-    EXPECT_EQ(newTagIds[13].size(), 2);  // simple4, combination3
-    EXPECT_THAT(newTagIds[13],
-                UnorderedElementsAreArray(filterMatcherIndexesById(
-                        newAtomMatchingTrackers, {simple4.id(), combination3.id()})));
 
     ASSERT_EQ(newAtomMatchingTrackerMap.size(), 6);
     EXPECT_EQ(newAtomMatchingTrackerMap.at(combination3Id), 0);
@@ -828,8 +799,8 @@ TEST_F(ConfigUpdateTest, TestUpdateConditions) {
     unordered_map<int64_t, int> newConditionTrackerMap;
     vector<sp<ConditionTracker>> newConditionTrackers;
     unordered_map<int, vector<int>> trackerToConditionMap;
-    vector<ConditionState> conditionCache;
-    set<int64_t> replacedConditions;
+    std::vector<ConditionState> conditionCache;
+    std::set<int64_t> replacedConditions;
     EXPECT_TRUE(updateConditions(key, newConfig, newAtomMatchingTrackerMap, replacedMatchers,
                                  oldConditionTrackerMap, oldConditionTrackers,
                                  newConditionTrackerMap, newConditionTrackers,

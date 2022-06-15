@@ -186,8 +186,7 @@ public:
                 TimeUnitToBucketSizeInMillisGuardrailed(kConfigKey.GetUid(), metric.bucket()));
         const bool containsAnyPositionInDimensionsInWhat =
                 HasPositionANY(metric.dimensions_in_what());
-        const bool shouldUseNestedDimensions =
-                ShouldUseNestedDimensions(metric.dimensions_in_what());
+        const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
 
         vector<Matcher> fieldMatchers;
         translateFieldMatcher(metric.value_field(), &fieldMatchers);
@@ -211,9 +210,8 @@ public:
                 kConfigKey, metric, protoHash, {pullAtomId, pullerManager},
                 {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
                  conditionCorrectionThresholdNs, metric.split_bucket_for_app_upgrade()},
-                {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions,
-                 logEventMatcherIndex, eventMatcherWizard, metric.dimensions_in_what(),
-                 fieldMatchers},
+                {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, logEventMatcherIndex,
+                 eventMatcherWizard, metric.dimensions_in_what(), fieldMatchers},
                 {conditionIndex, metric.links(), initialConditionCache, wizard},
                 {metric.state_link(), slicedStateAtoms, stateGroupMap},
                 {/*eventActivationMap=*/{}, /*eventDeactivationMap=*/{}},
@@ -255,24 +253,23 @@ public:
         metric.add_slice_by_state(StringToId(state));
         return metric;
     }
-
-    static ValueMetric createMetricWithRepeatedValueField() {
-        ValueMetric metric;
-        metric.set_id(metricId);
-        metric.set_bucket(ONE_MINUTE);
-        metric.mutable_value_field()->set_field(tagId);
-        FieldMatcher* valueChild = metric.mutable_value_field()->add_child();
-        valueChild->set_field(3);
-        valueChild->set_position(Position::FIRST);
-        metric.set_max_pull_delay_sec(INT_MAX);
-        metric.set_split_bucket_for_app_upgrade(true);
-        metric.set_aggregation_type(ValueMetric_AggregationType_SUM);
-        return metric;
-    }
 };
 
 // Setup for parameterized tests.
 class NumericValueMetricProducerTest_PartialBucket : public TestWithParam<BucketSplitEvent> {};
+
+class NumericValueMetricProducerTest_SubsetDimensions : public ::testing::Test {
+    void SetUp() override {
+        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
+        FlagProvider::getInstance().overrideFlag(VALUE_METRIC_SUBSET_DIMENSION_AGGREGATION_FLAG,
+                                                 FLAG_FALSE,
+                                                 /*isBootFlag=*/true);
+    }
+
+    void TearDown() override {
+        FlagProvider::getInstance().resetOverrides();
+    }
+};
 
 INSTANTIATE_TEST_SUITE_P(NumericValueMetricProducerTest_PartialBucket,
                          NumericValueMetricProducerTest_PartialBucket,
@@ -7340,7 +7337,10 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestLateStateChangeSlic
                         60 * NS_PER_SEC, 0);
 }
 
-TEST(NumericValueMetricProducerTest, TestSubsetDimensions) {
+TEST_F(NumericValueMetricProducerTest_SubsetDimensions, TestSubsetDimensions_FlagTrue) {
+    FlagProvider::getInstance().overrideFlag(VALUE_METRIC_SUBSET_DIMENSION_AGGREGATION_FLAG,
+                                             FLAG_TRUE, /*isBootFlag=*/true);
+
     // Create metric with subset of dimensions.
     ValueMetric metric = NumericValueMetricProducerTestHelper::createMetric();
     *metric.mutable_dimensions_in_what() = CreateDimensions(tagId, {1 /*uid*/});
@@ -7426,36 +7426,41 @@ TEST(NumericValueMetricProducerTest, TestSubsetDimensions) {
     ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, {26}, -1, 0);
 }
 
-TEST(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions) {
-    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetricWithRepeatedValueField();
-    metric.mutable_dimensions_in_what()->set_field(tagId);
-    FieldMatcher* valueChild = metric.mutable_dimensions_in_what()->add_child();
-    valueChild->set_field(1);
-    valueChild->set_position(Position::FIRST);
+TEST_F(NumericValueMetricProducerTest_SubsetDimensions, TestSubsetDimensions_FlagFalse) {
+    // Create metric with subset of dimensions.
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetric();
+    *metric.mutable_dimensions_in_what() = CreateDimensions(tagId, {1 /*uid*/});
 
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
 
     EXPECT_CALL(*pullerManager, Pull(tagId, kConfigKey, _, _))
-            // First field is a dimension field (repeated, position FIRST).
-            // Third field is the value field (repeated, position FIRST).
-            // NumericValueMetricProducer initialized.
+            // First and third fields are dimension fields. Second field is the value field.
+            // First bucket pull.
             .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
                                 vector<std::shared_ptr<LogEvent>>* data) {
                 data->clear();
                 data->push_back(
-                        makeRepeatedUidLogEvent(tagId, bucketStartTimeNs + 1, {1, 10}, 5, {2, 3}));
+                        CreateThreeValueLogEvent(tagId, bucketStartTimeNs + 1, 1 /*uid*/, 5, 5));
                 data->push_back(
-                        makeRepeatedUidLogEvent(tagId, bucketStartTimeNs + 1, {2, 10}, 5, {3, 4}));
+                        CreateThreeValueLogEvent(tagId, bucketStartTimeNs + 1, 1 /*uid*/, 5, 7));
+                data->push_back(
+                        CreateThreeValueLogEvent(tagId, bucketStartTimeNs + 1, 2 /*uid*/, 6, 5));
+                data->push_back(
+                        CreateThreeValueLogEvent(tagId, bucketStartTimeNs + 1, 2 /*uid*/, 6, 7));
                 return true;
             }))
-            // Dump report pull.
+            // Dump report.
             .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
                                 vector<std::shared_ptr<LogEvent>>* data) {
                 data->clear();
-                data->push_back(makeRepeatedUidLogEvent(tagId, bucket2StartTimeNs + 10000000000,
-                                                        {1, 10}, 5, {10, 3}));
-                data->push_back(makeRepeatedUidLogEvent(tagId, bucket2StartTimeNs + 10000000000,
-                                                        {2, 10}, 5, {14, 4}));
+                data->push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 10000000000,
+                                                         1 /*uid*/, 13, 5));
+                data->push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 10000000000,
+                                                         1 /*uid*/, 15, 7));
+                data->push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 10000000000,
+                                                         2 /*uid*/, 21, 5));
+                data->push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 10000000000,
+                                                         2 /*uid*/, 22, 7));
                 return true;
             }));
 
@@ -7466,8 +7471,10 @@ TEST(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions) {
     // Bucket 2 start.
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
-    allData.push_back(makeRepeatedUidLogEvent(tagId, bucket2StartTimeNs + 1, {1, 10}, 5, {5, 7}));
-    allData.push_back(makeRepeatedUidLogEvent(tagId, bucket2StartTimeNs + 1, {2, 10}, 5, {7, 5}));
+    allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 1 /*uid*/, 10, 5));
+    allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 1 /*uid*/, 11, 7));
+    allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 2 /*uid*/, 8, 5));
+    allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 2 /*uid*/, 9, 7));
     valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
 
     // Check dump report.
@@ -7490,19 +7497,19 @@ TEST(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions) {
     ValueMetricData data = valueMetrics.data(0);
     ValidateUidDimension(data.dimensions_in_what(), tagId, 1);
     ASSERT_EQ(2, data.bucket_info_size());
-    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs, {3}, -1,
-                        0);  // Summed diffs of 2, 5
-    ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, {5}, -1,
-                        0);  // Summed diffs of 5, 10
+    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs, {6}, -1,
+                        0);  // Summed diffs of 5, 5, 10, 11
+    ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, {4}, -1,
+                        0);  // Summed diffs of 11, 13, 15
 
     // Check data keyed to uid 2.
     data = valueMetrics.data(1);
     ValidateUidDimension(data.dimensions_in_what(), tagId, 2);
     ASSERT_EQ(2, data.bucket_info_size());
-    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs, {4}, -1,
-                        0);  // Summed diffs of 3, 7
-    ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, {7}, -1,
-                        0);  // Summed diffs of 7, 14
+    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs, {3}, -1,
+                        0);  // Summed diffs of 6, 6, 8, 9
+    ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, {13}, -1,
+                        0);  // Summed diffs of 9, 21, 22
 }
 
 }  // namespace statsd

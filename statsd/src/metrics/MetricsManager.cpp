@@ -23,7 +23,6 @@
 #include "CountMetricProducer.h"
 #include "condition/CombinationConditionTracker.h"
 #include "condition/SimpleConditionTracker.h"
-#include "flags/FlagProvider.h"
 #include "guardrail/StatsdStats.h"
 #include "matchers/CombinationAtomMatchingTracker.h"
 #include "matchers/SimpleAtomMatchingTracker.h"
@@ -76,20 +75,18 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mPullerManager(pullerManager),
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
-      mShouldPersistHistory(config.persist_locally()),
-      mAtomMatcherOptimizationEnabled(FlagProvider::getInstance().getBootFlagBool(
-              OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_FALSE)) {
+      mShouldPersistHistory(config.persist_locally()) {
     // Init the ttl end timestamp.
     refreshTtl(timeBaseNs);
 
     mConfigValid = initStatsdConfig(
             key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseNs, currentTimeNs, mTagIdsToMatchersMap, mAllAtomMatchingTrackers,
-            mAtomMatchingTrackerMap, mAllConditionTrackers, mConditionTrackerMap,
-            mAllMetricProducers, mMetricProducerMap, mAllAnomalyTrackers, mAllPeriodicAlarmTrackers,
-            mConditionToMetricMap, mTrackerToMetricMap, mTrackerToConditionMap,
-            mActivationAtomTrackerToMetricMap, mDeactivationAtomTrackerToMetricMap,
-            mAlertTrackerMap, mMetricIndexesWithActivation, mStateProtoHashes, mNoReportMetricIds);
+            timeBaseNs, currentTimeNs, mTagIds, mAllAtomMatchingTrackers, mAtomMatchingTrackerMap,
+            mAllConditionTrackers, mConditionTrackerMap, mAllMetricProducers, mMetricProducerMap,
+            mAllAnomalyTrackers, mAllPeriodicAlarmTrackers, mConditionToMetricMap,
+            mTrackerToMetricMap, mTrackerToConditionMap, mActivationAtomTrackerToMetricMap,
+            mDeactivationAtomTrackerToMetricMap, mAlertTrackerMap, mMetricIndexesWithActivation,
+            mStateProtoHashes, mNoReportMetricIds);
 
     mHashStringsInReport = config.hash_strings_in_metric_report();
     mVersionStringsInReport = config.version_strings_in_metric_report();
@@ -131,7 +128,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     vector<sp<AnomalyTracker>> newAnomalyTrackers;
     unordered_map<int64_t, int> newAlertTrackerMap;
     vector<sp<AlarmTracker>> newPeriodicAlarmTrackers;
-    mTagIdsToMatchersMap.clear();
+    mTagIds.clear();
     mConditionToMetricMap.clear();
     mTrackerToMetricMap.clear();
     mTrackerToConditionMap.clear();
@@ -143,7 +140,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
             mConfigKey, config, mUidMap, mPullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
             timeBaseNs, currentTimeNs, mAllAtomMatchingTrackers, mAtomMatchingTrackerMap,
             mAllConditionTrackers, mConditionTrackerMap, mAllMetricProducers, mMetricProducerMap,
-            mAllAnomalyTrackers, mAlertTrackerMap, mStateProtoHashes, mTagIdsToMatchersMap,
+            mAllAnomalyTrackers, mAlertTrackerMap, mStateProtoHashes, mTagIds,
             newAtomMatchingTrackers, newAtomMatchingTrackerMap, newConditionTrackers,
             newConditionTrackerMap, newMetricProducers, newMetricProducerMap, newAnomalyTrackers,
             newAlertTrackerMap, newPeriodicAlarmTrackers, mConditionToMetricMap,
@@ -559,9 +556,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     mIsActive = isActive || !activeMetricsIndices.empty();
 
-    const auto matchersIt = mTagIdsToMatchersMap.find(tagId);
-
-    if (matchersIt == mTagIdsToMatchersMap.end()) {
+    if (mTagIds.find(tagId) == mTagIds.end()) {
         // Not interesting...
         return;
     }
@@ -569,16 +564,9 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     vector<MatchingState> matcherCache(mAllAtomMatchingTrackers.size(),
                                        MatchingState::kNotComputed);
 
-    if (mAtomMatcherOptimizationEnabled) {
-        for (const auto& matcherIndex : matchersIt->second) {
-            mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                               matcherCache);
-        }
-    } else {
-        //  Evaluate all atom matchers.
-        for (auto& matcher : mAllAtomMatchingTrackers) {
-            matcher->onLogEvent(event, mAllAtomMatchingTrackers, matcherCache);
-        }
+    // Evaluate all atom matchers.
+    for (auto& matcher : mAllAtomMatchingTrackers) {
+        matcher->onLogEvent(event, mAllAtomMatchingTrackers, matcherCache);
     }
 
     // Set of metrics that received an activation cancellation.

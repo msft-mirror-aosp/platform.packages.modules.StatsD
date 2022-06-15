@@ -24,7 +24,6 @@ android_test {
     static_libs: [
         "androidx.test.rules",
         "truth-prebuilt",
-        "modules-utils-build",
     ],
     libs: [
         "android.test.runner.stubs",

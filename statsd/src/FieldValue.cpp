@@ -137,10 +137,6 @@ bool isUidField(const FieldValue& fieldValue) {
     return fieldValue.mAnnotations.isUidField();
 }
 
-bool isPrimitiveRepeatedField(const Field& field) {
-    return field.getDepth() == 1;
-}
-
 Value::Value(const Value& from) {
     type = from.getType();
     switch (type) {
@@ -498,19 +494,6 @@ bool HasPositionALL(const FieldMatcher& matcher) {
         }
     }
     return false;
-}
-
-bool HasPrimitiveRepeatedField(const FieldMatcher& matcher) {
-    for (const auto& child : matcher.child()) {
-        if (child.has_position() && child.child_size() == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool ShouldUseNestedDimensions(const FieldMatcher& matcher) {
-    return HasPositionALL(matcher) || HasPrimitiveRepeatedField(matcher);
 }
 
 size_t getSize(const std::vector<FieldValue>& fieldValues) {

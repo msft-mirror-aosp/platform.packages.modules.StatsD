@@ -53,11 +53,9 @@ namespace android {
 namespace os {
 namespace statsd {
 
-constexpr const char* kIncludeCertificateHash = "include_certificate_hash";
-
 class StatsService : public BnStatsd {
 public:
-    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue);
+    StatsService(const sp<Looper>& handlerLooper, std::shared_ptr<LogEventQueue> queue);
     virtual ~StatsService();
 
     /** The anomaly alarm registered with AlarmManager won't be updated by less than this. */
@@ -351,7 +349,7 @@ private:
     /**
      * Tracks the uid <--> package name mapping.
      */
-    const sp<UidMap> mUidMap;
+    sp<UidMap> mUidMap;
 
     /**
      * Fetches external metrics

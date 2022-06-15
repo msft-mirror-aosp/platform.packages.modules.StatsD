@@ -20,7 +20,6 @@
 
 #include "src/StatsLogProcessor.h"
 #include "src/StatsService.h"
-#include "src/packages/UidMap.h"
 #include "src/stats_log_util.h"
 #include "tests/statsd_test_util.h"
 
@@ -123,8 +122,7 @@ StatsdConfig MakeGaugeMetricConfig(int64_t minTime) {
 }  // anonymous namespace
 
 TEST(PartialBucketE2eTest, TestCountMetricWithoutSplit) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     SendConfig(service, MakeCountMetricConfig({true}));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
@@ -139,8 +137,7 @@ TEST(PartialBucketE2eTest, TestCountMetricWithoutSplit) {
 }
 
 TEST(PartialBucketE2eTest, TestCountMetricNoSplitOnNewApp) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     SendConfig(service, MakeCountMetricConfig({true}));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
@@ -160,8 +157,7 @@ TEST(PartialBucketE2eTest, TestCountMetricNoSplitOnNewApp) {
 }
 
 TEST(PartialBucketE2eTest, TestCountMetricSplitOnUpgrade) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     SendConfig(service, MakeCountMetricConfig({true}));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
@@ -195,8 +191,7 @@ TEST(PartialBucketE2eTest, TestCountMetricSplitOnUpgrade) {
 }
 
 TEST(PartialBucketE2eTest, TestCountMetricSplitOnRemoval) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     SendConfig(service, MakeCountMetricConfig({true}));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
@@ -229,8 +224,7 @@ TEST(PartialBucketE2eTest, TestCountMetricSplitOnRemoval) {
 }
 
 TEST(PartialBucketE2eTest, TestCountMetricSplitOnBoot) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     SendConfig(service, MakeCountMetricConfig(std::nullopt));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
@@ -259,8 +253,7 @@ TEST(PartialBucketE2eTest, TestCountMetricSplitOnBoot) {
 }
 
 TEST(PartialBucketE2eTest, TestCountMetricNoSplitOnUpgradeWhenDisabled) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     StatsdConfig config = MakeCountMetricConfig({false});
     SendConfig(service, config);
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
@@ -288,8 +281,7 @@ TEST(PartialBucketE2eTest, TestCountMetricNoSplitOnUpgradeWhenDisabled) {
 }
 
 TEST(PartialBucketE2eTest, TestValueMetricWithoutMinPartialBucket) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     service->mPullerManager->RegisterPullAtomCallback(
             /*uid=*/0, util::SUBSYSTEM_SLEEP_STATE, NS_PER_SEC, NS_PER_SEC * 10, {},
             SharedRefBase::make<FakeSubsystemSleepCallback>());
@@ -320,8 +312,7 @@ TEST(PartialBucketE2eTest, TestValueMetricWithoutMinPartialBucket) {
 }
 
 TEST(PartialBucketE2eTest, TestValueMetricWithMinPartialBucket) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     service->mPullerManager->RegisterPullAtomCallback(
             /*uid=*/0, util::SUBSYSTEM_SLEEP_STATE, NS_PER_SEC, NS_PER_SEC * 10, {},
             SharedRefBase::make<FakeSubsystemSleepCallback>());
@@ -353,8 +344,7 @@ TEST(PartialBucketE2eTest, TestValueMetricWithMinPartialBucket) {
 }
 
 TEST(PartialBucketE2eTest, TestValueMetricOnBootWithoutMinPartialBucket) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     // Initial pull will fail since puller is not registered.
     SendConfig(service, MakeValueMetricConfig(0));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
@@ -387,8 +377,7 @@ TEST(PartialBucketE2eTest, TestValueMetricOnBootWithoutMinPartialBucket) {
 }
 
 TEST(PartialBucketE2eTest, TestGaugeMetricWithoutMinPartialBucket) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     service->mPullerManager->RegisterPullAtomCallback(
             /*uid=*/0, util::SUBSYSTEM_SLEEP_STATE, NS_PER_SEC, NS_PER_SEC * 10, {},
             SharedRefBase::make<FakeSubsystemSleepCallback>());
@@ -413,8 +402,7 @@ TEST(PartialBucketE2eTest, TestGaugeMetricWithoutMinPartialBucket) {
 }
 
 TEST(PartialBucketE2eTest, TestGaugeMetricWithMinPartialBucket) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     // Partial buckets don't occur when app is first installed.
     service->mUidMap->updateApp(1, String16(kApp1.c_str()), 1, 1, String16("v1"), String16(""),
                                 /* certificateHash */ {});
@@ -444,8 +432,7 @@ TEST(PartialBucketE2eTest, TestGaugeMetricWithMinPartialBucket) {
 }
 
 TEST(PartialBucketE2eTest, TestGaugeMetricOnBootWithoutMinPartialBucket) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     // Initial pull will fail since puller hasn't been registered.
     SendConfig(service, MakeGaugeMetricConfig(0));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
@@ -475,8 +462,7 @@ TEST(PartialBucketE2eTest, TestGaugeMetricOnBootWithoutMinPartialBucket) {
 }
 
 TEST(PartialBucketE2eTest, TestCountMetricNoSplitByDefault) {
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
     StatsdConfig config = MakeCountMetricConfig({nullopt});  // Do not set the value in the metric.
     SendConfig(service, config);
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are

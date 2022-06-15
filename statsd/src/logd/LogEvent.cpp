@@ -39,6 +39,34 @@ using android::util::ProtoOutputStream;
 using std::string;
 using std::vector;
 
+// stats_event.h socket types. Keep in sync.
+/* ERRORS */
+#define ERROR_NO_TIMESTAMP 0x1
+#define ERROR_NO_ATOM_ID 0x2
+#define ERROR_OVERFLOW 0x4
+#define ERROR_ATTRIBUTION_CHAIN_TOO_LONG 0x8
+#define ERROR_TOO_MANY_KEY_VALUE_PAIRS 0x10
+#define ERROR_ANNOTATION_DOES_NOT_FOLLOW_FIELD 0x20
+#define ERROR_INVALID_ANNOTATION_ID 0x40
+#define ERROR_ANNOTATION_ID_TOO_LARGE 0x80
+#define ERROR_TOO_MANY_ANNOTATIONS 0x100
+#define ERROR_TOO_MANY_FIELDS 0x200
+#define ERROR_INVALID_VALUE_TYPE 0x400
+#define ERROR_STRING_NOT_NULL_TERMINATED 0x800
+
+/* TYPE IDS */
+#define INT32_TYPE 0x00
+#define INT64_TYPE 0x01
+#define STRING_TYPE 0x02
+#define LIST_TYPE 0x03
+#define FLOAT_TYPE 0x04
+#define BOOL_TYPE 0x05
+#define BYTE_ARRAY_TYPE 0x06
+#define OBJECT_TYPE 0x07
+#define KEY_VALUE_PAIRS_TYPE 0x08
+#define ATTRIBUTION_CHAIN_TYPE 0x09
+#define ERROR_TYPE 0x0F
+
 LogEvent::LogEvent(int32_t uid, int32_t pid)
     : mLogdTimestampNs(time(nullptr)), mLogUid(uid), mLogPid(pid) {
 }
@@ -175,11 +203,8 @@ void LogEvent::parseKeyValuePairs(int32_t* pos, int32_t depth, bool* last, uint8
 
 void LogEvent::parseAttributionChain(int32_t* pos, int32_t depth, bool* last,
                                      uint8_t numAnnotations) {
-    std::optional<size_t> firstUidInChainIndex = mValues.size();
-    const uint8_t numNodes = readNextValue<uint8_t>();
-
-    if (numNodes > INT8_MAX) mValid = false;
-
+    const unsigned int firstUidInChainIndex = mValues.size();
+    const int32_t numNodes = readNextValue<uint8_t>();
     for (pos[1] = 1; pos[1] <= numNodes; pos[1]++) {
         last[1] = (pos[1] == numNodes);
 
@@ -193,62 +218,20 @@ void LogEvent::parseAttributionChain(int32_t* pos, int32_t depth, bool* last,
         parseString(pos, /*depth=*/2, last, /*numAnnotations=*/0);
     }
 
-    if (mValues.size() > (firstUidInChainIndex.value() + 1)) {
-        // At least one node was successfully parsed.
-        mAttributionChainStartIndex = firstUidInChainIndex;
-        mAttributionChainEndIndex = mValues.size() - 1;
-    } else {
-        firstUidInChainIndex = std::nullopt;
+    if (mValues.size() - 1 > INT8_MAX) {
         mValid = false;
+    } else if (mValues.size() - 1 > firstUidInChainIndex) {
+        // At least one node was successfully parsed.
+        mAttributionChainStartIndex = static_cast<int8_t>(firstUidInChainIndex);
+        mAttributionChainEndIndex = static_cast<int8_t>(mValues.size() - 1);
     }
 
     if (mValid) {
-        parseAnnotations(numAnnotations, /*numElements*/ std::nullopt, firstUidInChainIndex);
+        parseAnnotations(numAnnotations, firstUidInChainIndex);
     }
 
     pos[1] = pos[2] = 1;
     last[1] = last[2] = false;
-}
-
-void LogEvent::parseArray(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations) {
-    const uint8_t numElements = readNextValue<uint8_t>();
-    const uint8_t typeInfo = readNextValue<uint8_t>();
-    const uint8_t typeId = getTypeId(typeInfo);
-
-    if (numElements > INT8_MAX) mValid = false;
-
-    for (pos[1] = 1; pos[1] <= numElements; pos[1]++) {
-        last[1] = (pos[1] == numElements);
-
-        // The top-level array is at depth 0, and all of its elements are at depth 1.
-        // Once nested fields are supported, array elements will be at top-level depth + 1.
-
-        switch (typeId) {
-            case INT32_TYPE:
-                parseInt32(pos, /*depth=*/1, last, /*numAnnotations=*/0);
-                break;
-            case INT64_TYPE:
-                parseInt64(pos, /*depth=*/1, last, /*numAnnotations=*/0);
-                break;
-            case FLOAT_TYPE:
-                parseFloat(pos, /*depth=*/1, last, /*numAnnotations=*/0);
-                break;
-            case BOOL_TYPE:
-                parseBool(pos, /*depth=*/1, last, /*numAnnotations=*/0);
-                break;
-            case STRING_TYPE:
-                parseString(pos, /*depth=*/1, last, /*numAnnotations=*/0);
-                break;
-            default:
-                mValid = false;
-                break;
-        }
-    }
-
-    parseAnnotations(numAnnotations, numElements);
-
-    pos[1] = 1;
-    last[1] = false;
 }
 
 // Assumes that mValues is not empty
@@ -256,33 +239,18 @@ bool LogEvent::checkPreviousValueType(Type expected) {
     return mValues[mValues.size() - 1].mValue.getType() == expected;
 }
 
-void LogEvent::parseIsUidAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements) {
-    // Need to set numElements if not an array.
-    if (!numElements) {
-        numElements = 1;
-    }
-
-    // If array is empty, skip uid parsing.
-    if (numElements == 0 && annotationType == BOOL_TYPE) {
-        readNextValue<uint8_t>();
-        return;
-    }
-
-    // Allowed types: INT, repeated INT
-    if (numElements > mValues.size() || !checkPreviousValueType(INT) ||
-        annotationType != BOOL_TYPE) {
+void LogEvent::parseIsUidAnnotation(uint8_t annotationType) {
+    if (mValues.empty() || mValues.size() - 1 > INT8_MAX || !checkPreviousValueType(INT)
+            || annotationType != BOOL_TYPE) {
         mValid = false;
         return;
     }
 
     bool isUid = readNextValue<uint8_t>();
     if (isUid) {
-        mNumUidFields += numElements.value();
+        mNumUidFields++;
     }
-
-    for (int i = 1; i <= numElements; i++) {
-        mValues[mValues.size() - i].mAnnotations.setUidField(isUid);
-    }
+    mValues[mValues.size() - 1].mAnnotations.setUidField(isUid);
 }
 
 void LogEvent::parseTruncateTimestampAnnotation(uint8_t annotationType) {
@@ -294,11 +262,8 @@ void LogEvent::parseTruncateTimestampAnnotation(uint8_t annotationType) {
     mTruncateTimestamp = readNextValue<uint8_t>();
 }
 
-void LogEvent::parsePrimaryFieldAnnotation(uint8_t annotationType,
-                                           std::optional<uint8_t> numElements,
-                                           std::optional<size_t> firstUidInChainIndex) {
-    // Allowed types: all types except for attribution chains and repeated fields.
-    if (mValues.empty() || annotationType != BOOL_TYPE || firstUidInChainIndex || numElements) {
+void LogEvent::parsePrimaryFieldAnnotation(uint8_t annotationType) {
+    if (mValues.empty() || annotationType != BOOL_TYPE) {
         mValid = false;
         return;
     }
@@ -308,42 +273,41 @@ void LogEvent::parsePrimaryFieldAnnotation(uint8_t annotationType,
 }
 
 void LogEvent::parsePrimaryFieldFirstUidAnnotation(uint8_t annotationType,
-                                                   std::optional<size_t> firstUidInChainIndex) {
-    // Allowed types: attribution chains
-    if (mValues.empty() || annotationType != BOOL_TYPE || !firstUidInChainIndex) {
+                                                   int firstUidInChainIndex) {
+    if (mValues.empty() || annotationType != BOOL_TYPE || -1 == firstUidInChainIndex) {
         mValid = false;
         return;
     }
 
-    if (mValues.size() < firstUidInChainIndex.value() + 1) {  // AttributionChain is empty.
+    if (static_cast<int>(mValues.size() - 1) < firstUidInChainIndex) { // AttributionChain is empty.
         mValid = false;
         android_errorWriteLog(0x534e4554, "174485572");
         return;
     }
 
     const bool primaryField = readNextValue<uint8_t>();
-    mValues[firstUidInChainIndex.value()].mAnnotations.setPrimaryField(primaryField);
+    mValues[firstUidInChainIndex].mAnnotations.setPrimaryField(primaryField);
 }
 
-void LogEvent::parseExclusiveStateAnnotation(uint8_t annotationType,
-                                             std::optional<uint8_t> numElements) {
-    // Allowed types: INT
-    if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
-        numElements) {
+void LogEvent::parseExclusiveStateAnnotation(uint8_t annotationType) {
+    if (mValues.empty() || annotationType != BOOL_TYPE) {
+        mValid = false;
+        return;
+    }
+
+    if (mValues.size() - 1 > INT8_MAX) {
+        android_errorWriteLog(0x534e4554, "174488848");
         mValid = false;
         return;
     }
 
     const bool exclusiveState = readNextValue<uint8_t>();
-    mExclusiveStateFieldIndex = mValues.size() - 1;
-    mValues[getExclusiveStateFieldIndex().value()].mAnnotations.setExclusiveState(exclusiveState);
+    mExclusiveStateFieldIndex = static_cast<int8_t>(mValues.size() - 1);
+    mValues[getExclusiveStateFieldIndex()].mAnnotations.setExclusiveState(exclusiveState);
 }
 
-void LogEvent::parseTriggerStateResetAnnotation(uint8_t annotationType,
-                                                std::optional<uint8_t> numElements) {
-    // Allowed types: INT
-    if (mValues.empty() || annotationType != INT32_TYPE || !checkPreviousValueType(INT) ||
-        numElements) {
+void LogEvent::parseTriggerStateResetAnnotation(uint8_t annotationType) {
+    if (mValues.empty() || annotationType != INT32_TYPE) {
         mValid = false;
         return;
     }
@@ -351,11 +315,8 @@ void LogEvent::parseTriggerStateResetAnnotation(uint8_t annotationType,
     mResetState = readNextValue<int32_t>();
 }
 
-void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
-                                          std::optional<uint8_t> numElements) {
-    // Allowed types: INT
-    if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
-        numElements) {
+void LogEvent::parseStateNestedAnnotation(uint8_t annotationType) {
+    if (mValues.empty() || annotationType != BOOL_TYPE) {
         mValid = false;
         return;
     }
@@ -366,34 +327,32 @@ void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
 
 // firstUidInChainIndex is a default parameter that is only needed when parsing
 // annotations for attribution chains.
-// numElements is a default param that is only needed when parsing annotations for repeated fields
-void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> numElements,
-                                std::optional<size_t> firstUidInChainIndex) {
+void LogEvent::parseAnnotations(uint8_t numAnnotations, int firstUidInChainIndex) {
     for (uint8_t i = 0; i < numAnnotations; i++) {
         uint8_t annotationId = readNextValue<uint8_t>();
         uint8_t annotationType = readNextValue<uint8_t>();
 
         switch (annotationId) {
             case ANNOTATION_ID_IS_UID:
-                parseIsUidAnnotation(annotationType, numElements);
+                parseIsUidAnnotation(annotationType);
                 break;
             case ANNOTATION_ID_TRUNCATE_TIMESTAMP:
                 parseTruncateTimestampAnnotation(annotationType);
                 break;
             case ANNOTATION_ID_PRIMARY_FIELD:
-                parsePrimaryFieldAnnotation(annotationType, numElements, firstUidInChainIndex);
+                parsePrimaryFieldAnnotation(annotationType);
                 break;
             case ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID:
                 parsePrimaryFieldFirstUidAnnotation(annotationType, firstUidInChainIndex);
                 break;
             case ANNOTATION_ID_EXCLUSIVE_STATE:
-                parseExclusiveStateAnnotation(annotationType, numElements);
+                parseExclusiveStateAnnotation(annotationType);
                 break;
             case ANNOTATION_ID_TRIGGER_STATE_RESET:
-                parseTriggerStateResetAnnotation(annotationType, numElements);
+                parseTriggerStateResetAnnotation(annotationType);
                 break;
             case ANNOTATION_ID_STATE_NESTED:
-                parseStateNestedAnnotation(annotationType, numElements);
+                parseStateNestedAnnotation(annotationType);
                 break;
             default:
                 mValid = false;
@@ -416,7 +375,7 @@ bool LogEvent::parseBuffer(uint8_t* buf, size_t len) {
     if (getTypeId(typeInfo) != OBJECT_TYPE) mValid = false;
 
     uint8_t numElements = readNextValue<uint8_t>();
-    if (numElements < 2 || numElements > INT8_MAX) mValid = false;
+    if (numElements < 2 || numElements > 127) mValid = false;
 
     typeInfo = readNextValue<uint8_t>();
     if (getTypeId(typeInfo) != INT64_TYPE) mValid = false;
@@ -459,9 +418,6 @@ bool LogEvent::parseBuffer(uint8_t* buf, size_t len) {
                 break;
             case ATTRIBUTION_CHAIN_TYPE:
                 parseAttributionChain(pos, /*depth=*/0, last, getNumAnnotations(typeInfo));
-                break;
-            case LIST_TYPE:
-                parseArray(pos, /*depth=*/0, last, getNumAnnotations(typeInfo));
                 break;
             case ERROR_TYPE:
                 /* mErrorBitmask =*/ readNextValue<int32_t>();
@@ -627,14 +583,14 @@ void LogEvent::ToProto(ProtoOutputStream& protoOutput) const {
     writeFieldValueTreeToStream(mTagId, getValues(), &protoOutput);
 }
 
-bool LogEvent::hasAttributionChain(std::pair<size_t, size_t>* indexRange) const {
-    if (!mAttributionChainStartIndex || !mAttributionChainEndIndex) {
+bool LogEvent::hasAttributionChain(std::pair<int, int>* indexRange) const {
+    if (mAttributionChainStartIndex == -1 || mAttributionChainEndIndex == -1) {
         return false;
     }
 
     if (nullptr != indexRange) {
-        indexRange->first = mAttributionChainStartIndex.value();
-        indexRange->second = mAttributionChainEndIndex.value();
+        indexRange->first = static_cast<int>(mAttributionChainStartIndex);
+        indexRange->second = static_cast<int>(mAttributionChainEndIndex);
     }
 
     return true;

@@ -89,7 +89,6 @@ public class TestDrive {
     @VisibleForTesting
     Dumper mDumper = new BasicDumper();
     boolean mPressToContinue = false;
-    Integer mReportCollectionDelayMillis = 60_000;
 
     public static void main(String[] args) {
         final Configuration configuration = new Configuration();
@@ -109,29 +108,13 @@ public class TestDrive {
         }
     }
 
-    static void printUsageMessage() {
-        LOGGER.severe("Usage: ./test_drive [options] <atomId1> <atomId2> ... <atomIdN>");
-        LOGGER.severe("OPTIONS");
-        LOGGER.severe("-h, --help");
-        LOGGER.severe("\tPrint this message");
-        LOGGER.severe("-one");
-        LOGGER.severe("\tCreating one event metric to catch all pushed atoms");
-        LOGGER.severe("-terse");
-        LOGGER.severe("\tTerse output format.");
-        LOGGER.severe("-p additional_allowed_package");
-        LOGGER.severe("\tAllows collection atoms from an additional package");
-        LOGGER.severe("-s DEVICE_SERIAL_NUMBER");
-        LOGGER.severe("\tDevice serial number to use for adb communication");
-        LOGGER.severe("-e");
-        LOGGER.severe("\tWait for Enter key press before collecting report");
-        LOGGER.severe("-d delay_ms");
-        LOGGER.severe("\tWait for delay_ms before collecting report, default is 60000 ms");
-    }
-
     boolean processArgs(Configuration configuration, String[] args, List<String> connectedDevices,
             String defaultDevice) {
         if (args.length < 1) {
-            printUsageMessage();
+            LOGGER.severe("Usage: ./test_drive [-one] "
+                    + "[-p additional_allowed_package] "
+                    + "[-s DEVICE_SERIAL_NUMBER] "
+                    + "<atomId1> <atomId2> ... <atomIdN>");
             return false;
         }
 
@@ -152,12 +135,6 @@ public class TestDrive {
                 mDeviceSerial = args[++first_arg];
             } else if (remaining_args >= 2 && arg.equals("-e")) {
                 mPressToContinue = true;
-            } else if (remaining_args >= 2 && arg.equals("-d")) {
-                mPressToContinue = false;
-                mReportCollectionDelayMillis = Integer.parseInt(args[++first_arg]);
-            } else if (arg.equals("-h") || arg.equals("--help")) {
-                printUsageMessage();
-                return false;
             } else {
                 break;  // Found the atom list
             }
@@ -198,15 +175,13 @@ public class TestDrive {
             }
             if (!hasPulledAtoms) {
                 if (mPressToContinue) {
-                    LOGGER.info("Press Enter after you finish playing with the device...");
+                    LOGGER.info("Press enter after you finish playing with the device...");
                     Scanner scanner = new Scanner(System.in);
                     scanner.nextLine();
                 } else {
                     LOGGER.info(
-                            String.format(
-                                    "All events should be dumped after %d ms ...",
-                                    mReportCollectionDelayMillis));
-                    Thread.sleep(mReportCollectionDelayMillis);
+                            "All events should be dumped after 1 min ...");
+                    Thread.sleep(60_000);
                 }
             } else {
                 LOGGER.info("All events should be dumped after 1.5 minutes ...");

@@ -774,12 +774,7 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
                     mContext.getMainExecutor(), this::onPropertiesChanged);
 
             // Get current statsd_java properties.
-            final long token = Binder.clearCallingIdentity();
-            try {
-                updateProperties(DeviceConfig.getProperties(NAMESPACE_STATSD_JAVA));
-            } finally {
-                Binder.restoreCallingIdentity(token);
-            }
+            updateProperties(DeviceConfig.getProperties(NAMESPACE_STATSD_JAVA));
 
             // Register death recipient.
             List<BroadcastReceiver> broadcastReceivers =

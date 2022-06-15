@@ -655,11 +655,6 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         ALOGE("cannot find \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
         return nullopt;
     }
-    if (HasPositionALL(metric.value_field())) {
-        ALOGE("value field with position ALL is not supported. ValueMetric \"%lld\"",
-              (long long)metric.id());
-        return nullopt;
-    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.value_field(), &fieldMatchers);
     if (fieldMatchers.size() < 1) {
@@ -733,7 +728,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             MillisToNano(TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), bucketSizeTimeUnit));
 
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
-    const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
+    const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
             StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
@@ -748,8 +743,8 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             key, metric, metricHash, {pullTagId, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              conditionCorrectionThresholdNs, getAppUpgradeBucketSplit(metric)},
-            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
-             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
+            {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, trackerIndex, matcherWizard,
+             metric.dimensions_in_what(), fieldMatchers},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
@@ -779,11 +774,6 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     }
     if (!metric.has_kll_field()) {
         ALOGE("cannot find \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
-        return nullopt;
-    }
-    if (HasPositionALL(metric.kll_field())) {
-        ALOGE("kll field with position ALL is not supported. KllMetric \"%lld\"",
-              (long long)metric.id());
         return nullopt;
     }
     std::vector<Matcher> fieldMatchers;
@@ -855,7 +845,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             MillisToNano(TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), bucketSizeTimeUnit));
 
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
-    const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
+    const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
 
     sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
@@ -866,8 +856,8 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             key, metric, metricHash, {/*pullTagId=*/-1, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              /*conditionCorrectionThresholdNs=*/nullopt, getAppUpgradeBucketSplit(metric)},
-            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
-             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
+            {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, trackerIndex, matcherWizard,
+             metric.dimensions_in_what(), fieldMatchers},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
@@ -1024,7 +1014,7 @@ optional<sp<AnomalyTracker>> createAnomalyTracker(
 bool initAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidMap,
                               unordered_map<int64_t, int>& atomMatchingTrackerMap,
                               vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                              unordered_map<int, vector<int>>& allTagIdsToMatchersMap) {
+                              set<int>& allTagIds) {
     vector<AtomMatcher> matcherConfigs;
     const int atomMatcherCount = config.atom_matcher_size();
     matcherConfigs.reserve(atomMatcherCount);
@@ -1046,31 +1036,15 @@ bool initAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidM
     }
 
     vector<bool> stackTracker2(allAtomMatchingTrackers.size(), false);
-    for (size_t matcherIndex = 0; matcherIndex < allAtomMatchingTrackers.size(); matcherIndex++) {
-        auto& matcher = allAtomMatchingTrackers[matcherIndex];
+    for (auto& matcher : allAtomMatchingTrackers) {
         if (!matcher->init(matcherConfigs, allAtomMatchingTrackers, atomMatchingTrackerMap,
                            stackTracker2)) {
             return false;
         }
-
         // Collect all the tag ids that are interesting. TagIds exist in leaf nodes only.
         const set<int>& tagIds = matcher->getAtomIds();
-        for (int atomId : tagIds) {
-            auto& matchers = allTagIdsToMatchersMap[atomId];
-            // Performance note:
-            // For small amount of elements linear search in vector will be
-            // faster then look up in a set:
-            // - we do not expect matchers vector per atom id will have significant size (< 10)
-            // - iteration via vector is the fastest way compared to other containers (set, etc.)
-            //   in the hot path MetricsManager::onLogEvent()
-            // - vector<T> will have the smallest memory footprint compared to any other
-            //   std containers implementation
-            if (find(matchers.begin(), matchers.end(), matcherIndex) == matchers.end()) {
-                matchers.push_back(matcherIndex);
-            }
-        }
+        allTagIds.insert(tagIds.begin(), tagIds.end());
     }
-
     return true;
 }
 
@@ -1368,8 +1342,7 @@ bool initStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const sp
                       const sp<StatsPullerManager>& pullerManager,
                       const sp<AlarmMonitor>& anomalyAlarmMonitor,
                       const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
-                      const int64_t currentTimeNs,
-                      std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
+                      const int64_t currentTimeNs, set<int>& allTagIds,
                       vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
                       unordered_map<int64_t, int>& atomMatchingTrackerMap,
                       vector<sp<ConditionTracker>>& allConditionTrackers,
@@ -1397,7 +1370,7 @@ bool initStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const sp
     }
 
     if (!initAtomMatchingTrackers(config, uidMap, atomMatchingTrackerMap, allAtomMatchingTrackers,
-                                  allTagIdsToMatchersMap)) {
+                                  allTagIds)) {
         ALOGE("initAtomMatchingTrackers failed");
         return false;
     }

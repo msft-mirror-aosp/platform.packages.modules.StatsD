@@ -258,11 +258,11 @@ bool initSubscribersForSubscriptionType(const StatsdConfig& config,
 // output:
 // [atomMatchingTrackerMap]: this map should contain matcher name to index mapping
 // [allAtomMatchingTrackers]: should store the sp to all the AtomMatchingTracker
-// [allTagIdsToMatchersMap]: maps of tag ids to atom matchers
+// [allTagIds]: contains the set of all interesting tag ids to this config.
 bool initAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidMap,
                               std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
                               std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                              std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap);
+                              std::set<int>& allTagIds);
 
 // Initialize ConditionTrackers
 // input:
@@ -340,8 +340,7 @@ bool initStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const sp
                       const sp<StatsPullerManager>& pullerManager,
                       const sp<AlarmMonitor>& anomalyAlarmMonitor,
                       const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
-                      const int64_t currentTimeNs,
-                      std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
+                      const int64_t currentTimeNs, std::set<int>& allTagIds,
                       std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
                       std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
                       std::vector<sp<ConditionTracker>>& allConditionTrackers,
