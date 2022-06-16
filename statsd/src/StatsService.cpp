@@ -55,8 +55,6 @@ constexpr const char* kPermissionDump = "android.permission.DUMP";
 
 constexpr const char* kPermissionRegisterPullAtom = "android.permission.REGISTER_STATS_PULL_ATOM";
 
-constexpr const char* kIncludeCertificateHash = "include_certificate_hash";
-
 #define STATS_SERVICE_DIR "/data/misc/stats-service"
 
 // for StatsDataDumpProto
@@ -90,8 +88,9 @@ Status checkUid(uid_t expectedUid) {
     }                                                             \
 }
 
-StatsService::StatsService(const sp<Looper>& handlerLooper, shared_ptr<LogEventQueue> queue)
-    : mAnomalyAlarmMonitor(new AlarmMonitor(
+StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue)
+    : mUidMap(uidMap),
+      mAnomalyAlarmMonitor(new AlarmMonitor(
               MIN_DIFF_TO_UPDATE_REGISTERED_ALARM_SECS,
               [this](const shared_ptr<IStatsCompanionService>& /*sc*/, int64_t timeMillis) {
                   mProcessor->setAnomalyAlarm(timeMillis);
@@ -120,7 +119,6 @@ StatsService::StatsService(const sp<Looper>& handlerLooper, shared_ptr<LogEventQ
                            [this]() { mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs()); }),
       mStatsCompanionServiceDeathRecipient(
               AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)) {
-    mUidMap = UidMap::getInstance();
     mPullerManager = new StatsPullerManager();
     StatsPuller::SetUidMap(mUidMap);
     mConfigManager = new ConfigManager();
