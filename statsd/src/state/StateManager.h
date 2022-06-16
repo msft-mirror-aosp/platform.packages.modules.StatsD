@@ -35,7 +35,7 @@ namespace statsd {
  * This class is NOT thread safe.
  * It should only be used while StatsLogProcessor's lock is held.
  */
-class StateManager : public virtual RefBase {
+class StateManager {
 public:
     StateManager();
 

@@ -37,6 +37,8 @@ using IsAtLeastSFunc = std::function<bool()>;
 const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
+const std::string OPTIMIZATION_ATOM_MATCHER_MAP_FLAG = "optimization_atom_matcher_map";
+
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
 const std::string FLAG_EMPTY = "";
@@ -109,9 +111,8 @@ private:
     friend class FlagProviderTest_SPlus_RealValues;
     friend class KllMetricE2eAbTest;
     friend class MetricsManagerTest;
-    friend class PartialBucketE2e_AppUpgradeDefaultTest;
+    friend class StatsLogProcessorTest;
 
-    FRIEND_TEST(ConfigUpdateE2eTest, TestKllMetric_KllDisabledBeforeConfigUpdate);
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
     FRIEND_TEST(EventMetricE2eTest, TestEventMetricDataAggregated);
@@ -125,9 +126,8 @@ private:
     FRIEND_TEST(FlagProviderTest_SPlus, TestGetFlagBoolServerFlagEmptyDefaultTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagFalse);
-    FRIEND_TEST(NumericValueMetricProducerTest_SubsetDimensions, TestSubsetDimensions);
-    FRIEND_TEST(PartialBucketE2e_AppUpgradeDefaultTest, TestCountMetricDefaultFalse);
-    FRIEND_TEST(PartialBucketE2e_AppUpgradeDefaultTest, TestCountMetricDefaultTrue);
+    FRIEND_TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagFalse);
+    FRIEND_TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagTrue);
 };
 
 }  // namespace statsd
