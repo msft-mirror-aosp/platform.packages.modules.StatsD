@@ -264,6 +264,38 @@ TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate) {
                 UnorderedElementsAreArray(unionSet({defaultPullUids, app2Uids, {AID_ADB}})));
 }
 
+TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagFalse) {
+    FlagProvider::getInstance().overrideFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_FALSE,
+                                             /*isBootFlag=*/true);
+
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+
+    StatsdConfig config = buildGoodConfig();
+    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    EXPECT_FALSE(metricsManager.mAtomMatcherOptimizationEnabled);
+}
+
+TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagTrue) {
+    FlagProvider::getInstance().overrideFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_TRUE,
+                                             /*isBootFlag=*/true);
+
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+
+    StatsdConfig config = buildGoodConfig();
+    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    EXPECT_TRUE(metricsManager.mAtomMatcherOptimizationEnabled);
+}
+
 TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom) {
     sp<UidMap> uidMap;
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
