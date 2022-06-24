@@ -237,13 +237,18 @@ bool matchesSimple(const sp<UidMap>& uidMap, const FieldValueMatcher& matcher,
         case FieldValueMatcher::ValueMatcherCase::kNeqAnyString: {
             const auto& str_list = matcher.neq_any_string();
             for (int i = start; i < end; i++) {
+                bool notEqAll = true;
                 for (const auto& str : str_list.str_value()) {
                     if (tryMatchString(uidMap, values[i], str)) {
-                        return false;
+                        notEqAll = false;
+                        break;
                     }
                 }
+                if (notEqAll) {
+                    return true;
+                }
             }
-            return true;
+            return false;
         }
         case FieldValueMatcher::ValueMatcherCase::kEqAnyString: {
             const auto& str_list = matcher.eq_any_string();
