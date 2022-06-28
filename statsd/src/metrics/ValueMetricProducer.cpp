@@ -447,6 +447,11 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::invalidateCurrentBucket(
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::skipCurrentBucket(
         const int64_t dropTimeNs, const BucketDropReason reason) {
+    if (!mIsActive) {
+        // Don't keep track of skipped buckets if metric is not active.
+        return;
+    }
+
     if (!maxDropEventsReached()) {
         mCurrentSkippedBucket.dropEvents.push_back(buildDropEvent(dropTimeNs, reason));
     }
