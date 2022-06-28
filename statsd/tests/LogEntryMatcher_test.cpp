@@ -948,7 +948,7 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_RepeatedStringField) {
     fieldValueMatcher->set_position(Position::LAST);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event));
     fieldValueMatcher->set_position(Position::ANY);
-    EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event));
+    EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event));
 
     neqStringList->add_str_value("str3");
     fieldValueMatcher->set_position(Position::FIRST);
@@ -956,7 +956,7 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_RepeatedStringField) {
     fieldValueMatcher->set_position(Position::LAST);
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event));
     fieldValueMatcher->set_position(Position::ANY);
-    EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event));
+    EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event));
 
     neqStringList->add_str_value("str1");
     fieldValueMatcher->set_position(Position::FIRST);
