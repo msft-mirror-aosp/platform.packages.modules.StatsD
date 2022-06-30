@@ -487,6 +487,22 @@ FieldMatcher CreateDimensions(const int atomId, const std::vector<int>& fields) 
     return dimensions;
 }
 
+FieldMatcher CreateRepeatedDimensions(const int atomId, const std::vector<int>& fields,
+                                      const std::vector<Position>& positions) {
+    FieldMatcher dimensions;
+    if (fields.size() != positions.size()) {
+        return dimensions;
+    }
+
+    dimensions.set_field(atomId);
+    for (size_t i = 0; i < fields.size(); i++) {
+        auto child = dimensions.add_child();
+        child->set_field(fields[i]);
+        child->set_position(positions[i]);
+    }
+    return dimensions;
+}
+
 FieldMatcher CreateAttributionUidAndOtherDimensions(const int atomId,
                                                     const std::vector<Position>& positions,
                                                     const std::vector<int>& fields) {
@@ -781,8 +797,30 @@ AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int dat
     return statsEvent;
 }
 
+AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
+                               const vector<int>& data2) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomId);
+    AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
+    AStatsEvent_writeInt32(statsEvent, uid);
+    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_writeInt32(statsEvent, data1);
+    AStatsEvent_writeInt32Array(statsEvent, data2.data(), data2.size());
+
+    return statsEvent;
+}
+
 shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
                                      int data2) {
+    AStatsEvent* statsEvent = makeUidStatsEvent(atomId, eventTimeNs, uid, data1, data2);
+
+    shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
+                                     const vector<int>& data2) {
     AStatsEvent* statsEvent = makeUidStatsEvent(atomId, eventTimeNs, uid, data1, data2);
 
     shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
@@ -800,6 +838,53 @@ shared_ptr<LogEvent> makeExtraUidsLogEvent(int atomId, int64_t eventTimeNs, int 
 
     shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
+                                             const vector<int>& uids) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomId);
+    AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
+    AStatsEvent_writeInt32Array(statsEvent, uids.data(), uids.size());
+    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+
+    shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+
+    return logEvent;
+}
+
+shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
+                                             const vector<int>& uids, int data1, int data2) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomId);
+    AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
+    AStatsEvent_writeInt32Array(statsEvent, uids.data(), uids.size());
+    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_writeInt32(statsEvent, data1);
+    AStatsEvent_writeInt32(statsEvent, data2);
+
+    shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+
+    return logEvent;
+}
+
+shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
+                                             const vector<int>& uids, int data1,
+                                             const vector<int>& data2) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomId);
+    AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
+    AStatsEvent_writeInt32Array(statsEvent, uids.data(), uids.size());
+    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_writeInt32(statsEvent, data1);
+    AStatsEvent_writeInt32Array(statsEvent, data2.data(), data2.size());
+
+    shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+
     return logEvent;
 }
 
@@ -1651,14 +1736,13 @@ void backfillStringInReport(ConfigMetricsReportList *config_report_list) {
 
 bool backfillDimensionPath(const DimensionsValue& path,
                            const google::protobuf::RepeatedPtrField<DimensionsValue>& leafValues,
-                           int* leafIndex,
-                           DimensionsValue* dimension) {
+                           int* leafIndex, DimensionsValue* dimension) {
     dimension->set_field(path.field());
     if (path.has_value_tuple()) {
         for (int i = 0; i < path.value_tuple().dimensions_value_size(); ++i) {
-            if (!backfillDimensionPath(
-                path.value_tuple().dimensions_value(i), leafValues, leafIndex,
-                dimension->mutable_value_tuple()->add_dimensions_value())) {
+            if (!backfillDimensionPath(path.value_tuple().dimensions_value(i), leafValues,
+                                       leafIndex,
+                                       dimension->mutable_value_tuple()->add_dimensions_value())) {
                 return false;
             }
         }
@@ -1840,6 +1924,14 @@ vector<pair<Atom, int64_t>> unnestGaugeAtomData(const GaugeBucketInfo& bucketInf
     return atomData;
 }
 
+void sortReportsByElapsedTime(ConfigMetricsReportList* configReportList) {
+    RepeatedPtrField<ConfigMetricsReport>* reports = configReportList->mutable_reports();
+    sort(reports->pointer_begin(), reports->pointer_end(),
+         [](const ConfigMetricsReport* lhs, const ConfigMetricsReport* rhs) {
+             return lhs->current_report_elapsed_nanos() < rhs->current_report_elapsed_nanos();
+         });
+}
+
 Status FakeSubsystemSleepCallback::onPullAtom(int atomTag,
         const shared_ptr<IPullAtomResultReceiver>& resultReceiver) {
     // Convert stats_events into StatsEventParcels.
@@ -1880,6 +1972,72 @@ void writeBootFlag(const string& flagName, const string& flagValue) {
                              flagName.c_str()),
                 flagValue);
 }
+
+PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap) {
+    ProtoOutputStream protoOutputStream;
+    uidMap->writeUidMapSnapshot(/* timestamp */ 1, /* includeVersionStrings */ true,
+                                /* includeInstaller */ true, /* certificateHashSize */ UINT8_MAX,
+                                /* interestingUids */ {},
+                                /* installerIndices */ nullptr, /* str_set */ nullptr,
+                                &protoOutputStream);
+
+    PackageInfoSnapshot packageInfoSnapshot;
+    outputStreamToProto(&protoOutputStream, &packageInfoSnapshot);
+    return packageInfoSnapshot;
+}
+
+PackageInfo buildPackageInfo(const string& name, const int32_t uid, const int64_t version,
+                             const string& versionString, const optional<string> installer,
+                             const vector<uint8_t>& certHash, const bool deleted,
+                             const bool hashStrings, const optional<uint32_t> installerIndex) {
+    PackageInfo packageInfo;
+    packageInfo.set_version(version);
+    packageInfo.set_uid(uid);
+    packageInfo.set_deleted(deleted);
+    if (!certHash.empty()) {
+        packageInfo.set_truncated_certificate_hash(certHash.data(), certHash.size());
+    }
+    if (hashStrings) {
+        packageInfo.set_name_hash(Hash64(name));
+        packageInfo.set_version_string_hash(Hash64(versionString));
+    } else {
+        packageInfo.set_name(name);
+        packageInfo.set_version_string(versionString);
+    }
+    if (installer) {
+        if (installerIndex) {
+            packageInfo.set_installer_index(*installerIndex);
+        } else if (hashStrings) {
+            packageInfo.set_installer_hash(Hash64(*installer));
+        } else {
+            packageInfo.set_installer(*installer);
+        }
+    }
+    return packageInfo;
+}
+
+vector<PackageInfo> buildPackageInfos(
+        const vector<string>& names, const vector<int32_t>& uids, const vector<int64_t>& versions,
+        const vector<string>& versionStrings, const vector<string>& installers,
+        const vector<vector<uint8_t>>& certHashes, const vector<bool>& deleted,
+        const vector<uint32_t>& installerIndices, const bool hashStrings) {
+    vector<PackageInfo> packageInfos;
+    for (int i = 0; i < uids.size(); i++) {
+        const optional<uint32_t> installerIndex =
+                installerIndices.empty() ? nullopt : optional<uint32_t>(installerIndices[i]);
+        const optional<string> installer =
+                installers.empty() ? nullopt : optional<string>(installers[i]);
+        vector<uint8_t> certHash;
+        if (!certHashes.empty()) {
+            certHash = certHashes[i];
+        }
+        packageInfos.emplace_back(buildPackageInfo(names[i], uids[i], versions[i],
+                                                   versionStrings[i], installer, certHash,
+                                                   deleted[i], hashStrings, installerIndex));
+    }
+    return packageInfos;
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

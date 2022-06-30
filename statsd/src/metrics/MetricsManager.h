@@ -106,6 +106,10 @@ public:
         return mInstallerInReport;
     };
 
+    inline uint8_t packageCertificateHashSizeBytes() const {
+        return mPackageCertificateHashSizeBytes;
+    }
+
     void refreshTtl(const int64_t currentTimestampNs) {
         if (mTtlNs > 0) {
             mTtlEndNs = currentTimestampNs + mTtlNs;
@@ -169,6 +173,7 @@ private:
     bool mHashStringsInReport = false;
     bool mVersionStringsInReport = false;
     bool mInstallerInReport = false;
+    uint8_t mPackageCertificateHashSizeBytes;
 
     int64_t mTtlNs;
     int64_t mTtlEndNs;
@@ -211,8 +216,10 @@ private:
 
     bool mShouldPersistHistory;
 
-    // All event tags that are interesting to my metrics.
-    std::set<int> mTagIds;
+    const bool mAtomMatcherOptimizationEnabled;
+
+    // All event tags that are interesting to config metrics matchers.
+    std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;
 
     // We only store the sp of AtomMatchingTracker, MetricProducer, and ConditionTracker in
     // MetricsManager. There are relationships between them, and the relationships are denoted by
@@ -251,7 +258,7 @@ private:
     // To make the log processing more efficient, we want to do as much filtering as possible
     // before we go into individual trackers and conditions to match.
 
-    // 1st filter: check if the event tag id is in mTagIds.
+    // 1st filter: check if the event tag id is in mTagIdsToMatchersMap.
     // 2nd filter: if it is, we parse the event because there is at least one member is interested.
     //             then pass to all AtomMatchingTrackers (itself also filter events by ids).
     // 3nd filter: for AtomMatchingTrackers that matched this event, we pass this event to the
@@ -340,6 +347,8 @@ private:
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithSameDeactivation);
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations);
 
+    FRIEND_TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagFalse);
+    FRIEND_TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagTrue);
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
 

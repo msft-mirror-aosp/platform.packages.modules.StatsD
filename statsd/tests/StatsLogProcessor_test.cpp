@@ -14,17 +14,18 @@
 
 #include "StatsLogProcessor.h"
 
+#include <android-base/stringprintf.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
 
 #include "StatsService.h"
 #include "config/ConfigKey.h"
-#include "src/stats_log.pb.h"
-#include "src/statsd_config.pb.h"
 #include "guardrail/StatsdStats.h"
 #include "logd/LogEvent.h"
 #include "packages/UidMap.h"
+#include "src/stats_log.pb.h"
+#include "src/statsd_config.pb.h"
 #include "statslog_statsdtest.h"
 #include "storage/StorageManager.h"
 #include "tests/statsd_test_util.h"
@@ -38,9 +39,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::base::StringPrintf;
 using android::util::ProtoOutputStream;
 
 #ifdef __ANDROID__
+#define STATS_DATA_DIR "/data/misc/stats-data"
 
 /**
  * Mock MetricsManager (ByteSize() is called).
@@ -63,7 +66,22 @@ public:
     MOCK_METHOD1(dropData, void(const int64_t dropTimeNs));
 };
 
-TEST(StatsLogProcessorTest, TestRateLimitByteSize) {
+// Setup for test fixture.
+class StatsLogProcessorTest : public testing::TestWithParam<string> {
+    void SetUp() override {
+        FlagProvider::getInstance().overrideFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, GetParam(),
+                                                 /*isBootFlag=*/true);
+    }
+
+    void TearDown() override {
+        FlagProvider::getInstance().resetOverrides();
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(OptimizationAtomMatcher, StatsLogProcessorTest,
+                         testing::Values(FLAG_FALSE, FLAG_TRUE));
+
+TEST_P(StatsLogProcessorTest, TestRateLimitByteSize) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     sp<AlarmMonitor> anomalyAlarmMonitor;
@@ -84,7 +102,7 @@ TEST(StatsLogProcessorTest, TestRateLimitByteSize) {
     p.flushIfNecessaryLocked(key, mockMetricsManager);
 }
 
-TEST(StatsLogProcessorTest, TestRateLimitBroadcast) {
+TEST_P(StatsLogProcessorTest, TestRateLimitBroadcast) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     sp<AlarmMonitor> anomalyAlarmMonitor;
@@ -116,7 +134,7 @@ TEST(StatsLogProcessorTest, TestRateLimitBroadcast) {
     // EXPECT_EQ(1, broadcastCount);
 }
 
-TEST(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
+TEST_P(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     sp<AlarmMonitor> anomalyAlarmMonitor;
@@ -158,12 +176,13 @@ StatsdConfig MakeConfig(bool includeMetric) {
     return config;
 }
 
-TEST(StatsLogProcessorTest, TestUidMapHasSnapshot) {
+TEST_P(StatsLogProcessorTest, TestUidMapHasSnapshot) {
     // Setup simple config key corresponding to empty config.
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -189,12 +208,13 @@ TEST(StatsLogProcessorTest, TestUidMapHasSnapshot) {
     ASSERT_EQ(2, uidmap.snapshots(0).package_info_size());
 }
 
-TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
+TEST_P(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
     // Setup simple config key corresponding to empty config.
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -218,7 +238,7 @@ TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
     EXPECT_FALSE(output.reports(0).has_uid_map());
 }
 
-TEST(StatsLogProcessorTest, TestReportIncludesSubConfig) {
+TEST_P(StatsLogProcessorTest, TestReportIncludesSubConfig) {
     // Setup simple config key corresponding to empty config.
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
@@ -252,7 +272,7 @@ TEST(StatsLogProcessorTest, TestReportIncludesSubConfig) {
     EXPECT_EQ(2, report.annotation(0).field_int32());
 }
 
-TEST(StatsLogProcessorTest, TestOnDumpReportEraseData) {
+TEST_P(StatsLogProcessorTest, TestOnDumpReportEraseData) {
     // Setup a simple config.
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
@@ -300,7 +320,7 @@ TEST(StatsLogProcessorTest, TestOnDumpReportEraseData) {
     EXPECT_TRUE(noData);
 }
 
-TEST(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate) {
+TEST_P(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate) {
     // Setup simple config key corresponding to empty config.
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
@@ -323,13 +343,13 @@ TEST(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate) {
     EXPECT_EQ(pullerManager->mPullUidProviders.find(key), pullerManager->mPullUidProviders.end());
 }
 
-TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
+TEST_P(StatsLogProcessorTest, InvalidConfigRemoved) {
     // Setup simple config key corresponding to empty config.
-    StatsdStats::getInstance().reset();
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")});
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
@@ -337,6 +357,9 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
                         [](const int&, const vector<int64_t>&) {return true;});
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(true);
+    // Remove the config mConfigStats so that the Icebox starts at 0 configs.
+    p.OnConfigRemoved(key);
+    StatsdStats::getInstance().reset();
     p.OnConfigUpdated(0, key, config);
     EXPECT_EQ(1, p.mMetricsManagers.size());
     EXPECT_NE(p.mMetricsManagers.find(key), p.mMetricsManagers.end());
@@ -354,11 +377,11 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
               StatsdStats::getInstance().mConfigStats.find(key));
     // Both "config" and "invalidConfig" should be in the icebox.
     EXPECT_EQ(2, StatsdStats::getInstance().mIceBox.size());
-
+    string suffix = StringPrintf("%d_%lld", key.GetUid(), (long long)key.GetId());
+    StorageManager::deleteSuffixedFiles(STATS_DATA_DIR, suffix.c_str());
 }
 
-
-TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
+TEST_P(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
     int uid = 1111;
 
     // Setup a simple config, no activation
@@ -703,7 +726,7 @@ TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
     EXPECT_EQ(broadcastCount, 1);
 }
 
-TEST(StatsLogProcessorTest, TestActivationOnBoot) {
+TEST_P(StatsLogProcessorTest, TestActivationOnBoot) {
     int uid = 1111;
 
     StatsdConfig config1;
@@ -824,7 +847,7 @@ TEST(StatsLogProcessorTest, TestActivationOnBoot) {
     EXPECT_EQ(kActive, activation1001->state);
 }
 
-TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivations) {
+TEST_P(StatsLogProcessorTest, TestActivationOnBootMultipleActivations) {
     int uid = 1111;
 
     // Create config with 2 metrics:
@@ -1225,7 +1248,7 @@ TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivations) {
     // }}}-------------------------------------------------------------------------------
 }
 
-TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivationsDifferentActivationTypes) {
+TEST_P(StatsLogProcessorTest, TestActivationOnBootMultipleActivationsDifferentActivationTypes) {
     int uid = 1111;
 
     // Create config with 2 metrics:
@@ -1487,7 +1510,7 @@ TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivationsDifferentActi
     // }}}---------------------------------------------------------------------------
 }
 
-TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
+TEST_P(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
     int uid = 9876;
     long configId = 12341;
 
@@ -1551,7 +1574,9 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
     metric2ActivationTrigger2->set_activation_type(ACTIVATE_IMMEDIATELY);
 
     // Send the config.
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    const sp<UidMap> uidMap = new UidMap();
+    const shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     string serialized = config1.SerializeAsString();
     service->addConfigurationChecked(uid, configId, {serialized.begin(), serialized.end()});
 
@@ -1865,7 +1890,87 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogIsolatedUidAttributionCha
     EXPECT_EQ(field2, actualFieldValues->at(5).mValue.int_value);
 }
 
-TEST(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimestamp) {
+/* *
+ * Test cases for repeated uid fields:
+ * - empty field
+ * - single host uid
+ * - single isolated uid
+ * - multiple host uids
+ * - multiple isolated uids
+ * - multiple host and isolated uids
+ */
+TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField) {
+    int hostUid1 = 21;
+    int hostUid2 = 22;
+    int isolatedUid1 = 31;
+    int isolatedUid2 = 32;
+    uint64_t eventTimeNs = 12355;
+    int atomId = 89;
+    int field1 = 90;
+    int field2 = 28;
+    sp<MockUidMap> mockUidMap =
+            makeMockUidMapForHosts({{hostUid1, {isolatedUid1}}, {hostUid2, {isolatedUid2}}});
+
+    ConfigKey cfgKey;
+    StatsdConfig config = MakeConfig(false);
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(1, 1, config, cfgKey, nullptr, 0, mockUidMap);
+
+    // Empty repeated uid field.
+    shared_ptr<LogEvent> logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {});
+    processor->OnLogEvent(logEvent.get());
+
+    const vector<FieldValue>* actualFieldValues = &logEvent->getValues();
+    ASSERT_EQ(0, actualFieldValues->size());
+
+    // Single host uid.
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {hostUid1});
+    processor->OnLogEvent(logEvent.get());
+
+    actualFieldValues = &logEvent->getValues();
+    ASSERT_EQ(1, actualFieldValues->size());
+    EXPECT_EQ(hostUid1, actualFieldValues->at(0).mValue.int_value);
+
+    // Single isolated uid.
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {isolatedUid1});
+    processor->OnLogEvent(logEvent.get());
+
+    actualFieldValues = &logEvent->getValues();
+    ASSERT_EQ(1, actualFieldValues->size());
+    EXPECT_EQ(hostUid1, actualFieldValues->at(0).mValue.int_value);
+
+    // Multiple host uids.
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {hostUid1, hostUid2});
+    processor->OnLogEvent(logEvent.get());
+
+    actualFieldValues = &logEvent->getValues();
+    ASSERT_EQ(2, actualFieldValues->size());
+    EXPECT_EQ(hostUid1, actualFieldValues->at(0).mValue.int_value);
+    EXPECT_EQ(hostUid2, actualFieldValues->at(1).mValue.int_value);
+
+    // Multiple isolated uids.
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {isolatedUid1, isolatedUid2});
+    processor->OnLogEvent(logEvent.get());
+
+    actualFieldValues = &logEvent->getValues();
+    ASSERT_EQ(2, actualFieldValues->size());
+    EXPECT_EQ(hostUid1, actualFieldValues->at(0).mValue.int_value);
+    EXPECT_EQ(hostUid2, actualFieldValues->at(1).mValue.int_value);
+
+    // Multiple host and isolated uids.
+    logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs,
+                                       {isolatedUid1, hostUid2, isolatedUid2, hostUid1});
+    processor->OnLogEvent(logEvent.get());
+
+    actualFieldValues = &logEvent->getValues();
+    ASSERT_EQ(4, actualFieldValues->size());
+    EXPECT_EQ(hostUid1, actualFieldValues->at(0).mValue.int_value);
+    EXPECT_EQ(hostUid2, actualFieldValues->at(1).mValue.int_value);
+    EXPECT_EQ(hostUid2, actualFieldValues->at(2).mValue.int_value);
+    EXPECT_EQ(hostUid1, actualFieldValues->at(3).mValue.int_value);
+}
+
+TEST_P(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimestamp) {
     int hostUid = 20;
     int isolatedUid = 30;
     sp<MockUidMap> mockUidMap = makeMockUidMapForHosts({{hostUid, {isolatedUid}}});
@@ -1909,7 +2014,6 @@ TEST(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimesta
     EXPECT_EQ(output.reports_size(), 1);
     EXPECT_EQ(output.reports(0).current_report_elapsed_nanos(), dumpTime3Ns);
     EXPECT_EQ(output.reports(0).last_report_elapsed_nanos(), dumpTime1Ns);
-
 }
 
 #else
