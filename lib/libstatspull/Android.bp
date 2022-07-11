@@ -123,7 +123,7 @@ cc_test {
     test_suites: ["general-tests", "mts-statsd"],
     test_config: "libstatspull_test.xml",
 
-    //TODO(b/153588990): Remove when the build system properly separates 
+    //TODO(b/153588990): Remove when the build system properly separates
     //32bit and 64bit architectures.
     compile_multilib: "both",
     multilib: {
