@@ -126,8 +126,7 @@ private:
     FRIEND_TEST(FlagProviderTest_SPlus, TestGetFlagBoolServerFlagEmptyDefaultTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagFalse);
-    FRIEND_TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagFalse);
-    FRIEND_TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagTrue);
+    FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
 };
 
 }  // namespace statsd
