@@ -441,10 +441,10 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     EXPECT_TRUE(processor->mMetricsManagers.begin()->second->isConfigValid());
     processor->mPullerManager->ForceClearPullerCache();
 
-    int startBucketNum = processor->mMetricsManagers.begin()
-                                 ->second->mAllMetricProducers[0]
-                                 ->getCurrentBucketNum();
-    EXPECT_GT(startBucketNum, (int64_t)0);
+    const int startBucketNum = processor->mMetricsManagers.begin()
+                                       ->second->mAllMetricProducers[0]
+                                       ->getCurrentBucketNum();
+    EXPECT_EQ(startBucketNum, 2);
     EXPECT_FALSE(processor->mMetricsManagers.begin()->second->mAllMetricProducers[0]->isActive());
 
     // When creating the config, the gauge metric producer should register the alarm at the
@@ -476,7 +476,8 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 2 * bucketSizeNs, nextPullTimeNs);
     EXPECT_FALSE(processor->mMetricsManagers.begin()->second->mAllMetricProducers[0]->isActive());
 
-    // Activate the metric. A pull occurs upon activation.
+    // Activate the metric. A pull occurs upon activation. The event is kept. 1 total
+    // 15 mins + 2 ms
     const int64_t activationNs = configAddedTimeNs + bucketSizeNs + (2 * 1000 * 1000);  // 2 millis.
     auto batterySaverOnEvent = CreateBatterySaverOnEvent(activationNs);
     processor->OnLogEvent(batterySaverOnEvent.get());  // 15 mins + 2 ms.
@@ -491,19 +492,28 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 4 * bucketSizeNs, nextPullTimeNs);
 
     // Create random event to deactivate metric.
-    auto deactivationEvent = CreateScreenBrightnessChangedEvent(activationNs + ttlNs + 1, 50);
+    // A pull should not occur here. 3 total.
+    // 25 mins + 2 ms + 1 ns.
+    const int64_t deactivationNs = activationNs + ttlNs + 1;
+    auto deactivationEvent = CreateScreenBrightnessChangedEvent(deactivationNs, 50);
     processor->OnLogEvent(deactivationEvent.get());
     EXPECT_FALSE(processor->mMetricsManagers.begin()->second->mAllMetricProducers[0]->isActive());
 
     // Event should not be kept. 3 total.
+    // 30 mins + 3 ns.
     processor->informPullAlarmFired(nextPullTimeNs + 3);
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 5 * bucketSizeNs, nextPullTimeNs);
 
+    // Event should not be kept. 3 total.
+    // 35 mins + 2 ns.
     processor->informPullAlarmFired(nextPullTimeNs + 2);
+    EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 6 * bucketSizeNs, nextPullTimeNs);
 
     ConfigMetricsReportList reports;
     vector<uint8_t> buffer;
-    processor->onDumpReport(cfgKey, configAddedTimeNs + 7 * bucketSizeNs + 10, false, true,
+    // 40 mins + 10 ns.
+    processor->onDumpReport(cfgKey, configAddedTimeNs + 6 * bucketSizeNs + 10,
+                            false /* include_current_partial_bucket */, true /* erase_data */,
                             ADB_DUMP, FAST, &buffer);
     EXPECT_TRUE(buffer.size() > 0);
     EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
@@ -552,8 +562,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     ASSERT_EQ(0, bucketInfo.wall_clock_timestamp_nanos_size());
     EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 5 * bucketSizeNs)),
               bucketInfo.start_bucket_elapsed_nanos());
-    EXPECT_EQ(MillisToNano(NanoToMillis(activationNs + ttlNs + 1)),
-              bucketInfo.end_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(deactivationNs)), bucketInfo.end_bucket_elapsed_nanos());
     EXPECT_TRUE(bucketInfo.atom(0).subsystem_sleep_state().subsystem_name().empty());
     EXPECT_GT(bucketInfo.atom(0).subsystem_sleep_state().time_millis(), 0);
 }

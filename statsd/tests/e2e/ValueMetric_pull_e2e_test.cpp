@@ -433,10 +433,10 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     EXPECT_TRUE(processor->mMetricsManagers.begin()->second->isConfigValid());
     processor->mPullerManager->ForceClearPullerCache();
 
-    int startBucketNum = processor->mMetricsManagers.begin()
-                                 ->second->mAllMetricProducers[0]
-                                 ->getCurrentBucketNum();
-    EXPECT_GT(startBucketNum, (int64_t)0);
+    const int startBucketNum = processor->mMetricsManagers.begin()
+                                       ->second->mAllMetricProducers[0]
+                                       ->getCurrentBucketNum();
+    EXPECT_EQ(startBucketNum, 2);
     EXPECT_FALSE(processor->mMetricsManagers.begin()->second->mAllMetricProducers[0]->isActive());
 
     // When creating the config, the value metric producer should register the alarm at the
@@ -465,43 +465,54 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     // Check no pull occurred on dump report when metric is not active.
     int64_t dumpReportTimeNs = appUpgradeTimeNs + 1;  // 10 mins + 3 ns.
     vector<uint8_t> buffer;
-    processor->onDumpReport(cfgKey, dumpReportTimeNs, true, true, ADB_DUMP, NO_TIME_CONSTRAINTS,
-                            &buffer);
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
+                            true /* erase_data */, ADB_DUMP, NO_TIME_CONSTRAINTS, &buffer);
     pulledAtomStats = getPulledAtomStats();
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
-    // Pulling alarm arrives on time and reset the sequential pulling alarm.
+    // Pulling alarm arrives on time and reset the sequential pulling alarm. This bucket is skipped.
     processor->informPullAlarmFired(expectedPullTimeNs + 1);  // 15 mins + 1 ns.
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 2 * bucketSizeNs, expectedPullTimeNs);
     EXPECT_FALSE(processor->mMetricsManagers.begin()->second->mAllMetricProducers[0]->isActive());
 
-    // Activate the metric. A pull occurs here
+    // Activate the metric. A pull occurs here that sets the base.
+    // 15 mins + 2 ms
     const int64_t activationNs = configAddedTimeNs + bucketSizeNs + (2 * 1000 * 1000);  // 2 millis.
     auto batterySaverOnEvent = CreateBatterySaverOnEvent(activationNs);
     processor->OnLogEvent(batterySaverOnEvent.get());  // 15 mins + 2 ms.
     EXPECT_TRUE(processor->mMetricsManagers.begin()->second->mAllMetricProducers[0]->isActive());
 
+    // This bucket should be kept. 1 total
     processor->informPullAlarmFired(expectedPullTimeNs + 1);  // 20 mins + 1 ns.
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 3 * bucketSizeNs, expectedPullTimeNs);
 
+    // 25 mins + 2 ns.
+    // This bucket should be kept. 2 total
     processor->informPullAlarmFired(expectedPullTimeNs + 2);  // 25 mins + 2 ns.
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 4 * bucketSizeNs, expectedPullTimeNs);
 
     // Create random event to deactivate metric.
-    auto deactivationEvent = CreateScreenBrightnessChangedEvent(activationNs + ttlNs + 1, 50);
+    // A pull occurs here and a partial bucket is created. The bucket ending here is kept. 3 total.
+    // 25 mins + 2 ms + 1 ns.
+    const int64_t deactivationNs = activationNs + ttlNs + 1;
+    auto deactivationEvent = CreateScreenBrightnessChangedEvent(deactivationNs, 50);
     processor->OnLogEvent(deactivationEvent.get());
     EXPECT_FALSE(processor->mMetricsManagers.begin()->second->mAllMetricProducers[0]->isActive());
 
+    // 30 mins + 3 ns. This bucket is skipped.
     processor->informPullAlarmFired(expectedPullTimeNs + 3);
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 5 * bucketSizeNs, expectedPullTimeNs);
 
+    // 35 mins + 4 ns. This bucket is skipped
     processor->informPullAlarmFired(expectedPullTimeNs + 4);
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 6 * bucketSizeNs, expectedPullTimeNs);
 
     ConfigMetricsReportList reports;
     buffer.clear();
-    processor->onDumpReport(cfgKey, configAddedTimeNs + 7 * bucketSizeNs + 10, false, true,
+    // 40 mins + 10 ns.
+    processor->onDumpReport(cfgKey, configAddedTimeNs + 6 * bucketSizeNs + 10,
+                            false /* include_current_partial_bucket */, true /* erase_data */,
                             ADB_DUMP, FAST, &buffer);
     EXPECT_TRUE(buffer.size() > 0);
     EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
@@ -520,8 +531,8 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     EXPECT_EQ(1 /* subsystem name field */,
               data.dimensions_in_what().value_tuple().dimensions_value(0).field());
     EXPECT_FALSE(data.dimensions_in_what().value_tuple().dimensions_value(0).value_str().empty());
-    // We have 2 full buckets, the two surrounding the activation are dropped.
-    ASSERT_EQ(2, data.bucket_info_size());
+    // We have 3 full buckets, the two surrounding the activation are dropped.
+    ASSERT_EQ(3, data.bucket_info_size());
 
     auto bucketInfo = data.bucket_info(0);
     EXPECT_EQ(baseTimeNs + 3 * bucketSizeNs, bucketInfo.start_bucket_elapsed_nanos());
@@ -531,6 +542,12 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     bucketInfo = data.bucket_info(1);
     EXPECT_EQ(baseTimeNs + 4 * bucketSizeNs, bucketInfo.start_bucket_elapsed_nanos());
     EXPECT_EQ(baseTimeNs + 5 * bucketSizeNs, bucketInfo.end_bucket_elapsed_nanos());
+    ASSERT_EQ(1, bucketInfo.values_size());
+
+    bucketInfo = data.bucket_info(2);
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 5 * bucketSizeNs)),
+              bucketInfo.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(deactivationNs)), bucketInfo.end_bucket_elapsed_nanos());
     ASSERT_EQ(1, bucketInfo.values_size());
 }
 

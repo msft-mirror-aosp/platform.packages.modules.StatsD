@@ -66,7 +66,8 @@ private:
         return config.value_metric(configIndex).links();
     }
 
-    void onActiveStateChangedInternalLocked(const int64_t eventTimeNs) override;
+    void onActiveStateChangedInternalLocked(const int64_t eventTimeNs,
+                                            const bool isActive) override;
 
     // Only called when mIsActive and the event is NOT too late.
     void onConditionChangedInternalLocked(const ConditionState oldCondition,
