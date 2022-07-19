@@ -82,7 +82,7 @@ public:
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
     void notifyAppUpgradeInternalLocked(const int64_t eventTimeNs) override {
         flushLocked(eventTimeNs);
-        if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+        if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE && mIsActive) {
             pullAndMatchEventsLocked(eventTimeNs);
         }
     };
@@ -92,7 +92,7 @@ public:
         std::lock_guard<std::mutex> lock(mMutex);
 
         flushLocked(eventTimeNs);
-        if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+        if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE && mIsActive) {
             pullAndMatchEventsLocked(eventTimeNs);
         }
     };
