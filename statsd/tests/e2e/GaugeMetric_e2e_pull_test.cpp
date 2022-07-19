@@ -60,6 +60,7 @@ StatsdConfig CreateStatsdConfig(const GaugeMetric::SamplingType sampling_type,
     gaugeMetric->set_bucket(FIVE_MINUTES);
     gaugeMetric->set_max_pull_delay_sec(INT_MAX);
     config.set_hash_strings_in_metric_report(false);
+    gaugeMetric->set_split_bucket_for_app_upgrade(true);
 
     return config;
 }
@@ -430,6 +431,8 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     event_activation->set_atom_matcher_id(batterySaverStartMatcher.id());
     event_activation->set_ttl_seconds(ttlNs / 1000000000);
 
+    StatsdStats::getInstance().reset();
+
     ConfigKey cfgKey;
     auto processor =
             CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
@@ -452,6 +455,20 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     int64_t& nextPullTimeNs =
             processor->mPullerManager->mReceivers.begin()->second.front().nextPullTimeNs;
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + bucketSizeNs, nextPullTimeNs);
+
+    // Check no pull occurred on metric initialization when it's not active.
+    const int64_t metricInitTimeNs = configAddedTimeNs + 1;  // 10 mins + 1 ns.
+    processor->onStatsdInitCompleted(metricInitTimeNs);
+    StatsdStatsReport_PulledAtomStats pulledAtomStats = getPulledAtomStats();
+    EXPECT_EQ(pulledAtomStats.atom_id(), ATOM_TAG);
+    EXPECT_EQ(pulledAtomStats.total_pull(), 0);
+
+    // Check no pull occurred on app upgrade when metric is not active.
+    const int64_t appUpgradeTimeNs = metricInitTimeNs + 1;  // 10 mins + 2 ns.
+    processor->notifyAppUpgrade(appUpgradeTimeNs, "appName", 1000 /* uid */, 2 /* version */);
+    pulledAtomStats = getPulledAtomStats();
+    EXPECT_EQ(pulledAtomStats.atom_id(), ATOM_TAG);
+    EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
     // Pulling alarm arrives on time and reset the sequential pulling alarm.
     // Event should not be kept.
