@@ -140,6 +140,7 @@ private:
 
     void prepareFirstBucketLocked() override;
 
+    // Only call if mCondition == ConditionState::kTrue && metric is active.
     void pullAndMatchEventsLocked(const int64_t timestampNs);
 
     bool onConfigUpdatedLocked(
