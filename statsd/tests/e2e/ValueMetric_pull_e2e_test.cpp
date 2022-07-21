@@ -60,6 +60,7 @@ StatsdConfig CreateStatsdConfig(bool useCondition = true) {
     valueMetric->set_use_absolute_value_on_reset(true);
     valueMetric->set_skip_zero_diff_output(false);
     valueMetric->set_max_pull_delay_sec(INT_MAX);
+    valueMetric->set_split_bucket_for_app_upgrade(true);
     return config;
 }
 
@@ -422,6 +423,8 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     event_activation->set_atom_matcher_id(batterySaverStartMatcher.id());
     event_activation->set_ttl_seconds(ttlNs / 1000000000);
 
+    StatsdStats::getInstance().reset();
+
     ConfigKey cfgKey;
     auto processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
                                              SharedRefBase::make<FakeSubsystemSleepCallback>(),
@@ -444,6 +447,29 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     int64_t& expectedPullTimeNs =
             processor->mPullerManager->mReceivers.begin()->second.front().nextPullTimeNs;
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + bucketSizeNs, expectedPullTimeNs);
+
+    // Check no pull occurred on metric initialization when it's not active.
+    const int64_t metricInitTimeNs = configAddedTimeNs + 1;  // 10 mins + 1 ns.
+    processor->onStatsdInitCompleted(metricInitTimeNs);
+    StatsdStatsReport_PulledAtomStats pulledAtomStats = getPulledAtomStats();
+    EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
+    EXPECT_EQ(pulledAtomStats.total_pull(), 0);
+
+    // Check no pull occurred on app upgrade when metric is not active.
+    const int64_t appUpgradeTimeNs = metricInitTimeNs + 1;  // 10 mins + 2 ns.
+    processor->notifyAppUpgrade(appUpgradeTimeNs, "appName", 1000 /* uid */, 2 /* version */);
+    pulledAtomStats = getPulledAtomStats();
+    EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
+    EXPECT_EQ(pulledAtomStats.total_pull(), 0);
+
+    // Check no pull occurred on dump report when metric is not active.
+    int64_t dumpReportTimeNs = appUpgradeTimeNs + 1;  // 10 mins + 3 ns.
+    vector<uint8_t> buffer;
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true, true, ADB_DUMP, NO_TIME_CONSTRAINTS,
+                            &buffer);
+    pulledAtomStats = getPulledAtomStats();
+    EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
+    EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
     // Pulling alarm arrives on time and reset the sequential pulling alarm.
     processor->informPullAlarmFired(expectedPullTimeNs + 1);  // 15 mins + 1 ns.
@@ -474,7 +500,7 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 6 * bucketSizeNs, expectedPullTimeNs);
 
     ConfigMetricsReportList reports;
-    vector<uint8_t> buffer;
+    buffer.clear();
     processor->onDumpReport(cfgKey, configAddedTimeNs + 7 * bucketSizeNs + 10, false, true,
                             ADB_DUMP, FAST, &buffer);
     EXPECT_TRUE(buffer.size() > 0);
