@@ -721,6 +721,8 @@ std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
     result.insert(result.end(), b.begin(), b.end());
     return result;
 }
+
+StatsdStatsReport_PulledAtomStats getPulledAtomStats();
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
