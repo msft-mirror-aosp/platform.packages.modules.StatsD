@@ -204,7 +204,8 @@ bool GaugeMetricProducer::onConfigUpdatedLocked(
 
     // If this is a config update, we must have just forced a partial bucket. Pull if needed to get
     // data for the new bucket.
-    if (mIsActive && mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled &&
+        mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
         pullAndMatchEventsLocked(mCurrentBucketStartTimeNs);
     }
     return true;
@@ -356,26 +357,25 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 }
 
 void GaugeMetricProducer::prepareFirstBucketLocked() {
-    if (mIsActive && mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled &&
+        mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
         pullAndMatchEventsLocked(mCurrentBucketStartTimeNs);
     }
 }
 
+// Only call if mCondition == ConditionState::kTrue && metric is active.
 void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
     bool triggerPuller = false;
     switch(mSamplingType) {
         // When the metric wants to do random sampling and there is already one gauge atom for the
         // current bucket, do not do it again.
         case GaugeMetric::RANDOM_ONE_SAMPLE: {
-            triggerPuller = mCondition == ConditionState::kTrue && mCurrentSlicedBucket->empty();
+            triggerPuller = mCurrentSlicedBucket->empty();
             break;
         }
-        case GaugeMetric::CONDITION_CHANGE_TO_TRUE: {
-            triggerPuller = mCondition == ConditionState::kTrue;
-            break;
-        }
+        case GaugeMetric::CONDITION_CHANGE_TO_TRUE:
         case GaugeMetric::FIRST_N_SAMPLES: {
-            triggerPuller = mCondition == ConditionState::kTrue;
+            triggerPuller = true;
             break;
         }
         default:
@@ -426,7 +426,7 @@ void GaugeMetricProducer::onConditionChangedLocked(const bool conditionMet,
     }
 
     flushIfNeededLocked(eventTimeNs);
-    if (mIsPulled && mTriggerAtomId == -1) {
+    if (conditionMet && mIsPulled && mTriggerAtomId == -1) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }
@@ -443,7 +443,7 @@ void GaugeMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
     flushIfNeededLocked(eventTimeNs);
     // If the condition is sliced, mCondition is true if any of the dimensions is true. And we will
     // pull for every dimension.
-    if (mIsPulled && mTriggerAtomId == -1) {
+    if (overallCondition && mIsPulled && mTriggerAtomId == -1) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }
@@ -528,6 +528,9 @@ void GaugeMetricProducer::onMatchedLogEventInternalLocked(
     flushIfNeededLocked(eventTimeNs);
 
     if (mTriggerAtomId == event.GetTagId()) {
+        // Both Active state and Condition are true here.
+        // Active state being true is checked in onMatchedLogEventLocked.
+        // Condition being true is checked at the start of this method.
         pullAndMatchEventsLocked(eventTimeNs);
         return;
     }
