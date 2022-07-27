@@ -194,9 +194,13 @@ void MetricProducer::flushIfExpire(int64_t elapsedTimestampNs) {
     if (!mIsActive) {
         return;
     }
-    mIsActive = evaluateActiveStateLocked(elapsedTimestampNs);
-    if (!mIsActive) {
-        onActiveStateChangedLocked(elapsedTimestampNs);
+    const bool isActive = evaluateActiveStateLocked(elapsedTimestampNs);
+    if (!isActive) {  // Metric went from active to not active.
+        onActiveStateChangedLocked(elapsedTimestampNs, false);
+
+        // Set mIsActive to false after onActiveStateChangedLocked to ensure any pulls that occur
+        // through onActiveStateChangedLocked are processed.
+        mIsActive = false;
     }
 }
 
@@ -215,10 +219,12 @@ void MetricProducer::activateLocked(int activationTrackerIndex, int64_t elapsedT
     }
     activation->start_ns = elapsedTimestampNs;
     activation->state = ActivationState::kActive;
-    bool oldActiveState = mIsActive;
-    mIsActive = true;
-    if (!oldActiveState) { // Metric went from not active to active.
-        onActiveStateChangedLocked(elapsedTimestampNs);
+    if (!mIsActive) {  // Metric was previously inactive and now is active.
+        // Set mIsActive to true before onActiveStateChangedLocked to ensure any pulls that occur
+        // through onActiveStateChangedLocked are processed.
+        mIsActive = true;
+
+        onActiveStateChangedLocked(elapsedTimestampNs, true);
     }
 }
 
