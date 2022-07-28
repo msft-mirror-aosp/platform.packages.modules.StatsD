@@ -61,6 +61,7 @@ StatsdConfig CreateStatsdConfig(bool useCondition = true) {
     valueMetric->set_skip_zero_diff_output(false);
     valueMetric->set_max_pull_delay_sec(INT_MAX);
     valueMetric->set_split_bucket_for_app_upgrade(true);
+    valueMetric->set_min_bucket_size_nanos(1000);
     return config;
 }
 
@@ -448,28 +449,66 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
             processor->mPullerManager->mReceivers.begin()->second.front().nextPullTimeNs;
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + bucketSizeNs, expectedPullTimeNs);
 
-    // Check no pull occurred on metric initialization when it's not active.
+    // Initialize metric.
     const int64_t metricInitTimeNs = configAddedTimeNs + 1;  // 10 mins + 1 ns.
     processor->onStatsdInitCompleted(metricInitTimeNs);
+
+    // Check no pull occurred since metric not active.
     StatsdStatsReport_PulledAtomStats pulledAtomStats = getPulledAtomStats();
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
-    // Check no pull occurred on app upgrade when metric is not active.
-    const int64_t appUpgradeTimeNs = metricInitTimeNs + 1;  // 10 mins + 2 ns.
+    // Check skip bucket is not added when metric is not active.
+    int64_t dumpReportTimeNs = metricInitTimeNs + 1;  // 10 mins + 2 ns.
+    vector<uint8_t> buffer;
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
+                            true /* erase_data */, ADB_DUMP, FAST, &buffer);
+    ConfigMetricsReportList reports;
+    EXPECT_TRUE(buffer.size() > 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    StatsLogReport::ValueMetricDataWrapper valueMetrics =
+            reports.reports(0).metrics(0).value_metrics();
+    EXPECT_EQ(valueMetrics.skipped_size(), 0);
+
+    // App upgrade.
+    const int64_t appUpgradeTimeNs = dumpReportTimeNs + 1;  // 10 mins + 3 ns.
     processor->notifyAppUpgrade(appUpgradeTimeNs, "appName", 1000 /* uid */, 2 /* version */);
+
+    // Check no pull occurred since metric not active.
     pulledAtomStats = getPulledAtomStats();
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
-    // Check no pull occurred on dump report when metric is not active.
-    int64_t dumpReportTimeNs = appUpgradeTimeNs + 1;  // 10 mins + 3 ns.
-    vector<uint8_t> buffer;
+    // Check skip bucket is not added when metric is not active.
+    dumpReportTimeNs = appUpgradeTimeNs + 1;  // 10 mins + 4 ns.
+    buffer.clear();
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
+                            true /* erase_data */, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(buffer.size() > 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    valueMetrics = reports.reports(0).metrics(0).value_metrics();
+    EXPECT_EQ(valueMetrics.skipped_size(), 0);
+
+    // Dump report with a pull. The pull should not happen because metric is inactive.
+    dumpReportTimeNs = dumpReportTimeNs + 1;  // 10 mins + 6 ns.
+    buffer.clear();
     processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
                             true /* erase_data */, ADB_DUMP, NO_TIME_CONSTRAINTS, &buffer);
     pulledAtomStats = getPulledAtomStats();
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
+
+    // Check skipped bucket is not added from the dump operation when metric is not active.
+    EXPECT_TRUE(buffer.size() > 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    valueMetrics = reports.reports(0).metrics(0).value_metrics();
+    EXPECT_EQ(valueMetrics.skipped_size(), 0);
 
     // Pulling alarm arrives on time and reset the sequential pulling alarm. This bucket is skipped.
     processor->informPullAlarmFired(expectedPullTimeNs + 1);  // 15 mins + 1 ns.
@@ -508,12 +547,11 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     processor->informPullAlarmFired(expectedPullTimeNs + 4);
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 6 * bucketSizeNs, expectedPullTimeNs);
 
-    ConfigMetricsReportList reports;
+    dumpReportTimeNs = configAddedTimeNs + 6 * bucketSizeNs + 10;
     buffer.clear();
     // 40 mins + 10 ns.
-    processor->onDumpReport(cfgKey, configAddedTimeNs + 6 * bucketSizeNs + 10,
-                            false /* include_current_partial_bucket */, true /* erase_data */,
-                            ADB_DUMP, FAST, &buffer);
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, false /* include_current_partial_bucket */,
+                            true /* erase_data */, ADB_DUMP, FAST, &buffer);
     EXPECT_TRUE(buffer.size() > 0);
     EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
     backfillDimensionPath(&reports);
@@ -521,7 +559,7 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     backfillStartEndTimestamp(&reports);
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
-    StatsLogReport::ValueMetricDataWrapper valueMetrics;
+    valueMetrics = StatsLogReport::ValueMetricDataWrapper();
     sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).value_metrics(), &valueMetrics);
     ASSERT_GT((int)valueMetrics.data_size(), 0);
 
@@ -549,6 +587,19 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
               bucketInfo.start_bucket_elapsed_nanos());
     EXPECT_EQ(MillisToNano(NanoToMillis(deactivationNs)), bucketInfo.end_bucket_elapsed_nanos());
     ASSERT_EQ(1, bucketInfo.values_size());
+
+    // Check skipped bucket is not added after deactivation.
+    dumpReportTimeNs = configAddedTimeNs + 7 * bucketSizeNs + 10;
+    buffer.clear();
+    // 45 mins + 10 ns.
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
+                            true /* erase_data */, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(buffer.size() > 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    valueMetrics = reports.reports(0).metrics(0).value_metrics();
+    EXPECT_EQ(valueMetrics.skipped_size(), 0);
 }
 
 /**
