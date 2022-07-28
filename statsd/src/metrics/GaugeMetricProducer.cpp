@@ -646,7 +646,7 @@ void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
             VLOG("Gauge gauge metric %lld, dump key value: %s", (long long)mMetricId,
                  slice.first.toString().c_str());
         }
-    } else {
+    } else if (mIsActive) {
         mCurrentSkippedBucket.bucketStartTimeNs = mCurrentBucketStartTimeNs;
         mCurrentSkippedBucket.bucketEndTimeNs = bucketEndTime;
         if (!maxDropEventsReached()) {
