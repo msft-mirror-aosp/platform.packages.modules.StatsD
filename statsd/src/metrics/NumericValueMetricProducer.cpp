@@ -128,10 +128,11 @@ void NumericValueMetricProducer::writePastBucketAggregateToProto(
     protoOutput->end(valueToken);
 }
 
-void NumericValueMetricProducer::onActiveStateChangedInternalLocked(const int64_t eventTimeNs) {
+void NumericValueMetricProducer::onActiveStateChangedInternalLocked(const int64_t eventTimeNs,
+                                                                    const bool isActive) {
     // When active state changes from true to false for pulled metric, clear diff base but don't
     // reset other counters as we may accumulate more value in the bucket.
-    if (mUseDiff && !mIsActive) {
+    if (mUseDiff && !isActive) {
         resetBase();
     }
 }
