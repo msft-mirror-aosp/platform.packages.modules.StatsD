@@ -61,6 +61,7 @@ StatsdConfig CreateStatsdConfig(const GaugeMetric::SamplingType sampling_type,
     gaugeMetric->set_max_pull_delay_sec(INT_MAX);
     config.set_hash_strings_in_metric_report(false);
     gaugeMetric->set_split_bucket_for_app_upgrade(true);
+    gaugeMetric->set_min_bucket_size_nanos(1000);
 
     return config;
 }
@@ -470,6 +471,20 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     EXPECT_EQ(pulledAtomStats.atom_id(), ATOM_TAG);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
+    // Check skipped bucket is not added when metric is not active.
+    int64_t dumpReportTimeNs = appUpgradeTimeNs + 1;  // 10 mins + 3 ns.
+    vector<uint8_t> buffer;
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
+                            true /* erase_data */, ADB_DUMP, NO_TIME_CONSTRAINTS, &buffer);
+    ConfigMetricsReportList reports;
+    EXPECT_TRUE(buffer.size() > 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    StatsLogReport::GaugeMetricDataWrapper gaugeMetrics =
+            reports.reports(0).metrics(0).gauge_metrics();
+    EXPECT_EQ(gaugeMetrics.skipped_size(), 0);
+
     // Pulling alarm arrives on time and reset the sequential pulling alarm.
     // Event should not be kept.
     processor->informPullAlarmFired(nextPullTimeNs + 1);  // 15 mins + 1 ns.
@@ -509,8 +524,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     processor->informPullAlarmFired(nextPullTimeNs + 2);
     EXPECT_EQ(baseTimeNs + startBucketNum * bucketSizeNs + 6 * bucketSizeNs, nextPullTimeNs);
 
-    ConfigMetricsReportList reports;
-    vector<uint8_t> buffer;
+    buffer.clear();
     // 40 mins + 10 ns.
     processor->onDumpReport(cfgKey, configAddedTimeNs + 6 * bucketSizeNs + 10,
                             false /* include_current_partial_bucket */, true /* erase_data */,
@@ -523,7 +537,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     backfillAggregatedAtoms(&reports);
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
-    StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;
+    gaugeMetrics = StatsLogReport::GaugeMetricDataWrapper();
     sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).gauge_metrics(), &gaugeMetrics);
     ASSERT_GT((int)gaugeMetrics.data_size(), 0);
 
@@ -565,6 +579,18 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     EXPECT_EQ(MillisToNano(NanoToMillis(deactivationNs)), bucketInfo.end_bucket_elapsed_nanos());
     EXPECT_TRUE(bucketInfo.atom(0).subsystem_sleep_state().subsystem_name().empty());
     EXPECT_GT(bucketInfo.atom(0).subsystem_sleep_state().time_millis(), 0);
+
+    // Check skipped bucket is not added after deactivation.
+    dumpReportTimeNs = configAddedTimeNs + 8 * bucketSizeNs + 10;
+    buffer.clear();
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
+                            true /* erase_data */, ADB_DUMP, NO_TIME_CONSTRAINTS, &buffer);
+    EXPECT_TRUE(buffer.size() > 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    gaugeMetrics = reports.reports(0).metrics(0).gauge_metrics();
+    EXPECT_EQ(gaugeMetrics.skipped_size(), 0);
 }
 
 TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition) {
