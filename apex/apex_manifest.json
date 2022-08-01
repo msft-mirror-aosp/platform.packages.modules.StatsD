@@ -1,5 +1,8 @@
 {
   "name": "com.android.os.statsd",
-  "version": 330910000
+
+  // Placeholder module version to be replaced during build.
+  // Do not change!
+  "version": 331010000
 }
 
