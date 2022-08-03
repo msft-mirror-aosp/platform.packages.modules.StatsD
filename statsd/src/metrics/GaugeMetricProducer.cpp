@@ -406,12 +406,15 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
     }
 }
 
-void GaugeMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs) {
-    MetricProducer::onActiveStateChangedLocked(eventTimeNs);
-    if (ConditionState::kTrue != mCondition || !mIsPulled) {
+void GaugeMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
+                                                     const bool isActive) {
+    MetricProducer::onActiveStateChangedLocked(eventTimeNs, isActive);
+
+    if (ConditionState::kTrue != mCondition) {
         return;
     }
-    if (mTriggerAtomId == -1 || (mIsActive && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE)) {
+
+    if (isActive && mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
         pullAndMatchEventsLocked(eventTimeNs);
     }
 }
@@ -426,7 +429,9 @@ void GaugeMetricProducer::onConditionChangedLocked(const bool conditionMet,
     }
 
     flushIfNeededLocked(eventTimeNs);
-    if (conditionMet && mIsPulled && mTriggerAtomId == -1) {
+    if (conditionMet && mIsPulled &&
+        (mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE ||
+         mSamplingType == GaugeMetric::CONDITION_CHANGE_TO_TRUE)) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }
@@ -641,7 +646,7 @@ void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
             VLOG("Gauge gauge metric %lld, dump key value: %s", (long long)mMetricId,
                  slice.first.toString().c_str());
         }
-    } else {
+    } else if (mIsActive) {
         mCurrentSkippedBucket.bucketStartTimeNs = mCurrentBucketStartTimeNs;
         mCurrentSkippedBucket.bucketEndTimeNs = bucketEndTime;
         if (!maxDropEventsReached()) {
