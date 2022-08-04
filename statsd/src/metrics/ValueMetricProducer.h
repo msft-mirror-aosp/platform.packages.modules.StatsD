@@ -167,9 +167,10 @@ protected:
     void clearPastBucketsLocked(const int64_t dumpTimeNs) override;
 
     // ValueMetricProducer internal interface to handle active state change.
-    void onActiveStateChangedLocked(const int64_t eventTimeNs) override;
+    void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) override;
 
-    virtual void onActiveStateChangedInternalLocked(const int64_t eventTimeNs) {
+    virtual void onActiveStateChangedInternalLocked(const int64_t eventTimeNs,
+                                                    const bool isActive) {
     }
 
     // ValueMetricProducer internal interface to handle condition change.
