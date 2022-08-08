@@ -82,7 +82,7 @@ public:
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
     void notifyAppUpgradeInternalLocked(const int64_t eventTimeNs) override {
         flushLocked(eventTimeNs);
-        if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+        if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE && mIsActive) {
             pullAndMatchEventsLocked(eventTimeNs);
         }
     };
@@ -92,7 +92,7 @@ public:
         std::lock_guard<std::mutex> lock(mMutex);
 
         flushLocked(eventTimeNs);
-        if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+        if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE && mIsActive) {
             pullAndMatchEventsLocked(eventTimeNs);
         }
     };
@@ -120,7 +120,7 @@ private:
     void onConditionChangedLocked(const bool conditionMet, const int64_t eventTime) override;
 
     // Internal interface to handle active state change.
-    void onActiveStateChangedLocked(const int64_t eventTimeNs) override;
+    void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) override;
 
     // Internal interface to handle sliced condition change.
     void onSlicedConditionMayChangeLocked(bool overallCondition, const int64_t eventTime) override;
@@ -140,6 +140,7 @@ private:
 
     void prepareFirstBucketLocked() override;
 
+    // Only call if mCondition == ConditionState::kTrue && metric is active.
     void pullAndMatchEventsLocked(const int64_t timestampNs);
 
     bool onConfigUpdatedLocked(
