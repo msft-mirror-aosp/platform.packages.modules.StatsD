@@ -31,13 +31,13 @@ namespace statsd {
 
 const static int FIELD_ID_ATOM = 1;
 
-void ShellSubscriber::startNewSubscription(int in, int out, int timeoutSec) {
+bool ShellSubscriber::startNewSubscription(int in, int out, int timeoutSec) {
     int myToken = claimToken();
     VLOG("ShellSubscriber: new subscription %d has come in", myToken);
     mSubscriptionShouldEnd.notify_one();
 
     shared_ptr<SubscriptionInfo> mySubscriptionInfo = make_shared<SubscriptionInfo>(in, out);
-    if (!readConfig(mySubscriptionInfo)) return;
+    if (!readConfig(mySubscriptionInfo)) return false;
 
     {
         std::unique_lock<std::mutex> lock(mMutex);
@@ -50,6 +50,7 @@ void ShellSubscriber::startNewSubscription(int in, int out, int timeoutSec) {
         }
 
     }
+    return true;
 }
 
 void ShellSubscriber::spawnHelperThread(int myToken) {
@@ -84,6 +85,13 @@ bool ShellSubscriber::readConfig(shared_ptr<SubscriptionInfo> subscriptionInfo) 
     // Read the size of the config.
     size_t bufferSize;
     if (!android::base::ReadFully(subscriptionInfo->mInputFd, &bufferSize, sizeof(bufferSize))) {
+        return false;
+    }
+
+    // Check bufferSize
+    if (bufferSize > (kMaxSizeKb * 1024)) {
+        ALOGE("Received config (%zu bytes) is larger than the max size (%zu bytes)", bufferSize,
+              (kMaxSizeKb * 1024));
         return false;
     }
 
