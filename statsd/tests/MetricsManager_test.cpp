@@ -35,6 +35,7 @@
 
 using namespace testing;
 using android::sp;
+using android::modules::sdklevel::IsAtLeastS;
 using android::os::statsd::Predicate;
 using std::map;
 using std::set;
@@ -264,8 +265,55 @@ TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate) {
                 UnorderedElementsAreArray(unionSet({defaultPullUids, app2Uids, {AID_ADB}})));
 }
 
-TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagFalse) {
-    FlagProvider::getInstance().overrideFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_FALSE,
+struct MetricsManagerServerFlagParam {
+    string flagValue;
+    string label;
+};
+
+class MetricsManagerTest_SPlus
+    : public ::testing::Test,
+      public ::testing::WithParamInterface<MetricsManagerServerFlagParam> {
+protected:
+    void SetUp() override {
+        if (shouldSkipTest()) {
+            GTEST_SKIP() << skipReason();
+        }
+
+        originalFlagValue = FlagProvider::getInstance().getFlagString(
+                OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_EMPTY);
+    }
+
+    bool shouldSkipTest() const {
+        return !IsAtLeastS();
+    }
+
+    string skipReason() const {
+        return "Skipping MetricsManagerTest_SPlus because device is not S+";
+    }
+
+    void TearDown() override {
+        if (originalFlagValue) {
+            writeFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, originalFlagValue.value());
+        }
+    }
+
+    std::optional<string> originalFlagValue;
+};
+
+INSTANTIATE_TEST_SUITE_P(
+        MetricsManagerTest_SPlus, MetricsManagerTest_SPlus,
+        testing::ValuesIn<MetricsManagerServerFlagParam>({
+                // Server flag values
+                {FLAG_TRUE, "ServerFlagTrue"},
+                {FLAG_FALSE, "ServerFlagFalse"},
+        }),
+        [](const testing::TestParamInfo<MetricsManagerTest_SPlus::ParamType>& info) {
+            return info.param.label;
+        });
+
+TEST_P(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag) {
+    FlagProvider::getInstance().overrideFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG,
+                                             GetParam().flagValue,
                                              /*isBootFlag=*/true);
 
     sp<UidMap> uidMap;
@@ -277,23 +325,11 @@ TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagFalse) {
     MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
                                   pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
 
-    EXPECT_FALSE(metricsManager.mAtomMatcherOptimizationEnabled);
-}
-
-TEST(MetricsManagerTest, TestAtomMatcherOptimizationEnabledFlagTrue) {
-    FlagProvider::getInstance().overrideFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
-
-    sp<UidMap> uidMap;
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    sp<AlarmMonitor> anomalyAlarmMonitor;
-    sp<AlarmMonitor> periodicAlarmMonitor;
-
-    StatsdConfig config = buildGoodConfig();
-    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
-                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
-
-    EXPECT_TRUE(metricsManager.mAtomMatcherOptimizationEnabled);
+    if (GetParam().flagValue == FLAG_TRUE) {
+        EXPECT_TRUE(metricsManager.mAtomMatcherOptimizationEnabled);
+    } else {
+        EXPECT_FALSE(metricsManager.mAtomMatcherOptimizationEnabled);
+    }
 }
 
 TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom) {
