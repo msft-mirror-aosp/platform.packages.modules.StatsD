@@ -78,6 +78,12 @@ message FieldValueMatcher {
 
     StringListMatcher eq_any_string = 13;
     StringListMatcher neq_any_string = 14;
+    IntListMatcher eq_any_int = 15;
+    IntListMatcher neq_any_int = 16;
+
+    string eq_wildcard_string = 17;
+    StringListMatcher eq_any_wildcard_string = 18;
+    StringListMatcher neq_any_wildcard_string = 19;
   }
 }
 
@@ -87,6 +93,10 @@ message MessageMatcher {
 
 message StringListMatcher {
     repeated string str_value = 1;
+}
+
+message IntListMatcher {
+    repeated int64 int_value = 1;
 }
 
 enum LogicalOperation {
