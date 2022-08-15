@@ -2038,6 +2038,20 @@ vector<PackageInfo> buildPackageInfos(
     return packageInfos;
 }
 
+StatsdStatsReport_PulledAtomStats getPulledAtomStats() {
+    vector<uint8_t> statsBuffer;
+    StatsdStats::getInstance().dumpStats(&statsBuffer, false /*reset stats*/);
+    StatsdStatsReport statsReport;
+    StatsdStatsReport_PulledAtomStats pulledAtomStats;
+    if (!statsReport.ParseFromArray(&statsBuffer[0], statsBuffer.size())) {
+        return pulledAtomStats;
+    }
+    if (statsReport.pulled_atom_stats_size() == 0) {
+        return pulledAtomStats;
+    }
+    return statsReport.pulled_atom_stats(0);
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
