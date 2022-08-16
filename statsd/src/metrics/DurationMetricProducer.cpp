@@ -434,27 +434,28 @@ void DurationMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondit
     onSlicedConditionMayChangeInternalLocked(overallCondition, eventTime);
 }
 
-void DurationMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs) {
-    MetricProducer::onActiveStateChangedLocked(eventTimeNs);
+void DurationMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
+                                                        const bool isActive) {
+    MetricProducer::onActiveStateChangedLocked(eventTimeNs, isActive);
 
     if (!mConditionSliced) {
         if (ConditionState::kTrue != mCondition) {
             return;
         }
 
-        if (mIsActive) {
+        if (isActive) {
             flushIfNeededLocked(eventTimeNs);
         }
 
         for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-            whatIt.second->onConditionChanged(mIsActive, eventTimeNs);
+            whatIt.second->onConditionChanged(isActive, eventTimeNs);
         }
-    } else if (mIsActive) {
+    } else if (isActive) {
         flushIfNeededLocked(eventTimeNs);
-        onSlicedConditionMayChangeInternalLocked(mIsActive, eventTimeNs);
-    } else { // mConditionSliced == true && !mIsActive
+        onSlicedConditionMayChangeInternalLocked(isActive, eventTimeNs);
+    } else {  // mConditionSliced == true && !isActive
         for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-            whatIt.second->onConditionChanged(mIsActive, eventTimeNs);
+            whatIt.second->onConditionChanged(isActive, eventTimeNs);
         }
     }
 }

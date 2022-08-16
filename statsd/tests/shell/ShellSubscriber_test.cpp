@@ -142,6 +142,29 @@ TEST(ShellSubscriberTest, testPushedSubscription) {
     runShellTest(config, uidMap, pullerManager, pushedList, shellData);
 }
 
+TEST(ShellSubscriberTest, testMaxSizeGuard) {
+    sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+    sp<ShellSubscriber> shellClient = new ShellSubscriber(uidMap, pullerManager);
+
+    // set up 2 pipes for read/write config and data
+    int fds_config[2];
+    ASSERT_EQ(0, pipe(fds_config));
+
+    int fds_data[2];
+    ASSERT_EQ(0, pipe(fds_data));
+
+    // write invalid size of the config
+    size_t invalidBufferSize = (shellClient->getMaxSizeKb() * 1024) + 1;
+    write(fds_config[1], &invalidBufferSize, sizeof(invalidBufferSize));
+    close(fds_config[1]);
+    close(fds_data[0]);
+
+    EXPECT_FALSE(shellClient->startNewSubscription(fds_config[0], fds_data[1], /*timeoutSec=*/-1));
+    close(fds_config[0]);
+    close(fds_data[1]);
+}
+
 namespace {
 
 int kUid1 = 1000;
