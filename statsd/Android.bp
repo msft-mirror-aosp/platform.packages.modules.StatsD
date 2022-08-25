@@ -71,6 +71,7 @@ cc_defaults {
         "src/packages/UidMap.cpp",
         "src/shell/shell_config.proto",
         "src/shell/ShellSubscriber.cpp",
+        "src/shell/ShellSubscriberClient.cpp",
         "src/socket/StatsSocketListener.cpp",
         "src/state/StateManager.cpp",
         "src/state/StateTracker.cpp",
