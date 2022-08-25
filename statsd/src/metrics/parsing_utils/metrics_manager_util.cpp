@@ -655,6 +655,11 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         ALOGE("cannot find \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
         return nullopt;
     }
+    if (HasPositionALL(metric.value_field())) {
+        ALOGE("value field with position ALL is not supported. ValueMetric \"%lld\"",
+              (long long)metric.id());
+        return nullopt;
+    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.value_field(), &fieldMatchers);
     if (fieldMatchers.size() < 1) {
@@ -728,7 +733,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             MillisToNano(TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), bucketSizeTimeUnit));
 
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
-    const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
+    const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
             StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
@@ -743,8 +748,8 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             key, metric, metricHash, {pullTagId, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              conditionCorrectionThresholdNs, getAppUpgradeBucketSplit(metric)},
-            {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, trackerIndex, matcherWizard,
-             metric.dimensions_in_what(), fieldMatchers},
+            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
@@ -774,6 +779,11 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     }
     if (!metric.has_kll_field()) {
         ALOGE("cannot find \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
+        return nullopt;
+    }
+    if (HasPositionALL(metric.kll_field())) {
+        ALOGE("kll field with position ALL is not supported. KllMetric \"%lld\"",
+              (long long)metric.id());
         return nullopt;
     }
     std::vector<Matcher> fieldMatchers;
@@ -845,7 +855,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             MillisToNano(TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), bucketSizeTimeUnit));
 
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
-    const bool sliceByPositionAll = HasPositionALL(metric.dimensions_in_what());
+    const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
@@ -856,8 +866,8 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             key, metric, metricHash, {/*pullTagId=*/-1, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              /*conditionCorrectionThresholdNs=*/nullopt, getAppUpgradeBucketSplit(metric)},
-            {containsAnyPositionInDimensionsInWhat, sliceByPositionAll, trackerIndex, matcherWizard,
-             metric.dimensions_in_what(), fieldMatchers},
+            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
