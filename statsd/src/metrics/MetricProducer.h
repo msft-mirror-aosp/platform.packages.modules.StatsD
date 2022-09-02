@@ -394,7 +394,7 @@ protected:
     /**
      * Flushes all the data including the current partial bucket.
      */
-    virtual void flushLocked(const int64_t& eventTimeNs) {
+    void flushLocked(const int64_t& eventTimeNs) {
         flushIfNeededLocked(eventTimeNs);
         flushCurrentBucketLocked(eventTimeNs, eventTimeNs);
     };
@@ -445,8 +445,8 @@ protected:
 
     bool evaluateActiveStateLocked(int64_t elapsedTimestampNs);
 
-    virtual void onActiveStateChangedLocked(const int64_t eventTimeNs) {
-        if (!mIsActive) {
+    virtual void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) {
+        if (!isActive) {
             flushLocked(eventTimeNs);
         }
     }
@@ -520,7 +520,9 @@ protected:
 
     bool mContainANYPositionInDimensionsInWhat;
 
-    bool mSliceByPositionALL;
+    // Metrics slicing by primitive repeated field and/or position ALL need to use nested
+    // dimensions.
+    bool mShouldUseNestedDimensions;
 
     vector<Matcher> mDimensionsInWhat;  // The dimensions_in_what defined in statsd_config
 

@@ -101,7 +101,7 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
         translateFieldMatcher(whatOptions.dimensionsInWhat, &mDimensionsInWhat);
     }
     mContainANYPositionInDimensionsInWhat = whatOptions.containsAnyPositionInDimensionsInWhat;
-    mSliceByPositionALL = whatOptions.sliceByPositionAll;
+    mShouldUseNestedDimensions = whatOptions.shouldUseNestedDimensions;
 
     if (conditionOptions.conditionLinks.size() > 0) {
         for (const auto& link : conditionOptions.conditionLinks) {
@@ -158,9 +158,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onStatsdInitCompleted(
         const int64_t& eventTimeNs) {
     lock_guard<mutex> lock(mMutex);
 
-    // TODO(b/188837487): Add mIsActive check
-
-    if (isPulled() && mCondition == ConditionState::kTrue) {
+    if (isPulled() && mCondition == ConditionState::kTrue && mIsActive) {
         pullAndMatchEventsLocked(eventTimeNs);
     }
     flushCurrentBucketLocked(eventTimeNs, eventTimeNs);
@@ -169,8 +167,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onStatsdInitCompleted(
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::notifyAppUpgradeInternalLocked(
         const int64_t eventTimeNs) {
-    // TODO(b/188837487): Add mIsActive check
-    if (isPulled() && mCondition == ConditionState::kTrue) {
+    if (isPulled() && mCondition == ConditionState::kTrue && mIsActive) {
         pullAndMatchEventsLocked(eventTimeNs);
     }
     flushCurrentBucketLocked(eventTimeNs, eventTimeNs);
@@ -296,14 +293,12 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
         const DumpLatency dumpLatency, set<string>* strSet, ProtoOutputStream* protoOutput) {
     VLOG("metric %lld dump report now...", (long long)mMetricId);
 
-    // TODO(b/188837487): Add mIsActive check
-
     if (includeCurrentPartialBucket) {
         // For pull metrics, we need to do a pull at bucket boundaries. If we do not do that the
         // current bucket will have incomplete data and the next will have the wrong snapshot to do
         // a diff against. If the condition is false, we are fine since the base data is reset and
         // we are not tracking anything.
-        if (isPulled() && mCondition == ConditionState::kTrue) {
+        if (isPulled() && mCondition == ConditionState::kTrue && mIsActive) {
             switch (dumpLatency) {
                 case FAST:
                     invalidateCurrentBucket(dumpTimeNs, BucketDropReason::DUMP_REPORT_REQUESTED);
@@ -324,8 +319,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
     }
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
-    // Fills the dimension path if not slicing by ALL.
-    if (!mSliceByPositionALL) {
+    // Fills the dimension path if not slicing by a primitive repeated field or position ALL.
+    if (!mShouldUseNestedDimensions) {
         if (!mDimensionsInWhat.empty()) {
             uint64_t dimenPathToken =
                     protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_PATH_IN_WHAT);
@@ -364,7 +359,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
                 protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_DATA);
 
         // First fill dimension.
-        if (mSliceByPositionALL) {
+        if (mShouldUseNestedDimensions) {
             uint64_t dimensionToken =
                     protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_IN_WHAT);
             writeDimensionToProto(metricDimensionKey.getDimensionKeyInWhat(), strSet, protoOutput);
@@ -452,19 +447,24 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::invalidateCurrentBucket(
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::skipCurrentBucket(
         const int64_t dropTimeNs, const BucketDropReason reason) {
+    if (!mIsActive) {
+        // Don't keep track of skipped buckets if metric is not active.
+        return;
+    }
+
     if (!maxDropEventsReached()) {
         mCurrentSkippedBucket.dropEvents.push_back(buildDropEvent(dropTimeNs, reason));
     }
     mCurrentBucketIsSkipped = true;
 }
 
-// Handle active state change. Active state change is treated like a condition change:
+// Handle active state change. Active state change is *mostly* treated like a condition change:
 // - drop bucket if active state change event arrives too late
 // - if condition is true, pull data on active state changes
 // - ConditionTimer tracks changes based on AND of condition and active state.
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onActiveStateChangedLocked(
-        const int64_t eventTimeNs) {
+        const int64_t eventTimeNs, const bool isActive) {
     const bool eventLate = isEventLateLocked(eventTimeNs);
     if (eventLate) {
         // Drop bucket because event arrived too late, ie. we are missing data for this bucket.
@@ -472,10 +472,9 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onActiveStateChangedLocked
         invalidateCurrentBucket(eventTimeNs, BucketDropReason::EVENT_IN_WRONG_BUCKET);
     }
 
-    // Call parent method once we've verified the validity of current bucket.
-    MetricProducer::onActiveStateChangedLocked(eventTimeNs);
-
     if (ConditionState::kTrue != mCondition) {
+        // Call parent method before early return.
+        MetricProducer::onActiveStateChangedLocked(eventTimeNs, isActive);
         return;
     }
 
@@ -485,15 +484,17 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onActiveStateChangedLocked
             pullAndMatchEventsLocked(eventTimeNs);
         }
 
-        onActiveStateChangedInternalLocked(eventTimeNs);
+        onActiveStateChangedInternalLocked(eventTimeNs, isActive);
     }
 
-    flushIfNeededLocked(eventTimeNs);
+    // Once any pulls are processed, call through to parent method which might flush the current
+    // bucket.
+    MetricProducer::onActiveStateChangedLocked(eventTimeNs, isActive);
 
     // Let condition timer know of new active state.
-    mConditionTimer.onConditionChanged(mIsActive, eventTimeNs);
+    mConditionTimer.onConditionChanged(isActive, eventTimeNs);
 
-    updateCurrentSlicedBucketConditionTimers(mIsActive, eventTimeNs);
+    updateCurrentSlicedBucketConditionTimers(isActive, eventTimeNs);
 }
 
 template <typename AggregatedValue, typename DimExtras>
@@ -688,7 +689,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onMatchedLogEventInternalL
     dimensionsInWhatInfo.hasCurrentState = true;
     dimensionsInWhatInfo.currentState = stateKey;
 
-    aggregateFields(eventTimeNs, eventKey, event, intervals, dimensionsInWhatInfo.dimExtras);
+    dimensionsInWhatInfo.seenNewData |= aggregateFields(eventTimeNs, eventKey, event, intervals,
+                                                        dimensionsInWhatInfo.dimExtras);
 
     // State change.
     if (!mSlicedStateAtoms.empty() && stateChange) {
@@ -834,18 +836,15 @@ template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
         int64_t nextBucketStartTimeNs) {
     StatsdStats::getInstance().noteBucketCount(mMetricId);
-    // Cleanup data structure to aggregate values.
-    for (auto it = mCurrentSlicedBucket.begin(); it != mCurrentSlicedBucket.end();) {
-        bool obsolete = true;
-        for (auto& interval : it->second.intervals) {
-            interval.sampleSize = 0;
-            if (interval.seenNewData) {
-                obsolete = false;
+    if (mSlicedStateAtoms.empty()) {
+        mCurrentSlicedBucket.clear();
+    } else {
+        for (auto it = mCurrentSlicedBucket.begin(); it != mCurrentSlicedBucket.end();) {
+            bool obsolete = true;
+            for (auto& interval : it->second.intervals) {
+                interval.sampleSize = 0;
             }
-            interval.seenNewData = false;
-        }
 
-        if (obsolete && !mSlicedStateAtoms.empty()) {
             // When slicing by state, only delete the MetricDimensionKey when the
             // state key in the MetricDimensionKey is not the current state key.
             const HashableDimensionKey& dimensionInWhatKey = it->first.getDimensionKeyInWhat();
@@ -855,13 +854,20 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
                 (it->first.getStateValuesKey() == currentDimInfoItr->second.currentState)) {
                 obsolete = false;
             }
+            if (obsolete) {
+                it = mCurrentSlicedBucket.erase(it);
+            } else {
+                it++;
+            }
         }
-        if (obsolete) {
-            it = mCurrentSlicedBucket.erase(it);
+    }
+    for (auto it = mDimInfos.begin(); it != mDimInfos.end();) {
+        if (!it->second.seenNewData) {
+            it = mDimInfos.erase(it);
         } else {
+            it->second.seenNewData = false;
             it++;
         }
-        // TODO(b/157655103): remove mDimInfos entries when obsolete
     }
 
     mCurrentBucketIsSkipped = false;

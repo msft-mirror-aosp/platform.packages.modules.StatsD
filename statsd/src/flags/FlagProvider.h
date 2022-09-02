@@ -37,8 +37,7 @@ using IsAtLeastSFunc = std::function<bool()>;
 const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
-const std::string VALUE_METRIC_SUBSET_DIMENSION_AGGREGATION_FLAG =
-        "value_metric_subset_dimension_aggregation";
+const std::string OPTIMIZATION_ATOM_MATCHER_MAP_FLAG = "optimization_atom_matcher_map";
 
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
@@ -112,10 +111,8 @@ private:
     friend class FlagProviderTest_SPlus_RealValues;
     friend class KllMetricE2eAbTest;
     friend class MetricsManagerTest;
-    friend class NumericValueMetricProducerTest_SubsetDimensions;
-    friend class PartialBucketE2e_AppUpgradeDefaultTest;
+    friend class StatsLogProcessorTest;
 
-    FRIEND_TEST(ConfigUpdateE2eTest, TestKllMetric_KllDisabledBeforeConfigUpdate);
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
     FRIEND_TEST(EventMetricE2eTest, TestEventMetricDataAggregated);
@@ -129,10 +126,7 @@ private:
     FRIEND_TEST(FlagProviderTest_SPlus, TestGetFlagBoolServerFlagEmptyDefaultTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagFalse);
-    FRIEND_TEST(NumericValueMetricProducerTest_SubsetDimensions, TestSubsetDimensions_FlagTrue);
-    FRIEND_TEST(NumericValueMetricProducerTest_SubsetDimensions, TestSubsetDimensions_FlagFalse);
-    FRIEND_TEST(PartialBucketE2e_AppUpgradeDefaultTest, TestCountMetricDefaultFalse);
-    FRIEND_TEST(PartialBucketE2e_AppUpgradeDefaultTest, TestCountMetricDefaultTrue);
+    FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
 };
 
 }  // namespace statsd

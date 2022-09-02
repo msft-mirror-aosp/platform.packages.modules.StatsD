@@ -167,14 +167,24 @@ public class DeviceAtomTestCase extends AtomTestCase {
      */
     protected int getUid() throws Exception {
         int currentUser = getDevice().getCurrentUser();
-        String uidLine = getDevice().executeShellCommand("cmd package list packages -U --user "
-                + currentUser + " " + DEVICE_SIDE_TEST_PACKAGE);
-        String[] uidLineParts = uidLine.split(":");
-        // 3rd entry is package uid
-        assertThat(uidLineParts.length).isGreaterThan(2);
-        int uid = Integer.parseInt(uidLineParts[2].trim());
-        assertThat(uid).isGreaterThan(10000);
-        return uid;
+        final String packages = getDevice().executeShellCommand("cmd package list packages -U"
+                + " --user " + currentUser + " " + DEVICE_SIDE_TEST_PACKAGE);
+
+        // Split package list by lines
+        // Sample packages response:
+        // package:com.android.server.cts.device.statsd.host uid:1010033
+        // package:com.android.server.cts.device.statsd uid:1010034
+        final String[] lines = packages.split("[\\r\\n]+");
+        for (final String line : lines) {
+            if (line.startsWith("package:" + DEVICE_SIDE_TEST_PACKAGE + " ")) {
+                final int uidIndex = line.lastIndexOf(":") + 1;
+                final int uid = Integer.parseInt(line.substring(uidIndex).trim());
+                assertThat(uid).isGreaterThan(10_000);
+                return uid;
+            }
+        }
+        throw new Error(
+                String.format("Could not find installed package: %s", DEVICE_SIDE_TEST_PACKAGE));
     }
 
     /**
@@ -292,9 +302,9 @@ public class DeviceAtomTestCase extends AtomTestCase {
 
     protected void rebootDeviceAndWaitUntilReady() throws Exception {
         rebootDevice();
-        // Wait for 2 mins.
+        // Wait for 3 mins.
         assertWithMessage("Device failed to boot")
-            .that(getDevice().waitForBootComplete(120_000)).isTrue();
+            .that(getDevice().waitForBootComplete(180_000)).isTrue();
         assertWithMessage("Stats service failed to start")
             .that(waitForStatsServiceStart(60_000)).isTrue();
         Thread.sleep(2_000);

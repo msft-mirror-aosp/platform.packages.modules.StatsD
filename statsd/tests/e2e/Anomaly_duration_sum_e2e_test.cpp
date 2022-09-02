@@ -21,6 +21,7 @@
 #include "src/StatsLogProcessor.h"
 #include "src/StatsService.h"
 #include "src/anomaly/DurationAnomalyTracker.h"
+#include "src/packages/UidMap.h"
 #include "src/stats_log_util.h"
 #include "tests/statsd_test_util.h"
 
@@ -113,7 +114,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_single_bucket) {
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
     sendConfig(service, config);
 
     auto processor = service->mProcessor;
@@ -296,7 +298,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets) {
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
     sendConfig(service, config);
 
     auto processor = service->mProcessor;
@@ -419,7 +422,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
     sendConfig(service, config);
 
     auto processor = service->mProcessor;
@@ -432,7 +436,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
     int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.duration_metric(0).bucket()) * 1e6;
 
     service->mUidMap->updateMap(bucketStartTimeNs, {1}, {1}, {String16("v1")},
-                                {String16("randomApp")}, {String16("")});
+                                {String16("randomApp")}, {String16("")},
+                                /* certificateHash */ {{}});
 
     sp<AnomalyTracker> anomalyTracker =
             processor->mMetricsManagers.begin()->second->mAllAnomalyTrackers[0];
@@ -468,7 +473,7 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
     // Partial bucket split.
     int64_t appUpgradeTimeNs = bucketStartTimeNs + 500;
     service->mUidMap->updateApp(appUpgradeTimeNs, String16("randomApp"), 1, 2, String16("v2"),
-                                String16(""));
+                                String16(""), /* certificateHash */ {});
     EXPECT_EQ(0u, anomalyTracker->getAlarmTimestampSec(dimensionKey1));
     EXPECT_EQ(0u, anomalyTracker->getRefractoryPeriodEndsSec(dimensionKey1));
     EXPECT_EQ((bucketStartTimeNs + 110 + threshold_ns) / NS_PER_SEC + 1,
@@ -509,7 +514,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period) {
     const uint32_t refractory_period_sec = 3 * bucketSizeNs / NS_PER_SEC;
     config.mutable_alert(0)->set_refractory_period_secs(refractory_period_sec);
 
-    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(nullptr, nullptr);
+    shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
     sendConfig(service, config);
 
     auto processor = service->mProcessor;

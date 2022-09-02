@@ -117,7 +117,7 @@ DurationMetricProducer::DurationMetricProducer(
         mValid = false;
     }
 
-    mSliceByPositionALL = HasPositionALL(metric.dimensions_in_what());
+    mShouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     if (metric.links().size() > 0) {
         for (const auto& link : metric.links()) {
@@ -434,27 +434,28 @@ void DurationMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondit
     onSlicedConditionMayChangeInternalLocked(overallCondition, eventTime);
 }
 
-void DurationMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs) {
-    MetricProducer::onActiveStateChangedLocked(eventTimeNs);
+void DurationMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
+                                                        const bool isActive) {
+    MetricProducer::onActiveStateChangedLocked(eventTimeNs, isActive);
 
     if (!mConditionSliced) {
         if (ConditionState::kTrue != mCondition) {
             return;
         }
 
-        if (mIsActive) {
+        if (isActive) {
             flushIfNeededLocked(eventTimeNs);
         }
 
         for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-            whatIt.second->onConditionChanged(mIsActive, eventTimeNs);
+            whatIt.second->onConditionChanged(isActive, eventTimeNs);
         }
-    } else if (mIsActive) {
+    } else if (isActive) {
         flushIfNeededLocked(eventTimeNs);
-        onSlicedConditionMayChangeInternalLocked(mIsActive, eventTimeNs);
-    } else { // mConditionSliced == true && !mIsActive
+        onSlicedConditionMayChangeInternalLocked(isActive, eventTimeNs);
+    } else {  // mConditionSliced == true && !isActive
         for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-            whatIt.second->onConditionChanged(mIsActive, eventTimeNs);
+            whatIt.second->onConditionChanged(isActive, eventTimeNs);
         }
     }
 }
@@ -507,7 +508,7 @@ void DurationMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
 
-    if (!mSliceByPositionALL) {
+    if (!mShouldUseNestedDimensions) {
         if (!mDimensionsInWhat.empty()) {
             uint64_t dimenPathToken = protoOutput->start(
                     FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_PATH_IN_WHAT);
@@ -528,7 +529,7 @@ void DurationMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                 protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_DATA);
 
         // First fill dimension.
-        if (mSliceByPositionALL) {
+        if (mShouldUseNestedDimensions) {
             uint64_t dimensionToken = protoOutput->start(
                     FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_IN_WHAT);
             writeDimensionToProto(dimensionKey.getDimensionKeyInWhat(), str_set, protoOutput);
