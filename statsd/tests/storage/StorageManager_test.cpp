@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/storage/StorageManager.h"
+
 #include <android-base/unique_fd.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
-#include "src/storage/StorageManager.h"
+
+#include "android-base/stringprintf.h"
+#include "stats_log_util.h"
 
 #ifdef __ANDROID__
 
@@ -194,6 +198,84 @@ TEST(StorageManagerTest, AppendConfigReportTest4) {
     EXPECT_FALSE(fileExist(file2_history));
 
     clearLocalHistoryTestFiles();
+}
+
+TEST(StorageManagerTest, TrainInfoReadWrite32To64BitTest) {
+    InstallTrainInfo trainInfo;
+    trainInfo.trainVersionCode = 12345;
+    trainInfo.trainName = "This is a train name #)$(&&$";
+    trainInfo.status = 1;
+    const char* expIds = "test_ids";
+    trainInfo.experimentIds.assign(expIds, expIds + strlen(expIds));
+
+    // Write the train info. fork the code to always write in 32 bit.
+    StorageManager::deleteSuffixedFiles(TRAIN_INFO_DIR, trainInfo.trainName.c_str());
+    std::string fileName = base::StringPrintf("%s/%ld_%s", TRAIN_INFO_DIR, (long)getWallClockSec(),
+                                              trainInfo.trainName.c_str());
+
+    int fd = open(fileName.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
+    ASSERT_NE(fd, -1);
+
+    size_t result;
+    // Write the magic word
+    result = write(fd, &TRAIN_INFO_FILE_MAGIC, sizeof(TRAIN_INFO_FILE_MAGIC));
+    ASSERT_EQ(result, sizeof(TRAIN_INFO_FILE_MAGIC));
+
+    // Write the train version
+    const size_t trainVersionCodeByteCount = sizeof(trainInfo.trainVersionCode);
+    result = write(fd, &trainInfo.trainVersionCode, trainVersionCodeByteCount);
+    ASSERT_EQ(result, trainVersionCodeByteCount);
+
+    // Write # of bytes in trainName to file.
+    // NB: this is changed from size_t to int32_t for this test.
+    const int32_t trainNameSize = trainInfo.trainName.size();
+    const size_t trainNameSizeByteCount = sizeof(trainNameSize);
+    result = write(fd, (uint8_t*)&trainNameSize, trainNameSizeByteCount);
+    ASSERT_EQ(result, trainNameSizeByteCount);
+
+    // Write trainName to file
+    result = write(fd, trainInfo.trainName.c_str(), trainNameSize);
+    ASSERT_EQ(result, trainNameSize);
+
+    // Write status to file
+    const size_t statusByteCount = sizeof(trainInfo.status);
+    result = write(fd, (uint8_t*)&trainInfo.status, statusByteCount);
+    ASSERT_EQ(result, statusByteCount);
+
+    // Write experiment id count to file.
+    // NB: this is changed from size_t to int32_t for this test.
+    const int32_t experimentIdsCount = trainInfo.experimentIds.size();
+    const size_t experimentIdsCountByteCount = sizeof(experimentIdsCount);
+    result = write(fd, (uint8_t*)&experimentIdsCount, experimentIdsCountByteCount);
+    ASSERT_EQ(result, experimentIdsCountByteCount);
+
+    // Write experimentIds to file
+    for (size_t i = 0; i < experimentIdsCount; i++) {
+        const int64_t experimentId = trainInfo.experimentIds[i];
+        const size_t experimentIdByteCount = sizeof(experimentId);
+        result = write(fd, &experimentId, experimentIdByteCount);
+        ASSERT_EQ(result, experimentIdByteCount);
+    }
+
+    // Write bools to file
+    const size_t boolByteCount = sizeof(trainInfo.requiresStaging);
+    result = write(fd, (uint8_t*)&trainInfo.requiresStaging, boolByteCount);
+    ASSERT_EQ(result, boolByteCount);
+    result = write(fd, (uint8_t*)&trainInfo.rollbackEnabled, boolByteCount);
+    ASSERT_EQ(result, boolByteCount);
+    result = write(fd, (uint8_t*)&trainInfo.requiresLowLatencyMonitor, boolByteCount);
+    ASSERT_EQ(result, boolByteCount);
+    close(fd);
+
+    InstallTrainInfo trainInfoResult;
+    EXPECT_TRUE(StorageManager::readTrainInfo(trainInfo.trainName, trainInfoResult));
+
+    EXPECT_EQ(trainInfo.trainVersionCode, trainInfoResult.trainVersionCode);
+    ASSERT_EQ(trainInfo.trainName.size(), trainInfoResult.trainName.size());
+    EXPECT_EQ(trainInfo.trainName, trainInfoResult.trainName);
+    EXPECT_EQ(trainInfo.status, trainInfoResult.status);
+    ASSERT_EQ(trainInfo.experimentIds.size(), trainInfoResult.experimentIds.size());
+    EXPECT_EQ(trainInfo.experimentIds, trainInfoResult.experimentIds);
 }
 
 }  // namespace statsd
