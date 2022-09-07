@@ -297,7 +297,8 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
         List<PackageInfo> allPackages = new ArrayList<>(
                 pm.getInstalledPackagesAsUser(PackageManager.GET_SIGNING_CERTIFICATES
                                 | PackageManager.MATCH_UNINSTALLED_PACKAGES
-                                | PackageManager.MATCH_ANY_USER,
+                                | PackageManager.MATCH_ANY_USER
+                                | PackageManager.MATCH_STATIC_SHARED_AND_SDK_LIBRARIES,
                         userHandle.getIdentifier()));
         // We make a second query to package manager for the apex modules because package manager
         // returns both installed and uninstalled apexes with
