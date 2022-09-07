@@ -40,11 +40,6 @@ using std::map;
  */
 #define STATS_DATA_DIR "/data/misc/stats-data"
 #define STATS_SERVICE_DIR "/data/misc/stats-service"
-#define TRAIN_INFO_DIR "/data/misc/train-info"
-#define TRAIN_INFO_PATH "/data/misc/train-info/train-info.bin"
-
-// Magic word at the start of the train info file, change this if changing the file format
-const uint32_t TRAIN_INFO_FILE_MAGIC = 0xfb7447bf;
 
 // for ConfigMetricsReportList
 const int FIELD_ID_REPORTS = 2;
@@ -310,6 +305,32 @@ bool StorageManager::readTrainInfoLocked(const std::string& trainName, InstallTr
         return false;
     }
 
+    // On devices that are upgrading from 32 to 64 bit, reading size_t bytes will result in reading
+    // the wrong amount of data. We try to detect that issue here and read the file correctly.
+    // In the normal case on 64-bit devices, the trainNameSize's upper 4 bytes should be 0, but if
+    // a 32-bit device wrote the file, these would be the first 4 bytes of the train name.
+    bool is32To64BitUpgrade = false;
+    if ((sizeof(size_t) == sizeof(int64_t)) && (trainNameSize & 0xFFFFFFFF00000000) != 0) {
+        is32To64BitUpgrade = true;
+        // Reset the file offset to the magic + version code, and reread from the train name size.
+        off_t seekResult = lseek(fd, sizeof(magic) + sizeof(trainInfo.trainVersionCode), SEEK_SET);
+
+        if (seekResult != sizeof(magic) + sizeof(trainInfo.trainVersionCode)) {
+            VLOG("Failed to reset file offset when reading 32 to 64 bit train info");
+            close(fd);
+            return false;
+        }
+
+        int32_t trainNameSize32Bit;
+        result = read(fd, &trainNameSize32Bit, sizeof(int32_t));
+        if (result != sizeof(int32_t)) {
+            VLOG("Failed to read train name size 32 bit from train info file");
+            close(fd);
+            return false;
+        }
+        trainNameSize = trainNameSize32Bit;
+    }
+
     // Read trainName
     trainInfo.trainName.resize(trainNameSize);
     result = read(fd, trainInfo.trainName.data(), trainNameSize);
@@ -330,11 +351,22 @@ bool StorageManager::readTrainInfoLocked(const std::string& trainName, InstallTr
 
     // Read experiment ids count.
     size_t experimentIdsCount;
-    result = read(fd, &experimentIdsCount, sizeof(size_t));
-    if (result != sizeof(size_t)) {
-        VLOG("Failed to read train experiment id count from train info file");
-        close(fd);
-        return false;
+    int32_t experimentIdsCount32Bit;
+    if (is32To64BitUpgrade) {
+        result = read(fd, &experimentIdsCount32Bit, sizeof(int32_t));
+        if (result != sizeof(int32_t)) {
+            VLOG("Failed to read train experiment id count 32 bit from train info file");
+            close(fd);
+            return false;
+        }
+        experimentIdsCount = experimentIdsCount32Bit;
+    } else {
+        result = read(fd, &experimentIdsCount, sizeof(size_t));
+        if (result != sizeof(size_t)) {
+            VLOG("Failed to read train experiment id count from train info file");
+            close(fd);
+            return false;
+        }
     }
 
     // Read experimentIds
