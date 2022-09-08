@@ -14,6 +14,13 @@
  * limitations under the License.
  */
 
+#include <map>
+#include <thread>
+#include <vector>
+
+#include <stats_event.h>
+#include <stats_pull_atom_callback.h>
+
 #include <aidl/android/os/BnPullAtomCallback.h>
 #include <aidl/android/os/IPullAtomResultReceiver.h>
 #include <aidl/android/os/IStatsd.h>
@@ -21,12 +28,6 @@
 #include <android/binder_auto_utils.h>
 #include <android/binder_ibinder.h>
 #include <android/binder_manager.h>
-#include <stats_event.h>
-#include <stats_pull_atom_callback.h>
-
-#include <map>
-#include <thread>
-#include <vector>
 
 using Status = ::ndk::ScopedAStatus;
 using aidl::android::os::BnPullAtomCallback;
@@ -158,20 +159,20 @@ class StatsPullAtomCallbackInternal : public BnPullAtomCallback {
 };
 
 /**
- * @brief pullersMutex is used to guard simultaneous access to pullers from below threads
+ * @brief pullAtomMutex is used to guard simultaneous access to mPullers from below threads
  * Main thread
  * - AStatsManager_setPullAtomCallback()
  * - AStatsManager_clearPullAtomCallback()
  * Binder thread:
  * - StatsdProvider::binderDied()
  */
-static std::mutex pullersMutex;
+static std::mutex pullAtomMutex;
 
-static std::map<int32_t, std::shared_ptr<StatsPullAtomCallbackInternal>> pullers;
+static std::map<int32_t, std::shared_ptr<StatsPullAtomCallbackInternal>> mPullers;
 
 class StatsdProvider {
 public:
-    StatsdProvider() : mDeathRecipient(AIBinder_DeathRecipient_new(binderDied)) {
+    StatsdProvider() : deathRecipient(AIBinder_DeathRecipient_new(binderDied)) {
     }
 
     ~StatsdProvider() {
@@ -179,21 +180,21 @@ public:
     }
 
     std::shared_ptr<IStatsd> getStatsService() {
-        std::lock_guard<std::mutex> lock(mStatsdMutex);
-        if (!mStatsd) {
+        std::lock_guard<std::mutex> lock(statsdMutex);
+        if (!statsd) {
             // Fetch statsd
             ::ndk::SpAIBinder binder(AServiceManager_getService("stats"));
-            mStatsd = IStatsd::fromBinder(binder);
-            if (mStatsd) {
-                AIBinder_linkToDeath(binder.get(), mDeathRecipient.get(), this);
+            statsd = IStatsd::fromBinder(binder);
+            if (statsd) {
+                AIBinder_linkToDeath(binder.get(), deathRecipient.get(), this);
             }
         }
-        return mStatsd;
+        return statsd;
     }
 
     void resetStatsService() {
-        std::lock_guard<std::mutex> lock(mStatsdMutex);
-        mStatsd = nullptr;
+        std::lock_guard<std::mutex> lock(statsdMutex);
+        statsd = nullptr;
     }
 
     static void binderDied(void* cookie) {
@@ -209,8 +210,8 @@ public:
         // copy of the data with the lock held before iterating through the map.
         std::map<int32_t, std::shared_ptr<StatsPullAtomCallbackInternal>> pullersCopy;
         {
-            std::lock_guard<std::mutex> lock(pullersMutex);
-            pullersCopy = pullers;
+            std::lock_guard<std::mutex> lock(pullAtomMutex);
+            pullersCopy = mPullers;
         }
         for (const auto& it : pullersCopy) {
             statsService->registerNativePullAtomCallback(it.first, it.second->getCoolDownMillis(),
@@ -221,16 +222,16 @@ public:
 
 private:
     /**
-     * @brief mStatsdMutex is used to guard simultaneous access to mStatsd from below threads:
+     * @brief statsdMutex is used to guard simultaneous access to statsd from below threads:
      * Work thread
      * - registerStatsPullAtomCallbackBlocking()
      * - unregisterStatsPullAtomCallbackBlocking()
      * Binder thread:
      * - StatsdProvider::binderDied()
      */
-    std::mutex mStatsdMutex;
-    std::shared_ptr<IStatsd> mStatsd;
-    ::ndk::ScopedAIBinder_DeathRecipient mDeathRecipient;
+    std::mutex statsdMutex;
+    std::shared_ptr<IStatsd> statsd;
+    ::ndk::ScopedAIBinder_DeathRecipient deathRecipient;
 };
 
 static std::shared_ptr<StatsdProvider> statsProvider = std::make_shared<StatsdProvider>();
@@ -275,9 +276,9 @@ void AStatsManager_setPullAtomCallback(int32_t atom_tag, AStatsManager_PullAtomM
                                                                timeoutMillis, additiveFields);
 
     {
-        std::lock_guard<std::mutex> lock(pullersMutex);
+        std::lock_guard<std::mutex> lg(pullAtomMutex);
         // Always add to the map. If statsd is dead, we will add them when it comes back.
-        pullers[atom_tag] = callbackBinder;
+        mPullers[atom_tag] = callbackBinder;
     }
 
     std::thread registerThread(registerStatsPullAtomCallbackBlocking, atom_tag, statsProvider,
@@ -287,10 +288,10 @@ void AStatsManager_setPullAtomCallback(int32_t atom_tag, AStatsManager_PullAtomM
 
 void AStatsManager_clearPullAtomCallback(int32_t atom_tag) {
     {
-        std::lock_guard<std::mutex> lock(pullersMutex);
+        std::lock_guard<std::mutex> lg(pullAtomMutex);
         // Always remove the puller from our map.
         // If statsd is down, we will not register it when it comes back.
-        pullers.erase(atom_tag);
+        mPullers.erase(atom_tag);
     }
 
     std::thread unregisterThread(unregisterStatsPullAtomCallbackBlocking, atom_tag, statsProvider);

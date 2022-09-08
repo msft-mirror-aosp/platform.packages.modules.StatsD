@@ -69,11 +69,8 @@ prebuilt_etc {
 // ==========================================================
 sdk {
     name: "statsd-module-sdk",
-    apexes: [
-        // Adds exportable dependencies of the APEX to the sdk,
-        // e.g. *classpath_fragments.
-        "com.android.os.statsd",
-    ],
+    bootclasspath_fragments: ["com.android.os.statsd-bootclasspath-fragment"],
+    systemserverclasspath_fragments: ["com.android.os.statsd-systemserverclasspath-fragment"],
     native_shared_libs: [
         "libstatssocket",
     ],
