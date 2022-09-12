@@ -29,6 +29,16 @@ namespace statsd {
 
 using android::util::ProtoOutputStream;
 
+/**
+ * NOTE: these directories are protected by SELinux, any changes here must also update
+ * the SELinux policies.
+ */
+#define TRAIN_INFO_DIR "/data/misc/train-info"
+#define TRAIN_INFO_PATH "/data/misc/train-info/train-info.bin"
+
+// Magic word at the start of the train info file, change this if changing the file format
+const uint32_t TRAIN_INFO_FILE_MAGIC = 0xfb7447bf;
+
 class StorageManager : public virtual RefBase {
 public:
     struct FileInfo {
