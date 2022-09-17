@@ -430,7 +430,7 @@ message ConfigMetricsReportList {
 
   repeated ConfigMetricsReport reports = 2;
 
-  reserved 10;
+  reserved 10 to 13, 101;
 }
 
 message StatsdStatsReport {
