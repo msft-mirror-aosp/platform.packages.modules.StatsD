@@ -62,9 +62,13 @@ public:
     ShellSubscriber(sp<UidMap> uidMap, sp<StatsPullerManager> pullerMgr)
         : mUidMap(uidMap), mPullerMgr(pullerMgr){};
 
-    void startNewSubscription(int inFd, int outFd, int timeoutSec);
+    bool startNewSubscription(int inFd, int outFd, int timeoutSec);
 
     void onLogEvent(const LogEvent& event);
+
+    inline size_t getMaxSizeKb() const {
+        return kMaxSizeKb;
+    }
 
 private:
     struct PullInfo {
@@ -139,6 +143,9 @@ private:
     // when next to send a heartbeat.
     int64_t mLastWriteMs = 0;
     const int64_t kMsBetweenHeartbeats = 1000;
+
+    // Cap the buffer size of configs to guard against bad allocations
+    static constexpr size_t kMaxSizeKb = 50;
 };
 
 }  // namespace statsd
