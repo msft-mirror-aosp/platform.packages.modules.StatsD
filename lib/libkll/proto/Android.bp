@@ -23,6 +23,7 @@ package {
 
 cc_library_static {
     name: "libkll-protos",
+    host_supported: true,
     srcs: ["*.proto"],
     proto: {
         export_proto_headers: true,
