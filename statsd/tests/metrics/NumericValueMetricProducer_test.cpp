@@ -913,9 +913,25 @@ TEST(NumericValueMetricProducerTest, TestPushedEventsWithoutCondition) {
     curInterval = valueProducer->mCurrentSlicedBucket.begin()->second.intervals[0];
     EXPECT_EQ(30, curInterval.aggregate.long_value);
 
-    valueProducer->flushIfNeededLocked(bucket2StartTimeNs);
-    assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {30}, {bucketSizeNs}, {0},
-                                    {bucketStartTimeNs}, {bucket2StartTimeNs});
+    // Check dump report.
+    ProtoOutputStream output;
+    valueProducer->onDumpReport(bucket2StartTimeNs + 10000, false /* include recent buckets */,
+                                true, FAST /* dumpLatency */, nullptr, &output);
+
+    StatsLogReport report = outputStreamToProto(&output);
+    backfillDimensionPath(&report);
+    backfillStartEndTimestamp(&report);
+    EXPECT_TRUE(report.has_value_metrics());
+    ASSERT_EQ(1, report.value_metrics().data_size());
+    ASSERT_EQ(0, report.value_metrics().skipped_size());
+
+    auto data = report.value_metrics().data(0);
+    ASSERT_EQ(1, data.bucket_info_size());
+    EXPECT_EQ(30, data.bucket_info(0).values(0).value_long());
+    EXPECT_EQ(bucketStartTimeNs, data.bucket_info(0).start_bucket_elapsed_nanos());
+    EXPECT_EQ(bucket2StartTimeNs, data.bucket_info(0).end_bucket_elapsed_nanos());
+    EXPECT_FALSE(data.has_dimensions_in_what());
+
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
 }
 
@@ -970,9 +986,26 @@ TEST(NumericValueMetricProducerTest, TestPushedEventsWithCondition) {
     curInterval = valueProducer->mCurrentSlicedBucket.begin()->second.intervals[0];
     EXPECT_EQ(50, curInterval.aggregate.long_value);
 
-    valueProducer->flushIfNeededLocked(bucket2StartTimeNs);
-    assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {50}, {20}, {0},
-                                    {bucketStartTimeNs}, {bucket2StartTimeNs});
+    // Check dump report.
+    ProtoOutputStream output;
+    valueProducer->onDumpReport(bucket2StartTimeNs + 10000, false /* include recent buckets */,
+                                true, FAST /* dumpLatency */, nullptr, &output);
+
+    StatsLogReport report = outputStreamToProto(&output);
+    backfillDimensionPath(&report);
+    backfillStartEndTimestamp(&report);
+    EXPECT_TRUE(report.has_value_metrics());
+    ASSERT_EQ(1, report.value_metrics().data_size());
+    ASSERT_EQ(0, report.value_metrics().skipped_size());
+
+    auto data = report.value_metrics().data(0);
+    ASSERT_EQ(1, data.bucket_info_size());
+    EXPECT_EQ(50, data.bucket_info(0).values(0).value_long());
+    EXPECT_EQ(20, data.bucket_info(0).condition_true_nanos());
+    EXPECT_EQ(bucketStartTimeNs, data.bucket_info(0).start_bucket_elapsed_nanos());
+    EXPECT_EQ(bucket2StartTimeNs, data.bucket_info(0).end_bucket_elapsed_nanos());
+    EXPECT_FALSE(data.has_dimensions_in_what());
+
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
 }
 
