@@ -116,15 +116,15 @@ public class ShellSubscriberTest extends AtomTestCase {
             for (int i = 0; i < maxSubs; i++) {
                 processes[i] = runDataSubscribe(validConfig, timeout);
             }
-            // Sleep a second to make sure all subscription clients are initialized before
+            // Sleep 2.5 seconds to make sure all subscription clients are initialized before
             // first pushed event
-            Thread.sleep(1000);
+            Thread.sleep(2500);
 
             // arbitrary label = 1
             doAppBreadcrumbReported(1);
 
-            // Sleep a second to make sure the processes read the breadcrumb before being killed.
-            Thread.sleep(1000);
+            // Sleep 2.5 seconds to make sure the processes read the breadcrumb before being killed.
+            Thread.sleep(2500);
 
             for (int i = 1; i < maxSubs; i++) {
                 killProcess(processes[i]);
@@ -132,18 +132,21 @@ public class ShellSubscriberTest extends AtomTestCase {
                 receivers[i] = readData(processes[i]);
                 checkOutput(receivers[i]);
             }
-            // Sleep a second to make sure the processes are killed and resources are released.
-            Thread.sleep(1000);
+            // Sleep 2.5 seconds to make sure the processes are killed and resources are released.
+            Thread.sleep(2500);
 
             for (int i = 1; i < maxSubs; i++) {
                 processes[i] = runDataSubscribe(validConfig, timeout);
             }
-            // Sleep a second to make sure all subscription clients are initialized before
+            // Sleep 2.5 seconds to make sure all subscription clients are initialized before
             // pushed event
-            Thread.sleep(1000);
+            Thread.sleep(2500);
 
             // arbitrary label = 1
             doAppBreadcrumbReported(1);
+
+            // Sleep 2.5 seconds to make sure the processes read the breadcrumb before being killed.
+            Thread.sleep(2500);
 
             // ShellSubscriber only allows 20 subscriptions at a time. This is the 21st which will
             // be ignored
@@ -153,8 +156,8 @@ public class ShellSubscriberTest extends AtomTestCase {
                 processList.remove(processes[i]);
                 receivers[i] = readData(processes[i]);
             }
-            // Sleep a second to make sure the processes are killed and resources are released.
-            Thread.sleep(1000);
+            // Sleep 2.5 seconds to make sure the processes are killed and resources are released.
+            Thread.sleep(2500);
         } catch (Exception e) {
             fail(e.getMessage());
         }
@@ -201,6 +204,7 @@ public class ShellSubscriberTest extends AtomTestCase {
     private Process runDataSubscribe(byte[] validConfig, int timeout) throws Exception {
         Runtime runtime = Runtime.getRuntime();
         Process process = runtime.exec("adb shell cmd stats data-subscribe " + timeout);
+        LogUtil.CLog.d("Starting new shell subscription.");
         processList.add(process);
         OutputStream stdin = process.getOutputStream();
         stdin.write(validConfig);
@@ -212,6 +216,7 @@ public class ShellSubscriberTest extends AtomTestCase {
         // Reading shell_data and passing it to the receiver struct
         InputStream stdout = process.getInputStream();
         byte[] output = stdout.readAllBytes();
+        LogUtil.CLog.d("output.length in readData: " + output.length);
         CollectingByteOutputReceiver receiver = new CollectingByteOutputReceiver();
         receiver.addOutput(output, 0, output.length);
         stdout.close();
@@ -254,6 +259,7 @@ public class ShellSubscriberTest extends AtomTestCase {
         int startIndex = 0;
 
         byte[] output = receiver.getOutput();
+        LogUtil.CLog.d("output length in checkOutput: " + output.length);
         assertThat(output.length).isGreaterThan(0);
         while (output.length > startIndex) {
             assertThat(output.length).isAtLeast(startIndex + sizetBytes);
