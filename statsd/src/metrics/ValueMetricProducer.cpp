@@ -293,6 +293,11 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
         const DumpLatency dumpLatency, set<string>* strSet, ProtoOutputStream* protoOutput) {
     VLOG("metric %lld dump report now...", (long long)mMetricId);
 
+    // Pulled metrics need to pull before flushing, which is why they do not call flushIfNeeded.
+    // TODO: b/249823426 see if we can pull and call flushIfneeded for pulled value metrics.
+    if (!isPulled()) {
+        flushIfNeededLocked(dumpTimeNs);
+    }
     if (includeCurrentPartialBucket) {
         // For pull metrics, we need to do a pull at bucket boundaries. If we do not do that the
         // current bucket will have incomplete data and the next will have the wrong snapshot to do
