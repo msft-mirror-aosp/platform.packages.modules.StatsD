@@ -151,6 +151,10 @@ public class ShellSubscriberTest extends AtomTestCase {
             // ShellSubscriber only allows 20 subscriptions at a time. This is the 21st which will
             // be ignored
             processes[maxSubs] = runDataSubscribe(validConfig, timeout);
+
+            // Sleep 2.5 seconds to make sure the invalid subscription attempts to run.
+            Thread.sleep(2500);
+
             for (int i = 0; i <= maxSubs; i++) {
                 killProcess(processes[i]);
                 processList.remove(processes[i]);
