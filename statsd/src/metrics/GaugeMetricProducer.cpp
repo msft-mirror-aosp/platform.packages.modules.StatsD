@@ -507,8 +507,11 @@ bool GaugeMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (newTupleCount > mDimensionHardLimit) {
-            ALOGE("GaugeMetric %lld dropping data for dimension key %s",
-                (long long)mMetricId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("GaugeMetric %lld dropping data for dimension key %s", (long long)mMetricId,
+                      newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -673,6 +676,8 @@ void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
     mCurrentSlicedBucket = std::make_shared<DimToGaugeAtomsMap>();
     mCurrentBucketStartTimeNs = nextBucketStartTimeNs;
     mCurrentSkippedBucket.reset();
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
 }
 
 size_t GaugeMetricProducer::byteSizeLocked() const {
