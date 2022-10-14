@@ -86,7 +86,8 @@ public:
           mStartTimeNs(startTimeNs),
           mConditionSliced(conditionSliced),
           mHasLinksToAllConditionDimensionsInTracker(fullLink),
-          mAnomalyTrackers(anomalyTrackers){};
+          mAnomalyTrackers(anomalyTrackers),
+          mHasHitGuardrail(false){};
 
     virtual ~DurationTracker(){};
 
@@ -265,6 +266,8 @@ protected:
     bool mHasLinksToAllConditionDimensionsInTracker;
 
     std::vector<sp<AnomalyTracker>> mAnomalyTrackers;
+
+    bool mHasHitGuardrail;
 
     FRIEND_TEST(OringDurationTrackerTest, TestPredictAnomalyTimestamp);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionExpiredAlarm);
