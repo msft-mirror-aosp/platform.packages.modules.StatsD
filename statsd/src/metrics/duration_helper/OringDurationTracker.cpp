@@ -48,8 +48,11 @@ bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
-            ALOGE("OringDurTracker %lld dropping data for dimension key %s",
-                (long long)mTrackerId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("OringDurTracker %lld dropping data for dimension key %s",
+                      (long long)mTrackerId, newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             return true;
         }
     }
@@ -214,6 +217,8 @@ bool OringDurationTracker::flushCurrentBucket(
         mCurrentBucketStartTimeNs = eventTimeNs;
     }
     mLastStartTime = mCurrentBucketStartTimeNs;
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
 
     // If all stopped, then tell owner it's safe to remove this tracker on a full bucket.
     // On a partial bucket, only clear if no anomaly trackers, as full bucket duration is used
