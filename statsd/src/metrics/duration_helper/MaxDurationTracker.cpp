@@ -48,8 +48,11 @@ bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
-            ALOGE("MaxDurTracker %lld dropping data for dimension key %s",
-                (long long)mTrackerId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("MaxDurTracker %lld dropping data for dimension key %s",
+                      (long long)mTrackerId, newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             return true;
         }
     }
@@ -211,6 +214,8 @@ bool MaxDurationTracker::flushCurrentBucket(
     }
 
     mDuration = 0;
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
     // If this tracker has no pending events, tell owner to remove.
     return !hasPendingEvent;
 }
