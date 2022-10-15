@@ -614,7 +614,7 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::hasReachedGuardRailLimit()
 
 template <typename AggregatedValue, typename DimExtras>
 bool ValueMetricProducer<AggregatedValue, DimExtras>::hitGuardRailLocked(
-        const MetricDimensionKey& newKey) const {
+        const MetricDimensionKey& newKey) {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mCurrentSlicedBucket.find(newKey) != mCurrentSlicedBucket.end()) {
@@ -625,8 +625,11 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::hitGuardRailLocked(
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (hasReachedGuardRailLimit()) {
-            ALOGE("ValueMetricProducer %lld dropping data for dimension key %s",
-                  (long long)mMetricId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("ValueMetricProducer %lld dropping data for dimension key %s",
+                      (long long)mMetricId, newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -879,6 +882,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
     mCurrentSkippedBucket.reset();
 
     mCurrentBucketStartTimeNs = nextBucketStartTimeNs;
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
     VLOG("metric %lld: new bucket start time: %lld", (long long)mMetricId,
          (long long)mCurrentBucketStartTimeNs);
 }

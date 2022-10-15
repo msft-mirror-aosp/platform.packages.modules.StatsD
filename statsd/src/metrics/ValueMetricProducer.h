@@ -316,7 +316,7 @@ protected:
     const int64_t mMinBucketSizeNs;
 
     // Util function to check whether the specified dimension hits the guardrail.
-    bool hitGuardRailLocked(const MetricDimensionKey& newKey) const;
+    bool hitGuardRailLocked(const MetricDimensionKey& newKey);
 
     bool hasReachedGuardRailLimit() const;
 
