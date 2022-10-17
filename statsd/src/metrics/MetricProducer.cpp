@@ -73,7 +73,8 @@ MetricProducer::MetricProducer(
       mIsActive(mEventActivationMap.empty()),
       mSlicedStateAtoms(slicedStateAtoms),
       mStateGroupMap(stateGroupMap),
-      mSplitBucketForAppUpgrade(splitBucketForAppUpgrade) {
+      mSplitBucketForAppUpgrade(splitBucketForAppUpgrade),
+      mHasHitGuardrail(false) {
 }
 
 bool MetricProducer::onConfigUpdatedLocked(
