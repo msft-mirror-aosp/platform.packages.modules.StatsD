@@ -133,15 +133,13 @@ bool updateStates(const StatsdConfig& config,
 // [replacedStates]: set of replaced state ids. metrics using these states must be replaced
 // output:
 // [metricsToUpdate]: update status of each metric. Will be changed from UPDATE_UNKNOWN
-// Returns whether the function was successful or not.
-bool determineAllMetricUpdateStatuses(const StatsdConfig& config,
-                                      const unordered_map<int64_t, int>& oldMetricProducerMap,
-                                      const vector<sp<MetricProducer>>& oldMetricProducers,
-                                      const unordered_map<int64_t, int>& metricToActivationMap,
-                                      const set<int64_t>& replacedMatchers,
-                                      const set<int64_t>& replacedConditions,
-                                      const set<int64_t>& replacedStates,
-                                      vector<UpdateStatus>& metricsToUpdate);
+// Returns nullopt if successful and InvalidConfigReason if not.
+optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
+        const StatsdConfig& config, const unordered_map<int64_t, int>& oldMetricProducerMap,
+        const vector<sp<MetricProducer>>& oldMetricProducers,
+        const unordered_map<int64_t, int>& metricToActivationMap,
+        const set<int64_t>& replacedMatchers, const set<int64_t>& replacedConditions,
+        const set<int64_t>& replacedStates, vector<UpdateStatus>& metricsToUpdate);
 
 // Update MetricProducers.
 // input:
@@ -162,7 +160,8 @@ bool determineAllMetricUpdateStatuses(const StatsdConfig& config,
 // [conditionToMetricMap]: contains the mapping from condition tracker index to
 //                          the list of MetricProducer index
 // [trackerToMetricMap]: contains the mapping from log tracker to MetricProducer index.
-bool updateMetrics(
+// Returns nullopt if successful and InvalidConfigReason if not.
+optional<InvalidConfigReason> updateMetrics(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,

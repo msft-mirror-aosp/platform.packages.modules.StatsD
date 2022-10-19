@@ -33,10 +33,18 @@ namespace statsd {
 
 struct InvalidConfigReason {
     InvalidConfigReasonEnum reason;
+    std::optional<int64_t> metricId;
+    std::optional<int64_t> stateId;
+    std::vector<int64_t> matcherIds;
+    std::vector<int64_t> conditionIds;
     InvalidConfigReason(){};
     InvalidConfigReason(InvalidConfigReasonEnum reason) : reason(reason){};
+    InvalidConfigReason(InvalidConfigReasonEnum reason, int64_t metricId)
+        : reason(reason), metricId(metricId){};
     bool operator==(const InvalidConfigReason& other) const {
-        return this->reason == other.reason;
+        return (this->reason == other.reason) && (this->metricId == other.metricId) &&
+               (this->stateId == other.stateId) && (this->matcherIds == other.matcherIds) &&
+               (this->conditionIds == other.conditionIds);
     }
 };
 
@@ -691,6 +699,24 @@ private:
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t matcherId);
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t metricId,
+                                                         const int64_t matcherId);
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t conditionId);
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t metricId,
+                                                           const int64_t conditionId);
+
+InvalidConfigReason createInvalidConfigReasonWithState(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t stateId);
 
 }  // namespace statsd
 }  // namespace os

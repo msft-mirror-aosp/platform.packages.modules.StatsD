@@ -1107,6 +1107,44 @@ std::pair<size_t, size_t> StatsdStats::getAtomDimensionKeySizeLimits(const int a
                                                     kDimensionKeySizeHardLimit);
 }
 
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t matcherId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.matcherIds.push_back(matcherId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t metricId,
+                                                         const int64_t matcherId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.matcherIds.push_back(matcherId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t conditionId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.conditionIds.push_back(conditionId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t metricId,
+                                                           const int64_t conditionId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.conditionIds.push_back(conditionId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithState(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t stateId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.stateId = stateId;
+    return invalidConfigReason;
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

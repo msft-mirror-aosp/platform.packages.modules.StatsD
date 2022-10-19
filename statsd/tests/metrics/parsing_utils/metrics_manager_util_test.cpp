@@ -518,7 +518,9 @@ TEST(MetricsManagerTest, TestDimensionMetricsWithMultiTags) {
                                trackerToConditionMap, activationAtomTrackerToMetricMap,
                                deactivationAtomTrackerToMetricMap, alertTrackerMap,
                                metricsWithActivation, stateProtoHashes, noReportMetricIds),
-              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
+              createInvalidConfigReasonWithMatcher(
+                      INVALID_CONFIG_REASON_METRIC_MATCHER_MORE_THAN_ONE_ATOM, /*metric id=*/3,
+                      StringToId("BATTERY_LOW")));
 }
 
 TEST(MetricsManagerTest, TestCircleLogMatcherDependency) {
@@ -618,16 +620,18 @@ TEST(MetricsManagerTest, TestMissingPredicate) {
     vector<int> metricsWithActivation;
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
-    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
-                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
-                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
-                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
-                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
-                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
-                               trackerToConditionMap, activationAtomTrackerToMetricMap,
-                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
-                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
-              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
+    EXPECT_EQ(
+            initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                             periodicAlarmMonitor, timeBaseSec, timeBaseSec, allTagIdsToMatchersMap,
+                             allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
+                             conditionTrackerMap, allMetricProducers, metricProducerMap,
+                             allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
+                             trackerToMetricMap, trackerToConditionMap,
+                             activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                             alertTrackerMap, metricsWithActivation, stateProtoHashes,
+                             noReportMetricIds),
+            createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_METRIC_CONDITION_NOT_FOUND,
+                                                   /*metric id=*/3, StringToId("SOME_CONDITION")));
 }
 
 TEST(MetricsManagerTest, TestCirclePredicateDependency) {
