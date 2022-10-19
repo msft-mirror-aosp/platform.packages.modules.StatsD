@@ -403,14 +403,17 @@ TEST(MetricsManagerTest, TestInitialConditions) {
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
 
-    EXPECT_TRUE(initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds));
+    // initStatsdConfig returns nullopt if config is valid
+    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
+                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
+                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
+                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
+                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
+                               trackerToConditionMap, activationAtomTrackerToMetricMap,
+                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
+                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
+              nullopt);
     ASSERT_EQ(4u, allMetricProducers.size());
     ASSERT_EQ(5u, allConditionTrackers.size());
 
@@ -461,14 +464,17 @@ TEST(MetricsManagerTest, TestGoodConfig) {
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
 
-    EXPECT_TRUE(initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds));
+    // initStatsdConfig returns nullopt if config is valid
+    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
+                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
+                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
+                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
+                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
+                               trackerToConditionMap, activationAtomTrackerToMetricMap,
+                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
+                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
+              nullopt);
     ASSERT_EQ(1u, allMetricProducers.size());
     EXPECT_THAT(metricProducerMap, UnorderedElementsAre(Pair(config.count_metric(0).id(), 0)));
     ASSERT_EQ(1u, allAnomalyTrackers.size());
@@ -503,14 +509,16 @@ TEST(MetricsManagerTest, TestDimensionMetricsWithMultiTags) {
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
 
-    EXPECT_FALSE(initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds));
+    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
+                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
+                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
+                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
+                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
+                               trackerToConditionMap, activationAtomTrackerToMetricMap,
+                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
+                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
+              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
 }
 
 TEST(MetricsManagerTest, TestCircleLogMatcherDependency) {
@@ -538,14 +546,16 @@ TEST(MetricsManagerTest, TestCircleLogMatcherDependency) {
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
 
-    EXPECT_FALSE(initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds));
+    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
+                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
+                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
+                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
+                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
+                               trackerToConditionMap, activationAtomTrackerToMetricMap,
+                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
+                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
+              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
 }
 
 TEST(MetricsManagerTest, TestMissingMatchers) {
@@ -572,14 +582,16 @@ TEST(MetricsManagerTest, TestMissingMatchers) {
     vector<int> metricsWithActivation;
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
-    EXPECT_FALSE(initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds));
+    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
+                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
+                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
+                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
+                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
+                               trackerToConditionMap, activationAtomTrackerToMetricMap,
+                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
+                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
+              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
 }
 
 TEST(MetricsManagerTest, TestMissingPredicate) {
@@ -606,14 +618,16 @@ TEST(MetricsManagerTest, TestMissingPredicate) {
     vector<int> metricsWithActivation;
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
-    EXPECT_FALSE(initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds));
+    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
+                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
+                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
+                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
+                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
+                               trackerToConditionMap, activationAtomTrackerToMetricMap,
+                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
+                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
+              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
 }
 
 TEST(MetricsManagerTest, TestCirclePredicateDependency) {
@@ -641,14 +655,16 @@ TEST(MetricsManagerTest, TestCirclePredicateDependency) {
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
 
-    EXPECT_FALSE(initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds));
+    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
+                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
+                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
+                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
+                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
+                               trackerToConditionMap, activationAtomTrackerToMetricMap,
+                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
+                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
+              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
 }
 
 TEST(MetricsManagerTest, testAlertWithUnknownMetric) {
@@ -676,14 +692,16 @@ TEST(MetricsManagerTest, testAlertWithUnknownMetric) {
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
 
-    EXPECT_FALSE(initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds));
+    EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
+                               periodicAlarmMonitor, timeBaseSec, timeBaseSec,
+                               allTagIdsToMatchersMap, allAtomMatchingTrackers,
+                               atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
+                               allMetricProducers, metricProducerMap, allAnomalyTrackers,
+                               allAlarmTrackers, conditionToMetricMap, trackerToMetricMap,
+                               trackerToConditionMap, activationAtomTrackerToMetricMap,
+                               deactivationAtomTrackerToMetricMap, alertTrackerMap,
+                               metricsWithActivation, stateProtoHashes, noReportMetricIds),
+              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
 }
 
 TEST(MetricsManagerTest, TestCreateAtomMatchingTrackerInvalidMatcher) {

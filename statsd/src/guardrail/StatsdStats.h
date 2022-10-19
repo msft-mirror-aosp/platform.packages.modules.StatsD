@@ -15,19 +15,30 @@
  */
 #pragma once
 
-#include "config/ConfigKey.h"
-
 #include <gtest/gtest_prod.h>
 #include <log/log_time.h>
+#include <src/guardrail/invalid_config_reason_enum.pb.h>
+
 #include <list>
 #include <mutex>
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
+
+#include "config/ConfigKey.h"
 
 namespace android {
 namespace os {
 namespace statsd {
+
+struct InvalidConfigReason {
+    InvalidConfigReasonEnum reason;
+    InvalidConfigReason(){};
+    InvalidConfigReason(InvalidConfigReasonEnum reason) : reason(reason){};
+    bool operator==(const InvalidConfigReason& other) const {
+        return this->reason == other.reason;
+    }
+};
 
 struct ConfigStats {
     int32_t uid;
@@ -40,6 +51,9 @@ struct ConfigStats {
     int32_t matcher_count;
     int32_t alert_count;
     bool is_valid;
+
+    // Stores reasons for why config is valid or not
+    std::optional<InvalidConfigReason> reason;
 
     std::list<int32_t> broadcast_sent_time_sec;
 
@@ -200,7 +214,7 @@ public:
     void noteConfigReceived(const ConfigKey& key, int metricsCount, int conditionsCount,
                             int matchersCount, int alertCount,
                             const std::list<std::pair<const int64_t, const int32_t>>& annotations,
-                            bool isValid);
+                            const std::optional<InvalidConfigReason>& reason);
     /**
      * Report a config has been removed.
      */

@@ -141,7 +141,7 @@ void StatsdStats::addToIceBoxLocked(shared_ptr<ConfigStats>& stats) {
 void StatsdStats::noteConfigReceived(
         const ConfigKey& key, int metricsCount, int conditionsCount, int matchersCount,
         int alertsCount, const std::list<std::pair<const int64_t, const int32_t>>& annotations,
-        bool isValid) {
+        const optional<InvalidConfigReason>& reason) {
     lock_guard<std::mutex> lock(mLock);
     int32_t nowTimeSec = getWallClockSec();
 
@@ -156,12 +156,13 @@ void StatsdStats::noteConfigReceived(
     configStats->condition_count = conditionsCount;
     configStats->matcher_count = matchersCount;
     configStats->alert_count = alertsCount;
-    configStats->is_valid = isValid;
+    configStats->is_valid = !reason.has_value();
+    configStats->reason = reason;
     for (auto& v : annotations) {
         configStats->annotations.emplace_back(v);
     }
 
-    if (isValid) {
+    if (!reason.has_value()) {
         mConfigStats[key] = configStats;
     } else {
         configStats->deletion_time_sec = nowTimeSec;

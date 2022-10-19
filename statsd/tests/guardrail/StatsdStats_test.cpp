@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include "src/guardrail/StatsdStats.h"
-#include "statslog_statsdtest.h"
-#include "tests/statsd_test_util.h"
 
 #include <gtest/gtest.h>
+
 #include <vector>
+
+#include "src/metrics/parsing_utils/metrics_manager_util.h"
+#include "statslog_statsdtest.h"
+#include "tests/statsd_test_util.h"
 
 #ifdef __ANDROID__
 
@@ -35,7 +38,7 @@ TEST(StatsdStatsTest, TestValidConfigAdd) {
     const int matchersCount = 30;
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
-                             true /*valid config*/);
+                             nullopt /*valid config*/);
     vector<uint8_t> output;
     stats.dumpStats(&output, false /*reset stats*/);
 
@@ -62,7 +65,7 @@ TEST(StatsdStatsTest, TestInvalidConfigAdd) {
     const int matchersCount = 30;
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
-                             false /*bad config*/);
+                             InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN) /*bad config*/);
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
 
@@ -83,7 +86,7 @@ TEST(StatsdStatsTest, TestConfigRemove) {
     const int matchersCount = 30;
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
-                             true);
+                             nullopt);
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
     StatsdStatsReport report;
@@ -105,7 +108,7 @@ TEST(StatsdStatsTest, TestConfigRemove) {
 TEST(StatsdStatsTest, TestSubStats) {
     StatsdStats stats;
     ConfigKey key(0, 12345);
-    stats.noteConfigReceived(key, 2, 3, 4, 5, {std::make_pair(123, 456)}, true);
+    stats.noteConfigReceived(key, 2, 3, 4, 5, {std::make_pair(123, 456)}, nullopt);
 
     stats.noteMatcherMatched(key, StringToId("matcher1"));
     stats.noteMatcherMatched(key, StringToId("matcher1"));
@@ -393,7 +396,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
         timestamps.push_back(i);
     }
     ConfigKey key(0, 12345);
-    stats.noteConfigReceived(key, 2, 3, 4, 5, {}, true);
+    stats.noteConfigReceived(key, 2, 3, 4, 5, {}, nullopt);
 
     for (int i = 0; i < StatsdStats::kMaxTimestampCount; i++) {
         stats.noteDataDropped(key, timestamps[i]);

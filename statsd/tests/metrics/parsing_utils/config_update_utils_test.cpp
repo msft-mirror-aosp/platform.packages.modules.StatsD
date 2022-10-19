@@ -83,14 +83,16 @@ map<int64_t, uint64_t> oldStateHashes;
 set<int64_t> noReportMetricIds;
 
 bool initConfig(const StatsdConfig& config) {
-    return initStatsdConfig(
-            key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseNs, timeBaseNs, allTagIdsToMatchersMap, oldAtomMatchingTrackers,
-            oldAtomMatchingTrackerMap, oldConditionTrackers, oldConditionTrackerMap,
-            oldMetricProducers, oldMetricProducerMap, oldAnomalyTrackers, oldAlarmTrackers,
-            tmpConditionToMetricMap, tmpTrackerToMetricMap, tmpTrackerToConditionMap,
-            tmpActivationAtomTrackerToMetricMap, tmpDeactivationAtomTrackerToMetricMap,
-            oldAlertTrackerMap, metricsWithActivation, oldStateHashes, noReportMetricIds);
+    // initStatsdConfig returns nullopt if config is valid
+    return !initStatsdConfig(
+                    key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
+                    timeBaseNs, timeBaseNs, allTagIdsToMatchersMap, oldAtomMatchingTrackers,
+                    oldAtomMatchingTrackerMap, oldConditionTrackers, oldConditionTrackerMap,
+                    oldMetricProducers, oldMetricProducerMap, oldAnomalyTrackers, oldAlarmTrackers,
+                    tmpConditionToMetricMap, tmpTrackerToMetricMap, tmpTrackerToConditionMap,
+                    tmpActivationAtomTrackerToMetricMap, tmpDeactivationAtomTrackerToMetricMap,
+                    oldAlertTrackerMap, metricsWithActivation, oldStateHashes, noReportMetricIds)
+                    .has_value();
 }
 
 vector<int> filterMatcherIndexesById(const vector<sp<AtomMatchingTracker>>& atomMatchingTrackers,

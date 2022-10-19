@@ -1102,38 +1102,36 @@ bool updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
     return true;
 }
 
-bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const sp<UidMap>& uidMap,
-                        const sp<StatsPullerManager>& pullerManager,
-                        const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                        const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
-                        const int64_t currentTimeNs,
-                        const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
-                        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
-                        const vector<sp<ConditionTracker>>& oldConditionTrackers,
-                        const unordered_map<int64_t, int>& oldConditionTrackerMap,
-                        const vector<sp<MetricProducer>>& oldMetricProducers,
-                        const unordered_map<int64_t, int>& oldMetricProducerMap,
-                        const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
-                        const unordered_map<int64_t, int>& oldAlertTrackerMap,
-                        const map<int64_t, uint64_t>& oldStateProtoHashes,
-                        std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
-                        vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
-                        unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-                        vector<sp<ConditionTracker>>& newConditionTrackers,
-                        unordered_map<int64_t, int>& newConditionTrackerMap,
-                        vector<sp<MetricProducer>>& newMetricProducers,
-                        unordered_map<int64_t, int>& newMetricProducerMap,
-                        vector<sp<AnomalyTracker>>& newAnomalyTrackers,
-                        unordered_map<int64_t, int>& newAlertTrackerMap,
-                        vector<sp<AlarmTracker>>& newPeriodicAlarmTrackers,
-                        unordered_map<int, vector<int>>& conditionToMetricMap,
-                        unordered_map<int, vector<int>>& trackerToMetricMap,
-                        unordered_map<int, vector<int>>& trackerToConditionMap,
-                        unordered_map<int, vector<int>>& activationTrackerToMetricMap,
-                        unordered_map<int, vector<int>>& deactivationTrackerToMetricMap,
-                        vector<int>& metricsWithActivation,
-                        map<int64_t, uint64_t>& newStateProtoHashes,
-                        set<int64_t>& noReportMetricIds) {
+optional<InvalidConfigReason> updateStatsdConfig(
+        const ConfigKey& key, const StatsdConfig& config, const sp<UidMap>& uidMap,
+        const sp<StatsPullerManager>& pullerManager, const sp<AlarmMonitor>& anomalyAlarmMonitor,
+        const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
+        const int64_t currentTimeNs, const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+        const vector<sp<ConditionTracker>>& oldConditionTrackers,
+        const unordered_map<int64_t, int>& oldConditionTrackerMap,
+        const vector<sp<MetricProducer>>& oldMetricProducers,
+        const unordered_map<int64_t, int>& oldMetricProducerMap,
+        const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
+        const unordered_map<int64_t, int>& oldAlertTrackerMap,
+        const map<int64_t, uint64_t>& oldStateProtoHashes,
+        std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
+        vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
+        unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
+        vector<sp<ConditionTracker>>& newConditionTrackers,
+        unordered_map<int64_t, int>& newConditionTrackerMap,
+        vector<sp<MetricProducer>>& newMetricProducers,
+        unordered_map<int64_t, int>& newMetricProducerMap,
+        vector<sp<AnomalyTracker>>& newAnomalyTrackers,
+        unordered_map<int64_t, int>& newAlertTrackerMap,
+        vector<sp<AlarmTracker>>& newPeriodicAlarmTrackers,
+        unordered_map<int, vector<int>>& conditionToMetricMap,
+        unordered_map<int, vector<int>>& trackerToMetricMap,
+        unordered_map<int, vector<int>>& trackerToConditionMap,
+        unordered_map<int, vector<int>>& activationTrackerToMetricMap,
+        unordered_map<int, vector<int>>& deactivationTrackerToMetricMap,
+        vector<int>& metricsWithActivation, map<int64_t, uint64_t>& newStateProtoHashes,
+        set<int64_t>& noReportMetricIds) {
     set<int64_t> replacedMatchers;
     set<int64_t> replacedConditions;
     set<int64_t> replacedStates;
@@ -1145,7 +1143,7 @@ bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const 
     if (config.package_certificate_hash_size_bytes() > UINT8_MAX) {
         ALOGE("Invalid value for package_certificate_hash_size_bytes: %d",
               config.package_certificate_hash_size_bytes());
-        return false;
+        return InvalidConfigReason(INVALID_CONFIG_REASON_PACKAGE_CERT_HASH_SIZE_TOO_LARGE);
     }
 
     if (!updateAtomMatchingTrackers(config, uidMap, oldAtomMatchingTrackerMap,
@@ -1153,7 +1151,7 @@ bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const 
                                     newAtomMatchingTrackerMap, newAtomMatchingTrackers,
                                     replacedMatchers)) {
         ALOGE("updateAtomMatchingTrackers failed");
-        return false;
+        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
     }
 
     if (!updateConditions(key, config, newAtomMatchingTrackerMap, replacedMatchers,
@@ -1161,13 +1159,13 @@ bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const 
                           newConditionTrackers, trackerToConditionMap, conditionCache,
                           replacedConditions)) {
         ALOGE("updateConditions failed");
-        return false;
+        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
     }
 
     if (!updateStates(config, oldStateProtoHashes, stateAtomIdMap, allStateGroupMaps,
                       newStateProtoHashes, replacedStates)) {
         ALOGE("updateStates failed");
-        return false;
+        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
     }
     if (!updateMetrics(key, config, timeBaseNs, currentTimeNs, pullerManager,
                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, replacedMatchers,
@@ -1178,23 +1176,23 @@ bool updateStatsdConfig(const ConfigKey& key, const StatsdConfig& config, const 
                        trackerToMetricMap, noReportMetricIds, activationTrackerToMetricMap,
                        deactivationTrackerToMetricMap, metricsWithActivation, replacedMetrics)) {
         ALOGE("updateMetrics failed");
-        return false;
+        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
     }
 
     if (!updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
                       oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
                       newMetricProducers, newAlertTrackerMap, newAnomalyTrackers)) {
         ALOGE("updateAlerts failed");
-        return false;
+        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
     }
 
     // Alarms do not have any state, so we can reuse the initialization logic.
     if (!initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
                     newPeriodicAlarmTrackers)) {
         ALOGE("initAlarms failed");
-        return false;
+        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
     }
-    return true;
+    return nullopt;
 }
 
 }  // namespace statsd
