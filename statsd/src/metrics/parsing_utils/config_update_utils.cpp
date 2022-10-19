@@ -31,16 +31,16 @@ namespace os {
 namespace statsd {
 
 // Recursive function to determine if a matcher needs to be updated. Populates matcherToUpdate.
-// Returns whether the function was successful or not.
-bool determineMatcherUpdateStatus(const StatsdConfig& config, const int matcherIdx,
-                                  const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
-                                  const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
-                                  const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-                                  vector<UpdateStatus>& matchersToUpdate,
-                                  vector<bool>& cycleTracker) {
+// Returns nullopt if successful and InvalidConfigReason if not.
+optional<InvalidConfigReason> determineMatcherUpdateStatus(
+        const StatsdConfig& config, const int matcherIdx,
+        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+        const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
+        vector<UpdateStatus>& matchersToUpdate, vector<bool>& cycleTracker) {
     // Have already examined this matcher.
     if (matchersToUpdate[matcherIdx] != UPDATE_UNKNOWN) {
-        return true;
+        return nullopt;
     }
 
     const AtomMatcher& matcher = config.atom_matcher(matcherIdx);
@@ -49,25 +49,27 @@ bool determineMatcherUpdateStatus(const StatsdConfig& config, const int matcherI
     const auto& oldAtomMatchingTrackerIt = oldAtomMatchingTrackerMap.find(id);
     if (oldAtomMatchingTrackerIt == oldAtomMatchingTrackerMap.end()) {
         matchersToUpdate[matcherIdx] = UPDATE_NEW;
-        return true;
+        return nullopt;
     }
 
     // This is an existing matcher. Check if it has changed.
     string serializedMatcher;
     if (!matcher.SerializeToString(&serializedMatcher)) {
         ALOGE("Unable to serialize matcher %lld", (long long)id);
-        return false;
+        return createInvalidConfigReasonWithMatcher(
+                INVALID_CONFIG_REASON_MATCHER_SERIALIZATION_FAILED, id);
     }
     uint64_t newProtoHash = Hash64(serializedMatcher);
     if (newProtoHash != oldAtomMatchingTrackers[oldAtomMatchingTrackerIt->second]->getProtoHash()) {
         matchersToUpdate[matcherIdx] = UPDATE_REPLACE;
-        return true;
+        return nullopt;
     }
 
+    optional<InvalidConfigReason> invalidConfigReason;
     switch (matcher.contents_case()) {
         case AtomMatcher::ContentsCase::kSimpleAtomMatcher: {
             matchersToUpdate[matcherIdx] = UPDATE_PRESERVE;
-            return true;
+            return nullopt;
         }
         case AtomMatcher::ContentsCase::kCombination: {
             // Recurse to check if children have changed.
@@ -77,17 +79,25 @@ bool determineMatcherUpdateStatus(const StatsdConfig& config, const int matcherI
                 const auto& childIt = newAtomMatchingTrackerMap.find(childMatcherId);
                 if (childIt == newAtomMatchingTrackerMap.end()) {
                     ALOGW("Matcher %lld not found in the config", (long long)childMatcherId);
-                    return false;
+                    invalidConfigReason = createInvalidConfigReasonWithMatcher(
+                            INVALID_CONFIG_REASON_MATCHER_CHILD_NOT_FOUND, id);
+                    invalidConfigReason->matcherIds.push_back(childMatcherId);
+                    return invalidConfigReason;
                 }
                 const int childIdx = childIt->second;
                 if (cycleTracker[childIdx]) {
                     ALOGE("Cycle detected in matcher config");
-                    return false;
+                    invalidConfigReason = createInvalidConfigReasonWithMatcher(
+                            INVALID_CONFIG_REASON_MATCHER_CYCLE, id);
+                    invalidConfigReason->matcherIds.push_back(childMatcherId);
+                    return invalidConfigReason;
                 }
-                if (!determineMatcherUpdateStatus(
-                            config, childIdx, oldAtomMatchingTrackerMap, oldAtomMatchingTrackers,
-                            newAtomMatchingTrackerMap, matchersToUpdate, cycleTracker)) {
-                    return false;
+                invalidConfigReason = determineMatcherUpdateStatus(
+                        config, childIdx, oldAtomMatchingTrackerMap, oldAtomMatchingTrackers,
+                        newAtomMatchingTrackerMap, matchersToUpdate, cycleTracker);
+                if (invalidConfigReason.has_value()) {
+                    invalidConfigReason->matcherIds.push_back(id);
+                    return invalidConfigReason;
                 }
 
                 if (matchersToUpdate[childIdx] == UPDATE_REPLACE) {
@@ -97,34 +107,37 @@ bool determineMatcherUpdateStatus(const StatsdConfig& config, const int matcherI
             }
             matchersToUpdate[matcherIdx] = status;
             cycleTracker[matcherIdx] = false;
-            return true;
+            return nullopt;
         }
         default: {
             ALOGE("Matcher \"%lld\" malformed", (long long)id);
-            return false;
+            return createInvalidConfigReasonWithMatcher(
+                    INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE, id);
         }
     }
-    return true;
+    return nullopt;
 }
 
-bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidMap,
-                                const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
-                                const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
-                                std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
-                                unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-                                vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
-                                set<int64_t>& replacedMatchers) {
+optional<InvalidConfigReason> updateAtomMatchingTrackers(
+        const StatsdConfig& config, const sp<UidMap>& uidMap,
+        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+        const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
+        std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
+        unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
+        vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers, set<int64_t>& replacedMatchers) {
     const int atomMatcherCount = config.atom_matcher_size();
     vector<AtomMatcher> matcherProtos;
     matcherProtos.reserve(atomMatcherCount);
     newAtomMatchingTrackers.reserve(atomMatcherCount);
+    optional<InvalidConfigReason> invalidConfigReason;
 
     // Maps matcher id to their position in the config. For fast lookup of dependencies.
     for (int i = 0; i < atomMatcherCount; i++) {
         const AtomMatcher& matcher = config.atom_matcher(i);
         if (newAtomMatchingTrackerMap.find(matcher.id()) != newAtomMatchingTrackerMap.end()) {
             ALOGE("Duplicate atom matcher found for id %lld", (long long)matcher.id());
-            return false;
+            return createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_MATCHER_DUPLICATE,
+                                                        matcher.id());
         }
         newAtomMatchingTrackerMap[matcher.id()] = i;
         matcherProtos.push_back(matcher);
@@ -134,10 +147,11 @@ bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& ui
     vector<UpdateStatus> matchersToUpdate(atomMatcherCount, UPDATE_UNKNOWN);
     vector<bool> cycleTracker(atomMatcherCount, false);
     for (int i = 0; i < atomMatcherCount; i++) {
-        if (!determineMatcherUpdateStatus(config, i, oldAtomMatchingTrackerMap,
-                                          oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                          matchersToUpdate, cycleTracker)) {
-            return false;
+        invalidConfigReason = determineMatcherUpdateStatus(
+                config, i, oldAtomMatchingTrackerMap, oldAtomMatchingTrackers,
+                newAtomMatchingTrackerMap, matchersToUpdate, cycleTracker);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
         }
     }
 
@@ -151,13 +165,16 @@ bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& ui
                     ALOGE("Could not find AtomMatcher %lld in the previous config, but expected it "
                           "to be there",
                           (long long)id);
-                    return false;
+                    return createInvalidConfigReasonWithMatcher(
+                            INVALID_CONFIG_REASON_MATCHER_NOT_IN_PREV_CONFIG, id);
                 }
                 const sp<AtomMatchingTracker>& tracker =
                         oldAtomMatchingTrackers[oldAtomMatchingTrackerIt->second];
-                if (!tracker->onConfigUpdated(matcherProtos[i], i, newAtomMatchingTrackerMap)) {
+                invalidConfigReason =
+                        tracker->onConfigUpdated(matcherProtos[i], i, newAtomMatchingTrackerMap);
+                if (invalidConfigReason.has_value()) {
                     ALOGW("Config update failed for matcher %lld", (long long)id);
-                    return false;
+                    return invalidConfigReason;
                 }
                 newAtomMatchingTrackers.push_back(tracker);
                 break;
@@ -166,9 +183,10 @@ bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& ui
                 replacedMatchers.insert(id);
                 [[fallthrough]];  // Intentionally fallthrough to create the new matcher.
             case UPDATE_NEW: {
-                sp<AtomMatchingTracker> tracker = createAtomMatchingTracker(matcher, i, uidMap);
+                sp<AtomMatchingTracker> tracker =
+                        createAtomMatchingTracker(matcher, i, uidMap, invalidConfigReason);
                 if (tracker == nullptr) {
-                    return false;
+                    return invalidConfigReason;
                 }
                 newAtomMatchingTrackers.push_back(tracker);
                 break;
@@ -176,7 +194,8 @@ bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& ui
             default: {
                 ALOGE("Matcher \"%lld\" update state is unknown. This should never happen",
                       (long long)id);
-                return false;
+                return createInvalidConfigReasonWithMatcher(
+                        INVALID_CONFIG_REASON_MATCHER_UPDATE_STATUS_UNKNOWN, id);
             }
         }
     }
@@ -184,9 +203,10 @@ bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& ui
     std::fill(cycleTracker.begin(), cycleTracker.end(), false);
     for (size_t matcherIndex = 0; matcherIndex < newAtomMatchingTrackers.size(); matcherIndex++) {
         auto& matcher = newAtomMatchingTrackers[matcherIndex];
-        if (!matcher->init(matcherProtos, newAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                           cycleTracker)) {
-            return false;
+        invalidConfigReason = matcher->init(matcherProtos, newAtomMatchingTrackers,
+                                            newAtomMatchingTrackerMap, cycleTracker);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
         }
 
         // Collect all the tag ids that are interesting. TagIds exist in leaf nodes only.
@@ -207,21 +227,21 @@ bool updateAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& ui
         }
     }
 
-    return true;
+    return nullopt;
 }
 
 // Recursive function to determine if a condition needs to be updated. Populates conditionsToUpdate.
-// Returns whether the function was successful or not.
-bool determineConditionUpdateStatus(const StatsdConfig& config, const int conditionIdx,
-                                    const unordered_map<int64_t, int>& oldConditionTrackerMap,
-                                    const vector<sp<ConditionTracker>>& oldConditionTrackers,
-                                    const unordered_map<int64_t, int>& newConditionTrackerMap,
-                                    const set<int64_t>& replacedMatchers,
-                                    vector<UpdateStatus>& conditionsToUpdate,
-                                    vector<bool>& cycleTracker) {
+// Returns nullopt if successful and InvalidConfigReason if not.
+optional<InvalidConfigReason> determineConditionUpdateStatus(
+        const StatsdConfig& config, const int conditionIdx,
+        const unordered_map<int64_t, int>& oldConditionTrackerMap,
+        const vector<sp<ConditionTracker>>& oldConditionTrackers,
+        const unordered_map<int64_t, int>& newConditionTrackerMap,
+        const set<int64_t>& replacedMatchers, vector<UpdateStatus>& conditionsToUpdate,
+        vector<bool>& cycleTracker) {
     // Have already examined this condition.
     if (conditionsToUpdate[conditionIdx] != UPDATE_UNKNOWN) {
-        return true;
+        return nullopt;
     }
 
     const Predicate& predicate = config.predicate(conditionIdx);
@@ -230,21 +250,23 @@ bool determineConditionUpdateStatus(const StatsdConfig& config, const int condit
     const auto& oldConditionTrackerIt = oldConditionTrackerMap.find(id);
     if (oldConditionTrackerIt == oldConditionTrackerMap.end()) {
         conditionsToUpdate[conditionIdx] = UPDATE_NEW;
-        return true;
+        return nullopt;
     }
 
     // This is an existing condition. Check if it has changed.
     string serializedCondition;
     if (!predicate.SerializeToString(&serializedCondition)) {
-        ALOGE("Unable to serialize matcher %lld", (long long)id);
-        return false;
+        ALOGE("Unable to serialize predicate %lld", (long long)id);
+        return createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_CONDITION_SERIALIZATION_FAILED, id);
     }
     uint64_t newProtoHash = Hash64(serializedCondition);
     if (newProtoHash != oldConditionTrackers[oldConditionTrackerIt->second]->getProtoHash()) {
         conditionsToUpdate[conditionIdx] = UPDATE_REPLACE;
-        return true;
+        return nullopt;
     }
 
+    optional<InvalidConfigReason> invalidConfigReason;
     switch (predicate.contents_case()) {
         case Predicate::ContentsCase::kSimplePredicate: {
             // Need to check if any of the underlying matchers changed.
@@ -252,23 +274,23 @@ bool determineConditionUpdateStatus(const StatsdConfig& config, const int condit
             if (simplePredicate.has_start()) {
                 if (replacedMatchers.find(simplePredicate.start()) != replacedMatchers.end()) {
                     conditionsToUpdate[conditionIdx] = UPDATE_REPLACE;
-                    return true;
+                    return nullopt;
                 }
             }
             if (simplePredicate.has_stop()) {
                 if (replacedMatchers.find(simplePredicate.stop()) != replacedMatchers.end()) {
                     conditionsToUpdate[conditionIdx] = UPDATE_REPLACE;
-                    return true;
+                    return nullopt;
                 }
             }
             if (simplePredicate.has_stop_all()) {
                 if (replacedMatchers.find(simplePredicate.stop_all()) != replacedMatchers.end()) {
                     conditionsToUpdate[conditionIdx] = UPDATE_REPLACE;
-                    return true;
+                    return nullopt;
                 }
             }
             conditionsToUpdate[conditionIdx] = UPDATE_PRESERVE;
-            return true;
+            return nullopt;
         }
         case Predicate::ContentsCase::kCombination: {
             // Need to recurse on the children to see if any of the child predicates changed.
@@ -278,18 +300,25 @@ bool determineConditionUpdateStatus(const StatsdConfig& config, const int condit
                 const auto& childIt = newConditionTrackerMap.find(childPredicateId);
                 if (childIt == newConditionTrackerMap.end()) {
                     ALOGW("Predicate %lld not found in the config", (long long)childPredicateId);
-                    return false;
+                    invalidConfigReason = createInvalidConfigReasonWithPredicate(
+                            INVALID_CONFIG_REASON_CONDITION_CHILD_NOT_FOUND, id);
+                    invalidConfigReason->conditionIds.push_back(childPredicateId);
+                    return invalidConfigReason;
                 }
                 const int childIdx = childIt->second;
                 if (cycleTracker[childIdx]) {
                     ALOGE("Cycle detected in predicate config");
-                    return false;
+                    invalidConfigReason = createInvalidConfigReasonWithPredicate(
+                            INVALID_CONFIG_REASON_CONDITION_CYCLE, id);
+                    invalidConfigReason->conditionIds.push_back(childPredicateId);
+                    return invalidConfigReason;
                 }
-                if (!determineConditionUpdateStatus(config, childIdx, oldConditionTrackerMap,
-                                                    oldConditionTrackers, newConditionTrackerMap,
-                                                    replacedMatchers, conditionsToUpdate,
-                                                    cycleTracker)) {
-                    return false;
+                invalidConfigReason = determineConditionUpdateStatus(
+                        config, childIdx, oldConditionTrackerMap, oldConditionTrackers,
+                        newConditionTrackerMap, replacedMatchers, conditionsToUpdate, cycleTracker);
+                if (invalidConfigReason.has_value()) {
+                    invalidConfigReason->conditionIds.push_back(id);
+                    return invalidConfigReason;
                 }
 
                 if (conditionsToUpdate[childIdx] == UPDATE_REPLACE) {
@@ -299,37 +328,41 @@ bool determineConditionUpdateStatus(const StatsdConfig& config, const int condit
             }
             conditionsToUpdate[conditionIdx] = status;
             cycleTracker[conditionIdx] = false;
-            return true;
+            return nullopt;
         }
         default: {
             ALOGE("Predicate \"%lld\" malformed", (long long)id);
-            return false;
+            return createInvalidConfigReasonWithPredicate(
+                    INVALID_CONFIG_REASON_CONDITION_MALFORMED_CONTENTS_CASE, id);
         }
     }
 
-    return true;
+    return nullopt;
 }
 
-bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
-                      const unordered_map<int64_t, int>& atomMatchingTrackerMap,
-                      const set<int64_t>& replacedMatchers,
-                      const unordered_map<int64_t, int>& oldConditionTrackerMap,
-                      const vector<sp<ConditionTracker>>& oldConditionTrackers,
-                      unordered_map<int64_t, int>& newConditionTrackerMap,
-                      vector<sp<ConditionTracker>>& newConditionTrackers,
-                      unordered_map<int, vector<int>>& trackerToConditionMap,
-                      vector<ConditionState>& conditionCache, set<int64_t>& replacedConditions) {
+optional<InvalidConfigReason> updateConditions(
+        const ConfigKey& key, const StatsdConfig& config,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const set<int64_t>& replacedMatchers,
+        const unordered_map<int64_t, int>& oldConditionTrackerMap,
+        const vector<sp<ConditionTracker>>& oldConditionTrackers,
+        unordered_map<int64_t, int>& newConditionTrackerMap,
+        vector<sp<ConditionTracker>>& newConditionTrackers,
+        unordered_map<int, vector<int>>& trackerToConditionMap,
+        vector<ConditionState>& conditionCache, set<int64_t>& replacedConditions) {
     vector<Predicate> conditionProtos;
     const int conditionTrackerCount = config.predicate_size();
     conditionProtos.reserve(conditionTrackerCount);
     newConditionTrackers.reserve(conditionTrackerCount);
     conditionCache.assign(conditionTrackerCount, ConditionState::kNotEvaluated);
+    optional<InvalidConfigReason> invalidConfigReason;
 
     for (int i = 0; i < conditionTrackerCount; i++) {
         const Predicate& condition = config.predicate(i);
         if (newConditionTrackerMap.find(condition.id()) != newConditionTrackerMap.end()) {
             ALOGE("Duplicate Predicate found!");
-            return false;
+            return createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_CONDITION_DUPLICATE,
+                                                          condition.id());
         }
         newConditionTrackerMap[condition.id()] = i;
         conditionProtos.push_back(condition);
@@ -338,10 +371,11 @@ bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
     vector<UpdateStatus> conditionsToUpdate(conditionTrackerCount, UPDATE_UNKNOWN);
     vector<bool> cycleTracker(conditionTrackerCount, false);
     for (int i = 0; i < conditionTrackerCount; i++) {
-        if (!determineConditionUpdateStatus(config, i, oldConditionTrackerMap, oldConditionTrackers,
-                                            newConditionTrackerMap, replacedMatchers,
-                                            conditionsToUpdate, cycleTracker)) {
-            return false;
+        invalidConfigReason = determineConditionUpdateStatus(
+                config, i, oldConditionTrackerMap, oldConditionTrackers, newConditionTrackerMap,
+                replacedMatchers, conditionsToUpdate, cycleTracker);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
         }
     }
 
@@ -358,7 +392,8 @@ bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
                     ALOGE("Could not find Predicate %lld in the previous config, but expected it "
                           "to be there",
                           (long long)id);
-                    return false;
+                    return createInvalidConfigReasonWithPredicate(
+                            INVALID_CONFIG_REASON_CONDITION_NOT_IN_PREV_CONFIG, id);
                 }
                 const int oldIndex = oldConditionTrackerIt->second;
                 newConditionTrackers.push_back(oldConditionTrackers[oldIndex]);
@@ -368,10 +403,10 @@ bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
                 replacedConditions.insert(id);
                 [[fallthrough]];  // Intentionally fallthrough to create the new condition tracker.
             case UPDATE_NEW: {
-                sp<ConditionTracker> tracker =
-                        createConditionTracker(key, predicate, i, atomMatchingTrackerMap);
+                sp<ConditionTracker> tracker = createConditionTracker(
+                        key, predicate, i, atomMatchingTrackerMap, invalidConfigReason);
                 if (tracker == nullptr) {
-                    return false;
+                    return invalidConfigReason;
                 }
                 newConditionTrackers.push_back(tracker);
                 break;
@@ -379,19 +414,21 @@ bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
             default: {
                 ALOGE("Condition \"%lld\" update state is unknown. This should never happen",
                       (long long)id);
-                return false;
+                return createInvalidConfigReasonWithPredicate(
+                        INVALID_CONFIG_REASON_CONDITION_UPDATE_STATUS_UNKNOWN, id);
             }
         }
     }
 
     // Update indices of preserved predicates.
     for (const int conditionIndex : preservedConditions) {
-        if (!newConditionTrackers[conditionIndex]->onConfigUpdated(
-                    conditionProtos, conditionIndex, newConditionTrackers, atomMatchingTrackerMap,
-                    newConditionTrackerMap)) {
+        invalidConfigReason = newConditionTrackers[conditionIndex]->onConfigUpdated(
+                conditionProtos, conditionIndex, newConditionTrackers, atomMatchingTrackerMap,
+                newConditionTrackerMap);
+        if (invalidConfigReason.has_value()) {
             ALOGE("Failed to update condition %lld",
                   (long long)newConditionTrackers[conditionIndex]->getConditionId());
-            return false;
+            return invalidConfigReason;
         }
     }
 
@@ -399,25 +436,30 @@ bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
     for (int conditionIndex = 0; conditionIndex < conditionTrackerCount; conditionIndex++) {
         const sp<ConditionTracker>& conditionTracker = newConditionTrackers[conditionIndex];
         // Calling init on preserved conditions is OK. It is needed to fill the condition cache.
-        if (!conditionTracker->init(conditionProtos, newConditionTrackers, newConditionTrackerMap,
-                                    cycleTracker, conditionCache)) {
-            return false;
+        invalidConfigReason =
+                conditionTracker->init(conditionProtos, newConditionTrackers,
+                                       newConditionTrackerMap, cycleTracker, conditionCache);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
         }
         for (const int trackerIndex : conditionTracker->getAtomMatchingTrackerIndex()) {
             vector<int>& conditionList = trackerToConditionMap[trackerIndex];
             conditionList.push_back(conditionIndex);
         }
     }
-    return true;
+    return nullopt;
 }
 
-bool updateStates(const StatsdConfig& config, const map<int64_t, uint64_t>& oldStateProtoHashes,
-                  unordered_map<int64_t, int>& stateAtomIdMap,
-                  unordered_map<int64_t, unordered_map<int, int64_t>>& allStateGroupMaps,
-                  map<int64_t, uint64_t>& newStateProtoHashes, set<int64_t>& replacedStates) {
+optional<InvalidConfigReason> updateStates(
+        const StatsdConfig& config, const map<int64_t, uint64_t>& oldStateProtoHashes,
+        unordered_map<int64_t, int>& stateAtomIdMap,
+        unordered_map<int64_t, unordered_map<int, int64_t>>& allStateGroupMaps,
+        map<int64_t, uint64_t>& newStateProtoHashes, set<int64_t>& replacedStates) {
     // Share with metrics_manager_util.
-    if (!initStates(config, stateAtomIdMap, allStateGroupMaps, newStateProtoHashes)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason =
+            initStates(config, stateAtomIdMap, allStateGroupMaps, newStateProtoHashes);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
     for (const auto& [stateId, stateHash] : oldStateProtoHashes) {
@@ -426,7 +468,7 @@ bool updateStates(const StatsdConfig& config, const map<int64_t, uint64_t>& oldS
             replacedStates.insert(stateId);
         }
     }
-    return true;
+    return nullopt;
 }
 // Returns true if any matchers in the metric activation were replaced.
 bool metricActivationDepsChange(const StatsdConfig& config,
@@ -1019,59 +1061,63 @@ optional<InvalidConfigReason> updateMetrics(
     return nullopt;
 }
 
-bool determineAlertUpdateStatus(const Alert& alert,
-                                const unordered_map<int64_t, int>& oldAlertTrackerMap,
-                                const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
-                                const set<int64_t>& replacedMetrics, UpdateStatus& updateStatus) {
+optional<InvalidConfigReason> determineAlertUpdateStatus(
+        const Alert& alert, const unordered_map<int64_t, int>& oldAlertTrackerMap,
+        const vector<sp<AnomalyTracker>>& oldAnomalyTrackers, const set<int64_t>& replacedMetrics,
+        UpdateStatus& updateStatus) {
     // Check if new alert.
     const auto& oldAnomalyTrackerIt = oldAlertTrackerMap.find(alert.id());
     if (oldAnomalyTrackerIt == oldAlertTrackerMap.end()) {
         updateStatus = UPDATE_NEW;
-        return true;
+        return nullopt;
     }
 
     // This is an existing alert, check if it has changed.
     string serializedAlert;
     if (!alert.SerializeToString(&serializedAlert)) {
         ALOGW("Unable to serialize alert %lld", (long long)alert.id());
-        return false;
+        return createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_SERIALIZATION_FAILED,
+                                                  alert.id());
     }
     uint64_t newProtoHash = Hash64(serializedAlert);
-    const auto [success, oldProtoHash] =
+    const auto [invalidConfigReason, oldProtoHash] =
             oldAnomalyTrackers[oldAnomalyTrackerIt->second]->getProtoHash();
-    if (!success) {
-        return false;
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
     if (newProtoHash != oldProtoHash) {
         updateStatus = UPDATE_REPLACE;
-        return true;
+        return nullopt;
     }
 
     // Check if the metric this alert relies on has changed.
     if (replacedMetrics.find(alert.metric_id()) != replacedMetrics.end()) {
         updateStatus = UPDATE_REPLACE;
-        return true;
+        return nullopt;
     }
 
     updateStatus = UPDATE_PRESERVE;
-    return true;
+    return nullopt;
 }
 
-bool updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
-                  const unordered_map<int64_t, int>& metricProducerMap,
-                  const set<int64_t>& replacedMetrics,
-                  const unordered_map<int64_t, int>& oldAlertTrackerMap,
-                  const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
-                  const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                  vector<sp<MetricProducer>>& allMetricProducers,
-                  unordered_map<int64_t, int>& newAlertTrackerMap,
-                  vector<sp<AnomalyTracker>>& newAnomalyTrackers) {
+optional<InvalidConfigReason> updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
+                                           const unordered_map<int64_t, int>& metricProducerMap,
+                                           const set<int64_t>& replacedMetrics,
+                                           const unordered_map<int64_t, int>& oldAlertTrackerMap,
+                                           const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
+                                           const sp<AlarmMonitor>& anomalyAlarmMonitor,
+                                           vector<sp<MetricProducer>>& allMetricProducers,
+                                           unordered_map<int64_t, int>& newAlertTrackerMap,
+                                           vector<sp<AnomalyTracker>>& newAnomalyTrackers) {
     int alertCount = config.alert_size();
     vector<UpdateStatus> alertUpdateStatuses(alertCount);
+    optional<InvalidConfigReason> invalidConfigReason;
     for (int i = 0; i < alertCount; i++) {
-        if (!determineAlertUpdateStatus(config.alert(i), oldAlertTrackerMap, oldAnomalyTrackers,
-                                        replacedMetrics, alertUpdateStatuses[i])) {
-            return false;
+        invalidConfigReason =
+                determineAlertUpdateStatus(config.alert(i), oldAlertTrackerMap, oldAnomalyTrackers,
+                                           replacedMetrics, alertUpdateStatuses[i]);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
         }
     }
 
@@ -1086,7 +1132,8 @@ bool updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
                     ALOGW("Could not find AnomalyTracker %lld in the previous config, but "
                           "expected it to be there",
                           (long long)alert.id());
-                    return false;
+                    return createInvalidConfigReasonWithAlert(
+                            INVALID_CONFIG_REASON_ALERT_NOT_IN_PREV_CONFIG, alert.id());
                 }
                 sp<AnomalyTracker> anomalyTracker = oldAnomalyTrackers[oldAnomalyTrackerIt->second];
                 anomalyTracker->onConfigUpdated();
@@ -1095,7 +1142,9 @@ bool updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
                 if (metricProducerIt == metricProducerMap.end()) {
                     ALOGW("alert \"%lld\" has unknown metric id: \"%lld\"", (long long)alert.id(),
                           (long long)alert.metric_id());
-                    return false;
+                    return createInvalidConfigReasonWithAlert(
+                            INVALID_CONFIG_REASON_ALERT_METRIC_NOT_FOUND, alert.metric_id(),
+                            alert.id());
                 }
                 allMetricProducers[metricProducerIt->second]->addAnomalyTracker(anomalyTracker,
                                                                                 currentTimeNs);
@@ -1104,11 +1153,11 @@ bool updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
             }
             case UPDATE_REPLACE:
             case UPDATE_NEW: {
-                optional<sp<AnomalyTracker>> anomalyTracker =
-                        createAnomalyTracker(alert, anomalyAlarmMonitor, alertUpdateStatuses[i],
-                                             currentTimeNs, metricProducerMap, allMetricProducers);
+                optional<sp<AnomalyTracker>> anomalyTracker = createAnomalyTracker(
+                        alert, anomalyAlarmMonitor, alertUpdateStatuses[i], currentTimeNs,
+                        metricProducerMap, allMetricProducers, invalidConfigReason);
                 if (!anomalyTracker) {
-                    return false;
+                    return invalidConfigReason;
                 }
                 newAnomalyTrackers.push_back(anomalyTracker.value());
                 break;
@@ -1116,15 +1165,17 @@ bool updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
             default: {
                 ALOGE("Alert \"%lld\" update state is unknown. This should never happen",
                       (long long)alert.id());
-                return false;
+                return createInvalidConfigReasonWithAlert(
+                        INVALID_CONFIG_REASON_ALERT_UPDATE_STATUS_UNKNOWN, alert.id());
             }
         }
     }
-    if (!initSubscribersForSubscriptionType(config, Subscription::ALERT, newAlertTrackerMap,
-                                            newAnomalyTrackers)) {
-        return false;
+    invalidConfigReason = initSubscribersForSubscriptionType(
+            config, Subscription::ALERT, newAlertTrackerMap, newAnomalyTrackers);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
-    return true;
+    return nullopt;
 }
 
 optional<InvalidConfigReason> updateStatsdConfig(
@@ -1171,28 +1222,31 @@ optional<InvalidConfigReason> updateStatsdConfig(
         return InvalidConfigReason(INVALID_CONFIG_REASON_PACKAGE_CERT_HASH_SIZE_TOO_LARGE);
     }
 
-    optional<InvalidConfigReason> invalidConfigReason;
-    if (!updateAtomMatchingTrackers(config, uidMap, oldAtomMatchingTrackerMap,
-                                    oldAtomMatchingTrackers, allTagIdsToMatchersMap,
-                                    newAtomMatchingTrackerMap, newAtomMatchingTrackers,
-                                    replacedMatchers)) {
+    optional<InvalidConfigReason> invalidConfigReason = updateAtomMatchingTrackers(
+            config, uidMap, oldAtomMatchingTrackerMap, oldAtomMatchingTrackers,
+            allTagIdsToMatchersMap, newAtomMatchingTrackerMap, newAtomMatchingTrackers,
+            replacedMatchers);
+    if (invalidConfigReason.has_value()) {
         ALOGE("updateAtomMatchingTrackers failed");
-        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
+        return invalidConfigReason;
     }
 
-    if (!updateConditions(key, config, newAtomMatchingTrackerMap, replacedMatchers,
-                          oldConditionTrackerMap, oldConditionTrackers, newConditionTrackerMap,
-                          newConditionTrackers, trackerToConditionMap, conditionCache,
-                          replacedConditions)) {
+    invalidConfigReason = updateConditions(
+            key, config, newAtomMatchingTrackerMap, replacedMatchers, oldConditionTrackerMap,
+            oldConditionTrackers, newConditionTrackerMap, newConditionTrackers,
+            trackerToConditionMap, conditionCache, replacedConditions);
+    if (invalidConfigReason.has_value()) {
         ALOGE("updateConditions failed");
-        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
+        return invalidConfigReason;
     }
 
-    if (!updateStates(config, oldStateProtoHashes, stateAtomIdMap, allStateGroupMaps,
-                      newStateProtoHashes, replacedStates)) {
+    invalidConfigReason = updateStates(config, oldStateProtoHashes, stateAtomIdMap,
+                                       allStateGroupMaps, newStateProtoHashes, replacedStates);
+    if (invalidConfigReason.has_value()) {
         ALOGE("updateStates failed");
-        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
+        return invalidConfigReason;
     }
+
     invalidConfigReason = updateMetrics(
             key, config, timeBaseNs, currentTimeNs, pullerManager, oldAtomMatchingTrackerMap,
             newAtomMatchingTrackerMap, replacedMatchers, newAtomMatchingTrackers,
@@ -1206,18 +1260,20 @@ optional<InvalidConfigReason> updateStatsdConfig(
         return invalidConfigReason;
     }
 
-    if (!updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
-                      oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
-                      newMetricProducers, newAlertTrackerMap, newAnomalyTrackers)) {
+    invalidConfigReason = updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
+                                       oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
+                                       newMetricProducers, newAlertTrackerMap, newAnomalyTrackers);
+    if (invalidConfigReason.has_value()) {
         ALOGE("updateAlerts failed");
-        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
+        return invalidConfigReason;
     }
 
+    invalidConfigReason = initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
+                                     newPeriodicAlarmTrackers);
     // Alarms do not have any state, so we can reuse the initialization logic.
-    if (!initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
-                    newPeriodicAlarmTrackers)) {
+    if (invalidConfigReason.has_value()) {
         ALOGE("initAlarms failed");
-        return InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN);
+        return invalidConfigReason;
     }
     return nullopt;
 }

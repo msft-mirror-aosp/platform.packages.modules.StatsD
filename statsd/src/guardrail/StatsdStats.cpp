@@ -1145,6 +1145,51 @@ InvalidConfigReason createInvalidConfigReasonWithState(const InvalidConfigReason
     return invalidConfigReason;
 }
 
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithAlarm(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alarmId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.alarmId = alarmId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscription(const InvalidConfigReasonEnum reason,
+                                                              const int64_t subscriptionId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlarm(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alarmId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    invalidConfigReason.alarmId = alarmId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlert(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

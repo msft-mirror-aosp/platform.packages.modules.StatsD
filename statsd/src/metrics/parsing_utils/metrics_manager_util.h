@@ -37,21 +37,25 @@ namespace statsd {
 // input:
 // [logMatcher]: the input AtomMatcher from the StatsdConfig
 // [index]: the index of the matcher
+// [invalidConfigReason]: logging ids if config is invalid
 // output:
 // new AtomMatchingTracker, or null if the tracker is unable to be created
-sp<AtomMatchingTracker> createAtomMatchingTracker(const AtomMatcher& logMatcher, const int index,
-                                                  const sp<UidMap>& uidMap);
+sp<AtomMatchingTracker> createAtomMatchingTracker(
+        const AtomMatcher& logMatcher, const int index, const sp<UidMap>& uidMap,
+        optional<InvalidConfigReason>& invalidConfigReason);
 
 // Create a ConditionTracker.
 // input:
 // [predicate]: the input Predicate from the StatsdConfig
 // [index]: the index of the condition tracker
 // [atomMatchingTrackerMap]: map of atom matcher id to its index in allAtomMatchingTrackers
+// [invalidConfigReason]: logging ids if config is invalid
 // output:
 // new ConditionTracker, or null if the tracker is unable to be created
 sp<ConditionTracker> createConditionTracker(
         const ConfigKey& key, const Predicate& predicate, const int index,
-        const unordered_map<int64_t, int>& atomMatchingTrackerMap);
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        optional<InvalidConfigReason>& invalidConfigReason);
 
 // Get the hash of a metric, combining the activation if the metric has one.
 optional<InvalidConfigReason> getMetricProtoHash(
@@ -220,14 +224,15 @@ optional<sp<AnomalyTracker>> createAnomalyTracker(
         const Alert& alert, const sp<AlarmMonitor>& anomalyAlarmMonitor,
         const UpdateStatus& updateStatus, const int64_t currentTimeNs,
         const std::unordered_map<int64_t, int>& metricProducerMap,
-        std::vector<sp<MetricProducer>>& allMetricProducers);
+        std::vector<sp<MetricProducer>>& allMetricProducers,
+        optional<InvalidConfigReason>& invalidConfigReason);
 
-// Templated function for adding subscriptions to alarms or alerts. Returns true if successful.
+// Templated function for adding subscriptions to alarms or alerts. Returns nullopt if successful
+// and InvalidConfigReason if not.
 template <typename T>
-bool initSubscribersForSubscriptionType(const StatsdConfig& config,
-                                        const Subscription_RuleType ruleType,
-                                        const std::unordered_map<int64_t, int>& ruleMap,
-                                        std::vector<T>& allRules) {
+optional<InvalidConfigReason> initSubscribersForSubscriptionType(
+        const StatsdConfig& config, const Subscription_RuleType ruleType,
+        const std::unordered_map<int64_t, int>& ruleMap, std::vector<T>& allRules) {
     for (int i = 0; i < config.subscription_size(); ++i) {
         const Subscription& subscription = config.subscription(i);
         if (subscription.rule_type() != ruleType) {
@@ -236,18 +241,31 @@ bool initSubscribersForSubscriptionType(const StatsdConfig& config,
         if (subscription.subscriber_information_case() ==
             Subscription::SubscriberInformationCase::SUBSCRIBER_INFORMATION_NOT_SET) {
             ALOGW("subscription \"%lld\" has no subscriber info.\"", (long long)subscription.id());
-            return false;
+            return createInvalidConfigReasonWithSubscription(
+                    INVALID_CONFIG_REASON_SUBSCRIPTION_SUBSCRIBER_INFO_MISSING, subscription.id());
         }
         const auto& itr = ruleMap.find(subscription.rule_id());
         if (itr == ruleMap.end()) {
             ALOGW("subscription \"%lld\" has unknown rule id: \"%lld\"",
                   (long long)subscription.id(), (long long)subscription.rule_id());
-            return false;
+            switch (subscription.rule_type()) {
+                case Subscription::ALARM:
+                    return createInvalidConfigReasonWithSubscriptionAndAlarm(
+                            INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND, subscription.id(),
+                            subscription.rule_id());
+                case Subscription::ALERT:
+                    return createInvalidConfigReasonWithSubscriptionAndAlert(
+                            INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND, subscription.id(),
+                            subscription.rule_id());
+                case Subscription::RULE_TYPE_UNSPECIFIED:
+                    return createInvalidConfigReasonWithSubscription(
+                            INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND, subscription.id());
+            }
         }
         const int ruleIndex = itr->second;
         allRules[ruleIndex]->addSubscription(subscription);
     }
-    return true;
+    return nullopt;
 }
 
 // Helper functions for MetricsManager to initialize from StatsdConfig.
@@ -264,10 +282,12 @@ bool initSubscribersForSubscriptionType(const StatsdConfig& config,
 // [atomMatchingTrackerMap]: this map should contain matcher name to index mapping
 // [allAtomMatchingTrackers]: should store the sp to all the AtomMatchingTracker
 // [allTagIdsToMatchersMap]: maps of tag ids to atom matchers
-bool initAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidMap,
-                              std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-                              std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                              std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap);
+// Returns nullopt if successful and InvalidConfigReason if not.
+optional<InvalidConfigReason> initAtomMatchingTrackers(
+        const StatsdConfig& config, const sp<UidMap>& uidMap,
+        std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap);
 
 // Initialize ConditionTrackers
 // input:
@@ -280,12 +300,14 @@ bool initAtomMatchingTrackers(const StatsdConfig& config, const sp<UidMap>& uidM
 // [trackerToConditionMap]: contain the mapping from index of
 //                        log tracker to condition trackers that use the log tracker
 // [initialConditionCache]: stores the initial conditions for each ConditionTracker
-bool initConditions(const ConfigKey& key, const StatsdConfig& config,
-                    const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-                    std::unordered_map<int64_t, int>& conditionTrackerMap,
-                    std::vector<sp<ConditionTracker>>& allConditionTrackers,
-                    std::unordered_map<int, std::vector<int>>& trackerToConditionMap,
-                    std::vector<ConditionState>& initialConditionCache);
+// Returns nullopt if successful and InvalidConfigReason if not.
+optional<InvalidConfigReason> initConditions(
+        const ConfigKey& key, const StatsdConfig& config,
+        const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        std::unordered_map<int64_t, int>& conditionTrackerMap,
+        std::vector<sp<ConditionTracker>>& allConditionTrackers,
+        std::unordered_map<int, std::vector<int>>& trackerToConditionMap,
+        std::vector<ConditionState>& initialConditionCache);
 
 // Initialize State maps using State protos in the config. These maps will
 // eventually be passed to MetricProducers to initialize their state info.
@@ -296,9 +318,11 @@ bool initConditions(const ConfigKey& key, const StatsdConfig& config,
 // [allStateGroupMaps]: this map should contain the mapping from states ids and state
 //                      values to state group ids for all states
 // [stateProtoHashes]: contains a map of state id to the hash of the State proto from the config
-bool initStates(const StatsdConfig& config, unordered_map<int64_t, int>& stateAtomIdMap,
-                unordered_map<int64_t, unordered_map<int, int64_t>>& allStateGroupMaps,
-                std::map<int64_t, uint64_t>& stateProtoHashes);
+// Returns nullopt if successful and InvalidConfigReason if not.
+optional<InvalidConfigReason> initStates(
+        const StatsdConfig& config, unordered_map<int64_t, int>& stateAtomIdMap,
+        unordered_map<int64_t, unordered_map<int, int64_t>>& allStateGroupMaps,
+        std::map<int64_t, uint64_t>& stateProtoHashes);
 
 // Initialize MetricProducers.
 // input:
@@ -336,9 +360,10 @@ optional<InvalidConfigReason> initMetrics(
 
 // Initialize alarms
 // Is called both on initialize new configs and config updates since alarms do not have any state.
-bool initAlarms(const StatsdConfig& config, const ConfigKey& key,
-                const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
-                const int64_t currentTimeNs, std::vector<sp<AlarmTracker>>& allAlarmTrackers);
+optional<InvalidConfigReason> initAlarms(const StatsdConfig& config, const ConfigKey& key,
+                                         const sp<AlarmMonitor>& periodicAlarmMonitor,
+                                         const int64_t timeBaseNs, const int64_t currentTimeNs,
+                                         std::vector<sp<AlarmTracker>>& allAlarmTrackers);
 
 // Initialize MetricsManager from StatsdConfig.
 // Parameters are the members of MetricsManager. See MetricsManager for declaration.

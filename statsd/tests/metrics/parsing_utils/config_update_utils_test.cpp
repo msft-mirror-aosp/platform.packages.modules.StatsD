@@ -155,9 +155,10 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherPreserve) {
     vector<bool> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
-    EXPECT_TRUE(determineMatcherUpdateStatus(config, 0, oldAtomMatchingTrackerMap,
-                                             oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                             matchersToUpdate, cycleTracker));
+    EXPECT_EQ(determineMatcherUpdateStatus(config, 0, oldAtomMatchingTrackerMap,
+                                           oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                                           matchersToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(matchersToUpdate[0], UPDATE_PRESERVE);
 }
 
@@ -179,9 +180,10 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherReplace) {
     vector<bool> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
-    EXPECT_TRUE(determineMatcherUpdateStatus(newConfig, 0, oldAtomMatchingTrackerMap,
-                                             oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                             matchersToUpdate, cycleTracker));
+    EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 0, oldAtomMatchingTrackerMap,
+                                           oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                                           matchersToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(matchersToUpdate[0], UPDATE_REPLACE);
 }
 
@@ -203,9 +205,10 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherNew) {
     vector<bool> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
-    EXPECT_TRUE(determineMatcherUpdateStatus(newConfig, 0, oldAtomMatchingTrackerMap,
-                                             oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                             matchersToUpdate, cycleTracker));
+    EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 0, oldAtomMatchingTrackerMap,
+                                           oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                                           matchersToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(matchersToUpdate[0], UPDATE_NEW);
 }
 
@@ -243,9 +246,10 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherPreserve) {
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
     vector<bool> cycleTracker(3, false);
     // Only update the combination. It should recurse the two child matchers and preserve all 3.
-    EXPECT_TRUE(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
-                                             oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                             matchersToUpdate, cycleTracker));
+    EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
+                                           oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                                           matchersToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(matchersToUpdate[0], UPDATE_PRESERVE);
     EXPECT_EQ(matchersToUpdate[1], UPDATE_PRESERVE);
     EXPECT_EQ(matchersToUpdate[2], UPDATE_PRESERVE);
@@ -287,9 +291,10 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherReplace) {
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
     vector<bool> cycleTracker(3, false);
     // Only update the combination. The simple matchers should not be evaluated.
-    EXPECT_TRUE(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
-                                             oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                             matchersToUpdate, cycleTracker));
+    EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
+                                           oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                                           matchersToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(matchersToUpdate[0], UPDATE_UNKNOWN);
     EXPECT_EQ(matchersToUpdate[1], UPDATE_REPLACE);
     EXPECT_EQ(matchersToUpdate[2], UPDATE_UNKNOWN);
@@ -331,9 +336,10 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherDepsChange) {
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
     vector<bool> cycleTracker(3, false);
     // Only update the combination.
-    EXPECT_TRUE(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
-                                             oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                             matchersToUpdate, cycleTracker));
+    EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
+                                           oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                                           matchersToUpdate, cycleTracker),
+              nullopt);
     // Matcher 2 and matcher3 must be reevaluated. Matcher 1 might, but does not need to be.
     EXPECT_EQ(matchersToUpdate[0], UPDATE_REPLACE);
     EXPECT_EQ(matchersToUpdate[1], UPDATE_REPLACE);
@@ -404,9 +410,11 @@ TEST_F(ConfigUpdateTest, TestUpdateMatchers) {
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
     set<int64_t> replacedMatchers;
-    EXPECT_TRUE(updateAtomMatchingTrackers(
-            newConfig, uidMap, oldAtomMatchingTrackerMap, oldAtomMatchingTrackers, newTagIds,
-            newAtomMatchingTrackerMap, newAtomMatchingTrackers, replacedMatchers));
+    EXPECT_EQ(updateAtomMatchingTrackers(newConfig, uidMap, oldAtomMatchingTrackerMap,
+                                         oldAtomMatchingTrackers, newTagIds,
+                                         newAtomMatchingTrackerMap, newAtomMatchingTrackers,
+                                         replacedMatchers),
+              nullopt);
 
     ASSERT_EQ(newTagIds.size(), 3);
     EXPECT_EQ(newTagIds.count(10), 1);
@@ -509,9 +517,10 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionPreserve) {
     vector<bool> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
-    EXPECT_TRUE(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
-                                               oldConditionTrackers, newConditionTrackerMap,
-                                               replacedMatchers, conditionsToUpdate, cycleTracker));
+    EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
+                                             oldConditionTrackers, newConditionTrackerMap,
+                                             replacedMatchers, conditionsToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(conditionsToUpdate[0], UPDATE_PRESERVE);
 }
 
@@ -535,9 +544,10 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionReplace) {
     vector<bool> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
-    EXPECT_TRUE(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
-                                               oldConditionTrackers, newConditionTrackerMap,
-                                               replacedMatchers, conditionsToUpdate, cycleTracker));
+    EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
+                                             oldConditionTrackers, newConditionTrackerMap,
+                                             replacedMatchers, conditionsToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(conditionsToUpdate[0], UPDATE_REPLACE);
 }
 
@@ -562,9 +572,10 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionDepsChange) {
     vector<bool> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
-    EXPECT_TRUE(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
-                                               oldConditionTrackers, newConditionTrackerMap,
-                                               replacedMatchers, conditionsToUpdate, cycleTracker));
+    EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
+                                             oldConditionTrackers, newConditionTrackerMap,
+                                             replacedMatchers, conditionsToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(conditionsToUpdate[0], UPDATE_REPLACE);
 }
 
@@ -604,9 +615,10 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionPreserve) {
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
     vector<bool> cycleTracker(3, false);
     // Only update the combination. It should recurse the two child predicates and preserve all 3.
-    EXPECT_TRUE(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
-                                               oldConditionTrackers, newConditionTrackerMap,
-                                               replacedMatchers, conditionsToUpdate, cycleTracker));
+    EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
+                                             oldConditionTrackers, newConditionTrackerMap,
+                                             replacedMatchers, conditionsToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(conditionsToUpdate[0], UPDATE_PRESERVE);
     EXPECT_EQ(conditionsToUpdate[1], UPDATE_PRESERVE);
     EXPECT_EQ(conditionsToUpdate[2], UPDATE_PRESERVE);
@@ -650,9 +662,10 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionReplace) {
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
     vector<bool> cycleTracker(3, false);
     // Only update the combination. The simple conditions should not be evaluated.
-    EXPECT_TRUE(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
-                                               oldConditionTrackers, newConditionTrackerMap,
-                                               replacedMatchers, conditionsToUpdate, cycleTracker));
+    EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
+                                             oldConditionTrackers, newConditionTrackerMap,
+                                             replacedMatchers, conditionsToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(conditionsToUpdate[0], UPDATE_REPLACE);
     EXPECT_EQ(conditionsToUpdate[1], UPDATE_UNKNOWN);
     EXPECT_EQ(conditionsToUpdate[2], UPDATE_UNKNOWN);
@@ -695,9 +708,10 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionDepsChange) {
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
     vector<bool> cycleTracker(3, false);
     // Only update the combination. Simple2 and combination1 must be evaluated.
-    EXPECT_TRUE(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
-                                               oldConditionTrackers, newConditionTrackerMap,
-                                               replacedMatchers, conditionsToUpdate, cycleTracker));
+    EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
+                                             oldConditionTrackers, newConditionTrackerMap,
+                                             replacedMatchers, conditionsToUpdate, cycleTracker),
+              nullopt);
     EXPECT_EQ(conditionsToUpdate[0], UPDATE_REPLACE);
     EXPECT_EQ(conditionsToUpdate[1], UPDATE_REPLACE);
 }
@@ -832,10 +846,11 @@ TEST_F(ConfigUpdateTest, TestUpdateConditions) {
     unordered_map<int, vector<int>> trackerToConditionMap;
     vector<ConditionState> conditionCache;
     set<int64_t> replacedConditions;
-    EXPECT_TRUE(updateConditions(key, newConfig, newAtomMatchingTrackerMap, replacedMatchers,
-                                 oldConditionTrackerMap, oldConditionTrackers,
-                                 newConditionTrackerMap, newConditionTrackers,
-                                 trackerToConditionMap, conditionCache, replacedConditions));
+    EXPECT_EQ(updateConditions(key, newConfig, newAtomMatchingTrackerMap, replacedMatchers,
+                               oldConditionTrackerMap, oldConditionTrackers, newConditionTrackerMap,
+                               newConditionTrackers, trackerToConditionMap, conditionCache,
+                               replacedConditions),
+              nullopt);
 
     unordered_map<int64_t, int> expectedConditionTrackerMap = {
             {simple1Id, simple1Index},           {simple2Id, simple2Index},
@@ -966,8 +981,9 @@ TEST_F(ConfigUpdateTest, TestUpdateStates) {
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
     map<int64_t, uint64_t> newStateProtoHashes;
     set<int64_t> replacedStates;
-    EXPECT_TRUE(updateStates(newConfig, oldStateHashes, stateAtomIdMap, allStateGroupMaps,
-                             newStateProtoHashes, replacedStates));
+    EXPECT_EQ(updateStates(newConfig, oldStateHashes, stateAtomIdMap, allStateGroupMaps,
+                           newStateProtoHashes, replacedStates),
+              nullopt);
     EXPECT_THAT(replacedStates, ContainerEq(set({state1Id, state3Id})));
 
     unordered_map<int64_t, int> expectedStateAtomIdMap = {
@@ -2167,7 +2183,7 @@ TEST_F(ConfigUpdateTest, TestUpdateCountMetrics) {
     unordered_map<int64_t, int> stateAtomIdMap;
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
     map<int64_t, uint64_t> stateProtoHashes;
-    EXPECT_TRUE(initStates(newConfig, stateAtomIdMap, allStateGroupMaps, stateProtoHashes));
+    EXPECT_EQ(initStates(newConfig, stateAtomIdMap, allStateGroupMaps, stateProtoHashes), nullopt);
     EXPECT_EQ(stateAtomIdMap[state2Id], util::BATTERY_SAVER_MODE_STATE_CHANGED);
 
     // Output data structures to validate.
@@ -2668,16 +2684,18 @@ TEST_F(ConfigUpdateTest, TestUpdateDurationMetrics) {
     vector<Predicate> conditionProtos(5);
     reverse_copy(config.predicate().begin(), config.predicate().end(), conditionProtos.begin());
     for (int i = 0; i < newConditionTrackers.size(); i++) {
-        EXPECT_TRUE(newConditionTrackers[i]->onConfigUpdated(
-                conditionProtos, i, newConditionTrackers, newAtomMatchingTrackerMap,
-                newConditionTrackerMap));
+        EXPECT_EQ(newConditionTrackers[i]->onConfigUpdated(conditionProtos, i, newConditionTrackers,
+                                                           newAtomMatchingTrackerMap,
+                                                           newConditionTrackerMap),
+                  nullopt);
     }
     vector<bool> cycleTracker(5, false);
     fill(conditionCache.begin(), conditionCache.end(), ConditionState::kNotEvaluated);
     for (int i = 0; i < newConditionTrackers.size(); i++) {
-        EXPECT_TRUE(newConditionTrackers[i]->init(conditionProtos, newConditionTrackers,
-                                                  newConditionTrackerMap, cycleTracker,
-                                                  conditionCache));
+        EXPECT_EQ(
+                newConditionTrackers[i]->init(conditionProtos, newConditionTrackers,
+                                              newConditionTrackerMap, cycleTracker, conditionCache),
+                nullopt);
     }
     // Predicate5 should be true since 2 uids have wakelocks
     EXPECT_EQ(conditionCache, vector({kTrue, kFalse, kUnknown, kUnknown, kUnknown}));
@@ -2702,7 +2720,7 @@ TEST_F(ConfigUpdateTest, TestUpdateDurationMetrics) {
     unordered_map<int64_t, int> stateAtomIdMap;
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
     map<int64_t, uint64_t> stateProtoHashes;
-    EXPECT_TRUE(initStates(newConfig, stateAtomIdMap, allStateGroupMaps, stateProtoHashes));
+    EXPECT_EQ(initStates(newConfig, stateAtomIdMap, allStateGroupMaps, stateProtoHashes), nullopt);
 
     // Output data structures to validate.
     unordered_map<int64_t, int> newMetricProducerMap;
@@ -2970,7 +2988,7 @@ TEST_F(ConfigUpdateTest, TestUpdateValueMetrics) {
     unordered_map<int64_t, int> stateAtomIdMap;
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
     map<int64_t, uint64_t> stateProtoHashes;
-    EXPECT_TRUE(initStates(newConfig, stateAtomIdMap, allStateGroupMaps, stateProtoHashes));
+    EXPECT_EQ(initStates(newConfig, stateAtomIdMap, allStateGroupMaps, stateProtoHashes), nullopt);
 
     // Output data structures to validate.
     unordered_map<int64_t, int> newMetricProducerMap;
@@ -3629,8 +3647,9 @@ TEST_F(ConfigUpdateTest, TestAlertPreserve) {
     EXPECT_TRUE(initConfig(config));
 
     UpdateStatus updateStatus = UPDATE_UNKNOWN;
-    EXPECT_TRUE(determineAlertUpdateStatus(alert, oldAlertTrackerMap, oldAnomalyTrackers,
-                                           /*replacedMetrics*/ {}, updateStatus));
+    EXPECT_EQ(determineAlertUpdateStatus(alert, oldAlertTrackerMap, oldAnomalyTrackers,
+                                         /*replacedMetrics*/ {}, updateStatus),
+              nullopt);
     EXPECT_EQ(updateStatus, UPDATE_PRESERVE);
 }
 
@@ -3647,8 +3666,9 @@ TEST_F(ConfigUpdateTest, TestAlertMetricChanged) {
     EXPECT_TRUE(initConfig(config));
 
     UpdateStatus updateStatus = UPDATE_UNKNOWN;
-    EXPECT_TRUE(determineAlertUpdateStatus(alert, oldAlertTrackerMap, oldAnomalyTrackers,
-                                           /*replacedMetrics*/ {metric.id()}, updateStatus));
+    EXPECT_EQ(determineAlertUpdateStatus(alert, oldAlertTrackerMap, oldAnomalyTrackers,
+                                         /*replacedMetrics*/ {metric.id()}, updateStatus),
+              nullopt);
     EXPECT_EQ(updateStatus, UPDATE_REPLACE);
 }
 
@@ -3666,8 +3686,9 @@ TEST_F(ConfigUpdateTest, TestAlertDefinitionChanged) {
     alert.set_num_buckets(2);
 
     UpdateStatus updateStatus = UPDATE_UNKNOWN;
-    EXPECT_TRUE(determineAlertUpdateStatus(alert, oldAlertTrackerMap, oldAnomalyTrackers,
-                                           /*replacedMetrics*/ {}, updateStatus));
+    EXPECT_EQ(determineAlertUpdateStatus(alert, oldAlertTrackerMap, oldAnomalyTrackers,
+                                         /*replacedMetrics*/ {}, updateStatus),
+              nullopt);
     EXPECT_EQ(updateStatus, UPDATE_REPLACE);
 }
 
@@ -3778,9 +3799,10 @@ TEST_F(ConfigUpdateTest, TestUpdateAlerts) {
 
     unordered_map<int64_t, int> newAlertTrackerMap;
     vector<sp<AnomalyTracker>> newAnomalyTrackers;
-    EXPECT_TRUE(updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
-                             oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
-                             newMetricProducers, newAlertTrackerMap, newAnomalyTrackers));
+    EXPECT_EQ(updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
+                           oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
+                           newMetricProducers, newAlertTrackerMap, newAnomalyTrackers),
+              nullopt);
 
     unordered_map<int64_t, int> expectedAlertMap = {
             {alert1Id, alert1Index},
@@ -3875,8 +3897,9 @@ TEST_F(ConfigUpdateTest, TestUpdateAlarms) {
     // Update time is 2 seconds after the base time.
     int64_t currentTimeNs = timeBaseNs + 2 * NS_PER_SEC;
     vector<sp<AlarmTracker>> newAlarmTrackers;
-    EXPECT_TRUE(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
-                           newAlarmTrackers));
+    EXPECT_EQ(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
+                         newAlarmTrackers),
+              nullopt);
 
     ASSERT_EQ(newAlarmTrackers.size(), 3);
     // Config is updated 2 seconds after statsd start
@@ -3906,8 +3929,9 @@ TEST_F(ConfigUpdateTest, TestUpdateAlarms) {
     // Do another update 60 seconds after config creation time, after the offsets of each alarm.
     currentTimeNs = timeBaseNs + 60 * NS_PER_SEC;
     newAlarmTrackers.clear();
-    EXPECT_TRUE(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
-                           newAlarmTrackers));
+    EXPECT_EQ(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
+                         newAlarmTrackers),
+              nullopt);
 
     ASSERT_EQ(newAlarmTrackers.size(), 3);
     // Config is updated one minute after statsd start.

@@ -135,12 +135,11 @@ StatsdConfig buildAlertWithUnknownMetric() {
     StatsdConfig config;
     config.set_id(12345);
 
-    AtomMatcher* eventMatcher = config.add_atom_matcher();
-    eventMatcher->set_id(StringToId("SCREEN_IS_ON"));
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
     CountMetric* metric = config.add_count_metric();
     metric->set_id(3);
-    metric->set_what(StringToId("SCREEN_IS_ON"));
+    metric->set_what(StringToId("ScreenTurnedOn"));
     metric->set_bucket(ONE_MINUTE);
     metric->mutable_dimensions_in_what()->set_field(2 /*SCREEN_STATE_CHANGE*/);
     metric->mutable_dimensions_in_what()->add_child()->set_field(1);
@@ -548,6 +547,11 @@ TEST(MetricsManagerTest, TestCircleLogMatcherDependency) {
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
 
+    optional<InvalidConfigReason> expectedInvalidConfigReason =
+            createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_MATCHER_CYCLE,
+                                                 StringToId("SCREEN_ON_OR_OFF"));
+    expectedInvalidConfigReason->matcherIds.push_back(StringToId("SCREEN_ON_OR_OFF"));
+
     EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
                                periodicAlarmMonitor, timeBaseSec, timeBaseSec,
                                allTagIdsToMatchersMap, allAtomMatchingTrackers,
@@ -557,7 +561,7 @@ TEST(MetricsManagerTest, TestCircleLogMatcherDependency) {
                                trackerToConditionMap, activationAtomTrackerToMetricMap,
                                deactivationAtomTrackerToMetricMap, alertTrackerMap,
                                metricsWithActivation, stateProtoHashes, noReportMetricIds),
-              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
+              expectedInvalidConfigReason);
 }
 
 TEST(MetricsManagerTest, TestMissingMatchers) {
@@ -584,6 +588,12 @@ TEST(MetricsManagerTest, TestMissingMatchers) {
     vector<int> metricsWithActivation;
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
+
+    optional<InvalidConfigReason> expectedInvalidConfigReason =
+            createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_MATCHER_CHILD_NOT_FOUND,
+                                                 StringToId("SCREEN_ON_OR_OFF"));
+    expectedInvalidConfigReason->matcherIds.push_back(StringToId("ABC"));
+
     EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
                                periodicAlarmMonitor, timeBaseSec, timeBaseSec,
                                allTagIdsToMatchersMap, allAtomMatchingTrackers,
@@ -593,7 +603,7 @@ TEST(MetricsManagerTest, TestMissingMatchers) {
                                trackerToConditionMap, activationAtomTrackerToMetricMap,
                                deactivationAtomTrackerToMetricMap, alertTrackerMap,
                                metricsWithActivation, stateProtoHashes, noReportMetricIds),
-              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
+              expectedInvalidConfigReason);
 }
 
 TEST(MetricsManagerTest, TestMissingPredicate) {
@@ -659,6 +669,11 @@ TEST(MetricsManagerTest, TestCirclePredicateDependency) {
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
 
+    optional<InvalidConfigReason> expectedInvalidConfigReason =
+            createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_CONDITION_CYCLE,
+                                                   StringToId("SCREEN_IS_EITHER_ON_OFF"));
+    expectedInvalidConfigReason->conditionIds.push_back(StringToId("SCREEN_IS_EITHER_ON_OFF"));
+
     EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
                                periodicAlarmMonitor, timeBaseSec, timeBaseSec,
                                allTagIdsToMatchersMap, allAtomMatchingTrackers,
@@ -668,7 +683,7 @@ TEST(MetricsManagerTest, TestCirclePredicateDependency) {
                                trackerToConditionMap, activationAtomTrackerToMetricMap,
                                deactivationAtomTrackerToMetricMap, alertTrackerMap,
                                metricsWithActivation, stateProtoHashes, noReportMetricIds),
-              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
+              expectedInvalidConfigReason);
 }
 
 TEST(MetricsManagerTest, testAlertWithUnknownMetric) {
@@ -695,7 +710,6 @@ TEST(MetricsManagerTest, testAlertWithUnknownMetric) {
     vector<int> metricsWithActivation;
     map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
-
     EXPECT_EQ(initStatsdConfig(kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor,
                                periodicAlarmMonitor, timeBaseSec, timeBaseSec,
                                allTagIdsToMatchersMap, allAtomMatchingTrackers,
@@ -705,7 +719,8 @@ TEST(MetricsManagerTest, testAlertWithUnknownMetric) {
                                trackerToConditionMap, activationAtomTrackerToMetricMap,
                                deactivationAtomTrackerToMetricMap, alertTrackerMap,
                                metricsWithActivation, stateProtoHashes, noReportMetricIds),
-              InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN));
+              createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_METRIC_NOT_FOUND,
+                                                 /*metric id=*/2, /*matcher id=*/3));
 }
 
 TEST(MetricsManagerTest, TestCreateAtomMatchingTrackerInvalidMatcher) {
@@ -713,7 +728,11 @@ TEST(MetricsManagerTest, TestCreateAtomMatchingTrackerInvalidMatcher) {
     AtomMatcher matcher;
     // Matcher has no contents_case (simple/combination), so it is invalid.
     matcher.set_id(21);
-    EXPECT_EQ(createAtomMatchingTracker(matcher, 0, uidMap), nullptr);
+    optional<InvalidConfigReason> invalidConfigReason;
+    EXPECT_EQ(createAtomMatchingTracker(matcher, 0, uidMap, invalidConfigReason), nullptr);
+    EXPECT_EQ(invalidConfigReason,
+              createInvalidConfigReasonWithMatcher(
+                      INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE, matcher.id()));
 }
 
 TEST(MetricsManagerTest, TestCreateAtomMatchingTrackerSimple) {
@@ -729,8 +748,11 @@ TEST(MetricsManagerTest, TestCreateAtomMatchingTrackerSimple) {
     simpleAtomMatcher->mutable_field_value_matcher(0)->set_eq_int(
             android::view::DisplayStateEnum::DISPLAY_STATE_ON);
 
-    sp<AtomMatchingTracker> tracker = createAtomMatchingTracker(matcher, index, uidMap);
+    optional<InvalidConfigReason> invalidConfigReason;
+    sp<AtomMatchingTracker> tracker =
+            createAtomMatchingTracker(matcher, index, uidMap, invalidConfigReason);
     EXPECT_NE(tracker, nullptr);
+    EXPECT_EQ(invalidConfigReason, nullopt);
 
     EXPECT_TRUE(tracker->mInitialized);
     EXPECT_EQ(tracker->getId(), id);
@@ -751,8 +773,11 @@ TEST(MetricsManagerTest, TestCreateAtomMatchingTrackerCombination) {
     combination->add_matcher(123);
     combination->add_matcher(223);
 
-    sp<AtomMatchingTracker> tracker = createAtomMatchingTracker(matcher, index, uidMap);
+    optional<InvalidConfigReason> invalidConfigReason;
+    sp<AtomMatchingTracker> tracker =
+            createAtomMatchingTracker(matcher, index, uidMap, invalidConfigReason);
     EXPECT_NE(tracker, nullptr);
+    EXPECT_EQ(invalidConfigReason, nullopt);
 
     // Combination matchers need to be initialized first.
     EXPECT_FALSE(tracker->mInitialized);
@@ -768,7 +793,12 @@ TEST(MetricsManagerTest, TestCreateConditionTrackerInvalid) {
     Predicate predicate;
     predicate.set_id(21);
     unordered_map<int64_t, int> atomTrackerMap;
-    EXPECT_EQ(createConditionTracker(key, predicate, 0, atomTrackerMap), nullptr);
+    optional<InvalidConfigReason> invalidConfigReason;
+    EXPECT_EQ(createConditionTracker(key, predicate, 0, atomTrackerMap, invalidConfigReason),
+              nullptr);
+    EXPECT_EQ(invalidConfigReason,
+              createInvalidConfigReasonWithPredicate(
+                      INVALID_CONFIG_REASON_CONDITION_MALFORMED_CONTENTS_CASE, predicate.id()));
 }
 
 TEST(MetricsManagerTest, TestCreateConditionTrackerSimple) {
@@ -791,7 +821,10 @@ TEST(MetricsManagerTest, TestCreateConditionTrackerSimple) {
     atomTrackerMap[stopMatcherId] = stopMatcherIndex;
     atomTrackerMap[stopAllMatcherId] = stopAllMatcherIndex;
 
-    sp<ConditionTracker> tracker = createConditionTracker(key, predicate, index, atomTrackerMap);
+    optional<InvalidConfigReason> invalidConfigReason;
+    sp<ConditionTracker> tracker =
+            createConditionTracker(key, predicate, index, atomTrackerMap, invalidConfigReason);
+    EXPECT_EQ(invalidConfigReason, nullopt);
     EXPECT_EQ(tracker->getConditionId(), id);
     EXPECT_EQ(tracker->isSliced(), false);
     EXPECT_TRUE(tracker->IsSimpleCondition());
@@ -816,7 +849,10 @@ TEST(MetricsManagerTest, TestCreateConditionTrackerCombination) {
 
     // Combination conditions must be initialized to set most state.
     unordered_map<int64_t, int> atomTrackerMap;
-    sp<ConditionTracker> tracker = createConditionTracker(key, predicate, index, atomTrackerMap);
+    optional<InvalidConfigReason> invalidConfigReason;
+    sp<ConditionTracker> tracker =
+            createConditionTracker(key, predicate, index, atomTrackerMap, invalidConfigReason);
+    EXPECT_EQ(invalidConfigReason, nullopt);
     EXPECT_EQ(tracker->getConditionId(), id);
     EXPECT_FALSE(tracker->IsSimpleCondition());
 }
@@ -830,10 +866,14 @@ TEST(MetricsManagerTest, TestCreateAnomalyTrackerInvalidMetric) {
 
     sp<AlarmMonitor> anomalyAlarmMonitor;
     vector<sp<MetricProducer>> metricProducers;
+    optional<InvalidConfigReason> invalidConfigReason;
     // Pass in empty metric producers, causing an error.
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123, {},
-                                   metricProducers),
+                                   metricProducers, invalidConfigReason),
               nullopt);
+    EXPECT_EQ(invalidConfigReason,
+              createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_METRIC_NOT_FOUND,
+                                                 alert.metric_id(), alert.id()));
 }
 
 TEST(MetricsManagerTest, TestCreateAnomalyTrackerNoThreshold) {
@@ -850,9 +890,13 @@ TEST(MetricsManagerTest, TestCreateAnomalyTrackerNoThreshold) {
     vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
             kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
+    optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
-                                   {{1, 0}}, metricProducers),
+                                   {{1, 0}}, metricProducers, invalidConfigReason),
               nullopt);
+    EXPECT_EQ(invalidConfigReason,
+              createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_THRESHOLD_MISSING,
+                                                 alert.id()));
 }
 
 TEST(MetricsManagerTest, TestCreateAnomalyTrackerMissingBuckets) {
@@ -869,9 +913,13 @@ TEST(MetricsManagerTest, TestCreateAnomalyTrackerMissingBuckets) {
     vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
             kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
+    optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
-                                   {{1, 0}}, metricProducers),
+                                   {{1, 0}}, metricProducers, invalidConfigReason),
               nullopt);
+    EXPECT_EQ(invalidConfigReason,
+              createInvalidConfigReasonWithAlert(
+                      INVALID_CONFIG_REASON_ALERT_INVALID_TRIGGER_OR_NUM_BUCKETS, alert.id()));
 }
 
 TEST(MetricsManagerTest, TestCreateAnomalyTrackerGood) {
@@ -889,9 +937,11 @@ TEST(MetricsManagerTest, TestCreateAnomalyTrackerGood) {
     vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
             kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
+    optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_NE(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
-                                   {{1, 0}}, metricProducers),
+                                   {{1, 0}}, metricProducers, invalidConfigReason),
               nullopt);
+    EXPECT_EQ(invalidConfigReason, nullopt);
 }
 
 TEST(MetricsManagerTest, TestCreateAnomalyTrackerDurationTooLong) {
@@ -914,9 +964,13 @@ TEST(MetricsManagerTest, TestCreateAnomalyTrackerDurationTooLong) {
             1 /* start index */, 2 /* stop index */, 3 /* stop_all index */, false /*nesting*/,
             wizard, 0x0123456789, dimensions, 0, 0)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
+    optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
-                                   {{1, 0}}, metricProducers),
+                                   {{1, 0}}, metricProducers, invalidConfigReason),
               nullopt);
+    EXPECT_EQ(invalidConfigReason,
+              createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_CANNOT_ADD_ANOMALY,
+                                                 alert.metric_id(), alert.id()));
 }
 
 TEST(MetricsManagerTest, TestCreateDurationProducerDimensionsInWhatInvalid) {

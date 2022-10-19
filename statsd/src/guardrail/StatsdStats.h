@@ -35,6 +35,9 @@ struct InvalidConfigReason {
     InvalidConfigReasonEnum reason;
     std::optional<int64_t> metricId;
     std::optional<int64_t> stateId;
+    std::optional<int64_t> alertId;
+    std::optional<int64_t> alarmId;
+    std::optional<int64_t> subscriptionId;
     std::vector<int64_t> matcherIds;
     std::vector<int64_t> conditionIds;
     InvalidConfigReason(){};
@@ -43,8 +46,9 @@ struct InvalidConfigReason {
         : reason(reason), metricId(metricId){};
     bool operator==(const InvalidConfigReason& other) const {
         return (this->reason == other.reason) && (this->metricId == other.metricId) &&
-               (this->stateId == other.stateId) && (this->matcherIds == other.matcherIds) &&
-               (this->conditionIds == other.conditionIds);
+               (this->stateId == other.stateId) && (this->alertId == other.alertId) &&
+               (this->alarmId == other.alarmId) && (this->subscriptionId == other.subscriptionId) &&
+               (this->matcherIds == other.matcherIds) && (this->conditionIds == other.conditionIds);
     }
 };
 
@@ -717,6 +721,25 @@ InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigRe
 InvalidConfigReason createInvalidConfigReasonWithState(const InvalidConfigReasonEnum reason,
                                                        const int64_t metricId,
                                                        const int64_t stateId);
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alertId);
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t alertId);
+
+InvalidConfigReason createInvalidConfigReasonWithAlarm(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alarmId);
+
+InvalidConfigReason createInvalidConfigReasonWithSubscription(const InvalidConfigReasonEnum reason,
+                                                              const int64_t subscriptionId);
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlarm(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alarmId);
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlert(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alertId);
 
 }  // namespace statsd
 }  // namespace os
