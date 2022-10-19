@@ -55,6 +55,12 @@ public class ShellSubscriberTest extends AtomTestCase {
     protected void setUp() throws Exception {
         super.setUp();
         sizetBytes = getSizetBytes();
+        Runtime runtime = Runtime.getRuntime();
+        LogUtil.CLog.d("Total processors available to Java Virtual Machine: "
+                       + runtime.availableProcessors());
+        LogUtil.CLog.d("Total amount of free memory in Java Virtual Machine: "
+                       + runtime.freeMemory());
+        Process process = runtime.exec("adb shell log 'statsd: Testing logging from subprocess'");
     }
 
     private void killProcess(Process process) throws Exception {
@@ -76,25 +82,53 @@ public class ShellSubscriberTest extends AtomTestCase {
         super.tearDown();
     }
 
-    public void testShellSubscription() {
+    public void testShellSubscriptionOld() {
         if (sizetBytes < 0) {
             return;
         }
 
-        CollectingByteOutputReceiver receiver = startSubscription();
-        checkOutput(receiver);
+        ShellConfig.ShellSubscription config = createConfigOld();
+        CollectingByteOutputReceiver receiver = new CollectingByteOutputReceiver();
+        startSubscriptionOld(config, receiver, /*maxTimeoutForCommandSec=*/5,
+                /*subscriptionTimeSec=*/5);
+        checkOutputOld(receiver);
+    }
+
+    public void testShellSubscriptionNew() {
+        if (sizetBytes < 0) {
+            return;
+        }
+
+        CollectingByteOutputReceiver receiver = startSubscriptionNew();
+        checkOutputNew(receiver);
+    }
+
+    public void testShellSubscriptionReconnectOld() {
+        if (sizetBytes < 0) {
+            return;
+        }
+
+        ShellConfig.ShellSubscription config = createConfigOld();
+        for (int i = 0; i < 5; i++) {
+            CollectingByteOutputReceiver receiver = new CollectingByteOutputReceiver();
+            // A subscription time of -1 means that statsd will not impose a timeout on the
+            // subscription. Thus, the client will exit before statsd ends the subscription.
+            startSubscriptionOld(config, receiver, /*maxTimeoutForCommandSec=*/5,
+                    /*subscriptionTimeSec=*/-1);
+            checkOutputOld(receiver);
+        }
     }
 
     // This is testShellSubscription but 5x
-    public void testShellSubscriptionReconnect() {
+    public void testShellSubscriptionReconnectNew() {
         int numOfSubs = 5;
         if (sizetBytes < 0) {
             return;
         }
 
         for (int i = 0; i < numOfSubs; i++) {
-            CollectingByteOutputReceiver receiver = startSubscription();
-            checkOutput(receiver);
+            CollectingByteOutputReceiver receiver = startSubscriptionNew();
+            checkOutputNew(receiver);
         }
     }
 
@@ -108,7 +142,7 @@ public class ShellSubscriberTest extends AtomTestCase {
         }
         CollectingByteOutputReceiver[] receivers = new CollectingByteOutputReceiver[maxSubs + 1];
         Process[] processes = new Process[maxSubs + 1];
-        ShellConfig.ShellSubscription config = createConfig();
+        ShellConfig.ShellSubscription config = createConfigNew();
         byte[] validConfig = makeValidConfig(config);
         // timeout of -1 means the subscription won't timeout
         int timeout = -1;
@@ -130,7 +164,7 @@ public class ShellSubscriberTest extends AtomTestCase {
                 killProcess(processes[i]);
                 processList.remove(processes[i]);
                 receivers[i] = readData(processes[i]);
-                checkOutput(receivers[i]);
+                checkOutputNew(receivers[i]);
             }
             // Sleep 2.5 seconds to make sure the processes are killed and resources are released.
             Thread.sleep(2500);
@@ -166,7 +200,7 @@ public class ShellSubscriberTest extends AtomTestCase {
             fail(e.getMessage());
         }
         for (int i = 0; i < maxSubs; i++) {
-            checkOutput(receivers[i]);
+            checkOutputNew(receivers[i]);
         }
         byte[] output = receivers[maxSubs].getOutput();
         assertThat(output.length).isEqualTo(0);
@@ -190,7 +224,16 @@ public class ShellSubscriberTest extends AtomTestCase {
     // Choose a pulled atom that is likely to be supported on all devices (SYSTEM_UPTIME). Testing
     // pushed atoms is trickier because executeShellCommand() is blocking, so we cannot push a
     // breadcrumb event while the shell subscription is running.
-    private ShellConfig.ShellSubscription createConfig() {
+    private ShellConfig.ShellSubscription createConfigOld() {
+        return ShellConfig.ShellSubscription.newBuilder()
+                .addPulled(ShellConfig.PulledAtomSubscription.newBuilder()
+                        .setMatcher(StatsdConfigProto.SimpleAtomMatcher.newBuilder()
+                                .setAtomId(Atom.SYSTEM_UPTIME_FIELD_NUMBER))
+                        .setFreqMillis(2000))
+                .build();
+    }
+
+    private ShellConfig.ShellSubscription createConfigNew() {
         return ShellConfig.ShellSubscription.newBuilder()
                 .addPushed((StatsdConfigProto.SimpleAtomMatcher.newBuilder()
                                 .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER))
@@ -227,8 +270,41 @@ public class ShellSubscriberTest extends AtomTestCase {
         return receiver;
     }
 
-    private CollectingByteOutputReceiver startSubscription() {
-        ShellConfig.ShellSubscription config = createConfig();
+    private void startSubscriptionOld(
+            ShellConfig.ShellSubscription config,
+            CollectingByteOutputReceiver receiver,
+            int maxTimeoutForCommandSec,
+            int subscriptionTimeSec) {
+        LogUtil.CLog.d("Uploading the following config:\n" + config.toString());
+        try {
+            File configFile = File.createTempFile("shellconfig", ".config");
+            configFile.deleteOnExit();
+            int length = config.toByteArray().length;
+            byte[] combined = new byte[sizetBytes + config.toByteArray().length];
+
+            System.arraycopy(IntToByteArrayLittleEndian(length), 0, combined, 0, sizetBytes);
+            System.arraycopy(config.toByteArray(), 0, combined, sizetBytes, length);
+
+            Files.write(combined, configFile);
+            String remotePath = "/data/local/tmp/" + configFile.getName();
+            getDevice().pushFile(configFile, remotePath);
+            LogUtil.CLog.d("waiting....................");
+
+            String cmd = String.join(" ", "cat", remotePath, "|", "cmd stats data-subscribe",
+                  String.valueOf(subscriptionTimeSec));
+
+
+            getDevice().executeShellCommand(cmd, receiver, maxTimeoutForCommandSec,
+                    /*maxTimeToOutputShellResponse=*/maxTimeoutForCommandSec, TimeUnit.SECONDS,
+                    /*retryAttempts=*/0);
+            getDevice().executeShellCommand("rm " + remotePath);
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+    }
+
+    private CollectingByteOutputReceiver startSubscriptionNew() {
+        ShellConfig.ShellSubscription config = createConfigNew();
         LogUtil.CLog.d("Uploading the following config:\n" + config.toString());
         byte[] validConfig = makeValidConfig(config);
         int timeout = 2;
@@ -257,8 +333,44 @@ public class ShellSubscriberTest extends AtomTestCase {
         return b.array();
     }
 
+    private void checkOutputOld(CollectingByteOutputReceiver receiver) {
+        int atomCount = 0;
+        int startIndex = 0;
+
+        byte[] output = receiver.getOutput();
+        assertThat(output.length).isGreaterThan(0);
+        while (output.length > startIndex) {
+            assertThat(output.length).isAtLeast(startIndex + sizetBytes);
+            int dataLength = readSizetFromByteArray(output, startIndex);
+            if (dataLength == 0) {
+                // We have received a heartbeat from statsd. This heartbeat isn't accompanied by any
+                // atoms so return to top of while loop.
+                startIndex += sizetBytes;
+                continue;
+            }
+            assertThat(output.length).isAtLeast(startIndex + sizetBytes + dataLength);
+
+            ShellDataProto.ShellData data = null;
+            try {
+                int dataStart = startIndex + sizetBytes;
+                int dataEnd = dataStart + dataLength;
+                data = ShellDataProto.ShellData.parseFrom(
+                        Arrays.copyOfRange(output, dataStart, dataEnd));
+            } catch (InvalidProtocolBufferException e) {
+                fail("Failed to parse proto");
+            }
+
+            assertThat(data.getAtomCount()).isEqualTo(1);
+            assertThat(data.getAtom(0).hasSystemUptime()).isTrue();
+            assertThat(data.getAtom(0).getSystemUptime().getUptimeMillis()).isGreaterThan(0L);
+            atomCount++;
+            startIndex += sizetBytes + dataLength;
+        }
+        assertThat(atomCount).isGreaterThan(0);
+    }
+
     // We do not know how much data will be returned, but we can check the data format.
-    private void checkOutput(CollectingByteOutputReceiver receiver) {
+    private void checkOutputNew(CollectingByteOutputReceiver receiver) {
         int atomCount = 0;
         int startIndex = 0;
 
