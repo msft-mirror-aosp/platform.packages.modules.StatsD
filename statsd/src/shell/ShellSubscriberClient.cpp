@@ -90,8 +90,8 @@ bool ShellSubscriberClient::readConfig() {
         }
 
         mPulledInfo.emplace_back(pulled.matcher(), pulled.freq_millis(), packages, uids);
-        VLOG("ShellSubscriberClient: adding matcher for pulled atom %d",
-             pulled.matcher().atom_id());
+        ALOGD("ShellSubscriberClient: adding matcher for pulled atom %d",
+              pulled.matcher().atom_id());
     }
 
     return true;
