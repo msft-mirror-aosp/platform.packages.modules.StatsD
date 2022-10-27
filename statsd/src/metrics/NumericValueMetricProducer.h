@@ -109,7 +109,7 @@ private:
 
     void appendToFullBucket(const bool isFullBucketReached);
 
-    bool hitFullBucketGuardRailLocked(const MetricDimensionKey& newKey) const;
+    bool hitFullBucketGuardRailLocked(const MetricDimensionKey& newKey);
 
     inline bool canSkipLogEventLocked(
             const MetricDimensionKey& eventKey, const bool condition, const int64_t eventTimeNs,
