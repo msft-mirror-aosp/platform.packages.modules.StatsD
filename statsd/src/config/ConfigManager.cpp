@@ -102,9 +102,7 @@ void ConfigManager::UpdateConfig(const ConfigKey& key, const StatsdConfig& confi
         // Add to set.
         mConfigs[key.GetUid()].insert(key);
 
-        for (const sp<ConfigListener>& listener : mListeners) {
-            broadcastList.push_back(listener);
-        }
+        broadcastList = mListeners;
     }
 
     const int64_t timestampNs = getElapsedRealtimeNs();
@@ -165,9 +163,7 @@ void ConfigManager::RemoveConfig(const ConfigKey& key) {
             // Remove from map
             uidIt->second.erase(key);
 
-            for (const sp<ConfigListener>& listener : mListeners) {
-                broadcastList.push_back(listener);
-            }
+            broadcastList = mListeners;
         }
 
         // Remove from disk. There can still be a lingering file on disk so we check
@@ -204,9 +200,7 @@ void ConfigManager::RemoveConfigs(int uid) {
 
         mConfigs.erase(uidIt);
 
-        for (const sp<ConfigListener>& listener : mListeners) {
-            broadcastList.push_back(listener);
-        }
+        broadcastList = mListeners;
     }
 
     // Remove separately so if they do anything in the callback they can't mess up our iteration.
@@ -233,9 +227,7 @@ void ConfigManager::RemoveAllConfigs() {
             uidIt = mConfigs.erase(uidIt);
         }
 
-        for (const sp<ConfigListener>& listener : mListeners) {
-            broadcastList.push_back(listener);
-        }
+        broadcastList = mListeners;
     }
 
     // Remove separately so if they do anything in the callback they can't mess up our iteration.
