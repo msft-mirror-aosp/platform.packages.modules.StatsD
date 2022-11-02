@@ -67,7 +67,8 @@ TEST_F(KllMetricE2eTest, TestSimpleMetric) {
     uint64_t dumpTimeNs = bucketStartTimeNs + bucketSizeNs;
     ConfigMetricsReportList reports;
     vector<uint8_t> buffer;
-    processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    processor->onDumpReport(key, dumpTimeNs, /*include_current_bucket*/ false, true, ADB_DUMP, FAST,
+                            &buffer);
     EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
     backfillDimensionPath(&reports);
     backfillStringInReport(&reports);

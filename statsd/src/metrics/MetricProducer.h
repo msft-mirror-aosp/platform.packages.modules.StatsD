@@ -563,6 +563,9 @@ protected:
     // Buckets that were invalidated and had their data dropped.
     std::vector<SkippedBucket> mSkippedBuckets;
 
+    // If hard dimension guardrail is hit, do not spam logcat
+    bool mHasHitGuardrail;
+
     FRIEND_TEST(CountMetricE2eTest, TestSlicedState);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithMap);
     FRIEND_TEST(CountMetricE2eTest, TestMultipleSlicedStates);

@@ -312,8 +312,11 @@ bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
-            ALOGE("CountMetric %lld dropping data for dimension key %s",
-                (long long)mMetricId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("CountMetric %lld dropping data for dimension key %s", (long long)mMetricId,
+                      newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -450,6 +453,8 @@ void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
     // (Do not clear since the old one is still referenced in mAnomalyTrackers).
     mCurrentSlicedCounter = std::make_shared<DimToValMap>();
     mCurrentBucketStartTimeNs = nextBucketStartTimeNs;
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
 }
 
 // Rough estimate of CountMetricProducer buffer stored. This number will be
