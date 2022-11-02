@@ -441,6 +441,13 @@ message StatsdStatsReport {
 
     message InvalidConfigReason {
       optional InvalidConfigReasonEnum reason = 1;
+      optional int64 metric_id = 2;
+      optional int64 state_id = 3;
+      optional int64 alert_id = 4;
+      optional int64 alarm_id = 5;
+      optional int64 subscription_id = 6;
+      repeated int64 matcher_id = 7;
+      repeated int64 condition_id = 8;
     }
 
     message MatcherStats {

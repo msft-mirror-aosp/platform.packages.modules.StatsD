@@ -689,6 +689,8 @@ private:
 
     FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigAdd);
+    FRIEND_TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId);
+    FRIEND_TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId);
     FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
     FRIEND_TEST(StatsdStatsTest, TestSubStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomLog);
