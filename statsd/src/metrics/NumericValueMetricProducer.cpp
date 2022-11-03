@@ -333,8 +333,7 @@ void NumericValueMetricProducer::accumulateEvents(const vector<shared_ptr<LogEve
     }
 }
 
-bool NumericValueMetricProducer::hitFullBucketGuardRailLocked(
-        const MetricDimensionKey& newKey) const {
+bool NumericValueMetricProducer::hitFullBucketGuardRailLocked(const MetricDimensionKey& newKey) {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mCurrentFullBucket.find(newKey) != mCurrentFullBucket.end()) {
@@ -344,8 +343,11 @@ bool NumericValueMetricProducer::hitFullBucketGuardRailLocked(
         size_t newTupleCount = mCurrentFullBucket.size() + 1;
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (newTupleCount > mDimensionHardLimit) {
-            ALOGE("ValueMetric %lld dropping data for full bucket dimension key %s",
-                  (long long)mMetricId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("ValueMetric %lld dropping data for full bucket dimension key %s",
+                      (long long)mMetricId, newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             return true;
         }
     }
