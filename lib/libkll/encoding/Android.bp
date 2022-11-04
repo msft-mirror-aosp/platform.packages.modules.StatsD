@@ -23,6 +23,7 @@ package {
 
 cc_library_static {
     name: "libkll-encoder",
+    host_supported: true,
     srcs: [
         "encoder.cpp",
         "varint.cpp",
