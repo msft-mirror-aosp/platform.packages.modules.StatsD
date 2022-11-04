@@ -82,9 +82,9 @@ struct ConfigStats {
 };
 
 struct UidMapStats {
-    int32_t changes;
-    int32_t bytes_used;
-    int32_t dropped_changes;
+    int32_t changes = 0;
+    int32_t bytes_used = 0;
+    int32_t dropped_changes = 0;
     int32_t deleted_apps = 0;
 };
 
