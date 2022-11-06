@@ -33,12 +33,9 @@ import com.google.common.io.Files;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 import java.io.File;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
-import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 import android.cts.statsd.atom.AtomTestCase;
 
@@ -48,32 +45,33 @@ import android.cts.statsd.atom.AtomTestCase;
 public class ShellSubscriberTest extends AtomTestCase {
     private int sizetBytes;
 
-    // ArrayList to keep track of all active spawned data-subscribe processes
-    ArrayList<Process> processList = new ArrayList<Process>();
+    public class ShellSubscriptionThread extends Thread {
+        String cmd;
+        CollectingByteOutputReceiver receiver;
+        int maxTimeoutForCommandSec;
+        public ShellSubscriptionThread(
+                String cmd,
+                CollectingByteOutputReceiver receiver,
+                int maxTimeoutForCommandSec) {
+            this.cmd = cmd;
+            this.receiver = receiver;
+            this.maxTimeoutForCommandSec = maxTimeoutForCommandSec;
+        }
+        public void run () {
+            try {
+                getDevice().executeShellCommand(cmd, receiver, maxTimeoutForCommandSec,
+                        /*maxTimeToOutputShellResponse=*/maxTimeoutForCommandSec, TimeUnit.SECONDS,
+                        /*retryAttempts=*/0);
+            } catch (Exception e) {
+                fail(e.getMessage());
+            }
+        }
+    }
 
     @Override
     protected void setUp() throws Exception {
         super.setUp();
         sizetBytes = getSizetBytes();
-    }
-
-    private void killProcess(Process process) throws Exception {
-        // Sending SIGINT to end subscription and then waiting to make sure
-        // process terminated. Note: some resources may need more time to
-        // be deconstructed; e.g. private thread
-        Runtime runtime = Runtime.getRuntime();
-        runtime.exec("kill -SIGINT " + String.valueOf(process.pid()));
-        process.waitFor();
-    }
-
-    @Override
-    protected void tearDown() throws Exception {
-        // Kill all remaining processes if any
-        for (Process process : processList) {
-            killProcess(process);
-        }
-        processList.clear();
-        super.tearDown();
     }
 
     public void testShellSubscription() {
@@ -98,8 +96,12 @@ public class ShellSubscriberTest extends AtomTestCase {
         }
     }
 
-    // Tests that multiple clients can run at once and ignores subscription requests
-    // after the subscription limit is hit (20 active subscriptions).
+    // Tests that multiple clients can run at once:
+    // -Runs maximum number of active subscriptions (20) at once.
+    // -Maximum number of subscriptions minus 1 return:
+    // --Leave 1 subscription alive to ensure the subscriber helper thread stays alive.
+    // -Run maximum number of subscriptions minus 1 to reach the maximum running again.
+    // -Attempt to run one more subscription, which will fail.
     public void testShellMaxSubscriptions() {
         // Maximum number of active subscriptions, set in ShellSubscriber.h
         int maxSubs = 20;
@@ -107,63 +109,94 @@ public class ShellSubscriberTest extends AtomTestCase {
             return;
         }
         CollectingByteOutputReceiver[] receivers = new CollectingByteOutputReceiver[maxSubs + 1];
-        Process[] processes = new Process[maxSubs + 1];
+        ShellSubscriptionThread[] shellThreads = new ShellSubscriptionThread[maxSubs + 1];
         ShellConfig.ShellSubscription config = createConfig();
         byte[] validConfig = makeValidConfig(config);
-        // timeout of -1 means the subscription won't timeout
-        int timeout = -1;
-        try {
-            for (int i = 0; i < maxSubs; i++) {
-                processes[i] = runDataSubscribe(validConfig, timeout);
-            }
-            // Sleep 2.5 seconds to make sure all subscription clients are initialized before
-            // first pushed event
-            Thread.sleep(2500);
 
-            // arbitrary label = 1
+        // timeout of 5 sec for all subscriptions except for the first
+        int timeout = 5;
+        // timeout of 25 sec to ensure that the first subscription stays active for two sessions
+        // of creating the maximum number of subscriptions
+        int firstSubTimeout = 25;
+        try {
+            // Push the shell config file to the device
+            String remotePath = pushShellConfigToDevice(validConfig);
+
+            String cmd = "cat " + remotePath + " |  cmd stats data-subscribe " + timeout;
+            String firstSubCmd =
+                        "cat " + remotePath + " |  cmd stats data-subscribe " + firstSubTimeout;
+
+            for (int i = 0; i < maxSubs; i++) {
+                // Run data-subscribe on a thread
+                receivers[i] = new CollectingByteOutputReceiver();
+                if (i == 0) {
+                    shellThreads[i] =
+                        new ShellSubscriptionThread(firstSubCmd, receivers[i], firstSubTimeout);
+                } else {
+                    shellThreads[i] =
+                        new ShellSubscriptionThread(cmd, receivers[i], timeout);
+                }
+                shellThreads[i].start();
+                LogUtil.CLog.d("Starting new shell subscription.");
+            }
+            // Sleep 2 seconds to make sure all subscription clients are initialized before
+            // first pushed event
+            Thread.sleep(2000);
+
+            // Pushed event. arbitrary label = 1
             doAppBreadcrumbReported(1);
 
-            // Sleep 2.5 seconds to make sure the processes read the breadcrumb before being killed.
-            Thread.sleep(2500);
-
+            // Make sure the last 19 threads die before moving to the next step.
+            // First subscription is still active due to its longer timeout that is used keep
+            // the subscriber helper thread alive
             for (int i = 1; i < maxSubs; i++) {
-                killProcess(processes[i]);
-                processList.remove(processes[i]);
-                receivers[i] = readData(processes[i]);
+                shellThreads[i].join();
+            }
+
+            // Validate the outputs of the last 19 subscriptions since they are finished
+            for (int i = 1; i < maxSubs; i++) {
                 checkOutput(receivers[i]);
             }
-            // Sleep 2.5 seconds to make sure the processes are killed and resources are released.
-            Thread.sleep(2500);
 
+            // Run 19 more subscriptions to hit the maximum active subscriptions again
             for (int i = 1; i < maxSubs; i++) {
-                processes[i] = runDataSubscribe(validConfig, timeout);
+                // Run data-subscribe on a thread
+                receivers[i] = new CollectingByteOutputReceiver();
+                shellThreads[i] =
+                    new ShellSubscriptionThread(cmd, receivers[i], timeout);
+                shellThreads[i].start();
+                LogUtil.CLog.d("Starting new shell subscription.");
             }
-            // Sleep 2.5 seconds to make sure all subscription clients are initialized before
+            // Sleep 2 seconds to make sure all subscription clients are initialized before
             // pushed event
-            Thread.sleep(2500);
-
-            // arbitrary label = 1
-            doAppBreadcrumbReported(1);
-
-            // Sleep 2.5 seconds to make sure the processes read the breadcrumb before being killed.
-            Thread.sleep(2500);
+            Thread.sleep(2000);
 
             // ShellSubscriber only allows 20 subscriptions at a time. This is the 21st which will
             // be ignored
-            processes[maxSubs] = runDataSubscribe(validConfig, timeout);
+            receivers[maxSubs] = new CollectingByteOutputReceiver();
+            shellThreads[maxSubs] =
+                new ShellSubscriptionThread(cmd, receivers[maxSubs], timeout);
+            shellThreads[maxSubs].start();
+
+            // Sleep 1 seconds to ensure that the 21st subscription is rejected
+            Thread.sleep(1000);
+
+            // Pushed event. arbitrary label = 1
+            doAppBreadcrumbReported(1);
+
+            // Make sure all the threads die before moving to the next step
             for (int i = 0; i <= maxSubs; i++) {
-                killProcess(processes[i]);
-                processList.remove(processes[i]);
-                receivers[i] = readData(processes[i]);
+                shellThreads[i].join();
             }
-            // Sleep 2.5 seconds to make sure the processes are killed and resources are released.
-            Thread.sleep(2500);
+            // Remove config from device if not already deleted
+            getDevice().executeShellCommand("rm " + remotePath);
         } catch (Exception e) {
             fail(e.getMessage());
         }
         for (int i = 0; i < maxSubs; i++) {
             checkOutput(receivers[i]);
         }
+        // Ensure that the 21st subscription got rejected and has an empty output
         byte[] output = receivers[maxSubs].getOutput();
         assertThat(output.length).isEqualTo(0);
     }
@@ -183,9 +216,6 @@ public class ShellSubscriberTest extends AtomTestCase {
         }
     }
 
-    // Choose a pulled atom that is likely to be supported on all devices (SYSTEM_UPTIME). Testing
-    // pushed atoms is trickier because executeShellCommand() is blocking, so we cannot push a
-    // breadcrumb event while the shell subscription is running.
     private ShellConfig.ShellSubscription createConfig() {
         return ShellConfig.ShellSubscription.newBuilder()
                 .addPushed((StatsdConfigProto.SimpleAtomMatcher.newBuilder()
@@ -201,49 +231,52 @@ public class ShellSubscriberTest extends AtomTestCase {
         return validConfig;
     }
 
-    private Process runDataSubscribe(byte[] validConfig, int timeout) throws Exception {
-        Runtime runtime = Runtime.getRuntime();
-        Process process = runtime.exec("adb shell cmd stats data-subscribe " + timeout);
-        LogUtil.CLog.d("Starting new shell subscription.");
-        processList.add(process);
-        OutputStream stdin = process.getOutputStream();
-        stdin.write(validConfig);
-        stdin.close();
-        return process;
-    }
+    private String pushShellConfigToDevice(byte[] validConfig) {
+        try {
+            File configFile = File.createTempFile("shellconfig", ".config");
+            configFile.deleteOnExit();
+            Files.write(validConfig, configFile);
+            String remotePath = "/data/local/tmp/" + configFile.getName();
+            getDevice().pushFile(configFile, remotePath);
+            return remotePath;
 
-    private CollectingByteOutputReceiver readData(Process process) throws Exception {
-        // Reading shell_data and passing it to the receiver struct
-        InputStream stdout = process.getInputStream();
-        byte[] output = stdout.readAllBytes();
-        LogUtil.CLog.d("output.length in readData: " + output.length);
-        CollectingByteOutputReceiver receiver = new CollectingByteOutputReceiver();
-        receiver.addOutput(output, 0, output.length);
-        stdout.close();
-        return receiver;
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+        return "";
     }
 
     private CollectingByteOutputReceiver startSubscription() {
         ShellConfig.ShellSubscription config = createConfig();
+        CollectingByteOutputReceiver receiver = new CollectingByteOutputReceiver();
         LogUtil.CLog.d("Uploading the following config:\n" + config.toString());
         byte[] validConfig = makeValidConfig(config);
+        // timeout of 2 sec for both data-subscribe command and executeShellCommand in thread
         int timeout = 2;
         try {
-            Process process = runDataSubscribe(validConfig, timeout);
+            // Push the shell config file to the device
+            String remotePath = pushShellConfigToDevice(validConfig);
+
+            String cmd = "cat " + remotePath + " |  cmd stats data-subscribe " + timeout;
+            // Run data-subscribe on a thread
+            ShellSubscriptionThread shellThread =
+                                    new ShellSubscriptionThread(cmd, receiver, timeout);
+            shellThread.start();
+            LogUtil.CLog.d("Starting new shell subscription.");
+
             // Sleep a second to make sure subscription is initiated
             Thread.sleep(1000);
-            // arbitrary label = 1
+
+            // Pushed event. arbitrary label = 1
             doAppBreadcrumbReported(1);
-            // Wait for process to timeout. If the process does not timeout, kill the process
-            if (!process.waitFor(2, TimeUnit.SECONDS)) {
-                killProcess(process);
-            }
-            processList.remove(process);
-            return readData(process);
+            // Wait for thread to die before returning
+            shellThread.join();
+            // Remove config from device if not already deleted
+            getDevice().executeShellCommand("rm " + remotePath);
         } catch (Exception e) {
             fail(e.getMessage());
         }
-        return new CollectingByteOutputReceiver();
+        return receiver;
     }
 
     private byte[] IntToByteArrayLittleEndian(int length) {

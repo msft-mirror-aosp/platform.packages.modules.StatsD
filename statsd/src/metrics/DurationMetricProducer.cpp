@@ -600,6 +600,8 @@ void DurationMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs
     }
     StatsdStats::getInstance().noteBucketCount(mMetricId);
     mCurrentBucketStartTimeNs = nextBucketStartTimeNs;
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
 }
 
 void DurationMetricProducer::dumpStatesLocked(FILE* out, bool verbose) const {
@@ -627,8 +629,11 @@ bool DurationMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey
                     mConfigKey, mMetricId, newTupleCount);
             // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
             if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
-                ALOGE("DurationMetric %lld dropping data for what dimension key %s",
-                    (long long)mMetricId, newKey.getDimensionKeyInWhat().toString().c_str());
+                if (!mHasHitGuardrail) {
+                    ALOGE("DurationMetric %lld dropping data for what dimension key %s",
+                          (long long)mMetricId, newKey.getDimensionKeyInWhat().toString().c_str());
+                    mHasHitGuardrail = true;
+                }
                 StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
                 return true;
             }

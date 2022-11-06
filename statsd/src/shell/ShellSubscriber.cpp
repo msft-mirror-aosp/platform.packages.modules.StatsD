@@ -41,7 +41,7 @@ ShellSubscriber::~ShellSubscriber() {
 // Create new ShellSubscriberClient to manage a new subscription
 bool ShellSubscriber::startNewSubscription(int in, int out, int64_t timeoutSec) {
     std::unique_lock<std::mutex> lock(mMutex);
-    VLOG("ShellSubscriber: new subscription has come in");
+    ALOGD("ShellSubscriber: new subscription has come in");
     if (mClientSet.size() >= kMaxSubscriptions) {
         ALOGE("ShellSubscriber: cannot have another active subscription. Current Subscriptions: "
               "%zu. Limit: %zu",
@@ -70,7 +70,7 @@ bool ShellSubscriber::startNewSubscription(int in, int out, int64_t timeoutSec) 
 
 // Sends heartbeat signals and sleeps between doing work
 void ShellSubscriber::pullAndSendHeartbeats() {
-    VLOG("ShellSubscriber: helper thread starting");
+    ALOGD("ShellSubscriber: helper thread starting");
     std::unique_lock<std::mutex> lock(mMutex);
     while (true) {
         int64_t sleepTimeMs = INT_MAX;
@@ -84,12 +84,13 @@ void ShellSubscriber::pullAndSendHeartbeats() {
             if ((*clientIt)->isAlive()) {
                 ++clientIt;
             } else {
+                ALOGD("ShellSubscriber: removing client!");
                 clientIt = mClientSet.erase(clientIt);
             }
         }
         if (mClientSet.empty()) {
             mThreadAlive = false;
-            VLOG("ShellSubscriber: helper thread done!");
+            ALOGD("ShellSubscriber: helper thread done!");
             return;
         }
         VLOG("ShellSubscriber: helper thread sleeping for %" PRId64 "ms", sleepTimeMs);
@@ -104,6 +105,7 @@ void ShellSubscriber::onLogEvent(const LogEvent& event) {
         if ((*clientIt)->isAlive()) {
             ++clientIt;
         } else {
+            ALOGD("ShellSubscriber: removing client!");
             clientIt = mClientSet.erase(clientIt);
         }
     }
