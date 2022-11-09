@@ -293,6 +293,11 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
         const DumpLatency dumpLatency, set<string>* strSet, ProtoOutputStream* protoOutput) {
     VLOG("metric %lld dump report now...", (long long)mMetricId);
 
+    // Pulled metrics need to pull before flushing, which is why they do not call flushIfNeeded.
+    // TODO: b/249823426 see if we can pull and call flushIfneeded for pulled value metrics.
+    if (!isPulled()) {
+        flushIfNeededLocked(dumpTimeNs);
+    }
     if (includeCurrentPartialBucket) {
         // For pull metrics, we need to do a pull at bucket boundaries. If we do not do that the
         // current bucket will have incomplete data and the next will have the wrong snapshot to do
@@ -609,7 +614,7 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::hasReachedGuardRailLimit()
 
 template <typename AggregatedValue, typename DimExtras>
 bool ValueMetricProducer<AggregatedValue, DimExtras>::hitGuardRailLocked(
-        const MetricDimensionKey& newKey) const {
+        const MetricDimensionKey& newKey) {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mCurrentSlicedBucket.find(newKey) != mCurrentSlicedBucket.end()) {
@@ -620,8 +625,11 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::hitGuardRailLocked(
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (hasReachedGuardRailLimit()) {
-            ALOGE("ValueMetricProducer %lld dropping data for dimension key %s",
-                  (long long)mMetricId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("ValueMetricProducer %lld dropping data for dimension key %s",
+                      (long long)mMetricId, newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -874,6 +882,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
     mCurrentSkippedBucket.reset();
 
     mCurrentBucketStartTimeNs = nextBucketStartTimeNs;
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
     VLOG("metric %lld: new bucket start time: %lld", (long long)mMetricId,
          (long long)mCurrentBucketStartTimeNs);
 }
