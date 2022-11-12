@@ -49,4 +49,7 @@ java_test_host {
         "platformprotos",
         "guava",
     ],
+    data: [
+        "test/external-atoms.proto",
+    ],
 }
