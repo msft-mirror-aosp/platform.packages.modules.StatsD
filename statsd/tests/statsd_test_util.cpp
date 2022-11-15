@@ -86,6 +86,11 @@ AtomMatcher CreateFinishScheduledJobAtomMatcher() {
                                                      ScheduledJobStateChanged::FINISHED);
 }
 
+AtomMatcher CreateScheduleScheduledJobAtomMatcher() {
+    return CreateScheduledJobStateChangedAtomMatcher("ScheduledJobSchedule",
+                                                     ScheduledJobStateChanged::SCHEDULED);
+}
+
 AtomMatcher CreateScreenBrightnessChangedAtomMatcher() {
     AtomMatcher atom_matcher;
     atom_matcher.set_id(StringToId("ScreenBrightnessChanged"));
@@ -1018,6 +1023,15 @@ std::unique_ptr<LogEvent> CreateFinishScheduledJobEvent(uint64_t timestampNs,
                                                ScheduledJobStateChanged::FINISHED, timestampNs);
 }
 
+// Create log event when scheduled job is scheduled.
+std::unique_ptr<LogEvent> CreateScheduleScheduledJobEvent(uint64_t timestampNs,
+                                                          const vector<int>& attributionUids,
+                                                          const vector<string>& attributionTags,
+                                                          const string& jobName) {
+    return CreateScheduledJobStateChangedEvent(attributionUids, attributionTags, jobName,
+                                               ScheduledJobStateChanged::SCHEDULED, timestampNs);
+}
+
 std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         uint64_t timestampNs, const vector<int>& repeatedIntField,
         const vector<int64_t>& repeatedLongField, const vector<float>& repeatedFloatField,
@@ -1305,6 +1319,22 @@ std::unique_ptr<LogEvent> CreateAppStartOccurredEvent(
     AStatsEvent_writeString(statsEvent, callingPkgName.c_str());
     AStatsEvent_writeInt32(statsEvent, isInstantApp);
     AStatsEvent_writeInt32(statsEvent, activityStartMs);
+
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+std::unique_ptr<LogEvent> CreateBleScanResultReceivedEvent(uint64_t timestampNs,
+                                                           const vector<int>& attributionUids,
+                                                           const vector<string>& attributionTags,
+                                                           const int numResults) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, util::BLE_SCAN_RESULT_RECEIVED);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+
+    writeAttribution(statsEvent, attributionUids, attributionTags);
+    AStatsEvent_writeInt32(statsEvent, numResults);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
