@@ -19,7 +19,9 @@ import com.android.os.StatsLog;
 import com.android.os.StatsLog.ConfigMetricsReportList;
 import com.android.os.StatsLog.EventMetricData;
 import com.android.os.StatsLog.StatsLogReport;
+
 import com.google.common.io.Files;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -69,11 +71,14 @@ public class Utils {
         }
         logger.severe(err.toString());
 
+        final String commandName = commands[0];
+
         // Check result
         if (process.waitFor() == 0) {
-            logger.fine("Adb command successful.");
+            logger.fine("Command " + commandName + " is successful.");
         } else {
-            logger.severe("Abnormal adb shell termination for: " + String.join(",", commands));
+            logger.severe(
+                    "Abnormal " + commandName + " termination for: " + String.join(",", commands));
             throw new RuntimeException("Error running adb command: " + err.toString());
         }
     }
@@ -81,13 +86,11 @@ public class Utils {
     /**
      * Dumps the report from the device and converts it to a ConfigMetricsReportList.
      * Erases the data if clearData is true.
-     * @param configId id of the config
-     * @param clearData whether to erase the report data from statsd after getting the report.
+     *
+     * @param configId    id of the config
+     * @param clearData   whether to erase the report data from statsd after getting the report.
      * @param useShellUid Pulls data for the {@link SHELL_UID} instead of the caller's uid.
-     * @param logger Logger to log error messages
-     * @return
-     * @throws IOException
-     * @throws InterruptedException
+     * @param logger      Logger to log error messages
      */
     public static ConfigMetricsReportList getReportList(long configId, boolean clearData,
             boolean useShellUid, Logger logger, String deviceSerial)
@@ -113,22 +116,20 @@ public class Utils {
             return reportList;
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
             logger.severe("Failed to fetch and parse the statsd output report. "
-                            + "Perhaps there is not a valid statsd config for the requested "
-                            + (useShellUid ? ("uid=" + SHELL_UID + ", ") : "")
-                            + "configId=" + configId
-                            + ".");
+                    + "Perhaps there is not a valid statsd config for the requested "
+                    + (useShellUid ? ("uid=" + SHELL_UID + ", ") : "")
+                    + "configId=" + configId
+                    + ".");
             throw (e);
         }
     }
 
     /**
      * Logs an AppBreadcrumbReported atom.
-     * @param label which label to log for the app breadcrumb atom.
-     * @param state which state to log for the app breadcrumb atom.
-     * @param logger Logger to log error messages
      *
-     * @throws IOException
-     * @throws InterruptedException
+     * @param label  which label to log for the app breadcrumb atom.
+     * @param state  which state to log for the app breadcrumb atom.
+     * @param logger Logger to log error messages
      */
     public static void logAppBreadcrumb(int label, int state, Logger logger, String deviceSerial)
             throws IOException, InterruptedException {
@@ -143,6 +144,7 @@ public class Utils {
                 String.valueOf(label),
                 String.valueOf(state));
     }
+
     public static void setUpLogger(Logger logger, boolean debug) {
         ConsoleHandler handler = new ConsoleHandler();
         handler.setFormatter(new LocalToolsFormatter());
@@ -209,6 +211,7 @@ public class Utils {
 
     /**
      * Parse the result of "adb devices" to return the list of connected devices.
+     *
      * @param logger Logger to log error messages
      * @return List of the serial numbers of the connected devices.
      */
@@ -235,6 +238,7 @@ public class Utils {
 
     /**
      * Returns ANDROID_SERIAL environment variable, or null if that is undefined or unavailable.
+     *
      * @param logger Destination of error messages.
      * @return String value of ANDROID_SERIAL environment variable, or null.
      */
@@ -250,10 +254,11 @@ public class Utils {
 
     /**
      * Returns the device to use if one can be deduced, or null.
-     * @param device Command-line specified device, or null.
+     *
+     * @param device           Command-line specified device, or null.
      * @param connectedDevices List of all connected devices.
-     * @param defaultDevice Environment-variable specified device, or null.
-     * @param logger Destination of error messages.
+     * @param defaultDevice    Environment-variable specified device, or null.
+     * @param logger           Destination of error messages.
      * @return Device to use, or null.
      */
     public static String chooseDevice(String device, List<String> connectedDevices,
@@ -307,9 +312,9 @@ public class Utils {
         StatsLog.AggregatedAtomInfo atomInfo = metricData.getAggregatedAtomInfo();
         for (long timestamp : atomInfo.getElapsedTimestampNanosList()) {
             data.add(EventMetricData.newBuilder()
-                             .setAtom(atomInfo.getAtom())
-                             .setElapsedTimestampNanos(timestamp)
-                             .build());
+                    .setAtom(atomInfo.getAtom())
+                    .setElapsedTimestampNanos(timestamp)
+                    .build());
         }
         return data;
     }
