@@ -80,6 +80,7 @@ public class TestDrive {
             "com.android.imsserviceentitlement",
             "com.google.android.cellbroadcastreceiver",
             "com.google.android.apps.nexuslauncher",
+            "com.google.android.markup",
             "AID_KEYSTORE",
             "AID_VIRTUALIZATIONSERVICE",
             "com.google.android.permissioncontroller",
