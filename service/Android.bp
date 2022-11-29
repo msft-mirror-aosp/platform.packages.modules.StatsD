@@ -38,7 +38,6 @@ java_library {
     static_libs: [
         "modules-utils-build",
     ],
-    plugins: ["java_api_finder"],
     lint: {
         strict_updatability_linting: true
     },
