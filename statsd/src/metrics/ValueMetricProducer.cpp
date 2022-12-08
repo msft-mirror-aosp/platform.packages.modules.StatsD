@@ -423,7 +423,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
                 VLOG("\t bucket [%lld - %lld]", (long long)bucket.mBucketStartNs,
                      (long long)bucket.mBucketEndNs);
                 writePastBucketAggregateToProto(bucket.aggIndex[i], bucket.aggregates[i],
-                                                protoOutput);
+                                                bucket.sampleSizes[i], protoOutput);
             }
             protoOutput->end(bucketInfoToken);
         }

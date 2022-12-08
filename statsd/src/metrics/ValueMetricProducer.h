@@ -43,6 +43,7 @@ struct PastBucket {
     int64_t mBucketEndNs;
     std::vector<int> aggIndex;
     std::vector<AggregatedValue> aggregates;
+    std::vector<int> sampleSizes;
 
     /**
      * If the metric has no condition, then this field is just wasted.
@@ -338,6 +339,7 @@ protected:
 
     virtual void writePastBucketAggregateToProto(const int aggIndex,
                                                  const AggregatedValue& aggregate,
+                                                 const int sampleSize,
                                                  ProtoOutputStream* const protoOutput) const = 0;
 
     static const size_t kBucketSize = sizeof(PastBucket<AggregatedValue>{});

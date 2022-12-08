@@ -141,6 +141,7 @@ message ValueBucketInfo {
           int64 value_long = 2;
           double value_double = 3;
       }
+      optional int32 sample_size = 4;
   }
 
   repeated Value values = 9;
