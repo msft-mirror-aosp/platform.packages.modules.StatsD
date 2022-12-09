@@ -77,7 +77,7 @@ MetricProducer::MetricProducer(
       mHasHitGuardrail(false) {
 }
 
-bool MetricProducer::onConfigUpdatedLocked(
+optional<InvalidConfigReason> MetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -96,17 +96,18 @@ bool MetricProducer::onConfigUpdatedLocked(
 
     unordered_map<int, shared_ptr<Activation>> newEventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> newEventDeactivationMap;
-    if (!handleMetricActivationOnConfigUpdate(
-                config, mMetricId, metricIndex, metricToActivationMap, oldAtomMatchingTrackerMap,
-                newAtomMatchingTrackerMap, mEventActivationMap, activationAtomTrackerToMetricMap,
-                deactivationAtomTrackerToMetricMap, metricsWithActivation, newEventActivationMap,
-                newEventDeactivationMap)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason = handleMetricActivationOnConfigUpdate(
+            config, mMetricId, metricIndex, metricToActivationMap, oldAtomMatchingTrackerMap,
+            newAtomMatchingTrackerMap, mEventActivationMap, activationAtomTrackerToMetricMap,
+            deactivationAtomTrackerToMetricMap, metricsWithActivation, newEventActivationMap,
+            newEventDeactivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
     mEventActivationMap = newEventActivationMap;
     mEventDeactivationMap = newEventDeactivationMap;
     mAnomalyTrackers.clear();
-    return true;
+    return nullopt;
 }
 
 void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const LogEvent& event) {
