@@ -13,11 +13,14 @@
 // limitations under the License.
 
 #include "src/guardrail/StatsdStats.h"
-#include "statslog_statsdtest.h"
-#include "tests/statsd_test_util.h"
 
 #include <gtest/gtest.h>
+
 #include <vector>
+
+#include "src/metrics/parsing_utils/metrics_manager_util.h"
+#include "statslog_statsdtest.h"
+#include "tests/statsd_test_util.h"
 
 #ifdef __ANDROID__
 
@@ -35,7 +38,7 @@ TEST(StatsdStatsTest, TestValidConfigAdd) {
     const int matchersCount = 30;
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
-                             true /*valid config*/);
+                             nullopt /*valid config*/);
     vector<uint8_t> output;
     stats.dumpStats(&output, false /*reset stats*/);
 
@@ -51,6 +54,7 @@ TEST(StatsdStatsTest, TestValidConfigAdd) {
     EXPECT_EQ(matchersCount, configReport.matcher_count());
     EXPECT_EQ(alertsCount, configReport.alert_count());
     EXPECT_EQ(true, configReport.is_valid());
+    EXPECT_FALSE(configReport.has_invalid_config_reason());
     EXPECT_FALSE(configReport.has_deletion_time_sec());
 }
 
@@ -61,8 +65,19 @@ TEST(StatsdStatsTest, TestInvalidConfigAdd) {
     const int conditionsCount = 20;
     const int matchersCount = 30;
     const int alertsCount = 10;
+    optional<InvalidConfigReason> invalidConfigReason =
+            InvalidConfigReason(INVALID_CONFIG_REASON_UNKNOWN, 1);
+    invalidConfigReason->stateId = 2;
+    invalidConfigReason->alertId = 3;
+    invalidConfigReason->alarmId = 4;
+    invalidConfigReason->subscriptionId = 5;
+    invalidConfigReason->matcherIds.push_back(6);
+    invalidConfigReason->matcherIds.push_back(7);
+    invalidConfigReason->conditionIds.push_back(8);
+    invalidConfigReason->conditionIds.push_back(9);
+    invalidConfigReason->conditionIds.push_back(10);
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
-                             false /*bad config*/);
+                             invalidConfigReason /*bad config*/);
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
 
@@ -73,6 +88,96 @@ TEST(StatsdStatsTest, TestInvalidConfigAdd) {
     const auto& configReport = report.config_stats(0);
     // The invalid config should be put into icebox with a deletion time.
     EXPECT_TRUE(configReport.has_deletion_time_sec());
+    EXPECT_TRUE(configReport.has_invalid_config_reason());
+    EXPECT_EQ(configReport.invalid_config_reason().reason(), INVALID_CONFIG_REASON_UNKNOWN);
+    EXPECT_EQ(configReport.invalid_config_reason().metric_id(), 1);
+    EXPECT_EQ(configReport.invalid_config_reason().state_id(), 2);
+    EXPECT_EQ(configReport.invalid_config_reason().alert_id(), 3);
+    EXPECT_EQ(configReport.invalid_config_reason().alarm_id(), 4);
+    EXPECT_EQ(configReport.invalid_config_reason().subscription_id(), 5);
+    EXPECT_EQ(configReport.invalid_config_reason().matcher_id_size(), 2);
+    EXPECT_EQ(configReport.invalid_config_reason().matcher_id(0), 6);
+    EXPECT_EQ(configReport.invalid_config_reason().matcher_id(1), 7);
+    EXPECT_EQ(configReport.invalid_config_reason().condition_id_size(), 3);
+    EXPECT_EQ(configReport.invalid_config_reason().condition_id(0), 8);
+    EXPECT_EQ(configReport.invalid_config_reason().condition_id(1), 9);
+    EXPECT_EQ(configReport.invalid_config_reason().condition_id(2), 10);
+}
+
+TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId) {
+    StatsdStats stats;
+    ConfigKey key(0, 12345);
+    const int metricsCount = 10;
+    const int conditionsCount = 20;
+    const int matchersCount = 30;
+    const int alertsCount = 10;
+    optional<InvalidConfigReason> invalidConfigReason =
+            InvalidConfigReason(INVALID_CONFIG_REASON_SUBSCRIPTION_SUBSCRIBER_INFO_MISSING);
+    invalidConfigReason->stateId = 1;
+    invalidConfigReason->alertId = 2;
+    invalidConfigReason->alarmId = 3;
+    invalidConfigReason->subscriptionId = 4;
+    invalidConfigReason->matcherIds.push_back(5);
+    invalidConfigReason->conditionIds.push_back(6);
+    invalidConfigReason->conditionIds.push_back(7);
+    stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
+                             invalidConfigReason /*bad config*/);
+    vector<uint8_t> output;
+    stats.dumpStats(&output, false);
+
+    StatsdStatsReport report;
+    bool good = report.ParseFromArray(&output[0], output.size());
+    EXPECT_TRUE(good);
+    ASSERT_EQ(1, report.config_stats_size());
+    const auto& configReport = report.config_stats(0);
+    // The invalid config should be put into icebox with a deletion time.
+    EXPECT_TRUE(configReport.has_deletion_time_sec());
+    EXPECT_TRUE(configReport.has_invalid_config_reason());
+    EXPECT_EQ(configReport.invalid_config_reason().reason(),
+              INVALID_CONFIG_REASON_SUBSCRIPTION_SUBSCRIBER_INFO_MISSING);
+    EXPECT_FALSE(configReport.invalid_config_reason().has_metric_id());
+    EXPECT_EQ(configReport.invalid_config_reason().state_id(), 1);
+    EXPECT_EQ(configReport.invalid_config_reason().alert_id(), 2);
+    EXPECT_EQ(configReport.invalid_config_reason().alarm_id(), 3);
+    EXPECT_EQ(configReport.invalid_config_reason().subscription_id(), 4);
+    EXPECT_EQ(configReport.invalid_config_reason().matcher_id_size(), 1);
+    EXPECT_EQ(configReport.invalid_config_reason().matcher_id(0), 5);
+    EXPECT_EQ(configReport.invalid_config_reason().condition_id_size(), 2);
+    EXPECT_EQ(configReport.invalid_config_reason().condition_id(0), 6);
+    EXPECT_EQ(configReport.invalid_config_reason().condition_id(1), 7);
+}
+
+TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId) {
+    StatsdStats stats;
+    ConfigKey key(0, 12345);
+    const int metricsCount = 10;
+    const int conditionsCount = 20;
+    const int matchersCount = 30;
+    const int alertsCount = 10;
+    optional<InvalidConfigReason> invalidConfigReason =
+            InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_NOT_IN_PREV_CONFIG, 1);
+    stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
+                             invalidConfigReason /*bad config*/);
+    vector<uint8_t> output;
+    stats.dumpStats(&output, false);
+
+    StatsdStatsReport report;
+    bool good = report.ParseFromArray(&output[0], output.size());
+    EXPECT_TRUE(good);
+    ASSERT_EQ(1, report.config_stats_size());
+    const auto& configReport = report.config_stats(0);
+    // The invalid config should be put into icebox with a deletion time.
+    EXPECT_TRUE(configReport.has_deletion_time_sec());
+    EXPECT_TRUE(configReport.has_invalid_config_reason());
+    EXPECT_EQ(configReport.invalid_config_reason().reason(),
+              INVALID_CONFIG_REASON_METRIC_NOT_IN_PREV_CONFIG);
+    EXPECT_EQ(configReport.invalid_config_reason().metric_id(), 1);
+    EXPECT_FALSE(configReport.invalid_config_reason().has_state_id());
+    EXPECT_FALSE(configReport.invalid_config_reason().has_alert_id());
+    EXPECT_FALSE(configReport.invalid_config_reason().has_alarm_id());
+    EXPECT_FALSE(configReport.invalid_config_reason().has_subscription_id());
+    EXPECT_EQ(configReport.invalid_config_reason().matcher_id_size(), 0);
+    EXPECT_EQ(configReport.invalid_config_reason().condition_id_size(), 0);
 }
 
 TEST(StatsdStatsTest, TestConfigRemove) {
@@ -83,7 +188,7 @@ TEST(StatsdStatsTest, TestConfigRemove) {
     const int matchersCount = 30;
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
-                             true);
+                             nullopt);
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
     StatsdStatsReport report;
@@ -105,7 +210,7 @@ TEST(StatsdStatsTest, TestConfigRemove) {
 TEST(StatsdStatsTest, TestSubStats) {
     StatsdStats stats;
     ConfigKey key(0, 12345);
-    stats.noteConfigReceived(key, 2, 3, 4, 5, {std::make_pair(123, 456)}, true);
+    stats.noteConfigReceived(key, 2, 3, 4, 5, {std::make_pair(123, 456)}, nullopt);
 
     stats.noteMatcherMatched(key, StringToId("matcher1"));
     stats.noteMatcherMatched(key, StringToId("matcher1"));
@@ -393,7 +498,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
         timestamps.push_back(i);
     }
     ConfigKey key(0, 12345);
-    stats.noteConfigReceived(key, 2, 3, 4, 5, {}, true);
+    stats.noteConfigReceived(key, 2, 3, 4, 5, {}, nullopt);
 
     for (int i = 0; i < StatsdStats::kMaxTimestampCount; i++) {
         stats.noteDataDropped(key, timestamps[i]);
