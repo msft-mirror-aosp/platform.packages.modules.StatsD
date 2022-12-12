@@ -7538,6 +7538,108 @@ TEST(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions) {
                         0);  // Summed diffs of 7, 14
 }
 
+TEST(NumericValueMetricProducerTest, TestSampleSize) {
+    sp<EventMatcherWizard> eventMatcherWizard =
+            createEventMatcherWizard(tagId, logEventMatcherIndex);
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetric();
+
+    /*Sample size is added automatically with ValueMetric::AVG*/
+    metric.set_aggregation_type(ValueMetric::AVG);
+    sp<NumericValueMetricProducer> valueProducerAvg =
+            NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
+                    pullerManager, metric, /*pullAtomId=*/-1);
+
+    /*Sample size is not added automatically with non-ValueMetric::AVG aggregation types*/
+    metric.set_aggregation_type(ValueMetric::SUM);
+    sp<NumericValueMetricProducer> valueProducerSum =
+            NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
+                    pullerManager, metric, /*pullAtomId=*/-1);
+
+    /*Sample size is added when use_sample_size bool is set to true*/
+    metric.set_use_sample_size(true);
+    sp<NumericValueMetricProducer> valueProducerSumWithSampleSize =
+            NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
+                    pullerManager, metric, /*pullAtomId=*/-1);
+
+    LogEvent event1(/*uid=*/0, /*pid=*/0);
+    LogEvent event2(/*uid=*/0, /*pid=*/0);
+    LogEvent event3(/*uid=*/0, /*pid=*/0);
+    CreateRepeatedValueLogEvent(&event1, tagId, bucketStartTimeNs + 10, 10);
+    CreateRepeatedValueLogEvent(&event2, tagId, bucketStartTimeNs + 20, 15);
+    CreateRepeatedValueLogEvent(&event3, tagId, bucketStartTimeNs + 20, 20);
+    valueProducerAvg->onMatchedLogEvent(1 /*log matcher index*/, event1);
+    valueProducerAvg->onMatchedLogEvent(1 /*log matcher index*/, event2);
+    valueProducerSum->onMatchedLogEvent(1 /*log matcher index*/, event1);
+    valueProducerSum->onMatchedLogEvent(1 /*log matcher index*/, event2);
+    valueProducerSum->onMatchedLogEvent(1 /*log matcher index*/, event3);
+    valueProducerSumWithSampleSize->onMatchedLogEvent(1 /*log matcher index*/, event1);
+    valueProducerSumWithSampleSize->onMatchedLogEvent(1 /*log matcher index*/, event2);
+    valueProducerSumWithSampleSize->onMatchedLogEvent(1 /*log matcher index*/, event3);
+
+    NumericValueMetricProducer::Interval curInterval;
+    ASSERT_EQ(1UL, valueProducerAvg->mCurrentSlicedBucket.size());
+    curInterval = valueProducerAvg->mCurrentSlicedBucket.begin()->second.intervals[0];
+    EXPECT_EQ(2, curInterval.sampleSize);
+    ASSERT_EQ(1UL, valueProducerSum->mCurrentSlicedBucket.size());
+    curInterval = valueProducerSum->mCurrentSlicedBucket.begin()->second.intervals[0];
+    EXPECT_EQ(3, curInterval.sampleSize);
+    ASSERT_EQ(1UL, valueProducerSumWithSampleSize->mCurrentSlicedBucket.size());
+    curInterval = valueProducerSumWithSampleSize->mCurrentSlicedBucket.begin()->second.intervals[0];
+    EXPECT_EQ(3, curInterval.sampleSize);
+
+    valueProducerAvg->flushIfNeededLocked(bucket2StartTimeNs);
+    valueProducerSum->flushIfNeededLocked(bucket2StartTimeNs);
+    valueProducerSumWithSampleSize->flushIfNeededLocked(bucket2StartTimeNs);
+
+    // Start dump report and check output.
+    ProtoOutputStream outputAvg;
+    std::set<string> strSetAvg;
+    valueProducerAvg->onDumpReport(bucket2StartTimeNs + 50 * NS_PER_SEC,
+                                   true /* include recent buckets */, true, NO_TIME_CONSTRAINTS,
+                                   &strSetAvg, &outputAvg);
+
+    StatsLogReport reportAvg = outputStreamToProto(&outputAvg);
+    ASSERT_EQ(1, reportAvg.value_metrics().data_size());
+
+    ValueMetricData data = reportAvg.value_metrics().data(0);
+    ASSERT_EQ(1, data.bucket_info_size());
+    ASSERT_EQ(1, data.bucket_info(0).values_size());
+    EXPECT_EQ((int64_t)data.bucket_info(0).values(0).sample_size(), 2);
+
+    // Start dump report and check output.
+    ProtoOutputStream outputSum;
+    std::set<string> strSetSum;
+    valueProducerSum->onDumpReport(bucket2StartTimeNs + 50 * NS_PER_SEC,
+                                   true /* include recent buckets */, true, NO_TIME_CONSTRAINTS,
+                                   &strSetSum, &outputSum);
+
+    StatsLogReport reportSum = outputStreamToProto(&outputSum);
+    ASSERT_EQ(1, reportSum.value_metrics().data_size());
+
+    data = reportSum.value_metrics().data(0);
+    ASSERT_EQ(1, data.bucket_info_size());
+    ASSERT_EQ(1, data.bucket_info(0).values_size());
+    EXPECT_EQ((int64_t)data.bucket_info(0).values(0).sample_size(), 0);
+
+    // Start dump report and check output.
+    ProtoOutputStream outputSumWithSampleSize;
+    std::set<string> strSetSumWithSampleSize;
+    valueProducerSumWithSampleSize->onDumpReport(
+            bucket2StartTimeNs + 50 * NS_PER_SEC, true /* include recent buckets */, true,
+            NO_TIME_CONSTRAINTS, &strSetSumWithSampleSize, &outputSumWithSampleSize);
+
+    StatsLogReport reportSumWithSampleSize = outputStreamToProto(&outputSumWithSampleSize);
+    ASSERT_EQ(1, reportSumWithSampleSize.value_metrics().data_size());
+
+    data = reportSumWithSampleSize.value_metrics().data(0);
+    ASSERT_EQ(1, data.bucket_info_size());
+    ASSERT_EQ(1, data.bucket_info(0).values_size());
+    EXPECT_EQ((int64_t)data.bucket_info(0).values(0).sample_size(), 3);
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
