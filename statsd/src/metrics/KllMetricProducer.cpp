@@ -76,7 +76,7 @@ KllMetricProducer::DumpProtoFields KllMetricProducer::getDumpProtoFields() const
 }
 
 void KllMetricProducer::writePastBucketAggregateToProto(
-        const int aggIndex, const unique_ptr<KllQuantile>& kll,
+        const int aggIndex, const unique_ptr<KllQuantile>& kll, const int sampleSize,
         ProtoOutputStream* const protoOutput) const {
     uint64_t sketchesToken =
             protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_SKETCHES);
@@ -149,6 +149,7 @@ PastBucket<unique_ptr<KllQuantile>> KllMetricProducer::buildPartialBucket(
             // Transfer ownership of unique_ptr<KllQuantile> from interval.aggregate to
             // bucket.aggregates vector. interval.aggregate is guaranteed to be nullptr after this.
             bucket.aggregates.push_back(std::move(interval.aggregate));
+            bucket.sampleSizes.push_back(interval.sampleSize);
         }
     }
     return bucket;
