@@ -81,6 +81,8 @@ public class TestDrive {
             "com.google.android.cellbroadcastreceiver",
             "com.google.android.apps.nexuslauncher",
             "com.google.android.markup",
+            "com.android.art",
+            "com.google.android.art",
             "AID_KEYSTORE",
             "AID_VIRTUALIZATIONSERVICE",
             "com.google.android.permissioncontroller",
