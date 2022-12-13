@@ -149,7 +149,6 @@ PastBucket<unique_ptr<KllQuantile>> KllMetricProducer::buildPartialBucket(
             // Transfer ownership of unique_ptr<KllQuantile> from interval.aggregate to
             // bucket.aggregates vector. interval.aggregate is guaranteed to be nullptr after this.
             bucket.aggregates.push_back(std::move(interval.aggregate));
-            bucket.sampleSizes.push_back(interval.sampleSize);
         }
     }
     return bucket;
