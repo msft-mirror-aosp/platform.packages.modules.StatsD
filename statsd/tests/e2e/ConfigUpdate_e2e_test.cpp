@@ -1455,6 +1455,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     EXPECT_FALSE(data.has_dimensions_in_what());
     EXPECT_EQ(data.slice_by_state_size(), 0);
     ASSERT_EQ(data.bucket_info_size(), 1);
+    EXPECT_EQ(3, data.bucket_info(0).values(0).sample_size());
     ValidateValueBucket(data.bucket_info(0), roundedBucketStartNs, roundedUpdateTimeNs, {20}, 0, 0);
 
     // Min screen brightness while screen on. Bucket skipped due to condition unknown.
