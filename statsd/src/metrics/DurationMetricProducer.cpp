@@ -197,14 +197,15 @@ optional<InvalidConfigReason> DurationMetricProducer::onConfigUpdatedLocked(
     const auto& what_it = conditionTrackerMap.find(metric.what());
     if (what_it == conditionTrackerMap.end()) {
         ALOGE("DurationMetric's \"what\" is not present in the config");
-        return InvalidConfigReason(INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND, mMetricId);
+        return createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND, mMetricId, metric.what());
     }
 
     const Predicate& durationWhat = config.predicate(what_it->second);
     if (durationWhat.contents_case() != Predicate::ContentsCase::kSimplePredicate) {
         ALOGE("DurationMetric's \"what\" must be a simple condition");
-        return InvalidConfigReason(INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE,
-                                   mMetricId);
+        return createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE, mMetricId, metric.what());
     }
 
     const SimplePredicate& simplePredicate = durationWhat.simple_predicate();
