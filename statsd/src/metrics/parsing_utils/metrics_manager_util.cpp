@@ -507,8 +507,8 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
     const auto& what_it = conditionTrackerMap.find(metric.what());
     if (what_it == conditionTrackerMap.end()) {
         ALOGE("DurationMetric's \"what\" is not present in the condition trackers");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND, metric.id());
+        invalidConfigReason = createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND, metric.id(), metric.what());
         return nullopt;
     }
 
@@ -516,8 +516,8 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
     const Predicate& durationWhat = config.predicate(whatIndex);
     if (durationWhat.contents_case() != Predicate::ContentsCase::kSimplePredicate) {
         ALOGE("DurationMetric's \"what\" must be a simple condition");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE, metric.id());
+        invalidConfigReason = createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE, metric.id(), metric.what());
         return nullopt;
     }
 
@@ -527,8 +527,8 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
     int startIndex = -1, stopIndex = -1, stopAllIndex = -1;
     if (!simplePredicate.has_start()) {
         ALOGE("Duration metrics must specify a valid start event matcher");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_DURATION_METRIC_MISSING_START, metric.id());
+        invalidConfigReason = createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_DURATION_METRIC_MISSING_START, metric.id(), metric.what());
         return nullopt;
     }
     invalidConfigReason = handleMetricWithAtomMatchingTrackers(
