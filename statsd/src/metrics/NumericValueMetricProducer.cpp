@@ -535,7 +535,9 @@ PastBucket<Value> NumericValueMetricProducer::buildPartialBucket(int64_t bucketE
 
         bucket.aggIndex.push_back(interval.aggIndex);
         bucket.aggregates.push_back(getFinalValue(interval));
-        bucket.sampleSizes.push_back(interval.sampleSize);
+        if (mUseSampleSize) {
+            bucket.sampleSizes.push_back(interval.sampleSize);
+        }
     }
     return bucket;
 }
