@@ -319,7 +319,7 @@ Predicate CreateScreenIsOnPredicate() {
 
 Predicate CreateScreenIsOffPredicate() {
     Predicate predicate;
-    predicate.set_id(1111123);
+    predicate.set_id(StringToId("ScreenIsOff"));
     predicate.mutable_simple_predicate()->set_start(StringToId("ScreenTurnedOff"));
     predicate.mutable_simple_predicate()->set_stop(StringToId("ScreenTurnedOn"));
     return predicate;
@@ -335,7 +335,7 @@ Predicate CreateHoldingWakelockPredicate() {
 
 Predicate CreateIsSyncingPredicate() {
     Predicate predicate;
-    predicate.set_id(33333333333333);
+    predicate.set_id(StringToId("IsSyncing"));
     predicate.mutable_simple_predicate()->set_start(StringToId("SyncStart"));
     predicate.mutable_simple_predicate()->set_stop(StringToId("SyncEnd"));
     return predicate;

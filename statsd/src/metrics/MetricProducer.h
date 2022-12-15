@@ -604,7 +604,7 @@ protected:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
 
-    FRIEND_TEST(MetricsManagerTest, TestInitialConditions);
+    FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMetricActivations);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateCountMetrics);

@@ -111,8 +111,8 @@ protected:
     // Used to determine if the definition of this matcher has changed across a config update.
     const uint64_t mProtoHash;
 
-    FRIEND_TEST(MetricsManagerTest, TestCreateAtomMatchingTrackerSimple);
-    FRIEND_TEST(MetricsManagerTest, TestCreateAtomMatchingTrackerCombination);
+    FRIEND_TEST(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerSimple);
+    FRIEND_TEST(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerCombination);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMatchers);
 };
 
