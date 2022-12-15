@@ -1480,6 +1480,7 @@ TEST(NumericValueMetricProducerTest, TestPushedAggregateAvg) {
     EXPECT_TRUE(
             std::abs(valueProducer->mPastBuckets.begin()->second.back().aggregates[0].double_value -
                      12.5) < epsilon);
+    EXPECT_EQ(2, valueProducer->mPastBuckets.begin()->second.back().sampleSizes[0]);
 }
 
 TEST(NumericValueMetricProducerTest, TestPushedAggregateSum) {
@@ -7607,7 +7608,8 @@ TEST(NumericValueMetricProducerTest, TestSampleSize) {
     ValueMetricData data = reportAvg.value_metrics().data(0);
     ASSERT_EQ(1, data.bucket_info_size());
     ASSERT_EQ(1, data.bucket_info(0).values_size());
-    EXPECT_EQ((int64_t)data.bucket_info(0).values(0).sample_size(), 2);
+    EXPECT_EQ(2, data.bucket_info(0).values(0).sample_size());
+    EXPECT_TRUE(std::abs(data.bucket_info(0).values(0).value_double() - 12.5) < epsilon);
 
     // Start dump report and check output.
     ProtoOutputStream outputSum;
@@ -7622,7 +7624,8 @@ TEST(NumericValueMetricProducerTest, TestSampleSize) {
     data = reportSum.value_metrics().data(0);
     ASSERT_EQ(1, data.bucket_info_size());
     ASSERT_EQ(1, data.bucket_info(0).values_size());
-    EXPECT_EQ((int64_t)data.bucket_info(0).values(0).sample_size(), 0);
+    EXPECT_EQ(45, data.bucket_info(0).values(0).value_long());
+    EXPECT_FALSE(data.bucket_info(0).values(0).has_sample_size());
 
     // Start dump report and check output.
     ProtoOutputStream outputSumWithSampleSize;
@@ -7637,7 +7640,8 @@ TEST(NumericValueMetricProducerTest, TestSampleSize) {
     data = reportSumWithSampleSize.value_metrics().data(0);
     ASSERT_EQ(1, data.bucket_info_size());
     ASSERT_EQ(1, data.bucket_info(0).values_size());
-    EXPECT_EQ((int64_t)data.bucket_info(0).values(0).sample_size(), 3);
+    EXPECT_EQ(3, data.bucket_info(0).values(0).sample_size());
+    EXPECT_EQ(45, data.bucket_info(0).values(0).value_long());
 }
 
 }  // namespace statsd
