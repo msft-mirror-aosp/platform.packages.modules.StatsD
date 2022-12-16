@@ -349,7 +349,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsNoCondition) {
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 11));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     // empty since bucket is flushed
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     // dimInfos holds the base
@@ -363,7 +363,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsNoCondition) {
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs + 1, 23));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     // empty since bucket is cleared
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     // dimInfos holds the base
@@ -378,7 +378,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsNoCondition) {
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket4StartTimeNs + 1, 36));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
     // empty since bucket is cleared
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     // dimInfos holds the base
@@ -425,7 +425,7 @@ TEST_P(NumericValueMetricProducerTest_PartialBucket, TestPartialBucketCreated) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 10, 2));
-    valueProducer->onDataPulled(allData, /** success */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // Partial buckets created in 2nd bucket.
     switch (GetParam()) {
@@ -474,7 +474,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsWithFiltering) {
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 3, 11));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     // empty since bucket is cleared
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     // dimInfos holds the base
@@ -488,14 +488,14 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsWithFiltering) {
 
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket3StartTimeNs + 1, 4, 23));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     // No new data seen, so data has been cleared.
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(0UL, valueProducer->mDimInfos.size());
 
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket4StartTimeNs + 1, 3, 36));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
     curBase = valueProducer->mDimInfos.begin()->second.dimExtras[0];
@@ -525,7 +525,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsTakeAbsoluteValueOnReset) {
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 11));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     // empty since bucket is cleared
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     // dimInfos holds the base
@@ -539,7 +539,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsTakeAbsoluteValueOnReset) {
     allData.clear();
     // 10 is less than 11, so we reset and keep 10 as the value.
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs + 1, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     // empty since the bucket is flushed.
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
@@ -551,7 +551,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsTakeAbsoluteValueOnReset) {
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket4StartTimeNs + 1, 36));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
     curBase = valueProducer->mDimInfos.begin()->second.dimExtras[0];
@@ -578,7 +578,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsTakeZeroOnReset) {
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 11));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     // empty since bucket is cleared
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     // mDimInfos holds the base
@@ -592,7 +592,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsTakeZeroOnReset) {
     allData.clear();
     // 10 is less than 11, so we reset. 10 only updates the base.
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs + 1, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
     curBase = valueProducer->mDimInfos.begin()->second.dimExtras[0];
@@ -602,7 +602,7 @@ TEST(NumericValueMetricProducerTest, TestPulledEventsTakeZeroOnReset) {
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket4StartTimeNs + 1, 36));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
     curBase = valueProducer->mDimInfos.begin()->second.dimExtras[0];
@@ -664,7 +664,7 @@ TEST(NumericValueMetricProducerTest, TestEventsWithNonSlicedCondition) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 110));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {10}, {bucketSizeNs - 8}, {0},
                                     {bucketStartTimeNs}, {bucket2StartTimeNs});
 
@@ -777,7 +777,7 @@ TEST_P(NumericValueMetricProducerTest_PartialBucket, TestPulledValue) {
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 100));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
 
     switch (GetParam()) {
@@ -795,7 +795,7 @@ TEST_P(NumericValueMetricProducerTest_PartialBucket, TestPulledValue) {
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs + 1, 150));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     EXPECT_EQ(bucket3StartTimeNs, valueProducer->mCurrentBucketStartTimeNs);
     EXPECT_EQ(2, valueProducer->getCurrentBucketNum());
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {20, 30},
@@ -823,7 +823,7 @@ TEST(NumericValueMetricProducerTest, TestPulledWithAppUpgradeDisabled) {
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 100));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
 
@@ -1141,7 +1141,7 @@ TEST(NumericValueMetricProducerTest, TestBucketBoundaryNoCondition) {
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 11));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     // empty since bucket is finished
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
@@ -1155,7 +1155,7 @@ TEST(NumericValueMetricProducerTest, TestBucketBoundaryNoCondition) {
     // pull 2 at correct time
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs + 1, 23));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     // empty since bucket is finished
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
@@ -1172,7 +1172,7 @@ TEST(NumericValueMetricProducerTest, TestBucketBoundaryNoCondition) {
     // The new bucket is back to normal.
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket6StartTimeNs + 1, 36));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket6StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket6StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
     curBase = valueProducer->mDimInfos.begin()->second.dimExtras[0];
@@ -1253,7 +1253,7 @@ TEST(NumericValueMetricProducerTest, TestBucketBoundaryWithCondition) {
     // since the condition turned to off before this pull finish, it has no effect
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 30, 110));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {20}, {bucketSizeNs - 8}, {1},
                                     {bucketStartTimeNs}, {bucket2StartTimeNs});
@@ -1339,7 +1339,7 @@ TEST(NumericValueMetricProducerTest, TestBucketBoundaryWithCondition2) {
     // for the new bucket since it was just pulled.
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 50, 140));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + 50);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 50);
 
     ASSERT_EQ(1UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
@@ -1354,7 +1354,7 @@ TEST(NumericValueMetricProducerTest, TestBucketBoundaryWithCondition2) {
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 160));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     assertPastBucketValuesSingleKey(
             valueProducer->mPastBuckets, {20, 30}, {bucketSizeNs - 8, bucketSizeNs - 24}, {1, -1},
@@ -1743,7 +1743,7 @@ TEST(NumericValueMetricProducerTest, TestUseZeroDefaultBase) {
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 2, 4));
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 1, 11));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(2UL, valueProducer->mDimInfos.size());
     EXPECT_EQ(true, base1.has_value());
@@ -1809,7 +1809,7 @@ TEST(NumericValueMetricProducerTest, TestUseZeroDefaultBaseWithPullFailures) {
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 2, 4));
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 1, 11));
 
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(2UL, valueProducer->mDimInfos.size());
     EXPECT_EQ(true, base1.has_value());
@@ -1832,7 +1832,7 @@ TEST(NumericValueMetricProducerTest, TestUseZeroDefaultBaseWithPullFailures) {
     // This pull is incomplete since it's missing dimension 1. Will cause mDimInfos to be trimmed
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket4StartTimeNs + 1, 2, 5));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
 
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
@@ -1846,7 +1846,7 @@ TEST(NumericValueMetricProducerTest, TestUseZeroDefaultBaseWithPullFailures) {
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket5StartTimeNs + 1, 2, 13));
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket5StartTimeNs + 1, 1, 5));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket5StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket5StartTimeNs);
 
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(2UL, valueProducer->mDimInfos.size());
@@ -1899,7 +1899,7 @@ TEST(NumericValueMetricProducerTest, TestTrimUnusedDimensionKey) {
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 2, 4));
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 1, 11));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(2UL, valueProducer->mDimInfos.size());
@@ -1925,7 +1925,7 @@ TEST(NumericValueMetricProducerTest, TestTrimUnusedDimensionKey) {
     // next pull somehow did not happen, skip to end of bucket 3
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket4StartTimeNs + 1, 2, 5));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
     // Only one dimension left. One was trimmed.
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
@@ -1940,7 +1940,7 @@ TEST(NumericValueMetricProducerTest, TestTrimUnusedDimensionKey) {
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket5StartTimeNs + 1, 2, 14));
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket5StartTimeNs + 1, 1, 14));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket5StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket5StartTimeNs);
 
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(2UL, valueProducer->mDimInfos.size());
@@ -1948,7 +1948,7 @@ TEST(NumericValueMetricProducerTest, TestTrimUnusedDimensionKey) {
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket6StartTimeNs + 1, 1, 19));
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket6StartTimeNs + 1, 2, 20));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket6StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket6StartTimeNs);
 
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(2UL, valueProducer->mDimInfos.size());
@@ -2010,7 +2010,7 @@ TEST(NumericValueMetricProducerTest, TestResetBaseOnPullFailAfterConditionChange
     EXPECT_EQ(0, curInterval.sampleSize);
 
     vector<shared_ptr<LogEvent>> allData;
-    valueProducer->onDataPulled(allData, /** succeed */ false, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_FAIL, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
     EXPECT_EQ(false, curBase.has_value());
@@ -2198,7 +2198,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenOneConditio
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 1, 110));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucketStartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucketStartTimeNs);
 
     // This will fail and should invalidate the whole bucket since we do not have all the data
     // needed to compute the metric value when the screen was on.
@@ -2208,7 +2208,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenOneConditio
     // Bucket end.
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 140));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     valueProducer->flushIfNeededLocked(bucket2StartTimeNs + 1);
 
@@ -2276,7 +2276,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenGuardRailHi
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 1, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // First bucket added to mSkippedBuckets after flush.
     ASSERT_EQ(1UL, valueProducer->mSkippedBuckets.size());
@@ -2336,7 +2336,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenInitialPull
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 1, 110));
-    valueProducer->onDataPulled(allData, /** succeed */ false, bucketStartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_FAIL, bucketStartTimeNs);
 
     valueProducer->onConditionChanged(false, bucketStartTimeNs + 2);
     valueProducer->onConditionChanged(true, bucketStartTimeNs + 3);
@@ -2344,7 +2344,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenInitialPull
     // Bucket end.
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 140));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     valueProducer->flushIfNeededLocked(bucket2StartTimeNs + 1);
 
@@ -2413,7 +2413,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenLastPullFai
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 1, 110));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucketStartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucketStartTimeNs);
 
     valueProducer->onConditionChanged(false, bucketStartTimeNs + 2);
     valueProducer->onConditionChanged(true, bucketStartTimeNs + 3);
@@ -2421,7 +2421,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenLastPullFai
     // Bucket end.
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 140));
-    valueProducer->onDataPulled(allData, /** succeed */ false, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_FAIL, bucket2StartTimeNs);
 
     valueProducer->flushIfNeededLocked(bucket2StartTimeNs + 1);
 
@@ -2475,7 +2475,7 @@ TEST(NumericValueMetricProducerTest, TestEmptyDataResetsBase_onDataPulled) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 110));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
     EXPECT_EQ(valueProducer->mDimInfos.begin()->second.seenNewData, false);
@@ -2485,7 +2485,7 @@ TEST(NumericValueMetricProducerTest, TestEmptyDataResetsBase_onDataPulled) {
     // Bucket 3 empty.
     allData.clear();
     allData.push_back(CreateNoValuesLogEvent(tagId, bucket3StartTimeNs + 1));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     // Data has been trimmed.
     ASSERT_EQ(1UL, valueProducer->mPastBuckets.size());
     ASSERT_EQ(1UL, valueProducer->mSkippedBuckets.size());
@@ -2495,7 +2495,7 @@ TEST(NumericValueMetricProducerTest, TestEmptyDataResetsBase_onDataPulled) {
     // Bucket 4 start.
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket4StartTimeNs + 1, 150));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
     ASSERT_EQ(1UL, valueProducer->mPastBuckets.size());
     ASSERT_EQ(2UL, valueProducer->mSkippedBuckets.size());
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
@@ -2504,7 +2504,7 @@ TEST(NumericValueMetricProducerTest, TestEmptyDataResetsBase_onDataPulled) {
     // Bucket 5 start.
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket5StartTimeNs + 1, 170));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket5StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket5StartTimeNs);
     assertPastBucketValuesSingleKey(
             valueProducer->mPastBuckets, {107, 20}, {bucketSizeNs, bucketSizeNs}, {0, 0},
             {bucketStartTimeNs, bucket4StartTimeNs}, {bucket2StartTimeNs, bucket5StartTimeNs});
@@ -2575,7 +2575,7 @@ TEST(NumericValueMetricProducerTest, TestEmptyDataResetsBase_onConditionChanged)
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 120));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
     curBase = valueProducer->mDimInfos.begin()->second.dimExtras[0];
@@ -2633,7 +2633,7 @@ TEST(NumericValueMetricProducerTest, TestEmptyDataResetsBase_onBucketBoundary) {
     // End of bucket
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(0UL, valueProducer->mDimInfos.size());
 
@@ -2670,7 +2670,7 @@ TEST(NumericValueMetricProducerTest, TestPartialResetOnBucketBoundaries) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 2));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // Key 1 should be removed from mDimInfos since in not present in the most pull.
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
@@ -2738,7 +2738,7 @@ TEST_P(NumericValueMetricProducerTest_PartialBucket, TestFullBucketResetWhenLast
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs + 1, 4));
     // Pull fails and arrives late.
-    valueProducer->onDataPulled(allData, /** fails */ false, bucket3StartTimeNs + 1);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_FAIL, bucket3StartTimeNs + 1);
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {9},
                                     {partialBucketSplitTimeNs - bucketStartTimeNs}, {0},
                                     {bucketStartTimeNs}, {partialBucketSplitTimeNs});
@@ -2782,7 +2782,7 @@ TEST(NumericValueMetricProducerTest, TestBucketBoundariesOnConditionChange) {
     // End of first bucket
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 4));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + 1);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 1);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
 
     valueProducer->onConditionChanged(true, bucket2StartTimeNs + 10);
@@ -2814,11 +2814,11 @@ TEST(NumericValueMetricProducerTest, TestLateOnDataPulledWithoutDiff) {
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 30, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucketStartTimeNs + 30);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucketStartTimeNs + 30);
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs, 20));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // Bucket should have been completed.
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {30}, {bucketSizeNs}, {0},
@@ -2844,11 +2844,11 @@ TEST(NumericValueMetricProducerTest, TestLateOnDataPulledWithDiff) {
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 30, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucketStartTimeNs + 30);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucketStartTimeNs + 30);
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs, 20));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // Bucket should have been completed.
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {19}, {bucketSizeNs}, {0},
@@ -2935,7 +2935,7 @@ TEST(NumericValueMetricProducerTest, TestDataIsNotUpdatedWhenNoConditionChanged)
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + 1);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 1);
 
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {2}, {2}, {0}, {bucketStartTimeNs},
                                     {bucket2StartTimeNs});
@@ -2979,18 +2979,18 @@ TEST(NumericValueMetricProducerTest, TestBucketInvalidIfGlobalBaseIsNotSet) {
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 3, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ false, bucketStartTimeNs + 3);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_FAIL, bucketStartTimeNs + 3);
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs, 20));
-    valueProducer->onDataPulled(allData, /** succeed */ false, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_FAIL, bucket2StartTimeNs);
 
     valueProducer->onConditionChanged(false, bucket2StartTimeNs + 8);
     valueProducer->onConditionChanged(true, bucket2StartTimeNs + 10);
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 30));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // There was not global base available so all buckets are invalid.
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {}, {}, {}, {}, {});
@@ -3019,7 +3019,7 @@ TEST(NumericValueMetricProducerTest, TestFastDumpWithoutCurrentBucket) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, tagId, 2, 2));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     ProtoOutputStream output;
     std::set<string> strSet;
@@ -3084,7 +3084,7 @@ TEST(NumericValueMetricProducerTest, TestPulledData_noDiff_withoutCondition) {
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 30, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + 30);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 30);
 
     // Bucket should have been completed.
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {10}, {bucketSizeNs}, {30},
@@ -3135,7 +3135,7 @@ TEST(NumericValueMetricProducerTest, TestPulledData_noDiff_withMultipleCondition
     // Now the alarm is delivered. Condition is off though.
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 30, 110));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {20}, {50 - 8}, {0},
                                     {bucketStartTimeNs}, {bucket2StartTimeNs});
@@ -3167,7 +3167,7 @@ TEST(NumericValueMetricProducerTest, TestPulledData_noDiff_bucketBoundaryTrue) {
     // Now the alarm is delivered. Condition is on.
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 30, 30));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {30}, {bucketSizeNs - 8}, {0},
                                     {bucketStartTimeNs}, {bucket2StartTimeNs});
@@ -3189,7 +3189,7 @@ TEST(NumericValueMetricProducerTest, TestPulledData_noDiff_bucketBoundaryFalse) 
     // Now the alarm is delivered. Condition is off though.
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 30, 30));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // Condition was always false.
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {}, {}, {}, {}, {});
@@ -3223,7 +3223,7 @@ TEST(NumericValueMetricProducerTest, TestPulledData_noDiff_withFailure) {
     // Now the alarm is delivered. Condition is off though.
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 30, 30));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(0UL, valueProducer->mDimInfos.size());
 
@@ -3312,7 +3312,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenConditionEv
     // Bucket boundary pull.
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs, 15));
-    valueProducer->onDataPulled(allData, /** succeeds */ true, bucket2StartTimeNs + 1);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 1);
 
     // Late condition change event.
     valueProducer->onConditionChanged(false, bucket2StartTimeNs - 100);
@@ -3379,7 +3379,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenAccumulateE
     // Bucket boundary pull.
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs, 15));
-    valueProducer->onDataPulled(allData, /** succeeds */ true, bucket2StartTimeNs + 1);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 1);
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs - 100, 20));
@@ -3723,7 +3723,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestConditionUnknownMultipleBuck
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 3));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // This bucket is also dropped due to condition unknown.
     int64_t conditionChangeTimeNs = bucket2StartTimeNs + 10 * NS_PER_SEC;
@@ -4721,7 +4721,7 @@ TEST(NumericValueMetricProducerTest, TestSlicedStateWithPrimaryField_WithDimensi
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs, 1 /*uid*/, 10));
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs, 2 /*uid*/, 15));
-    valueProducer->onDataPulled(allData, /** succeeds */ true, bucket2StartTimeNs + 1);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 1);
 
     // Ensure the MetricDimensionKeys for the current state are kept.
     ASSERT_EQ(2UL, valueProducer->mCurrentSlicedBucket.size());
@@ -5757,7 +5757,7 @@ TEST(NumericValueMetricProducerTest, TestSlicedStateWithMultipleDimensions) {
             CreateThreeValueLogEvent(tagId, bucket2StartTimeNs, 1 /*uid*/, 13, 16 /* tag */));
     allData.push_back(
             CreateThreeValueLogEvent(tagId, bucket2StartTimeNs, 2 /*uid*/, 13, 8 /*tag*/));
-    valueProducer->onDataPulled(allData, /** succeeds */ true, bucket2StartTimeNs + 1);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 1);
 
     // Buckets flushed. MetricDimensionKeys not corresponding to the current state are removed.
     ASSERT_EQ(3UL, valueProducer->mCurrentSlicedBucket.size());
@@ -5967,7 +5967,7 @@ TEST(NumericValueMetricProducerTest, TestSlicedStateWithCondition) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs, 11));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     ASSERT_EQ(2UL, valueProducer->mPastBuckets.size());
     ASSERT_EQ(1UL, valueProducer->mCurrentSlicedBucket.size());
@@ -6131,7 +6131,7 @@ TEST(NumericValueMetricProducerTest, TestSlicedStateWithConditionFalseMultipleBu
     // Pull at end of first bucket.
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs, 11));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(2UL, valueProducer->mPastBuckets.size());
     ASSERT_EQ(1UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(1UL, valueProducer->mDimInfos.size());
@@ -6144,7 +6144,7 @@ TEST(NumericValueMetricProducerTest, TestSlicedStateWithConditionFalseMultipleBu
     // Pull at end of second bucket. Since no new data is seen, mDimInfos will be cleared.
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 15));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     ASSERT_EQ(2UL, valueProducer->mPastBuckets.size());
     ASSERT_EQ(1UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(0UL, valueProducer->mDimInfos.size());
@@ -6340,7 +6340,7 @@ TEST(NumericValueMetricProducerTest, TestSlicedStateWithMultipleDimensionsMissin
             CreateThreeValueLogEvent(tagId, bucket2StartTimeNs, 1 /*uid*/, 13, 14 /* tag */));
     allData.push_back(
             CreateThreeValueLogEvent(tagId, bucket2StartTimeNs, 1 /*uid*/, 13, 16 /* tag */));
-    valueProducer->onDataPulled(allData, /** succeeds */ true, bucket2StartTimeNs + 1);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs + 1);
 
     // Buckets flushed. MetricDimensionKeys not corresponding to the current state are removed.
     ASSERT_EQ(2UL, valueProducer->mCurrentSlicedBucket.size());
@@ -6528,7 +6528,7 @@ TEST(NumericValueMetricProducerTest, TestUploadThreshold) {
     allData.clear();
     allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 1 /*uid*/, 21, 21));
     allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 2 /*uid*/, 20, 5));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // Check dump report.
     ProtoOutputStream output;
@@ -6597,7 +6597,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullWhileC
     // first delayed pull on the bucket #1 edge
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + pullDelayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + pullDelayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + pullDelayNs);
 
     // the delayed pull did close the first bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5}, {bucketSizeNs}, {pullDelayNs},
@@ -6606,7 +6607,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullWhileC
     // second pull on the bucket #2 boundary on time
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 15));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
 
     // the second pull did close the second bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5, 5},
@@ -6647,7 +6648,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullWhileC
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + delayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + delayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + delayNs);
 
     // first delayed pull on the bucket #1 edge
     // the delayed pull did close the first bucket with condition duration == conditionDurationNs
@@ -6661,7 +6663,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullWhileC
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
 
     // second pull on the bucket #2 edge is on time
     assertPastBucketValuesSingleKey(
@@ -6717,7 +6719,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestLatePullOnCondition
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 30));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
 
     // second pull on the bucket #2 edge is on time
     // the pull did close the second bucket with condition where
@@ -6820,7 +6822,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullWithCo
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket1LatePullNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket1LatePullNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket1LatePullNs);
 
     // first delayed pull on the bucket #1 edge
     // the delayed pull did close the first bucket with condition duration == bucketSizeNs
@@ -6834,7 +6836,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullWithCo
     // will force delayed pull & bucket #2 close
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2LatePullNs, 25));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2LatePullNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2LatePullNs);
 
     // second delayed pull on the bucket #2 edge
     // the pull did close the second bucket with condition true
@@ -6851,7 +6853,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullWithCo
     // will force pull on time & bucket #3 close
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket4StartTimeNs, 40));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
 
     // the pull did close the third bucket with condition true
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5, 10, 15},
@@ -6888,7 +6890,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullNoCond
     // first delayed pull on the bucket #1 edge
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + pullDelayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + pullDelayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + pullDelayNs);
 
     // the delayed pull did close the first bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5}, {bucketSizeNs}, {pullDelayNs},
@@ -6897,7 +6900,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullNoCond
     // second pull on the bucket #2 boundary on time
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 15));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
 
     // the second pull did close the second bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5, 5},
@@ -6908,7 +6911,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullNoCond
     // third pull on the bucket #3 boundary on time
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket4StartTimeNs, 20));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
 
     // the third pull did close the third bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5, 5, 5},
@@ -6940,7 +6943,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullNoCond
     // first delayed pull on the bucket #1 edge with delay
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + pullDelayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + pullDelayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + pullDelayNs);
 
     // the delayed pull did close the first bucket which is skipped
     // skipped due to bucket does not contains any value
@@ -6950,7 +6954,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullNoCond
     // second pull on the bucket #2 boundary on time
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 15));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
 
     // the second pull did close the second bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5}, {bucketSizeNs},
@@ -6959,7 +6963,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestAlarmLatePullNoCond
     // third pull on the bucket #3 boundary on time
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket4StartTimeNs, 20));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket4StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket4StartTimeNs);
 
     // the third pull did close the third bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(
@@ -7000,7 +7004,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestThresholdNotDefined
     // first delayed pull on the bucket #1 edge
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + pullDelayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + pullDelayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + pullDelayNs);
 
     // the delayed pull did close the first bucket with condition duration == bucketSizeNs
     // and the condition correction == pull delay
@@ -7056,7 +7061,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestThresholdDefinedZer
     // first delayed pull on the bucket #1 edge
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + pullDelayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + pullDelayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + pullDelayNs);
 
     // the delayed pull did close the first bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5}, {bucketSizeNs}, {pullDelayNs},
@@ -7113,7 +7119,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestThresholdUploadPass
     // first delayed pull on the bucket #1 edge
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + pullDelayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + pullDelayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + pullDelayNs);
 
     // the delayed pull did close the first bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5}, {bucketSizeNs}, {pullDelayNs},
@@ -7122,7 +7129,7 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestThresholdUploadPass
     // second pull on the bucket #2 boundary on time
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket3StartTimeNs, 15));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
 
     // the second pull did close the second bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5, 5},
@@ -7183,7 +7190,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestThresholdUploadPass
     // first delayed pull on the bucket #1 edge
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + pullDelayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + pullDelayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + pullDelayNs);
 
     // the delayed pull did close the first bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5}, {bucketSizeNs}, {pullDelayNs},
@@ -7240,7 +7248,8 @@ TEST(NumericValueMetricProducerTest_ConditionCorrection, TestThresholdUploadSkip
     // first delayed pull on the bucket #1 edge
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + pullDelayNs, 10));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + pullDelayNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                                bucket2StartTimeNs + pullDelayNs);
 
     // the delayed pull did close the first bucket with condition duration == bucketSizeNs
     assertPastBucketValuesSingleKey(valueProducer->mPastBuckets, {5}, {bucketSizeNs}, {pullDelayNs},
@@ -7423,7 +7432,7 @@ TEST(NumericValueMetricProducerTest, TestSubsetDimensions) {
     allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 1 /*uid*/, 11, 7));
     allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 2 /*uid*/, 8, 5));
     allData.push_back(CreateThreeValueLogEvent(tagId, bucket2StartTimeNs + 1, 2 /*uid*/, 9, 7));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(2UL, valueProducer->mDimInfos.size());
 
@@ -7502,7 +7511,7 @@ TEST(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions) {
     allData.clear();
     allData.push_back(makeRepeatedUidLogEvent(tagId, bucket2StartTimeNs + 1, {1, 10}, 5, {5, 7}));
     allData.push_back(makeRepeatedUidLogEvent(tagId, bucket2StartTimeNs + 1, {2, 10}, 5, {7, 5}));
-    valueProducer->onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     // Check dump report.
     ProtoOutputStream output;

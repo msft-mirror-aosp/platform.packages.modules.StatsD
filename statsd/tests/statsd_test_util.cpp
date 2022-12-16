@@ -2038,7 +2038,7 @@ vector<PackageInfo> buildPackageInfos(
     return packageInfos;
 }
 
-StatsdStatsReport_PulledAtomStats getPulledAtomStats() {
+StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {
     vector<uint8_t> statsBuffer;
     StatsdStats::getInstance().dumpStats(&statsBuffer, false /*reset stats*/);
     StatsdStatsReport statsReport;
@@ -2049,7 +2049,12 @@ StatsdStatsReport_PulledAtomStats getPulledAtomStats() {
     if (statsReport.pulled_atom_stats_size() == 0) {
         return pulledAtomStats;
     }
-    return statsReport.pulled_atom_stats(0);
+    for (size_t i = 0; i < statsReport.pulled_atom_stats_size(); i++) {
+        if (statsReport.pulled_atom_stats(i).atom_id() == atom_id) {
+            return statsReport.pulled_atom_stats(i);
+        }
+    }
+    return pulledAtomStats;
 }
 
 }  // namespace statsd

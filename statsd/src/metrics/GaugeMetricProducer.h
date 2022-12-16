@@ -76,8 +76,14 @@ public:
     virtual ~GaugeMetricProducer();
 
     // Handles when the pulled data arrives.
-    void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data,
-                      bool pullSuccess, int64_t originalPullTimeNs) override;
+    void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data, PullResult pullResult,
+                      int64_t originalPullTimeNs) override;
+
+    // Determine if metric needs to pull
+    bool isPullNeeded() const override {
+        std::lock_guard<std::mutex> lock(mMutex);
+        return mIsActive && (mCondition == ConditionState::kTrue);
+    };
 
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
     void notifyAppUpgradeInternalLocked(const int64_t eventTimeNs) override {

@@ -69,9 +69,11 @@ StatsdConfig CreateStatsdConfig(const GaugeMetric::SamplingType sampling_type,
 }  // namespaces
 
 // Setup for test fixture.
-class GaugeMetricE2ePulledTest : public ::testing::Test {
+class GaugeMetricE2ePulledTest : public ::testing::TestWithParam<string> {
     void SetUp() override {
         FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
+        FlagProvider::getInstance().overrideFlag(LIMIT_PULL_FLAG, GetParam(),
+                                                 /*isBootFlag=*/true);
     }
 
     void TearDown() override {
@@ -79,7 +81,10 @@ class GaugeMetricE2ePulledTest : public ::testing::Test {
     }
 };
 
-TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
+INSTANTIATE_TEST_SUITE_P(LimitPull, GaugeMetricE2ePulledTest,
+                         testing::Values(FLAG_FALSE, FLAG_TRUE));
+
+TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -219,7 +224,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
     EXPECT_GT(data.bucket_info(5).atom(0).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_F(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
+TEST_P(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
     auto config = CreateStatsdConfig(GaugeMetric::CONDITION_CHANGE_TO_TRUE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -317,7 +322,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
     EXPECT_GT(data.bucket_info(2).atom(1).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
+TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -415,7 +420,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
     EXPECT_GT(data.bucket_info(2).atom(0).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
+TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE, /*useCondition=*/false);
 
     int64_t baseTimeNs = getElapsedRealtimeNs();
@@ -460,14 +465,15 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     // Check no pull occurred on metric initialization when it's not active.
     const int64_t metricInitTimeNs = configAddedTimeNs + 1;  // 10 mins + 1 ns.
     processor->onStatsdInitCompleted(metricInitTimeNs);
-    StatsdStatsReport_PulledAtomStats pulledAtomStats = getPulledAtomStats();
+    StatsdStatsReport_PulledAtomStats pulledAtomStats =
+            getPulledAtomStats(util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.atom_id(), ATOM_TAG);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
     // Check no pull occurred on app upgrade when metric is not active.
     const int64_t appUpgradeTimeNs = metricInitTimeNs + 1;  // 10 mins + 2 ns.
     processor->notifyAppUpgrade(appUpgradeTimeNs, "appName", 1000 /* uid */, 2 /* version */);
-    pulledAtomStats = getPulledAtomStats();
+    pulledAtomStats = getPulledAtomStats(util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.atom_id(), ATOM_TAG);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
@@ -593,7 +599,7 @@ TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     EXPECT_EQ(gaugeMetrics.skipped_size(), 0);
 }
 
-TEST_F(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition) {
+TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE, /*useCondition=*/false);
 
     int64_t baseTimeNs = getElapsedRealtimeNs();

@@ -712,7 +712,7 @@ std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
     return result;
 }
 
-StatsdStatsReport_PulledAtomStats getPulledAtomStats();
+StatsdStatsReport_PulledAtomStats getPulledAtomStats(int atom_id);
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
