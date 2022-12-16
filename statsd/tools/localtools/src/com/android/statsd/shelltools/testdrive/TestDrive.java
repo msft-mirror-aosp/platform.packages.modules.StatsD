@@ -33,9 +33,15 @@ import com.android.statsd.shelltools.Utils;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.io.Files;
+import com.google.protobuf.DescriptorProtos;
+import com.google.protobuf.Descriptors;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -74,6 +80,9 @@ public class TestDrive {
             "com.android.imsserviceentitlement",
             "com.google.android.cellbroadcastreceiver",
             "com.google.android.apps.nexuslauncher",
+            "com.google.android.markup",
+            "com.android.art",
+            "com.google.android.art",
             "AID_KEYSTORE",
             "AID_VIRTUALIZATIONSERVICE",
             "com.google.android.permissioncontroller",
@@ -81,11 +90,11 @@ public class TestDrive {
             "AID_SECURE_ELEMENT",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
-            "AID_KEYSTORE",
-            "AID_RADIO",
-            "AID_SYSTEM",
+            "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",
     };
     private static final Logger LOGGER = Logger.getLogger(TestDrive.class.getName());
+    private static final String HW_ATOMS_PROTO_FILEPATH =
+            "hardware/google/pixel/pixelstats/pixelatoms.proto";
 
     @VisibleForTesting
     String mDeviceSerial = null;
@@ -93,20 +102,24 @@ public class TestDrive {
     Dumper mDumper = new BasicDumper();
     boolean mPressToContinue = false;
     Integer mReportCollectionDelayMillis = 60_000;
+    List<String> mProtoIncludes = new ArrayList<>();
 
     public static void main(String[] args) {
         final Configuration configuration = new Configuration();
         final TestDrive testDrive = new TestDrive();
         Utils.setUpLogger(LOGGER, false);
 
-        if (!testDrive.processArgs(configuration, args,
-                Utils.getDeviceSerials(LOGGER), Utils.getDefaultDevice(LOGGER))) {
+        if (!testDrive.processArgs(
+                configuration, args, Utils.getDeviceSerials(LOGGER),
+                Utils.getDefaultDevice(LOGGER))) {
             return;
         }
 
-        final ConfigMetricsReportList reports = testDrive.testDriveAndGetReports(
-                configuration.createConfig(), configuration.hasPulledAtoms(),
-                configuration.hasPushedAtoms());
+        final ConfigMetricsReportList reports =
+                testDrive.testDriveAndGetReports(
+                        configuration.createConfig(),
+                        configuration.hasPulledAtoms(),
+                        configuration.hasPushedAtoms());
         if (reports != null) {
             configuration.dumpMetrics(reports, testDrive.mDumper);
         }
@@ -119,6 +132,9 @@ public class TestDrive {
         LOGGER.severe("\tPrint this message");
         LOGGER.severe("-one");
         LOGGER.severe("\tCreating one event metric to catch all pushed atoms");
+        LOGGER.severe("-i");
+        LOGGER.severe("\tPath to proto file to include (pixelatoms.proto, etc.)");
+        LOGGER.severe("\tPath is absolute or relative to current dir or to ANDROID_BUILD_TOP");
         LOGGER.severe("-terse");
         LOGGER.severe("\tTerse output format.");
         LOGGER.severe("-p additional_allowed_package");
@@ -131,7 +147,10 @@ public class TestDrive {
         LOGGER.severe("\tWait for delay_ms before collecting report, default is 60000 ms");
     }
 
-    boolean processArgs(Configuration configuration, String[] args, List<String> connectedDevices,
+    boolean processArgs(
+            Configuration configuration,
+            String[] args,
+            List<String> connectedDevices,
             String defaultDevice) {
         if (args.length < 1) {
             printUsageMessage();
@@ -151,6 +170,8 @@ public class TestDrive {
                 mDumper = new TerseDumper();
             } else if (remaining_args >= 3 && arg.equals("-p")) {
                 configuration.mAdditionalAllowedPackage = args[++first_arg];
+            } else if (remaining_args >= 3 && arg.equals("-i")) {
+                mProtoIncludes.add(args[++first_arg]);
             } else if (remaining_args >= 3 && arg.equals("-s")) {
                 mDeviceSerial = args[++first_arg];
             } else if (remaining_args >= 2 && arg.equals("-e")) {
@@ -162,8 +183,12 @@ public class TestDrive {
                 printUsageMessage();
                 return false;
             } else {
-                break;  // Found the atom list
+                break; // Found the atom list
             }
+        }
+
+        if (mProtoIncludes.size() == 0) {
+            mProtoIncludes.add(HW_ATOMS_PROTO_FILEPATH);
         }
 
         mDeviceSerial = Utils.chooseDevice(mDeviceSerial, connectedDevices, defaultDevice, LOGGER);
@@ -171,10 +196,10 @@ public class TestDrive {
             return false;
         }
 
-        for ( ; first_arg < args.length; ++first_arg) {
+        for (; first_arg < args.length; ++first_arg) {
             String atom = args[first_arg];
             try {
-                configuration.addAtom(Integer.valueOf(atom));
+                configuration.addAtom(Integer.valueOf(atom), mProtoIncludes);
             } catch (NumberFormatException e) {
                 LOGGER.severe("Bad atom id provided: " + atom);
             }
@@ -183,8 +208,8 @@ public class TestDrive {
         return configuration.hasPulledAtoms() || configuration.hasPushedAtoms();
     }
 
-    private ConfigMetricsReportList testDriveAndGetReports(StatsdConfig config,
-            boolean hasPulledAtoms, boolean hasPushedAtoms) {
+    private ConfigMetricsReportList testDriveAndGetReports(
+            StatsdConfig config, boolean hasPulledAtoms, boolean hasPushedAtoms) {
         if (config == null) {
             LOGGER.severe("Failed to create valid config.");
             return null;
@@ -193,8 +218,7 @@ public class TestDrive {
         String remoteConfigPath = null;
         try {
             remoteConfigPath = pushConfig(config, mDeviceSerial);
-            LOGGER.info("Pushed the following config to statsd on device '" + mDeviceSerial
-                    + "':");
+            LOGGER.info("Pushed the following config to statsd on device '" + mDeviceSerial + "':");
             LOGGER.info(config.toString());
             if (hasPushedAtoms) {
                 LOGGER.info("Now please play with the device to trigger the event.");
@@ -217,16 +241,15 @@ public class TestDrive {
                 Utils.logAppBreadcrumb(0, 0, LOGGER, mDeviceSerial);
                 Thread.sleep(75_000);
             }
-            return Utils.getReportList(CONFIG_ID, true, false, LOGGER,
-                    mDeviceSerial);
+            return Utils.getReportList(CONFIG_ID, true, false, LOGGER, mDeviceSerial);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to test drive: " + e.getMessage(), e);
         } finally {
             removeConfig(mDeviceSerial);
             if (remoteConfigPath != null) {
                 try {
-                    Utils.runCommand(null, LOGGER,
-                            "adb", "-s", mDeviceSerial, "shell", "rm",
+                    Utils.runCommand(
+                            null, LOGGER, "adb", "-s", mDeviceSerial, "shell", "rm",
                             remoteConfigPath);
                 } catch (Exception e) {
                     LOGGER.log(Level.WARNING,
@@ -246,6 +269,7 @@ public class TestDrive {
         @VisibleForTesting
         String mAdditionalAllowedPackage = null;
         private final Set<Long> mTrackedMetrics = new HashSet<>();
+        private final String mAndroidBuildTop = System.getenv("ANDROID_BUILD_TOP");
 
         private void dumpMetrics(ConfigMetricsReportList reportList, Dumper dumper) {
             // We may get multiple reports. Take the last one.
@@ -266,16 +290,129 @@ public class TestDrive {
                     || atomId >= VENDOR_PULLED_ATOM_START_TAG;
         }
 
-        void addAtom(Integer atom) {
+        void addAtom(Integer atom, List<String> protoIncludes) {
             if (Atom.getDescriptor().findFieldByNumber(atom) == null) {
-                LOGGER.severe("No such atom found: " + atom);
-                return;
+                // try to look in alternative locations
+                if (protoIncludes != null) {
+                    boolean isAtomDefined = false;
+                    for (int i = 0; i < protoIncludes.size(); i++) {
+                        isAtomDefined = isAtomDefinedInFile(protoIncludes.get(i), atom);
+                        if (isAtomDefined) {
+                            break;
+                        }
+                    }
+                    if (!isAtomDefined) {
+                        LOGGER.severe("No such atom found: " + atom);
+                        return;
+                    }
+                }
             }
             if (isPulledAtom(atom)) {
                 mPulledAtoms.add(atom);
             } else {
                 mPushedAtoms.add(atom);
             }
+        }
+
+        private String compileProtoFileIntoDescriptorSet(String protoFileName) {
+            final String protoCompilerBinary = "aprotoc";
+            final String descSetFlag = "--descriptor_set_out";
+
+            final String dsFileName = generateDescriptorSetFileName(protoFileName);
+            if (dsFileName == null) return null;
+
+            LOGGER.log(Level.FINE, "Target DescriptorSet File " + dsFileName);
+
+            try {
+                List<String> cmdArgs = new ArrayList<>();
+                cmdArgs.add(protoCompilerBinary);
+                cmdArgs.add(descSetFlag);
+                cmdArgs.add(dsFileName);
+
+                // populate the proto_path argument
+                if (mAndroidBuildTop != null) {
+                    cmdArgs.add("-I");
+                    cmdArgs.add(mAndroidBuildTop);
+                }
+
+                Path protoPath = Paths.get(protoFileName);
+                while (protoPath.getParent() != null) {
+                    LOGGER.log(Level.FINE, "Including " + protoPath.getParent().toString());
+                    cmdArgs.add("-I");
+                    cmdArgs.add(protoPath.getParent().toString());
+                    protoPath = protoPath.getParent();
+                }
+                cmdArgs.add(protoFileName);
+
+                String[] commands = new String[cmdArgs.size()];
+                commands = cmdArgs.toArray(commands);
+                Utils.runCommand(null, LOGGER, commands);
+                return dsFileName;
+            } catch (IOException e) {
+                LOGGER.log(Level.SEVERE, "Error while performing proto compilation: " + e);
+            } catch (InterruptedException e) {
+                LOGGER.log(Level.SEVERE, "Error while performing proto compilation: " + e);
+            }
+            return null;
+        }
+
+        private String validateIncludeProtoPath(String protoFileName) {
+            try {
+                File protoFile = new File(protoFileName);
+                if (!protoFile.exists()) {
+                    protoFileName = Paths.get(mAndroidBuildTop).resolve(
+                            protoFileName).toRealPath().toString();
+                }
+
+                // file will be generated in the current work dir
+                return Paths.get(protoFileName).toRealPath().toString();
+            } catch (IOException e) {
+                LOGGER.log(Level.INFO, "Could not find file " + protoFileName);
+            }
+            return null;
+        }
+
+        private String generateDescriptorSetFileName(String protoFileName) {
+            try {
+                // file will be generated in the current work dir
+                final Path protoPath = Paths.get(protoFileName).toRealPath();
+                LOGGER.log(Level.FINE, "Absolute proto file " + protoPath.toString());
+                Path dsPath = Paths.get(System.getProperty("user.dir"));
+                dsPath = dsPath.resolve(protoPath.getFileName().toString() + ".ds.tmp");
+                return dsPath.toString();
+            } catch (IOException e) {
+                LOGGER.log(Level.INFO, "Could not find file " + protoFileName);
+            }
+            return null;
+        }
+
+        private boolean isAtomDefinedInFile(String fileName, Integer atom) {
+            final String fullProtoFilePath = validateIncludeProtoPath(fileName);
+            if (fullProtoFilePath == null) return false;
+
+            final String dsFileName = compileProtoFileIntoDescriptorSet(fullProtoFilePath);
+            if (dsFileName == null) return false;
+
+            try (InputStream input = new FileInputStream(dsFileName)) {
+                DescriptorProtos.FileDescriptorSet fileDescriptorSet =
+                        DescriptorProtos.FileDescriptorSet.parseFrom(input);
+
+                Descriptors.FileDescriptor fieldOptionsDesc =
+                        DescriptorProtos.FieldOptions.getDescriptor().getFile();
+
+                Descriptors.Descriptor atomMsgDesc = Descriptors.FileDescriptor.buildFrom(
+                        fileDescriptorSet.getFile(0),
+                        new Descriptors.FileDescriptor[]{fieldOptionsDesc}).findMessageTypeByName(
+                        "Atom");
+
+                if (atomMsgDesc.findFieldByNumber(atom) != null) return true;
+            } catch (Descriptors.DescriptorValidationException | IOException e) {
+                LOGGER.log(Level.WARNING, "Unable to parse atoms proto file: " + fileName, e);
+            } finally {
+                File dsFile = new File(dsFileName);
+                dsFile.delete();
+            }
+            return false;
         }
 
         private boolean hasPulledAtoms() {
@@ -324,7 +461,7 @@ public class TestDrive {
             }
 
             if (mOnePushedAtomEvent) {
-                // Create a union event metric, using an matcher that matches all pulled atoms.
+                // Create a union event metric, using a matcher that matches all pushed atoms.
                 AtomMatcher unionAtomMatcher = createUnionMatcher(simpleAtomMatchers,
                         atomMatcherId);
                 builder.addAtomMatcher(unionAtomMatcher);
@@ -333,12 +470,10 @@ public class TestDrive {
                 builder.addEventMetric(eventMetricBuilder.build());
                 mTrackedMetrics.add(metricId++);
             } else {
-                // Create multiple event metrics, one per pulled atom.
+                // Create multiple event metrics, one per pushed atom.
                 for (AtomMatcher atomMatcher : simpleAtomMatchers) {
                     EventMetric.Builder eventMetricBuilder = EventMetric.newBuilder();
-                    eventMetricBuilder
-                            .setId(metricId)
-                            .setWhat(atomMatcher.getId());
+                    eventMetricBuilder.setId(metricId).setWhat(atomMatcher.getId());
                     builder.addEventMetric(eventMetricBuilder.build());
                     mTrackedMetrics.add(metricId++);
                 }
@@ -355,8 +490,8 @@ public class TestDrive {
             return atomMatcherBuilder.build();
         }
 
-        private AtomMatcher createUnionMatcher(List<AtomMatcher> simpleAtomMatchers,
-                long atomMatcherId) {
+        private AtomMatcher createUnionMatcher(
+                List<AtomMatcher> simpleAtomMatchers, long atomMatcherId) {
             AtomMatcher.Combination.Builder combinationBuilder =
                     AtomMatcher.Combination.newBuilder();
             combinationBuilder.setOperation(StatsdConfigProto.LogicalOperation.OR);
@@ -377,24 +512,31 @@ public class TestDrive {
             return StatsdConfig.newBuilder()
                     .addAllAllowedLogSource(allowedSources)
                     .addAllDefaultPullPackages(Arrays.asList(DEFAULT_PULL_SOURCES))
-                    .addPullAtomPackages(PullAtomPackages.newBuilder()
-                            .setAtomId(Atom.MEDIA_DRM_ACTIVITY_INFO_FIELD_NUMBER)
-                            .addPackages("AID_MEDIA"))
-                    .addPullAtomPackages(PullAtomPackages.newBuilder()
-                            .setAtomId(Atom.GPU_STATS_GLOBAL_INFO_FIELD_NUMBER)
-                            .addPackages("AID_GPU_SERVICE"))
-                    .addPullAtomPackages(PullAtomPackages.newBuilder()
-                            .setAtomId(Atom.GPU_STATS_APP_INFO_FIELD_NUMBER)
-                            .addPackages("AID_GPU_SERVICE"))
-                    .addPullAtomPackages(PullAtomPackages.newBuilder()
-                            .setAtomId(Atom.TRAIN_INFO_FIELD_NUMBER)
-                            .addPackages("AID_STATSD"))
-                    .addPullAtomPackages(PullAtomPackages.newBuilder()
-                            .setAtomId(Atom.GENERAL_EXTERNAL_STORAGE_ACCESS_STATS_FIELD_NUMBER)
-                            .addPackages("com.google.android.providers.media.module"))
-                    .addPullAtomPackages(PullAtomPackages.newBuilder()
-                            .setAtomId(Atom.LAUNCHER_LAYOUT_SNAPSHOT_FIELD_NUMBER)
-                            .addPackages("com.google.android.apps.nexuslauncher"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(Atom.MEDIA_DRM_ACTIVITY_INFO_FIELD_NUMBER)
+                                    .addPackages("AID_MEDIA"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(Atom.GPU_STATS_GLOBAL_INFO_FIELD_NUMBER)
+                                    .addPackages("AID_GPU_SERVICE"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(Atom.GPU_STATS_APP_INFO_FIELD_NUMBER)
+                                    .addPackages("AID_GPU_SERVICE"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(Atom.TRAIN_INFO_FIELD_NUMBER)
+                                    .addPackages("AID_STATSD"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(
+                                            Atom.GENERAL_EXTERNAL_STORAGE_ACCESS_STATS_FIELD_NUMBER)
+                                    .addPackages("com.google.android.providers.media.module"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(Atom.LAUNCHER_LAYOUT_SNAPSHOT_FIELD_NUMBER)
+                                    .addPackages("com.google.android.apps.nexuslauncher"))
                     .setHashStringsInMetricReport(false);
         }
     }
@@ -420,6 +562,7 @@ public class TestDrive {
                 dumpEventMetrics(report);
             }
         }
+
         void dumpEventMetrics(StatsLogReport report) {
             final List<StatsLog.EventMetricData> data = Utils.getEventMetricData(report);
             if (data.isEmpty()) {
@@ -427,12 +570,13 @@ public class TestDrive {
             }
             long firstTimestampNanos = data.get(0).getElapsedTimestampNanos();
             for (StatsLog.EventMetricData event : data) {
-                final double deltaSec = (event.getElapsedTimestampNanos() - firstTimestampNanos)
-                        / 1e9;
+                final double deltaSec =
+                        (event.getElapsedTimestampNanos() - firstTimestampNanos) / 1e9;
                 System.out.println(
                         String.format("+%.3fs: %s", deltaSec, event.getAtom().toString()));
             }
         }
+
         void dumpGaugeMetrics(StatsLogReport report) {
             final List<StatsLog.GaugeMetricData> data = report.getGaugeMetrics().getDataList();
             if (data.isEmpty()) {
@@ -450,18 +594,35 @@ public class TestDrive {
         configFile.deleteOnExit();
         Files.write(config.toByteArray(), configFile);
         String remotePath = "/data/local/tmp/" + configFile.getName();
-        Utils.runCommand(null, LOGGER, "adb", "-s", deviceSerial,
-                "push", configFile.getAbsolutePath(), remotePath);
-        Utils.runCommand(null, LOGGER, "adb", "-s", deviceSerial,
-                "shell", "cat", remotePath, "|", Utils.CMD_UPDATE_CONFIG,
+        Utils.runCommand(
+                null, LOGGER, "adb", "-s", deviceSerial, "push", configFile.getAbsolutePath(),
+                remotePath);
+        Utils.runCommand(
+                null,
+                LOGGER,
+                "adb",
+                "-s",
+                deviceSerial,
+                "shell",
+                "cat",
+                remotePath,
+                "|",
+                Utils.CMD_UPDATE_CONFIG,
                 String.valueOf(CONFIG_ID));
         return remotePath;
     }
 
     private static void removeConfig(String deviceSerial) {
         try {
-            Utils.runCommand(null, LOGGER, "adb", "-s", deviceSerial,
-                    "shell", Utils.CMD_REMOVE_CONFIG, String.valueOf(CONFIG_ID));
+            Utils.runCommand(
+                    null,
+                    LOGGER,
+                    "adb",
+                    "-s",
+                    deviceSerial,
+                    "shell",
+                    Utils.CMD_REMOVE_CONFIG,
+                    String.valueOf(CONFIG_ID));
         } catch (Exception e) {
             LOGGER.severe("Failed to remove config: " + e.getMessage());
         }
