@@ -180,6 +180,10 @@ public:
     }
 
     std::shared_ptr<IStatsd> getStatsService() {
+        // There are host unit tests which are using libstatspull
+        // Since we do not have statsd on host - the getStatsService() is no-op and
+        // should return nullptr
+#ifdef __ANDROID__
         std::lock_guard<std::mutex> lock(mStatsdMutex);
         if (!mStatsd) {
             // Fetch statsd
@@ -189,6 +193,7 @@ public:
                 AIBinder_linkToDeath(binder.get(), mDeathRecipient.get(), this);
             }
         }
+#endif  //  __ANDROID__
         return mStatsd;
     }
 
