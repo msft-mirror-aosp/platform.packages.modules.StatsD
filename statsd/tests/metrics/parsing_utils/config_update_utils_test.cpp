@@ -25,7 +25,6 @@
 
 #include "src/condition/CombinationConditionTracker.h"
 #include "src/condition/SimpleConditionTracker.h"
-#include "src/flags/FlagProvider.h"
 #include "src/matchers/CombinationAtomMatchingTracker.h"
 #include "src/metrics/DurationMetricProducer.h"
 #include "src/metrics/GaugeMetricProducer.h"
@@ -134,11 +133,6 @@ public:
         oldStateHashes.clear();
         noReportMetricIds.clear();
         StateManager::getInstance().clear();
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue, &getServerFlagFuncTrue);
-    }
-
-    void TearDown() override {
-        FlagProvider::getInstance().resetOverrides();
     }
 };
 
@@ -3939,6 +3933,175 @@ TEST_F(ConfigUpdateTest, TestUpdateAlarms) {
     EXPECT_EQ(newAlarmTrackers[0]->getAlarmTimestampSec(), timeBaseNs / NS_PER_SEC + 1 + 2 * 50);
     EXPECT_EQ(newAlarmTrackers[1]->getAlarmTimestampSec(), timeBaseNs / NS_PER_SEC + 5 + 2000);
     EXPECT_EQ(newAlarmTrackers[2]->getAlarmTimestampSec(), timeBaseNs / NS_PER_SEC + 10 + 10000);
+}
+
+TEST_F(ConfigUpdateTest, TestMetricHasMultipleActivations) {
+    StatsdConfig config;
+    int64_t metricId = 1;
+    auto metric_activation1 = config.add_metric_activation();
+    metric_activation1->set_metric_id(metricId);
+    metric_activation1->set_activation_type(ACTIVATE_IMMEDIATELY);
+    EXPECT_TRUE(initConfig(config));
+
+    auto metric_activation2 = config.add_metric_activation();
+    metric_activation2->set_metric_id(metricId);
+    metric_activation2->set_activation_type(ACTIVATE_IMMEDIATELY);
+
+    unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
+    unordered_map<int64_t, int> newAtomMatchingTrackerMap;
+    unordered_map<int64_t, int> newConditionTrackerMap;
+    unordered_map<int64_t, int> newMetricProducerMap;
+    unordered_map<int64_t, int> stateAtomIdMap;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    set<int64_t> noReportMetricIds;
+    vector<int> metricsWithActivation;
+    vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
+    vector<sp<ConditionTracker>> newConditionTrackers;
+    vector<sp<MetricProducer>> newMetricProducers;
+    vector<ConditionState> conditionCache;
+    set<int64_t> replacedMetrics;
+    set<int64_t> replacedMatchers;
+    set<int64_t> replacedConditions;
+    set<int64_t> replacedStates;
+    EXPECT_EQ(updateMetrics(key, config, /*timeBaseNs=*/123, /*currentTimeNs=*/12345,
+                            new StatsPullerManager(), oldAtomMatchingTrackerMap,
+                            newAtomMatchingTrackerMap, replacedMatchers, newAtomMatchingTrackers,
+                            newConditionTrackerMap, replacedConditions, newConditionTrackers,
+                            conditionCache, stateAtomIdMap, allStateGroupMaps, replacedStates,
+                            oldMetricProducerMap, oldMetricProducers, newMetricProducerMap,
+                            newMetricProducers, conditionToMetricMap, trackerToMetricMap,
+                            noReportMetricIds, activationAtomTrackerToMetricMap,
+                            deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                            replacedMetrics),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_HAS_MULTIPLE_ACTIVATIONS, metricId));
+}
+
+TEST_F(ConfigUpdateTest, TestNoReportMetricNotFound) {
+    StatsdConfig config;
+    int64_t metricId = 1;
+    config.add_no_report_metric(metricId);
+
+    unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
+    unordered_map<int64_t, int> newAtomMatchingTrackerMap;
+    unordered_map<int64_t, int> newConditionTrackerMap;
+    unordered_map<int64_t, int> newMetricProducerMap;
+    unordered_map<int64_t, int> stateAtomIdMap;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    set<int64_t> noReportMetricIds;
+    vector<int> metricsWithActivation;
+    vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
+    vector<sp<ConditionTracker>> newConditionTrackers;
+    vector<sp<MetricProducer>> newMetricProducers;
+    vector<ConditionState> conditionCache;
+    set<int64_t> replacedMetrics;
+    set<int64_t> replacedMatchers;
+    set<int64_t> replacedConditions;
+    set<int64_t> replacedStates;
+    EXPECT_EQ(updateMetrics(key, config, /*timeBaseNs=*/123, /*currentTimeNs=*/12345,
+                            new StatsPullerManager(), oldAtomMatchingTrackerMap,
+                            newAtomMatchingTrackerMap, replacedMatchers, newAtomMatchingTrackers,
+                            newConditionTrackerMap, replacedConditions, newConditionTrackers,
+                            conditionCache, stateAtomIdMap, allStateGroupMaps, replacedStates,
+                            oldMetricProducerMap, oldMetricProducers, newMetricProducerMap,
+                            newMetricProducers, conditionToMetricMap, trackerToMetricMap,
+                            noReportMetricIds, activationAtomTrackerToMetricMap,
+                            deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                            replacedMetrics),
+              InvalidConfigReason(INVALID_CONFIG_REASON_NO_REPORT_METRIC_NOT_FOUND, metricId));
+}
+
+TEST_F(ConfigUpdateTest, TestMetricSlicedStateAtomAllowedFromAnyUid) {
+    StatsdConfig config;
+    CountMetric* metric = config.add_count_metric();
+    *metric = createCountMetric(/*name=*/"Count", /*what=*/StringToId("ScreenTurnedOn"),
+                                /*condition=*/nullopt, /*states=*/{});
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+    *config.add_state() = CreateScreenState();
+    metric->add_slice_by_state(StringToId("ScreenState"));
+    EXPECT_TRUE(initConfig(config));
+
+    config.add_whitelisted_atom_ids(util::SCREEN_STATE_CHANGED);
+
+    unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
+    unordered_map<int64_t, int> newAtomMatchingTrackerMap;
+    unordered_map<int64_t, int> newConditionTrackerMap;
+    unordered_map<int64_t, int> newMetricProducerMap;
+    unordered_map<int64_t, int> stateAtomIdMap;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    set<int64_t> noReportMetricIds;
+    vector<int> metricsWithActivation;
+    vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
+    vector<sp<ConditionTracker>> newConditionTrackers;
+    vector<sp<MetricProducer>> newMetricProducers;
+    vector<ConditionState> conditionCache;
+    set<int64_t> replacedMetrics;
+    set<int64_t> replacedMatchers;
+    set<int64_t> replacedConditions;
+    set<int64_t> replacedStates;
+
+    newAtomMatchingTrackerMap[StringToId("ScreenTurnedOn")] = 0;
+    stateAtomIdMap[StringToId("ScreenState")] = util::SCREEN_STATE_CHANGED;
+    EXPECT_EQ(
+            updateMetrics(
+                    key, config, /*timeBaseNs=*/123, /*currentTimeNs=*/12345,
+                    new StatsPullerManager(), oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
+                    replacedMatchers, newAtomMatchingTrackers, newConditionTrackerMap,
+                    replacedConditions, newConditionTrackers, conditionCache, stateAtomIdMap,
+                    allStateGroupMaps, replacedStates, oldMetricProducerMap, oldMetricProducers,
+                    newMetricProducerMap, newMetricProducers, conditionToMetricMap,
+                    trackerToMetricMap, noReportMetricIds, activationAtomTrackerToMetricMap,
+                    deactivationAtomTrackerToMetricMap, metricsWithActivation, replacedMetrics),
+            InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SLICED_STATE_ATOM_ALLOWED_FROM_ANY_UID,
+                                StringToId("Count")));
+}
+
+TEST_F(ConfigUpdateTest, TestMatcherDuplicate) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+    EXPECT_TRUE(initConfig(config));
+
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    unordered_map<int, vector<int>> newTagIds;
+    unordered_map<int64_t, int> newAtomMatchingTrackerMap;
+    vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
+    set<int64_t> replacedMatchers;
+    EXPECT_EQ(updateAtomMatchingTrackers(
+                      config, uidMap, oldAtomMatchingTrackerMap, oldAtomMatchingTrackers, newTagIds,
+                      newAtomMatchingTrackerMap, newAtomMatchingTrackers, replacedMatchers),
+              createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_MATCHER_DUPLICATE,
+                                                   StringToId("ScreenTurnedOn")));
+}
+
+TEST_F(ConfigUpdateTest, TestConditionDuplicate) {
+    StatsdConfig config;
+    *config.add_predicate() = CreateScreenIsOnPredicate();
+    EXPECT_TRUE(initConfig(config));
+
+    *config.add_predicate() = CreateScreenIsOnPredicate();
+
+    unordered_map<int64_t, int> newAtomMatchingTrackerMap;
+    unordered_map<int64_t, int> newConditionTrackerMap;
+    vector<sp<ConditionTracker>> newConditionTrackers;
+    unordered_map<int, vector<int>> trackerToConditionMap;
+    vector<ConditionState> conditionCache;
+    set<int64_t> replacedConditions;
+    set<int64_t> replacedMatchers;
+    EXPECT_EQ(updateConditions(key, config, newAtomMatchingTrackerMap, replacedMatchers,
+                               oldConditionTrackerMap, oldConditionTrackers, newConditionTrackerMap,
+                               newConditionTrackers, trackerToConditionMap, conditionCache,
+                               replacedConditions),
+              createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_CONDITION_DUPLICATE,
+                                                     StringToId("ScreenIsOn")));
 }
 
 }  // namespace statsd
