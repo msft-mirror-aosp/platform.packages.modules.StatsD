@@ -135,6 +135,16 @@ android::hash_t hashDimension(const HashableDimensionKey& value) {
                                                android::hash_type(fieldValue.mValue.float_value));
                 break;
             }
+            case DOUBLE: {
+                hash = android::JenkinsHashMix(hash,
+                                               android::hash_type(fieldValue.mValue.double_value));
+                break;
+            }
+            case STORAGE: {
+                hash = android::JenkinsHashMixBytes(hash, fieldValue.mValue.storage_value.data(),
+                                                    fieldValue.mValue.storage_value.size());
+                break;
+            }
             default:
                 break;
         }
