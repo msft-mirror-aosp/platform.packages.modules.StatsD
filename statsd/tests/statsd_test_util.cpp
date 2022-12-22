@@ -255,10 +255,8 @@ AtomMatcher CreateAppStartOccurredAtomMatcher() {
 AtomMatcher CreateTestAtomRepeatedStateAtomMatcher(const string& name,
                                                    TestAtomReported::State state,
                                                    Position position) {
-    AtomMatcher atom_matcher;
-    atom_matcher.set_id(StringToId(name));
+    AtomMatcher atom_matcher = CreateSimpleAtomMatcher(name, util::TEST_ATOM_REPORTED);
     auto simple_atom_matcher = atom_matcher.mutable_simple_atom_matcher();
-    simple_atom_matcher->set_atom_id(util::TEST_ATOM_REPORTED);
     auto field_value_matcher = simple_atom_matcher->add_field_value_matcher();
     field_value_matcher->set_field(14);  // Repeated enum field.
     field_value_matcher->set_eq_int(state);
@@ -592,14 +590,14 @@ ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const
     return metric;
 }
 
-KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int valueField,
+KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int kllField,
                           const optional<int64_t>& condition) {
     KllMetric metric;
     metric.set_id(StringToId(name));
     metric.set_what(what.id());
     metric.set_bucket(TEN_MINUTES);
     metric.mutable_kll_field()->set_field(what.simple_atom_matcher().atom_id());
-    metric.mutable_kll_field()->add_child()->set_field(valueField);
+    metric.mutable_kll_field()->add_child()->set_field(kllField);
     if (condition) {
         metric.set_condition(condition.value());
     }
@@ -1692,6 +1690,8 @@ void backfillStringInReport(ConfigMetricsReport *config_report) {
             backfillStringInDimension(str_map, metric_report->mutable_gauge_metrics());
         } else if (metric_report->has_value_metrics()) {
             backfillStringInDimension(str_map, metric_report->mutable_value_metrics());
+        } else if (metric_report->has_kll_metrics()) {
+            backfillStringInDimension(str_map, metric_report->mutable_kll_metrics());
         }
     }
     // Backfill the package names.
@@ -1764,20 +1764,20 @@ bool backfillDimensionPath(const DimensionsValue& path,
 }
 
 void backfillDimensionPath(StatsLogReport* report) {
-    if (report->has_dimensions_path_in_what() || report->has_dimensions_path_in_condition()) {
+    if (report->has_dimensions_path_in_what()) {
         auto whatPath = report->dimensions_path_in_what();
-        auto conditionPath = report->dimensions_path_in_condition();
         if (report->has_count_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_count_metrics());
+            backfillDimensionPath(whatPath, report->mutable_count_metrics());
         } else if (report->has_duration_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_duration_metrics());
+            backfillDimensionPath(whatPath, report->mutable_duration_metrics());
         } else if (report->has_gauge_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_gauge_metrics());
+            backfillDimensionPath(whatPath, report->mutable_gauge_metrics());
         } else if (report->has_value_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_value_metrics());
+            backfillDimensionPath(whatPath, report->mutable_value_metrics());
+        } else if (report->has_kll_metrics()) {
+            backfillDimensionPath(whatPath, report->mutable_kll_metrics());
         }
         report->clear_dimensions_path_in_what();
-        report->clear_dimensions_path_in_condition();
     }
 }
 
