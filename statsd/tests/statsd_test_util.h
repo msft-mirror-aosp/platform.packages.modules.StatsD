@@ -272,7 +272,7 @@ GaugeMetric createGaugeMetric(const string& name, const int64_t what,
 ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const int valueField,
                               const optional<int64_t>& condition, const vector<int64_t>& states);
 
-KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int valueField,
+KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int kllField,
                           const optional<int64_t>& condition);
 
 Alert createAlert(const string& name, const int64_t metricId, const int buckets,
@@ -535,9 +535,6 @@ void backfillStringInDimension(const std::map<uint64_t, string>& str_map,
         if (data->has_dimensions_in_what()) {
             backfillStringInDimension(str_map, data->mutable_dimensions_in_what());
         }
-        if (data->has_dimensions_in_condition()) {
-            backfillStringInDimension(str_map, data->mutable_dimensions_in_condition());
-        }
     }
 }
 
@@ -560,20 +557,13 @@ public:
 };
 
 template <typename T>
-void backfillDimensionPath(const DimensionsValue& whatPath,
-                           const DimensionsValue& conditionPath,
-                           T* metricData) {
+void backfillDimensionPath(const DimensionsValue& whatPath, T* metricData) {
     for (int i = 0; i < metricData->data_size(); ++i) {
         auto data = metricData->mutable_data(i);
         if (data->dimension_leaf_values_in_what_size() > 0) {
             backfillDimensionPath(whatPath, data->dimension_leaf_values_in_what(),
                                   data->mutable_dimensions_in_what());
             data->clear_dimension_leaf_values_in_what();
-        }
-        if (data->dimension_leaf_values_in_condition_size() > 0) {
-            backfillDimensionPath(conditionPath, data->dimension_leaf_values_in_condition(),
-                                  data->mutable_dimensions_in_condition());
-            data->clear_dimension_leaf_values_in_condition();
         }
     }
 }
