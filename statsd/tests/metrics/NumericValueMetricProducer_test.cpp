@@ -7559,8 +7559,8 @@ TEST(NumericValueMetricProducerTest, TestSampleSize) {
             NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
                     pullerManager, metric, /*pullAtomId=*/-1);
 
-    /*Sample size is added when use_sample_size bool is set to true*/
-    metric.set_use_sample_size(true);
+    /*Sample size is added when include_sample_size bool is set to true*/
+    metric.set_include_sample_size(true);
     sp<NumericValueMetricProducer> valueProducerSumWithSampleSize =
             NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
                     pullerManager, metric, /*pullAtomId=*/-1);
