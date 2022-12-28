@@ -29,6 +29,7 @@ namespace statsd {
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
+using android::util::FIELD_TYPE_ENUM;
 using android::util::FIELD_TYPE_FLOAT;
 using android::util::FIELD_TYPE_INT32;
 using android::util::FIELD_TYPE_INT64;
@@ -81,6 +82,7 @@ const int FIELD_ID_CONFIG_STATS_CONDITION_COUNT = 6;
 const int FIELD_ID_CONFIG_STATS_MATCHER_COUNT = 7;
 const int FIELD_ID_CONFIG_STATS_ALERT_COUNT = 8;
 const int FIELD_ID_CONFIG_STATS_VALID = 9;
+const int FIELD_ID_CONFIG_STATS_INVALID_CONFIG_REASON = 24;
 const int FIELD_ID_CONFIG_STATS_BROADCAST = 10;
 const int FIELD_ID_CONFIG_STATS_DATA_DROP_TIME = 11;
 const int FIELD_ID_CONFIG_STATS_DATA_DROP_BYTES = 21;
@@ -96,6 +98,15 @@ const int FIELD_ID_CONFIG_STATS_ACTIVATION = 22;
 const int FIELD_ID_CONFIG_STATS_DEACTIVATION = 23;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT64 = 1;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT32 = 2;
+
+const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
+const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
+const int FIELD_ID_INVALID_CONFIG_REASON_STATE_ID = 3;
+const int FIELD_ID_INVALID_CONFIG_REASON_ALERT_ID = 4;
+const int FIELD_ID_INVALID_CONFIG_REASON_ALARM_ID = 5;
+const int FIELD_ID_INVALID_CONFIG_REASON_SUBSCRIPTION_ID = 6;
+const int FIELD_ID_INVALID_CONFIG_REASON_MATCHER_ID = 7;
+const int FIELD_ID_INVALID_CONFIG_REASON_CONDITION_ID = 8;
 
 const int FIELD_ID_MATCHER_STATS_ID = 1;
 const int FIELD_ID_MATCHER_STATS_COUNT = 2;
@@ -141,7 +152,7 @@ void StatsdStats::addToIceBoxLocked(shared_ptr<ConfigStats>& stats) {
 void StatsdStats::noteConfigReceived(
         const ConfigKey& key, int metricsCount, int conditionsCount, int matchersCount,
         int alertsCount, const std::list<std::pair<const int64_t, const int32_t>>& annotations,
-        bool isValid) {
+        const optional<InvalidConfigReason>& reason) {
     lock_guard<std::mutex> lock(mLock);
     int32_t nowTimeSec = getWallClockSec();
 
@@ -156,12 +167,13 @@ void StatsdStats::noteConfigReceived(
     configStats->condition_count = conditionsCount;
     configStats->matcher_count = matchersCount;
     configStats->alert_count = alertsCount;
-    configStats->is_valid = isValid;
+    configStats->is_valid = !reason.has_value();
+    configStats->reason = reason;
     for (auto& v : annotations) {
         configStats->annotations.emplace_back(v);
     }
 
-    if (isValid) {
+    if (!reason.has_value()) {
         mConfigStats[key] = configStats;
     } else {
         configStats->deletion_time_sec = nowTimeSec;
@@ -678,11 +690,16 @@ void StatsdStats::dumpStats(int out) const {
     for (const auto& configStats : mIceBox) {
         dprintf(out,
                 "Config {%d_%lld}: creation=%d, deletion=%d, reset=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d,  valid=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d\n",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->reset_time_sec,
                 configStats->metric_count, configStats->condition_count, configStats->matcher_count,
                 configStats->alert_count, configStats->is_valid);
+
+        if (!configStats->is_valid) {
+            dprintf(out, "\tinvalid config reason: %s\n",
+                    InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
+        }
 
         for (const auto& broadcastTime : configStats->broadcast_sent_time_sec) {
             dprintf(out, "\tbroadcast time: %d\n", broadcastTime);
@@ -709,11 +726,17 @@ void StatsdStats::dumpStats(int out) const {
         auto& configStats = pair.second;
         dprintf(out,
                 "Config {%d-%lld}: creation=%d, deletion=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d,  valid=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d\n",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->metric_count,
                 configStats->condition_count, configStats->matcher_count, configStats->alert_count,
                 configStats->is_valid);
+
+        if (!configStats->is_valid) {
+            dprintf(out, "\tinvalid config reason: %s\n",
+                    InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
+        }
+
         for (const auto& annotation : configStats->annotations) {
             dprintf(out, "\tannotation: %lld, %d\n", (long long)annotation.first,
                     annotation.second);
@@ -877,6 +900,44 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_MATCHER_COUNT, configStats.matcher_count);
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_ALERT_COUNT, configStats.alert_count);
     proto->write(FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_VALID, configStats.is_valid);
+
+    if (!configStats.is_valid) {
+        uint64_t tmpToken =
+                proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_STATS_INVALID_CONFIG_REASON);
+        proto->write(FIELD_TYPE_ENUM | FIELD_ID_INVALID_CONFIG_REASON_ENUM,
+                     configStats.reason->reason);
+        if (configStats.reason->metricId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID,
+                         configStats.reason->metricId.value());
+        }
+        if (configStats.reason->stateId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_STATE_ID,
+                         configStats.reason->stateId.value());
+        }
+        if (configStats.reason->alertId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_ALERT_ID,
+                         configStats.reason->alertId.value());
+        }
+        if (configStats.reason->alarmId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_ALARM_ID,
+                         configStats.reason->alarmId.value());
+        }
+        if (configStats.reason->subscriptionId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_SUBSCRIPTION_ID,
+                         configStats.reason->subscriptionId.value());
+        }
+        for (const auto& matcherId : configStats.reason->matcherIds) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED |
+                                 FIELD_ID_INVALID_CONFIG_REASON_MATCHER_ID,
+                         matcherId);
+        }
+        for (const auto& conditionId : configStats.reason->conditionIds) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED |
+                                 FIELD_ID_INVALID_CONFIG_REASON_CONDITION_ID,
+                         conditionId);
+        }
+        proto->end(tmpToken);
+    }
 
     for (const auto& broadcast : configStats.broadcast_sent_time_sec) {
         proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_BROADCAST | FIELD_COUNT_REPEATED,
@@ -1104,6 +1165,89 @@ std::pair<size_t, size_t> StatsdStats::getAtomDimensionKeySizeLimits(const int a
                    ? kAtomDimensionKeySizeLimitMap.at(atomId)
                    : std::make_pair<size_t, size_t>(kDimensionKeySizeSoftLimit,
                                                     kDimensionKeySizeHardLimit);
+}
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t matcherId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.matcherIds.push_back(matcherId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t metricId,
+                                                         const int64_t matcherId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.matcherIds.push_back(matcherId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t conditionId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.conditionIds.push_back(conditionId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t metricId,
+                                                           const int64_t conditionId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.conditionIds.push_back(conditionId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithState(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t stateId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.stateId = stateId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithAlarm(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alarmId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.alarmId = alarmId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscription(const InvalidConfigReasonEnum reason,
+                                                              const int64_t subscriptionId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlarm(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alarmId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    invalidConfigReason.alarmId = alarmId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlert(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
 }
 
 }  // namespace statsd
