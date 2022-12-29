@@ -219,10 +219,10 @@ protected:
     FRIEND_TEST(AnomalyTrackerTest, TestSparseBuckets);
     FRIEND_TEST(GaugeMetricProducerTest, TestAnomalyDetection);
     FRIEND_TEST(CountMetricProducerTest, TestAnomalyDetectionUnSliced);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateAlerts);
 };
