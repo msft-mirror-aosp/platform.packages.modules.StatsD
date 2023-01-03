@@ -143,7 +143,7 @@ private:
 
     const ValueMetric::AggregationType mAggregationType;
 
-    const bool mUseSampleSize;
+    const bool mIncludeSampleSize;
 
     const bool mUseDiff;
 
