@@ -358,7 +358,7 @@ message ValueMetric {
   }
   optional AggregationType aggregation_type = 8 [default = SUM];
 
-  optional bool use_sample_size = 22;
+  optional bool include_sample_size = 22;
 
   optional int64 min_bucket_size_nanos = 10;
 
