@@ -50,6 +50,7 @@ const int FIELD_ID_VALUE_METRICS = 7;
 const int FIELD_ID_VALUE_INDEX = 1;
 const int FIELD_ID_VALUE_LONG = 2;
 const int FIELD_ID_VALUE_DOUBLE = 3;
+const int FIELD_ID_VALUE_SAMPLESIZE = 4;
 const int FIELD_ID_VALUES = 9;
 const int FIELD_ID_BUCKET_NUM = 4;
 const int FIELD_ID_START_BUCKET_ELAPSED_MILLIS = 5;
@@ -71,6 +72,9 @@ NumericValueMetricProducer::NumericValueMetricProducer(
                           conditionOptions, stateOptions, activationOptions, guardrailOptions),
       mUseAbsoluteValueOnReset(metric.use_absolute_value_on_reset()),
       mAggregationType(metric.aggregation_type()),
+      mIncludeSampleSize(metric.has_include_sample_size()
+                                 ? metric.include_sample_size()
+                                 : metric.aggregation_type() == ValueMetric_AggregationType_AVG),
       mUseDiff(metric.has_use_diff() ? metric.use_diff() : isPulled()),
       mValueDirection(metric.value_direction()),
       mSkipZeroDiffOutput(metric.skip_zero_diff_output()),
@@ -112,10 +116,14 @@ void NumericValueMetricProducer::resetBase() {
 }
 
 void NumericValueMetricProducer::writePastBucketAggregateToProto(
-        const int aggIndex, const Value& value, ProtoOutputStream* const protoOutput) const {
+        const int aggIndex, const Value& value, const int sampleSize,
+        ProtoOutputStream* const protoOutput) const {
     uint64_t valueToken =
             protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_VALUES);
     protoOutput->write(FIELD_TYPE_INT32 | FIELD_ID_VALUE_INDEX, aggIndex);
+    if (mIncludeSampleSize) {
+        protoOutput->write(FIELD_TYPE_INT32 | FIELD_ID_VALUE_SAMPLESIZE, sampleSize);
+    }
     if (value.getType() == LONG) {
         protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_VALUE_LONG, (long long)value.long_value);
         VLOG("\t\t value %d: %lld", aggIndex, (long long)value.long_value);
@@ -527,6 +535,9 @@ PastBucket<Value> NumericValueMetricProducer::buildPartialBucket(int64_t bucketE
 
         bucket.aggIndex.push_back(interval.aggIndex);
         bucket.aggregates.push_back(getFinalValue(interval));
+        if (mIncludeSampleSize) {
+            bucket.sampleSizes.push_back(interval.sampleSize);
+        }
     }
     return bucket;
 }

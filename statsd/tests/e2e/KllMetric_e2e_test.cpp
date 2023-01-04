@@ -25,6 +25,21 @@ namespace statsd {
 
 using namespace std;
 
+namespace {
+
+unique_ptr<LogEvent> CreateTestAtomReportedEvent(const uint64_t timestampNs, const long longField,
+                                                 const string& stringField) {
+    return CreateTestAtomReportedEvent(
+            timestampNs, /* attributionUids */ {1001},
+            /* attributionTags */ {"app1"}, /* intField */ 0, longField, /* floatField */ 0.0f,
+            stringField, /* boolField */ false, TestAtomReported::OFF, /* bytesField */ {},
+            /* repeatedIntField */ {}, /* repeatedLongField */ {}, /* repeatedFloatField */ {},
+            /* repeatedStringField */ {}, /* repeatedBoolField */ {},
+            /* repeatedBoolFieldLength */ 0, /* repeatedEnumField */ {});
+}
+
+}  // anonymous namespace.
+
 class KllMetricE2eTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -88,6 +103,75 @@ TEST_F(KllMetricE2eTest, TestSimpleMetric) {
     EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), bucketStartTimeNs + bucketSizeNs);
     EXPECT_EQ(bucket.sketches_size(), 1);
     EXPECT_EQ(metricReport.kll_metrics().skipped_size(), 0);
+}
+
+TEST_F(KllMetricE2eTest, TestMetricWithDimensions) {
+    whatMatcher = CreateSimpleAtomMatcher("TestAtomReported", util::TEST_ATOM_REPORTED);
+    metric = createKllMetric("TestAtomMetric", whatMatcher, /* kllField */ 3,
+                             /* condition */ nullopt);
+
+    *metric.mutable_dimensions_in_what() =
+            CreateDimensions(util::TEST_ATOM_REPORTED, {5 /* string_field */});
+
+    config.clear_atom_matcher();
+    *config.add_atom_matcher() = whatMatcher;
+
+    config.clear_kll_metric();
+    *config.add_kll_metric() = metric;
+
+    events.clear();
+    events.push_back(CreateTestAtomReportedEvent(bucketStartTimeNs + 5 * NS_PER_SEC, 5l, "dim_1"));
+    events.push_back(CreateTestAtomReportedEvent(bucketStartTimeNs + 15 * NS_PER_SEC, 6l, "dim_2"));
+    events.push_back(CreateTestAtomReportedEvent(bucketStartTimeNs + 25 * NS_PER_SEC, 7l, "dim_1"));
+
+    const sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    uint64_t dumpTimeNs = bucketStartTimeNs + bucketSizeNs;
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(key, dumpTimeNs, /*include_current_bucket*/ false, true, ADB_DUMP, FAST,
+                            &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    ASSERT_EQ(reports.reports_size(), 1);
+
+    ConfigMetricsReport report = reports.reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+    StatsLogReport metricReport = report.metrics(0);
+    EXPECT_EQ(metricReport.metric_id(), metric.id());
+    EXPECT_TRUE(metricReport.has_kll_metrics());
+    ASSERT_EQ(metricReport.kll_metrics().data_size(), 2);
+
+    KllMetricData data = metricReport.kll_metrics().data(0);
+    ASSERT_EQ(data.bucket_info_size(), 1);
+    KllBucketInfo bucket = data.bucket_info(0);
+    EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), bucketStartTimeNs);
+    EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), bucketStartTimeNs + bucketSizeNs);
+    EXPECT_EQ(bucket.sketches_size(), 1);
+    EXPECT_EQ(metricReport.kll_metrics().skipped_size(), 0);
+    EXPECT_EQ(data.dimensions_in_what().field(), util::TEST_ATOM_REPORTED);
+    ASSERT_EQ(data.dimensions_in_what().value_tuple().dimensions_value_size(), 1);
+    EXPECT_EQ(data.dimensions_in_what().value_tuple().dimensions_value(0).field(), 5);
+    EXPECT_EQ(data.dimensions_in_what().value_tuple().dimensions_value(0).value_str(), "dim_1");
+
+    data = metricReport.kll_metrics().data(1);
+    ASSERT_EQ(data.bucket_info_size(), 1);
+    bucket = data.bucket_info(0);
+    EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), bucketStartTimeNs);
+    EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), bucketStartTimeNs + bucketSizeNs);
+    EXPECT_EQ(bucket.sketches_size(), 1);
+    EXPECT_EQ(metricReport.kll_metrics().skipped_size(), 0);
+    EXPECT_EQ(data.dimensions_in_what().field(), util::TEST_ATOM_REPORTED);
+    ASSERT_EQ(data.dimensions_in_what().value_tuple().dimensions_value_size(), 1);
+    EXPECT_EQ(data.dimensions_in_what().value_tuple().dimensions_value(0).field(), 5);
+    EXPECT_EQ(data.dimensions_in_what().value_tuple().dimensions_value(0).value_str(), "dim_2");
 }
 
 TEST_F(KllMetricE2eTest, TestInitWithKllFieldPositionALL) {
