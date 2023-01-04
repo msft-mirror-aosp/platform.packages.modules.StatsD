@@ -143,7 +143,7 @@ private:
     // Only call if mCondition == ConditionState::kTrue && metric is active.
     void pullAndMatchEventsLocked(const int64_t timestampNs);
 
-    bool onConfigUpdatedLocked(
+    optional<InvalidConfigReason> onConfigUpdatedLocked(
             const StatsdConfig& config, const int configIndex, const int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,

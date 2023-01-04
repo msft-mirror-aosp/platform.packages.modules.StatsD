@@ -52,6 +52,9 @@ cc_library {
 
 cc_test {
     name: "libkll_test",
+    tidy_timeout_srcs: [
+        "tests/sampler_test.cpp",
+    ],
     srcs: [
         "tests/**/*.cpp",
     ],
