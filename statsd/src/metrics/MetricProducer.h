@@ -26,6 +26,7 @@
 #include "anomaly/AnomalyTracker.h"
 #include "condition/ConditionWizard.h"
 #include "config/ConfigKey.h"
+#include "guardrail/StatsdStats.h"
 #include "matchers/EventMatcherWizard.h"
 #include "matchers/matcher_util.h"
 #include "packages/PackageInfoListener.h"
@@ -166,7 +167,7 @@ public:
     // This metric and all of its dependencies are guaranteed to be preserved across the update.
     // This function also updates several maps used by metricsManager.
     // This function clears all anomaly trackers. All anomaly trackers need to be added again.
-    bool onConfigUpdated(
+    optional<InvalidConfigReason> onConfigUpdated(
             const StatsdConfig& config, const int configIndex, const int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -253,7 +254,7 @@ public:
                 dumpLatency, str_set, protoOutput);
     }
 
-    virtual bool onConfigUpdatedLocked(
+    virtual optional<InvalidConfigReason> onConfigUpdatedLocked(
             const StatsdConfig& config, const int configIndex, const int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -603,7 +604,7 @@ protected:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
 
-    FRIEND_TEST(MetricsManagerTest, TestInitialConditions);
+    FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMetricActivations);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateCountMetrics);

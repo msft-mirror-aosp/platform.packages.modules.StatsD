@@ -16,20 +16,21 @@
 
 #pragma once
 
+#include <unordered_map>
+
 #include "anomaly/AlarmMonitor.h"
 #include "anomaly/AlarmTracker.h"
 #include "anomaly/AnomalyTracker.h"
 #include "condition/ConditionTracker.h"
 #include "config/ConfigKey.h"
 #include "external/StatsPullerManager.h"
-#include "src/statsd_config.pb.h"
-#include "src/statsd_metadata.pb.h"
+#include "guardrail/StatsdStats.h"
 #include "logd/LogEvent.h"
 #include "matchers/AtomMatchingTracker.h"
 #include "metrics/MetricProducer.h"
 #include "packages/UidMap.h"
-
-#include <unordered_map>
+#include "src/statsd_config.pb.h"
+#include "src/statsd_metadata.pb.h"
 
 namespace android {
 namespace os {
@@ -168,8 +169,6 @@ private:
 
     sp<UidMap> mUidMap;
 
-    bool mConfigValid = false;
-
     bool mHashStringsInReport = false;
     bool mVersionStringsInReport = false;
     bool mInstallerInReport = false;
@@ -180,6 +179,8 @@ private:
 
     int64_t mLastReportTimeNs;
     int64_t mLastReportWallClockNs;
+
+    optional<InvalidConfigReason> mInvalidConfigReason;
 
     sp<StatsPullerManager> mPullerManager;
 
@@ -294,11 +295,12 @@ private:
     void initPullAtomSources();
 
     // Only called on config creation/update to initialize log sources from the config.
-    // Calls initAllowedLogSources and initPullAtomSources. Sets mConfigValid to false on error.
+    // Calls initAllowedLogSources and initPullAtomSources. Sets up mInvalidConfigReason on
+    // error.
     void createAllLogSourcesFromConfig(const StatsdConfig& config);
 
     // Verifies the config meets guardrails and updates statsdStats.
-    // Sets mConfigValid to false on error. Should be called on config creation/update
+    // Sets up mInvalidConfigReason on error. Should be called on config creation/update
     void verifyGuardrailsAndUpdateStatsdStats();
 
     // Initializes mIsAlwaysActive and mIsActive.
