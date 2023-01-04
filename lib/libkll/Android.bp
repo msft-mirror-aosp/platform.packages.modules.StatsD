@@ -24,6 +24,7 @@ package {
 cc_library {
     name: "libkll",
     host_supported: true,
+    vendor_available: true,
     srcs: [
         "compactor_stack.cpp",
         "kll.cpp",
