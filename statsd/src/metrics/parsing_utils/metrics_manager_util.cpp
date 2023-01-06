@@ -450,6 +450,18 @@ optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
         }
     }
 
+    // Check that all metric state links are a subset of dimensions_in_what fields.
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    for (const auto& stateLink : metric.state_link()) {
+        invalidConfigReason = handleMetricWithStateLink(metric.id(), stateLink.fields_in_what(),
+                                                        dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            ALOGW("CountMetric's MetricStateLinks must be a subset of dimensions in what");
+            return nullopt;
+        }
+    }
+
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
     invalidConfigReason = handleMetricActivation(
