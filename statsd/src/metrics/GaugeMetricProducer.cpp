@@ -141,8 +141,7 @@ GaugeMetricProducer::GaugeMetricProducer(
     mCurrentBucketStartTimeNs = startTimeNs;
 
     VLOG("Gauge metric %lld created. bucket size %lld start_time: %lld sliced %d",
-         (long long)metric.id(), (long long)mBucketSizeNs, (long long)mTimeBaseNs,
-         mConditionSliced);
+         (long long)mMetricId, (long long)mBucketSizeNs, (long long)mTimeBaseNs, mConditionSliced);
 }
 
 GaugeMetricProducer::~GaugeMetricProducer() {
@@ -152,7 +151,7 @@ GaugeMetricProducer::~GaugeMetricProducer() {
     }
 }
 
-bool GaugeMetricProducer::onConfigUpdatedLocked(
+optional<InvalidConfigReason> GaugeMetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -166,38 +165,45 @@ bool GaugeMetricProducer::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    if (!MetricProducer::onConfigUpdatedLocked(
-                config, configIndex, metricIndex, allAtomMatchingTrackers,
-                oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
-                allConditionTrackers, conditionTrackerMap, wizard, metricToActivationMap,
-                trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
-                deactivationAtomTrackerToMetricMap, metricsWithActivation)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+            config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
+            newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
+            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+            metricsWithActivation);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
     const GaugeMetric& metric = config.gauge_metric(configIndex);
     // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
-    if (!handleMetricWithAtomMatchingTrackers(metric.what(), metricIndex, /*enforceOneAtom=*/false,
-                                              allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                              trackerToMetricMap, mWhatMatcherIndex)) {
-        return false;
+    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+            metric.what(), mMetricId, metricIndex, /*enforceOneAtom=*/false,
+            allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap,
+            mWhatMatcherIndex);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
     // Need to update maps since the index changed, but mTriggerAtomId will not change.
     int triggerTrackerIndex;
-    if (metric.has_trigger_event() &&
-        !handleMetricWithAtomMatchingTrackers(metric.trigger_event(), metricIndex,
-                                              /*enforceOneAtom=*/true, allAtomMatchingTrackers,
-                                              newAtomMatchingTrackerMap, trackerToMetricMap,
-                                              triggerTrackerIndex)) {
-        return false;
+    if (metric.has_trigger_event()) {
+        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+                metric.trigger_event(), mMetricId, metricIndex,
+                /*enforceOneAtom=*/true, allAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                trackerToMetricMap, triggerTrackerIndex);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
     }
 
-    if (metric.has_condition() &&
-        !handleMetricWithConditions(metric.condition(), metricIndex, conditionTrackerMap,
-                                    metric.links(), allConditionTrackers, mConditionTrackerIndex,
-                                    conditionToMetricMap)) {
-        return false;
+    if (metric.has_condition()) {
+        invalidConfigReason = handleMetricWithConditions(
+                metric.condition(), mMetricId, metricIndex, conditionTrackerMap, metric.links(),
+                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
     }
     sp<EventMatcherWizard> tmpEventWizard = mEventMatcherWizard;
     mEventMatcherWizard = matcherWizard;
@@ -208,7 +214,7 @@ bool GaugeMetricProducer::onConfigUpdatedLocked(
         mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
         pullAndMatchEventsLocked(mCurrentBucketStartTimeNs);
     }
-    return true;
+    return nullopt;
 }
 
 void GaugeMetricProducer::dumpStatesLocked(FILE* out, bool verbose) const {

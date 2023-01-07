@@ -26,6 +26,7 @@ import com.android.internal.os.StatsdConfigProto;
 import com.android.internal.os.StatsdConfigProto.StatsdConfig;
 import com.android.os.AtomsProto;
 
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -60,7 +61,7 @@ public class ConfigurationTest {
     public void testOnePushed() {
         final int atom = 90;
         assertFalse(TestDrive.Configuration.isPulledAtom(atom));
-        mConfiguration.addAtom(atom);
+        mConfiguration.addAtom(atom, null);
         StatsdConfig config = mConfiguration.createConfig();
 
         //event_metric {
@@ -87,11 +88,47 @@ public class ConfigurationTest {
         assertEquals(0, atomMatchers.size());
     }
 
+    @Ignore("b/258831376")
+    @Test
+    public void testOnePushedFromExternalAtomsProto() {
+        final int atom = 105999;
+        assertFalse(TestDrive.Configuration.isPulledAtom(atom));
+
+        List<String> mProtoIncludes = new ArrayList<>();
+        mProtoIncludes.add("test/external-atoms.proto");
+
+        mConfiguration.addAtom(atom, mProtoIncludes);
+        StatsdConfig config = mConfiguration.createConfig();
+
+        //event_metric {
+        //  id: 1111
+        //  what: 1234567
+        //}
+        //atom_matcher {
+        //  id: 1234567
+        //  simple_atom_matcher {
+        //    atom_id: 105999
+        //  }
+        //}
+
+        assertEquals(1, config.getEventMetricCount());
+        assertEquals(0, config.getGaugeMetricCount());
+
+        assertTrue(mConfiguration.isTrackedMetric(config.getEventMetric(0).getId()));
+
+        final List<StatsdConfigProto.AtomMatcher> atomMatchers =
+                new ArrayList<>(config.getAtomMatcherList());
+        assertEquals(atom,
+                findAndRemoveAtomMatcherById(atomMatchers, config.getEventMetric(0).getWhat())
+                        .getSimpleAtomMatcher().getAtomId());
+        assertEquals(0, atomMatchers.size());
+    }
+
     @Test
     public void testOnePulled() {
         final int atom = 10022;
         assertTrue(TestDrive.Configuration.isPulledAtom(atom));
-        mConfiguration.addAtom(atom);
+        mConfiguration.addAtom(atom, null);
         StatsdConfig config = mConfiguration.createConfig();
 
         //gauge_metric {
@@ -141,12 +178,12 @@ public class ConfigurationTest {
     public void testOnePulledTwoPushed() {
         final int pulledAtom = 10022;
         assertTrue(TestDrive.Configuration.isPulledAtom(pulledAtom));
-        mConfiguration.addAtom(pulledAtom);
+        mConfiguration.addAtom(pulledAtom, null);
 
         Integer[] pushedAtoms = new Integer[]{244, 245};
         for (int atom : pushedAtoms) {
             assertFalse(TestDrive.Configuration.isPulledAtom(atom));
-            mConfiguration.addAtom(atom);
+            mConfiguration.addAtom(atom, null);
         }
         StatsdConfig config = mConfiguration.createConfig();
 
@@ -230,12 +267,12 @@ public class ConfigurationTest {
 
         final int pulledAtom = 10022;
         assertTrue(TestDrive.Configuration.isPulledAtom(pulledAtom));
-        mConfiguration.addAtom(pulledAtom);
+        mConfiguration.addAtom(pulledAtom, null);
 
         Integer[] pushedAtoms = new Integer[]{244, 245};
         for (int atom : pushedAtoms) {
             assertFalse(TestDrive.Configuration.isPulledAtom(atom));
-            mConfiguration.addAtom(atom);
+            mConfiguration.addAtom(atom, null);
         }
         StatsdConfig config = mConfiguration.createConfig();
 
