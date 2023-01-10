@@ -239,7 +239,10 @@ cc_binary {
 cc_test {
     name: "statsd_test",
     defaults: ["statsd_defaults"],
-    test_suites: ["device-tests", "mts-statsd"],
+    test_suites: [
+        "device-tests",
+        "mts-statsd",
+    ],
     test_config: "statsd_test.xml",
 
     //TODO(b/153588990): Remove when the build system properly separates
@@ -382,6 +385,7 @@ cc_test {
             "external/protobuf/src",
         ],
     },
+    min_sdk_version: "30",
 
 }
 
