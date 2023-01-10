@@ -241,7 +241,7 @@ struct Matcher {
     }
 
     bool hasAllPositionMatcher() const {
-        return mMatcher.getDepth() >= 1 && getRawMaskAtDepth(1) == 0x7f;
+        return mMatcher.getDepth() >= 1 && mMatcher.getRawPosAtDepth(1) == 0;
     }
 
     inline bool operator!=(const Matcher& that) const {
