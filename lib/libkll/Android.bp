@@ -24,6 +24,7 @@ package {
 cc_library {
     name: "libkll",
     host_supported: true,
+    vendor_available: true,
     srcs: [
         "compactor_stack.cpp",
         "kll.cpp",
@@ -52,6 +53,9 @@ cc_library {
 
 cc_test {
     name: "libkll_test",
+    tidy_timeout_srcs: [
+        "tests/sampler_test.cpp",
+    ],
     srcs: [
         "tests/**/*.cpp",
     ],

@@ -130,6 +130,7 @@ private:
     DumpProtoFields getDumpProtoFields() const override;
 
     void writePastBucketAggregateToProto(const int aggIndex, const Value& value,
+                                         const int sampleSize,
                                          ProtoOutputStream* const protoOutput) const override;
 
     // Internal function to calculate the current used bytes.
@@ -141,6 +142,8 @@ private:
     const bool mUseAbsoluteValueOnReset;
 
     const ValueMetric::AggregationType mAggregationType;
+
+    const bool mIncludeSampleSize;
 
     const bool mUseDiff;
 
@@ -204,6 +207,7 @@ private:
                 TestResetBaseOnPullFailAfterConditionChange_EndOfBucket);
     FRIEND_TEST(NumericValueMetricProducerTest, TestResetBaseOnPullFailBeforeConditionChange);
     FRIEND_TEST(NumericValueMetricProducerTest, TestResetBaseOnPullTooLate);
+    FRIEND_TEST(NumericValueMetricProducerTest, TestSampleSize);
     FRIEND_TEST(NumericValueMetricProducerTest, TestSkipZeroDiffOutput);
     FRIEND_TEST(NumericValueMetricProducerTest, TestSkipZeroDiffOutputMultiValue);
     FRIEND_TEST(NumericValueMetricProducerTest, TestSlicedState);
