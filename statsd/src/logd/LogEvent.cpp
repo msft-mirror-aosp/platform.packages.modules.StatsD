@@ -39,6 +39,7 @@ using android::util::ProtoOutputStream;
 using std::string;
 using std::vector;
 
+// TODO(b/265020033): Update this to use getWallClockNs()
 LogEvent::LogEvent(int32_t uid, int32_t pid)
     : mLogdTimestampNs(time(nullptr)), mLogUid(uid), mLogPid(pid) {
 }
