@@ -334,6 +334,10 @@ public class TestDrive {
                 if (mAndroidBuildTop != null) {
                     cmdArgs.add("-I");
                     cmdArgs.add(mAndroidBuildTop);
+
+                    Path protoBufSrcPath = Paths.get(mAndroidBuildTop, "external/protobuf/src");
+                    cmdArgs.add("-I");
+                    cmdArgs.add(protoBufSrcPath.toString());
                 }
 
                 Path protoPath = Paths.get(protoFileName);
