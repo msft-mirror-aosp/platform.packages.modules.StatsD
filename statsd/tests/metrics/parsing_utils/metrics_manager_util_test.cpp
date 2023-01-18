@@ -1462,6 +1462,305 @@ TEST_F(MetricsManagerUtilTest, TestCreateDurationProducerDimensionsInWhatInvalid
     EXPECT_FALSE(metricsManager->isConfigValid());
 }
 
+TEST_F(MetricsManagerUtilTest, TestSampledMetrics) {
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+
+    AtomMatcher appCrashMatcher =
+            CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
+    *config.add_atom_matcher() = appCrashMatcher;
+
+    *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
+    *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
+
+    AtomMatcher bleScanResultReceivedMatcher = CreateSimpleAtomMatcher(
+            "BleScanResultReceivedAtomMatcher", util::BLE_SCAN_RESULT_RECEIVED);
+    *config.add_atom_matcher() = bleScanResultReceivedMatcher;
+
+    Predicate holdingWakelockPredicate = CreateHoldingWakelockPredicate();
+    *holdingWakelockPredicate.mutable_simple_predicate()->mutable_dimensions() =
+            CreateAttributionUidDimensions(util::WAKELOCK_STATE_CHANGED, {Position::FIRST});
+    *config.add_predicate() = holdingWakelockPredicate;
+
+    CountMetric sampledCountMetric =
+            createCountMetric("CountSampledAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *sampledCountMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    *sampledCountMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    sampledCountMetric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = sampledCountMetric;
+
+    CountMetric unsampledCountMetric =
+            createCountMetric("CountAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *unsampledCountMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    *config.add_count_metric() = unsampledCountMetric;
+
+    DurationMetric sampledDurationMetric = createDurationMetric(
+            "DurationSampledWakelockPerUid", holdingWakelockPredicate.id(), nullopt, {});
+    *sampledDurationMetric.mutable_dimensions_in_what() =
+            CreateAttributionUidDimensions(util::WAKELOCK_STATE_CHANGED, {Position::FIRST});
+    *sampledDurationMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateAttributionUidDimensions(util::WAKELOCK_STATE_CHANGED, {Position::FIRST});
+    sampledDurationMetric.mutable_dimensional_sampling_info()->set_shard_count(4);
+    *config.add_duration_metric() = sampledDurationMetric;
+
+    DurationMetric unsampledDurationMetric = createDurationMetric(
+            "DurationWakelockPerUid", holdingWakelockPredicate.id(), nullopt, {});
+    unsampledDurationMetric.set_aggregation_type(DurationMetric::SUM);
+    *unsampledDurationMetric.mutable_dimensions_in_what() =
+            CreateAttributionUidDimensions(util::WAKELOCK_STATE_CHANGED, {Position::FIRST});
+    *config.add_duration_metric() = unsampledDurationMetric;
+
+    ValueMetric sampledValueMetric =
+            createValueMetric("ValueSampledBleScanResultsPerUid", bleScanResultReceivedMatcher,
+                              /*num_results=*/2, nullopt, {});
+    *sampledValueMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::BLE_SCAN_RESULT_RECEIVED, {1 /* uid */});
+    *sampledValueMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::BLE_SCAN_RESULT_RECEIVED, {1 /*uid*/});
+    sampledValueMetric.mutable_dimensional_sampling_info()->set_shard_count(6);
+    *config.add_value_metric() = sampledValueMetric;
+
+    ValueMetric unsampledValueMetric =
+            createValueMetric("ValueBleScanResultsPerUid", bleScanResultReceivedMatcher,
+                              /*num_results=*/2, nullopt, {});
+    *unsampledValueMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::BLE_SCAN_RESULT_RECEIVED, {1 /* uid */});
+    *config.add_value_metric() = unsampledValueMetric;
+
+    KllMetric sampledKllMetric =
+            createKllMetric("KllSampledBleScanResultsPerUid", bleScanResultReceivedMatcher,
+                            /*num_results=*/2, nullopt);
+    *sampledKllMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::BLE_SCAN_RESULT_RECEIVED, {1 /* uid */});
+    *sampledKllMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::BLE_SCAN_RESULT_RECEIVED, {1 /*uid*/});
+    sampledKllMetric.mutable_dimensional_sampling_info()->set_shard_count(8);
+    *config.add_kll_metric() = sampledKllMetric;
+
+    KllMetric unsampledKllMetric = createKllMetric(
+            "KllBleScanResultsPerUid", bleScanResultReceivedMatcher, /*num_results=*/2, nullopt);
+    *unsampledKllMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::BLE_SCAN_RESULT_RECEIVED, {1 /* uid */});
+    *config.add_kll_metric() = unsampledKllMetric;
+
+    GaugeMetric sampledGaugeMetric =
+            createGaugeMetric("GaugeSampledAppCrashesPerUid", appCrashMatcher.id(),
+                              GaugeMetric::FIRST_N_SAMPLES, nullopt, nullopt);
+    *sampledGaugeMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /* uid */});
+    *sampledGaugeMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    sampledGaugeMetric.mutable_dimensional_sampling_info()->set_shard_count(10);
+    *config.add_gauge_metric() = sampledGaugeMetric;
+
+    GaugeMetric unsampledGaugeMetric =
+            createGaugeMetric("GaugeAppCrashesPerUid", appCrashMatcher.id(),
+                              GaugeMetric::FIRST_N_SAMPLES, nullopt, nullopt);
+    *unsampledGaugeMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /* uid */});
+    *config.add_gauge_metric() = unsampledGaugeMetric;
+
+    ConfigKey key(123, 987);
+    uint64_t timeNs = 456;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+    sp<UidMap> uidMap;
+    sp<MetricsManager> metricsManager =
+            new MetricsManager(key, config, timeNs, timeNs, uidMap, pullerManager,
+                               anomalyAlarmMonitor, periodicAlarmMonitor);
+    ASSERT_TRUE(metricsManager->isConfigValid());
+    ASSERT_EQ(10, metricsManager->mAllMetricProducers.size());
+
+    sp<MetricProducer> sampledCountMetricProducer = metricsManager->mAllMetricProducers[0];
+    sp<MetricProducer> unsampledCountMetricProducer = metricsManager->mAllMetricProducers[1];
+    sp<MetricProducer> sampledDurationMetricProducer = metricsManager->mAllMetricProducers[2];
+    sp<MetricProducer> unsampledDurationMetricProducer = metricsManager->mAllMetricProducers[3];
+    sp<MetricProducer> sampledValueMetricProducer = metricsManager->mAllMetricProducers[4];
+    sp<MetricProducer> unsampledValueMetricProducer = metricsManager->mAllMetricProducers[5];
+    sp<MetricProducer> sampledKllMetricProducer = metricsManager->mAllMetricProducers[6];
+    sp<MetricProducer> unsampledKllMetricProducer = metricsManager->mAllMetricProducers[7];
+    sp<MetricProducer> sampledGaugeMetricProducer = metricsManager->mAllMetricProducers[8];
+    sp<MetricProducer> unsampledGaugeMetricProducer = metricsManager->mAllMetricProducers[9];
+
+    // Check shard count is set correctly for sampled metrics or set to default.
+    EXPECT_EQ(2, sampledCountMetricProducer->mShardCount);
+    EXPECT_EQ(0, unsampledCountMetricProducer->mShardCount);
+    EXPECT_EQ(4, sampledDurationMetricProducer->mShardCount);
+    EXPECT_EQ(0, unsampledDurationMetricProducer->mShardCount);
+    EXPECT_EQ(6, sampledValueMetricProducer->mShardCount);
+    EXPECT_EQ(0, unsampledValueMetricProducer->mShardCount);
+    EXPECT_EQ(8, sampledKllMetricProducer->mShardCount);
+    EXPECT_EQ(0, unsampledKllMetricProducer->mShardCount);
+    EXPECT_EQ(10, sampledGaugeMetricProducer->mShardCount);
+    EXPECT_EQ(0, unsampledGaugeMetricProducer->mShardCount);
+
+    // Check sampled what fields is set correctly or empty.
+    EXPECT_EQ(1, sampledCountMetricProducer->mSampledWhatFields.size());
+    EXPECT_EQ(true, unsampledCountMetricProducer->mSampledWhatFields.empty());
+    EXPECT_EQ(1, sampledDurationMetricProducer->mSampledWhatFields.size());
+    EXPECT_EQ(true, unsampledDurationMetricProducer->mSampledWhatFields.empty());
+    EXPECT_EQ(1, sampledValueMetricProducer->mSampledWhatFields.size());
+    EXPECT_EQ(true, unsampledValueMetricProducer->mSampledWhatFields.empty());
+    EXPECT_EQ(1, sampledKllMetricProducer->mSampledWhatFields.size());
+    EXPECT_EQ(true, unsampledKllMetricProducer->mSampledWhatFields.empty());
+    EXPECT_EQ(1, sampledGaugeMetricProducer->mSampledWhatFields.size());
+    EXPECT_EQ(true, unsampledGaugeMetricProducer->mSampledWhatFields.empty());
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasShardCountButNoSampledField) {
+    AtomMatcher appCrashMatcher =
+            CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = appCrashMatcher;
+
+    CountMetric metric =
+            createCountMetric("CountSampledAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_METRIC_DIMENSIONAL_SAMPLING_INFO_MISSING_SAMPLED_FIELD,
+                      metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasSampledFieldIncorrectShardCount) {
+    AtomMatcher appCrashMatcher =
+            CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = appCrashMatcher;
+
+    CountMetric metric =
+            createCountMetric("CountSampledAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_METRIC_DIMENSIONAL_SAMPLING_INFO_INCORRECT_SHARD_COUNT,
+                      metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasMultipleSampledFields) {
+    AtomMatcher appCrashMatcher =
+            CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = appCrashMatcher;
+
+    CountMetric metric =
+            createCountMetric("CountSampledAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/, 2 /*event_type*/});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
+                                  metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionALL) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::ALL});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::ALL});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
+                                  metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionFIRST) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::FIRST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::FIRST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionLAST) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::LAST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::LAST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::ANY});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::ALL});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
+                                  metric.id()));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

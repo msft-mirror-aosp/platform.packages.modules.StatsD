@@ -107,6 +107,9 @@ AtomMatcher CreateStartScheduledJobAtomMatcher();
 // Create AtomMatcher proto for a scheduled job is done.
 AtomMatcher CreateFinishScheduledJobAtomMatcher();
 
+// Create AtomMatcher proto for cancelling a scheduled job.
+AtomMatcher CreateScheduleScheduledJobAtomMatcher();
+
 // Create AtomMatcher proto for screen brightness state changed.
 AtomMatcher CreateScreenBrightnessChangedAtomMatcher();
 
@@ -378,6 +381,12 @@ std::unique_ptr<LogEvent> CreateFinishScheduledJobEvent(uint64_t timestampNs,
                                                         const vector<string>& attributionTags,
                                                         const string& jobName);
 
+// Create log event when scheduled job schedules.
+std::unique_ptr<LogEvent> CreateScheduleScheduledJobEvent(uint64_t timestampNs,
+                                                          const vector<int>& attributionUids,
+                                                          const vector<string>& attributionTags,
+                                                          const string& jobName);
+
 // Create log event when battery saver starts.
 std::unique_ptr<LogEvent> CreateBatterySaverOnEvent(uint64_t timestampNs);
 // Create log event when battery saver stops.
@@ -440,6 +449,11 @@ std::unique_ptr<LogEvent> CreateAppStartOccurredEvent(
         uint64_t timestampNs, const int uid, const string& pkg_name,
         AppStartOccurred::TransitionType type, const string& activity_name,
         const string& calling_pkg_name, const bool is_instant_app, int64_t activity_start_msec);
+
+std::unique_ptr<LogEvent> CreateBleScanResultReceivedEvent(uint64_t timestampNs,
+                                                           const vector<int>& attributionUids,
+                                                           const vector<string>& attributionTags,
+                                                           const int numResults);
 
 std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         uint64_t timestampNs, const vector<int>& repeatedIntField,

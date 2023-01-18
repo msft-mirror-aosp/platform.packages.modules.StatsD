@@ -16,8 +16,11 @@
 
 #define STATSD_DEBUG false
 #include "Log.h"
+
 #include "FieldValue.h"
+
 #include "HashableDimensionKey.h"
+#include "hash.h"
 #include "math.h"
 
 namespace android {
@@ -519,6 +522,38 @@ size_t getSize(const std::vector<FieldValue>& fieldValues) {
         totalSize += fieldValue.getSize();
     }
     return totalSize;
+}
+
+bool shouldKeepSample(const FieldValue& sampleFieldValue, int shardOffset, int shardCount) {
+    int hashValue = 0;
+    switch (sampleFieldValue.mValue.type) {
+        case INT:
+            hashValue = Hash32(reinterpret_cast<const char*>(&sampleFieldValue.mValue.int_value),
+                               sizeof(sampleFieldValue.mValue.int_value));
+            break;
+        case LONG:
+            hashValue = Hash32(reinterpret_cast<const char*>(&sampleFieldValue.mValue.long_value),
+                               sizeof(sampleFieldValue.mValue.long_value));
+            break;
+        case FLOAT:
+            hashValue = Hash32(reinterpret_cast<const char*>(&sampleFieldValue.mValue.float_value),
+                               sizeof(sampleFieldValue.mValue.float_value));
+            break;
+        case DOUBLE:
+            hashValue = Hash32(reinterpret_cast<const char*>(&sampleFieldValue.mValue.double_value),
+                               sizeof(sampleFieldValue.mValue.double_value));
+            break;
+        case STRING:
+            hashValue = Hash32(sampleFieldValue.mValue.str_value);
+            break;
+        case STORAGE:
+            hashValue = Hash32((const char*)sampleFieldValue.mValue.storage_value.data(),
+                               sampleFieldValue.mValue.storage_value.size());
+            break;
+        default:
+            return true;
+    }
+    return (hashValue + shardOffset) % shardCount == 0;
 }
 
 }  // namespace statsd
