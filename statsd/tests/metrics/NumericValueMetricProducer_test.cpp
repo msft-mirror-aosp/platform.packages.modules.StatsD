@@ -147,6 +147,22 @@ public:
                                    stateGroupMap);
     }
 
+    static sp<NumericValueMetricProducer> createValueProducerWithSampling(
+            sp<MockStatsPullerManager>& pullerManager, ValueMetric& metric,
+            const int pullAtomId = tagId) {
+        sp<NumericValueMetricProducer> valueProducer = createValueProducer(
+                pullerManager, metric, pullAtomId, /*conditionAfterFirstBucketPrepared=*/nullopt,
+                /*slicedStateAtoms=*/{}, /*stateGroupMap=*/{}, bucketStartTimeNs, bucketStartTimeNs,
+                /*eventMatcherWizard=*/nullptr);
+
+        SamplingInfo samplingInfo;
+        samplingInfo.shardCount = metric.dimensional_sampling_info().shard_count();
+        translateFieldMatcher(metric.dimensional_sampling_info().sampled_what_field(),
+                              &samplingInfo.sampledWhatFields);
+        valueProducer->setSamplingInfo(samplingInfo);
+        return valueProducer;
+    }
+
     static sp<NumericValueMetricProducer> createValueProducerWithBucketParams(
             sp<MockStatsPullerManager>& pullerManager, ValueMetric& metric,
             const int64_t timeBaseNs, const int64_t startTimeNs, const int pullAtomId = tagId) {
@@ -7642,6 +7658,79 @@ TEST(NumericValueMetricProducerTest, TestSampleSize) {
     ASSERT_EQ(1, data.bucket_info(0).values_size());
     EXPECT_EQ(3, data.bucket_info(0).values(0).sample_size());
     EXPECT_EQ(45, data.bucket_info(0).values(0).value_long());
+}
+
+TEST(NumericValueMetricProducerTest, TestDimensionalSampling) {
+    ShardOffsetProvider::getInstance().setShardOffset(5);
+
+    int shardCount = 2;
+    ValueMetric sampledValueMetric = NumericValueMetricProducerTestHelper::createMetric();
+    *sampledValueMetric.mutable_dimensions_in_what() = CreateDimensions(tagId, {1 /*uid*/});
+    *sampledValueMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(tagId, {1 /*uid*/});
+    sampledValueMetric.mutable_dimensional_sampling_info()->set_shard_count(shardCount);
+
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+
+    EXPECT_CALL(*pullerManager, Pull(tagId, kConfigKey, _, _))
+            // First field is a dimension field and sampled what field.
+            // Second field is the value field.
+            // NumericValueMetricProducer initialized.
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                data->clear();
+                data->push_back(makeUidLogEvent(tagId, bucketStartTimeNs + 1, 1001, 5, 10));
+                data->push_back(makeUidLogEvent(tagId, bucketStartTimeNs + 1, 1002, 10, 10));
+                data->push_back(makeUidLogEvent(tagId, bucketStartTimeNs + 1, 1003, 15, 10));
+                return true;
+            }))
+            // Dump report pull.
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                data->clear();
+                data->push_back(
+                        makeUidLogEvent(tagId, bucketStartTimeNs + 10000000000, 1001, 6, 10));
+                data->push_back(
+                        makeUidLogEvent(tagId, bucketStartTimeNs + 10000000000, 1002, 12, 10));
+                data->push_back(
+                        makeUidLogEvent(tagId, bucketStartTimeNs + 10000000000, 1003, 18, 10));
+                return true;
+            }));
+
+    sp<NumericValueMetricProducer> valueProducer =
+            NumericValueMetricProducerTestHelper::createValueProducerWithSampling(
+                    pullerManager, sampledValueMetric);
+
+    // Check dump report.
+    ProtoOutputStream output;
+    std::set<string> strSet;
+    int64_t dumpReportTimeNs = bucketStartTimeNs + 10000000000;
+    valueProducer->onDumpReport(dumpReportTimeNs, true /* include current buckets */, true,
+                                NO_TIME_CONSTRAINTS /* dumpLatency */, &strSet, &output);
+
+    StatsLogReport report = outputStreamToProto(&output);
+    backfillDimensionPath(&report);
+    backfillStartEndTimestamp(&report);
+    EXPECT_TRUE(report.has_value_metrics());
+    StatsLogReport::ValueMetricDataWrapper valueMetrics;
+    sortMetricDataByDimensionsValue(report.value_metrics(), &valueMetrics);
+    ASSERT_EQ(2, valueMetrics.data_size());
+    EXPECT_EQ(0, report.value_metrics().skipped_size());
+
+    // Only Uid 1, 3, 4 are logged. (odd hash value) + (offset of 5) % (shard count of 2) = 0
+    ValueMetricData data = valueMetrics.data(0);
+    ValidateUidDimension(data.dimensions_in_what(), tagId, 1001);
+    ASSERT_EQ(1, data.bucket_info_size());
+    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + 10000000000,
+                        {1}, -1,
+                        0);  // Diff of 5 and 6
+
+    data = valueMetrics.data(1);
+    ValidateUidDimension(data.dimensions_in_what(), tagId, 1003);
+    ASSERT_EQ(1, data.bucket_info_size());
+    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + 10000000000,
+                        {3}, -1,
+                        0);  // Diff of 15 and 18
 }
 
 }  // namespace statsd

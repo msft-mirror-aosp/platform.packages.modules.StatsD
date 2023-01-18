@@ -221,6 +221,7 @@ private:
     FRIEND_TEST(GaugeMetricProducerTest, TestFirstBucket);
     FRIEND_TEST(GaugeMetricProducerTest, TestPullOnTrigger);
     FRIEND_TEST(GaugeMetricProducerTest, TestRemoveDimensionInOutput);
+    FRIEND_TEST(GaugeMetricProducerTest, TestPullDimensionalSampling);
 
     FRIEND_TEST(GaugeMetricProducerTest_PartialBucket, TestPushedEvents);
     FRIEND_TEST(GaugeMetricProducerTest_PartialBucket, TestPulled);
