@@ -106,13 +106,12 @@ cc_defaults {
         "libutils",
         "server_configurable_flags",
         "statsd-aidl-ndk",
-        "libsqlite",
+        "libsqlite_static_noicu",
     ],
     shared_libs: [
         "libbinder_ndk",
         "libincident",
         "liblog",
-        "libandroidicu",
     ],
     header_libs: [
         "libgtest_prod_headers",
