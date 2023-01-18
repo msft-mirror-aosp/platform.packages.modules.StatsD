@@ -1783,6 +1783,89 @@ TEST(CountMetricE2eTest, TestConditionSlicedByRepeatedUidWithUidDimension) {
                         1);
 }
 
+TEST(CountMetricE2eTest, TestDimensionalSampling) {
+    ShardOffsetProvider::getInstance().setShardOffset(5);
+
+    // Initialize config.
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
+
+    AtomMatcher appCrashMatcher =
+            CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
+    *config.add_atom_matcher() = appCrashMatcher;
+
+    CountMetric sampledCountMetric =
+            createCountMetric("CountSampledAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *sampledCountMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    *sampledCountMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    sampledCountMetric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = sampledCountMetric;
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    const uint64_t bucketSizeNs =
+            TimeUnitToBucketSizeInMillis(config.count_metric(0).bucket()) * 1000000LL;
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            bucketStartTimeNs, bucketStartTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+
+    int appUid1 = 1001;  // odd hash value
+    int appUid2 = 1002;  // even hash value
+    int appUid3 = 1003;  // odd hash value
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 20 * NS_PER_SEC, appUid1));  // 0:30
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 40 * NS_PER_SEC, appUid2));  // 0:50
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 60 * NS_PER_SEC, appUid3));  // 1:10
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 80 * NS_PER_SEC, appUid1));  // 1:20
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 90 * NS_PER_SEC, appUid2));  // 1:30
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 100 * NS_PER_SEC, appUid3));  // 1:40
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Check dump report.
+    vector<uint8_t> buffer;
+    ConfigMetricsReportList reports;
+    processor->onDumpReport(cfgKey, bucketStartTimeNs + bucketSizeNs + 1, false, true, ADB_DUMP,
+                            FAST, &buffer);
+    ASSERT_GT(buffer.size(), 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    EXPECT_TRUE(reports.reports(0).metrics(0).has_count_metrics());
+    StatsLogReport::CountMetricDataWrapper countMetrics;
+    sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).count_metrics(), &countMetrics);
+    ASSERT_EQ(2, countMetrics.data_size());
+
+    // Only Uid 1 and 3 are logged. (odd hash value) + (offset of 5) % (shard count of 2) = 0
+    CountMetricData data = countMetrics.data(0);
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, appUid1);
+    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + bucketSizeNs,
+                        2);
+
+    data = countMetrics.data(1);
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, appUid3);
+    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + bucketSizeNs,
+                        2);
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
