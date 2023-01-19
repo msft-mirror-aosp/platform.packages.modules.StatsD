@@ -713,6 +713,10 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
         return;
     }
 
+    if (!passesSampleCheckLocked(values)) {
+        return;
+    }
+
     HashableDimensionKey dimensionInWhat = DEFAULT_DIMENSION_KEY;
     if (!mDimensionsInWhat.empty()) {
         filterValues(mDimensionsInWhat, values, &dimensionInWhat);
