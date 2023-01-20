@@ -150,7 +150,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsNoCondition) {
     allData.clear();
     allData.push_back(makeLogEvent(tagId, bucket2StartTimeNs + 1, 10, "some value", 11));
 
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     auto it = gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields->begin();
     EXPECT_EQ(INT, it->mValue.getType());
@@ -168,7 +168,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsNoCondition) {
 
     allData.clear();
     allData.push_back(makeLogEvent(tagId, bucket3StartTimeNs + 10, 24, "some value", 25));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucket3StartTimeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     it = gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields->begin();
     EXPECT_EQ(INT, it->mValue.getType());
@@ -331,7 +331,7 @@ TEST_P(GaugeMetricProducerTest_PartialBucket, TestPulled) {
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 1, 1));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucketStartTimeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucketStartTimeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(1, gaugeProducer.mCurrentSlicedBucket->begin()
                          ->second.front()
@@ -361,7 +361,8 @@ TEST_P(GaugeMetricProducerTest_PartialBucket, TestPulled) {
 
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + bucketSizeNs + 1, 3));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucketStartTimeNs + bucketSizeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                               bucketStartTimeNs + bucketSizeNs);
     ASSERT_EQ(2UL, gaugeProducer.mPastBuckets[DEFAULT_METRIC_DIMENSION_KEY].size());
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(3, gaugeProducer.mCurrentSlicedBucket->begin()
@@ -399,7 +400,7 @@ TEST(GaugeMetricProducerTest, TestPulledWithAppUpgradeDisabled) {
 
     vector<shared_ptr<LogEvent>> allData;
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 1, 1));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucketStartTimeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucketStartTimeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(1, gaugeProducer.mCurrentSlicedBucket->begin()
                          ->second.front()
@@ -462,7 +463,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucket2StartTimeNs + 1, 110));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(110, gaugeProducer.mCurrentSlicedBucket->begin()
@@ -551,7 +552,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 1, 1000, 110));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
 
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     ASSERT_EQ(1UL, gaugeProducer.mPastBuckets.size());
@@ -598,7 +599,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection) {
     vector<shared_ptr<LogEvent>> allData;
     allData.clear();
     allData.push_back(CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 1, 13));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucketStartTimeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucketStartTimeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(13L, gaugeProducer.mCurrentSlicedBucket->begin()
                            ->second.front()
@@ -611,7 +612,8 @@ TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection) {
 
     allData.clear();
     allData.push_back(event2);
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucketStartTimeNs + bucketSizeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                               bucketStartTimeNs + bucketSizeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(15L, gaugeProducer.mCurrentSlicedBucket->begin()
                            ->second.front()
@@ -623,7 +625,8 @@ TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection) {
     allData.clear();
     allData.push_back(
             CreateRepeatedValueLogEvent(tagId, bucketStartTimeNs + 2 * bucketSizeNs + 10, 26));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucket2StartTimeNs + 2 * bucketSizeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                               bucket2StartTimeNs + 2 * bucketSizeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(26L, gaugeProducer.mCurrentSlicedBucket->begin()
                            ->second.front()
@@ -635,7 +638,8 @@ TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection) {
     // This event does not have the gauge field. Thus the current bucket value is 0.
     allData.clear();
     allData.push_back(CreateNoValuesLogEvent(tagId, bucketStartTimeNs + 3 * bucketSizeNs + 10));
-    gaugeProducer.onDataPulled(allData, /** succeed */ true, bucketStartTimeNs + 3 * bucketSizeNs);
+    gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
+                               bucketStartTimeNs + 3 * bucketSizeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_TRUE(gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields->empty());
 }
