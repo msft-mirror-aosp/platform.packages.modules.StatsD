@@ -2016,6 +2016,37 @@ TEST_P(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimes
     EXPECT_EQ(output.reports(0).last_report_elapsed_nanos(), dumpTime1Ns);
 }
 
+TEST_P(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate) {
+    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
+                                             /*isBootFlag=*/true);
+
+    sp<UidMap> m = new UidMap();
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
+                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
+                 /* certificateHash */ {{}, {}});
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> subscriberAlarmMonitor;
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
+            [](const ConfigKey& key) { return true; },
+            [](const int&, const vector<int64_t>&) { return true; });
+    ConfigKey key(3, 4);
+    StatsdConfig config = MakeConfig(true);
+    config.set_restricted_metrics_delegate_package_name("rm_package");
+    p.OnConfigUpdated(0, key, config);
+
+    EXPECT_EQ(1, p.mMetricsManagers.size());
+    EXPECT_NE(p.mMetricsManagers.find(key), p.mMetricsManagers.end());
+    sp<MetricsManager> oldMetricsManager = p.mMetricsManagers.find(key)->second;
+
+    StatsdConfig newConfig = MakeConfig(true);
+    newConfig.clear_restricted_metrics_delegate_package_name();
+    p.OnConfigUpdated(/*timestampNs=*/0, key, newConfig);
+
+    ASSERT_NE(p.mMetricsManagers.find(key)->second, oldMetricsManager);
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif
