@@ -155,8 +155,8 @@ TEST(SqlUtils, TestInsertTwoEvents) {
     LogEvent logEvent1 = makeLogEvent(statsEvent1);
 
     AStatsEvent* statsEvent2 = makeAStatsEvent(tagId, bucketStartTimeNs + 20);
-    AStatsEvent_writeString(statsEvent1, "222");
-    LogEvent logEvent2 = makeLogEvent(statsEvent1);
+    AStatsEvent_writeString(statsEvent2, "222");
+    LogEvent logEvent2 = makeLogEvent(statsEvent2);
 
     vector<LogEvent> events{logEvent1, logEvent2};
 
