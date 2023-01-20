@@ -204,6 +204,97 @@ TEST_F(KllMetricE2eTest, TestInitWithKllFieldPositionALL) {
     ASSERT_EQ(0, processor->mMetricsManagers.size());
 }
 
+TEST_F(KllMetricE2eTest, TestDimensionalSampling) {
+    ShardOffsetProvider::getInstance().setShardOffset(5);
+
+    // Create config.
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
+
+    AtomMatcher bleScanResultReceivedMatcher = CreateSimpleAtomMatcher(
+            "BleScanResultReceivedAtomMatcher", util::BLE_SCAN_RESULT_RECEIVED);
+    *config.add_atom_matcher() = bleScanResultReceivedMatcher;
+
+    // Create kll metric.
+    KllMetric sampledKllMetric =
+            createKllMetric("KllSampledBleScanResultsPerUid", bleScanResultReceivedMatcher,
+                            /*num_results=*/2, nullopt);
+    *sampledKllMetric.mutable_dimensions_in_what() =
+            CreateAttributionUidDimensions(util::BLE_SCAN_RESULT_RECEIVED, {Position::FIRST});
+    *sampledKllMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateAttributionUidDimensions(util::BLE_SCAN_RESULT_RECEIVED, {Position::FIRST});
+    sampledKllMetric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_kll_metric() = sampledKllMetric;
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            bucketStartTimeNs, bucketStartTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+
+    int appUid1 = 1001;  // odd hash value
+    int appUid2 = 1002;  // even hash value
+    int appUid3 = 1003;  // odd hash value
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    events.push_back(CreateBleScanResultReceivedEvent(bucketStartTimeNs + 20 * NS_PER_SEC,
+                                                      {appUid1}, {"tag1"}, 10));
+    events.push_back(CreateBleScanResultReceivedEvent(bucketStartTimeNs + 40 * NS_PER_SEC,
+                                                      {appUid2}, {"tag2"}, 10));
+    events.push_back(CreateBleScanResultReceivedEvent(bucketStartTimeNs + 60 * NS_PER_SEC,
+                                                      {appUid3}, {"tag3"}, 10));
+
+    events.push_back(CreateBleScanResultReceivedEvent(bucketStartTimeNs + 120 * NS_PER_SEC,
+                                                      {appUid1}, {"tag1"}, 11));
+    events.push_back(CreateBleScanResultReceivedEvent(bucketStartTimeNs + 140 * NS_PER_SEC,
+                                                      {appUid2}, {"tag2"}, 12));
+    events.push_back(CreateBleScanResultReceivedEvent(bucketStartTimeNs + 160 * NS_PER_SEC,
+                                                      {appUid3}, {"tag3"}, 13));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Check dump report.
+    vector<uint8_t> buffer;
+    ConfigMetricsReportList reports;
+    processor->onDumpReport(cfgKey, bucketStartTimeNs + bucketSizeNs + 1, false, true, ADB_DUMP,
+                            FAST, &buffer);
+    ASSERT_GT(buffer.size(), 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
+
+    ConfigMetricsReport report = reports.reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+    StatsLogReport metricReport = report.metrics(0);
+    EXPECT_EQ(metricReport.metric_id(), sampledKllMetric.id());
+    EXPECT_TRUE(metricReport.has_kll_metrics());
+    StatsLogReport::KllMetricDataWrapper kllMetrics;
+    sortMetricDataByDimensionsValue(metricReport.kll_metrics(), &kllMetrics);
+    ASSERT_EQ(kllMetrics.data_size(), 2);
+    EXPECT_EQ(kllMetrics.skipped_size(), 0);
+
+    // Only Uid 1 and 3 are logged. (odd hash value) + (offset of 5) % (shard count of 2) = 0
+    KllMetricData data = kllMetrics.data(0);
+    ValidateAttributionUidDimension(data.dimensions_in_what(), util::BLE_SCAN_RESULT_RECEIVED,
+                                    appUid1);
+    ValidateKllBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + bucketSizeNs, {2},
+                      0);
+
+    data = kllMetrics.data(1);
+    ValidateAttributionUidDimension(data.dimensions_in_what(), util::BLE_SCAN_RESULT_RECEIVED,
+                                    appUid3);
+    ValidateKllBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + bucketSizeNs, {2},
+                      0);
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif

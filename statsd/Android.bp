@@ -88,6 +88,7 @@ cc_defaults {
         "src/uid_data.proto",
         "src/utils/MultiConditionTrigger.cpp",
         "src/utils/DbUtils.cpp",
+        "src/utils/ShardOffsetProvider.cpp",
     ],
 
     local_include_dirs: [
