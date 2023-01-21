@@ -118,10 +118,14 @@ public:
     virtual ~ValueMetricProducer();
 
     // Process data pulled on bucket boundary.
-    virtual void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data, bool pullSuccess,
-                              int64_t originalPullTimeNs) override {
+    virtual void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data,
+                              PullResult pullResult, int64_t originalPullTimeNs) override {
     }
 
+    // Determine if metric needs to pull
+    virtual bool isPullNeeded() const override {
+        return false;
+    }
 
     // ValueMetric needs special logic if it's a pulled atom.
     void onStatsdInitCompleted(const int64_t& eventTimeNs) override;
