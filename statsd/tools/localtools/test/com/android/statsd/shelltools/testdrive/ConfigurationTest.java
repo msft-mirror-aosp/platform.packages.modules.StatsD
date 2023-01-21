@@ -57,6 +57,8 @@ public class ConfigurationTest {
 
     private final TestDrive.Configuration mConfiguration = new TestDrive.Configuration();
 
+    private final String mProtoFilePath = "test/data/atoms.proto";
+
     @Test
     public void testOnePushed() {
         final int atom = 90;
@@ -95,7 +97,7 @@ public class ConfigurationTest {
         assertFalse(TestDrive.Configuration.isPulledAtom(atom));
 
         List<String> mProtoIncludes = new ArrayList<>();
-        mProtoIncludes.add("test/external-atoms.proto");
+        mProtoIncludes.add(mProtoFilePath);
 
         mConfiguration.addAtom(atom, mProtoIncludes);
         StatsdConfig config = mConfiguration.createConfig();
@@ -108,6 +110,78 @@ public class ConfigurationTest {
         //  id: 1234567
         //  simple_atom_matcher {
         //    atom_id: 105999
+        //  }
+        //}
+
+        assertEquals(1, config.getEventMetricCount());
+        assertEquals(0, config.getGaugeMetricCount());
+
+        assertTrue(mConfiguration.isTrackedMetric(config.getEventMetric(0).getId()));
+
+        final List<StatsdConfigProto.AtomMatcher> atomMatchers =
+                new ArrayList<>(config.getAtomMatcherList());
+        assertEquals(atom,
+                findAndRemoveAtomMatcherById(atomMatchers, config.getEventMetric(0).getWhat())
+                        .getSimpleAtomMatcher().getAtomId());
+        assertEquals(0, atomMatchers.size());
+    }
+
+    @Ignore("b/258831376")
+    @Test
+    public void testOnePushedFromExternalAtomsProtoWithImportedAtom() {
+        final int atom = 106001;
+        assertFalse(TestDrive.Configuration.isPulledAtom(atom));
+
+        List<String> mProtoIncludes = new ArrayList<>();
+        mProtoIncludes.add(mProtoFilePath);
+
+        mConfiguration.addAtom(atom, mProtoIncludes);
+        StatsdConfig config = mConfiguration.createConfig();
+
+        //event_metric {
+        //  id: 1111
+        //  what: 1234567
+        //}
+        //atom_matcher {
+        //  id: 1234567
+        //  simple_atom_matcher {
+        //    atom_id: 106001
+        //  }
+        //}
+
+        assertEquals(1, config.getEventMetricCount());
+        assertEquals(0, config.getGaugeMetricCount());
+
+        assertTrue(mConfiguration.isTrackedMetric(config.getEventMetric(0).getId()));
+
+        final List<StatsdConfigProto.AtomMatcher> atomMatchers =
+                new ArrayList<>(config.getAtomMatcherList());
+        assertEquals(atom,
+                findAndRemoveAtomMatcherById(atomMatchers, config.getEventMetric(0).getWhat())
+                        .getSimpleAtomMatcher().getAtomId());
+        assertEquals(0, atomMatchers.size());
+    }
+
+    @Ignore("b/258831376")
+    @Test
+    public void testOnePushedFromExternalAtomsProtoWithImportedEnum() {
+        final int atom = 100001;
+        assertFalse(TestDrive.Configuration.isPulledAtom(atom));
+
+        List<String> mProtoIncludes = new ArrayList<>();
+        mProtoIncludes.add(mProtoFilePath);
+
+        mConfiguration.addAtom(atom, mProtoIncludes);
+        StatsdConfig config = mConfiguration.createConfig();
+
+        //event_metric {
+        //  id: 1111
+        //  what: 1234567
+        //}
+        //atom_matcher {
+        //  id: 1234567
+        //  simple_atom_matcher {
+        //    atom_id: 100001
         //  }
         //}
 
