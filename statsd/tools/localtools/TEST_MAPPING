@@ -7,8 +7,16 @@
           "exclude-annotation": "org.junit.Ignore"
         },
         {
-          // Exclude test methods that require aprotoc host dependencies
-          "exclude-filter": "com.android.statsd.shelltools.testdrive.ConfigurationTest#testOnePushedFromExternalAtomsProto"
+            // Exclude test methods that require aprotoc host dependencies - see http://b/118691442
+            "exclude-filter": "com.android.statsd.shelltools.testdrive.ConfigurationTest.testOnePushedFromExternalAtomsProto"
+        },
+        {
+            // Exclude test methods that require aprotoc host dependencies - see http://b/118691442
+            "exclude-filter": "com.android.statsd.shelltools.testdrive.ConfigurationTest.testOnePushedFromExternalAtomsProtoWithImportedAtom"
+        },
+        {
+            // Exclude test methods that require aprotoc host dependencies - see http://b/118691442
+            "exclude-filter": "com.android.statsd.shelltools.testdrive.ConfigurationTest.testOnePushedFromExternalAtomsProtoWithImportedEnum"
         }
       ]
     }
