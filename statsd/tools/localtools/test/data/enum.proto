@@ -16,24 +16,11 @@
 
 syntax = "proto2";
 
-package android.tests;
+package android.tests.enum;
 
-option java_package = "android.tests";
-option java_outer_classname = "ExternalAtoms";
-
-/* Allocated atom IDs. */
-message Atom {
-  oneof pushed {
-    // AOSP atom ID range starts at 105000
-    AOSPAtom aosp_atom = 105999;
-  }
-  // AOSP atom ID range ends at 109999
-}
-
-/* A test atom from an AOSP atom ids range */
-message AOSPAtom {
-
-  optional string reverse_domain_name = 1;
-
-  optional int32 value = 2;
+enum DemoEnumValues {
+    DEMO_VALUE1 = 1;
+    DEMO_VALUE2 = 2;
+    DEMO_VALUE3 = 3;
+    DEMO_VALUE4 = 4;
 }
