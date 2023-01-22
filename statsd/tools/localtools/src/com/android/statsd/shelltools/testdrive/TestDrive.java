@@ -146,6 +146,8 @@ public class TestDrive {
         LOGGER.severe("\tWait for Enter key press before collecting report");
         LOGGER.severe("-d delay_ms");
         LOGGER.severe("\tWait for delay_ms before collecting report, default is 60000 ms");
+        LOGGER.severe("-v");
+        LOGGER.severe("\tDebug logging level");
     }
 
     boolean processArgs(
@@ -177,6 +179,8 @@ public class TestDrive {
                 mDeviceSerial = args[++first_arg];
             } else if (remaining_args >= 2 && arg.equals("-e")) {
                 mPressToContinue = true;
+            } else if (remaining_args >= 2 && arg.equals("-v")) {
+                Utils.setUpLogger(LOGGER, true);
             } else if (remaining_args >= 2 && arg.equals("-d")) {
                 mPressToContinue = false;
                 mReportCollectionDelayMillis = Integer.parseInt(args[++first_arg]);
@@ -192,11 +196,6 @@ public class TestDrive {
             mProtoIncludes.add(HW_ATOMS_PROTO_FILEPATH);
         }
 
-        mDeviceSerial = Utils.chooseDevice(mDeviceSerial, connectedDevices, defaultDevice, LOGGER);
-        if (mDeviceSerial == null) {
-            return false;
-        }
-
         for (; first_arg < args.length; ++first_arg) {
             String atom = args[first_arg];
             try {
@@ -204,6 +203,11 @@ public class TestDrive {
             } catch (NumberFormatException e) {
                 LOGGER.severe("Bad atom id provided: " + atom);
             }
+        }
+
+        mDeviceSerial = Utils.chooseDevice(mDeviceSerial, connectedDevices, defaultDevice, LOGGER);
+        if (mDeviceSerial == null) {
+            return false;
         }
 
         return configuration.hasPulledAtoms() || configuration.hasPushedAtoms();
@@ -318,8 +322,10 @@ public class TestDrive {
         private String compileProtoFileIntoDescriptorSet(String protoFileName) {
             final String protoCompilerBinary = "aprotoc";
             final String descSetFlag = "--descriptor_set_out";
-
+            final String includeImportsFlag = "--include_imports";
+            final String includeSourceInfoFlag = "--include_source_info";
             final String dsFileName = generateDescriptorSetFileName(protoFileName);
+
             if (dsFileName == null) return null;
 
             LOGGER.log(Level.FINE, "Target DescriptorSet File " + dsFileName);
@@ -329,6 +335,8 @@ public class TestDrive {
                 cmdArgs.add(protoCompilerBinary);
                 cmdArgs.add(descSetFlag);
                 cmdArgs.add(dsFileName);
+                cmdArgs.add(includeImportsFlag);
+                cmdArgs.add(includeSourceInfoFlag);
 
                 // populate the proto_path argument
                 if (mAndroidBuildTop != null) {
@@ -353,10 +361,8 @@ public class TestDrive {
                 commands = cmdArgs.toArray(commands);
                 Utils.runCommand(null, LOGGER, commands);
                 return dsFileName;
-            } catch (IOException e) {
-                LOGGER.log(Level.SEVERE, "Error while performing proto compilation: " + e);
-            } catch (InterruptedException e) {
-                LOGGER.log(Level.SEVERE, "Error while performing proto compilation: " + e);
+            } catch (InterruptedException | IOException e) {
+                LOGGER.severe("Error while performing proto compilation: " + e.getMessage());
             }
             return null;
         }
@@ -386,7 +392,7 @@ public class TestDrive {
                 dsPath = dsPath.resolve(protoPath.getFileName().toString() + ".ds.tmp");
                 return dsPath.toString();
             } catch (IOException e) {
-                LOGGER.log(Level.INFO, "Could not find file " + protoFileName);
+                LOGGER.severe("Could not find file " + protoFileName);
             }
             return null;
         }
@@ -401,17 +407,54 @@ public class TestDrive {
             try (InputStream input = new FileInputStream(dsFileName)) {
                 DescriptorProtos.FileDescriptorSet fileDescriptorSet =
                         DescriptorProtos.FileDescriptorSet.parseFrom(input);
-
                 Descriptors.FileDescriptor fieldOptionsDesc =
                         DescriptorProtos.FieldOptions.getDescriptor().getFile();
 
-                Descriptors.Descriptor atomMsgDesc = Descriptors.FileDescriptor.buildFrom(
-                        fileDescriptorSet.getFile(0),
-                        new Descriptors.FileDescriptor[]{fieldOptionsDesc}).findMessageTypeByName(
-                        "Atom");
+                LOGGER.fine("Files count is " + fileDescriptorSet.getFileCount());
 
-                if (atomMsgDesc.findFieldByNumber(atom) != null) return true;
-            } catch (Descriptors.DescriptorValidationException | IOException e) {
+                // preparing dependencies list
+                List<Descriptors.FileDescriptor> dependencies =
+                        new ArrayList<Descriptors.FileDescriptor>();
+                for (int fileIndex = 0; fileIndex < fileDescriptorSet.getFileCount(); fileIndex++) {
+                    LOGGER.fine("Processing file " + fileIndex);
+                    try {
+                        Descriptors.FileDescriptor dep = Descriptors.FileDescriptor.buildFrom(
+                                fileDescriptorSet.getFile(fileIndex),
+                                new Descriptors.FileDescriptor[0]);
+                        dependencies.add(dep);
+                    } catch (Descriptors.DescriptorValidationException e) {
+                        LOGGER.fine("Unable to parse atoms proto file: " + fileName + ". Error: "
+                                + e.getDescription());
+                    }
+                }
+
+                Descriptors.FileDescriptor[] fileDescriptorDeps =
+                        new Descriptors.FileDescriptor[dependencies.size()];
+                fileDescriptorDeps = dependencies.toArray(fileDescriptorDeps);
+
+                // looking for a file with an Atom definition
+                for (int fileIndex = 0; fileIndex < fileDescriptorSet.getFileCount(); fileIndex++) {
+                    LOGGER.fine("Processing file " + fileIndex);
+                    Descriptors.Descriptor atomMsgDesc = null;
+                    try {
+                        atomMsgDesc = Descriptors.FileDescriptor.buildFrom(
+                                        fileDescriptorSet.getFile(fileIndex), fileDescriptorDeps,
+                                        true)
+                                .findMessageTypeByName("Atom");
+                    } catch (Descriptors.DescriptorValidationException e) {
+                        LOGGER.severe("Unable to parse atoms proto file: " + fileName + ". Error: "
+                                + e.getDescription());
+                    }
+
+                    if (atomMsgDesc != null) {
+                        LOGGER.fine("Atom message is located");
+                    }
+
+                    if (atomMsgDesc != null && atomMsgDesc.findFieldByNumber(atom) != null) {
+                        return true;
+                    }
+                }
+            } catch (IOException e) {
                 LOGGER.log(Level.WARNING, "Unable to parse atoms proto file: " + fileName, e);
             } finally {
                 File dsFile = new File(dsFileName);
