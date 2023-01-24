@@ -39,8 +39,21 @@ bool deleteTable(const ConfigKey& key, const int64_t metricId);
 /* Deletes the SQLite db data file. */
 void deleteDb(const ConfigKey& key);
 
-/* Inserts new data into the specified metric data table. */
+/* Gets a handle to the sqlite db. You must call closeDb to free the allocated memory.
+ * Returns a nullptr if an error occurs.
+ */
+sqlite3* getDb(const ConfigKey& key);
+
+/* Closes the handle to the sqlite db. */
+void closeDb(sqlite3* db);
+
+/* Inserts new data into the specified metric data table.
+ * A temp sqlite handle is created using the ConfigKey.
+ */
 bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>& events);
+
+/* Inserts new data into the specified sqlite db handle. */
+bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events);
 
 /* Executes a sql query on the specified SQLite db. */
 bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& rows,

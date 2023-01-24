@@ -112,6 +112,19 @@ void deleteDb(const ConfigKey& key) {
     StorageManager::deleteFile(dbName.c_str());
 }
 
+sqlite3* getDb(const ConfigKey& key) {
+    const string dbName = getDbName(key);
+    sqlite3* db;
+    if (sqlite3_open(dbName.c_str(), &db) == SQLITE_OK) {
+        return db;
+    }
+    return nullptr;
+}
+
+void closeDb(sqlite3* db) {
+    sqlite3_close(db);
+}
+
 static string getInsertSqlString(const int64_t metricId, const vector<LogEvent>& events) {
     string result = StringPrintf("INSERT INTO metric_%lld VALUES", (long long)metricId);
     for (auto& logEvent : events) {
@@ -156,11 +169,15 @@ bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>
         sqlite3_close(db);
         return false;
     }
+    bool success = insert(db, metricId, events);
+    sqlite3_close(db);
+    return success;
+}
 
+bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events) {
     char* error = nullptr;
     string zSql = getInsertSqlString(metricId, events);
     sqlite3_exec(db, zSql.c_str(), nullptr, nullptr, &error);
-    sqlite3_close(db);
     if (error) {
         ALOGW("Failed to insert data to db: %s", error);
         return false;
