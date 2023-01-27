@@ -29,6 +29,11 @@ namespace os {
 namespace statsd {
 namespace dbutils {
 
+namespace {
+const ConfigKey key = ConfigKey(111, 222);
+const int64_t metricId = 111;
+const int32_t tagId = 1;
+
 AStatsEvent* makeAStatsEvent(int32_t atomId, int64_t timestampNs) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, atomId);
@@ -42,10 +47,15 @@ LogEvent makeLogEvent(AStatsEvent* statsEvent) {
     return event;
 }
 
-TEST(SqlUtils, TestInsertString) {
-    ConfigKey key = ConfigKey(111, 222);
-    int64_t metricId = 111;
-    int tagId = 1;
+class DbUtilsTest : public ::testing::Test {
+public:
+    void TearDown() override {
+        deleteDb(key);
+    }
+};
+}  // Anonymous namespace.
+
+TEST_F(DbUtilsTest, TestInsertString) {
     int64_t bucketStartTimeNs = 10000000000;
 
     AStatsEvent* statsEvent = makeAStatsEvent(tagId, bucketStartTimeNs + 10);
@@ -60,7 +70,6 @@ TEST(SqlUtils, TestInsertString) {
     std::vector<std::vector<std::string>> rows;
     string zSql = "SELECT * FROM metric_111 ORDER BY elapsedTimestampNs";
     EXPECT_TRUE(query(key, zSql, rows, columnTypes));
-    deleteDb(key);
 
     ASSERT_EQ(rows.size(), 1);
     ASSERT_EQ(columnTypes.size(), 4);
@@ -75,10 +84,7 @@ TEST(SqlUtils, TestInsertString) {
     EXPECT_EQ(columnTypes[3], SQLITE_TEXT);
 }
 
-TEST(SqlUtils, TestInsertInteger) {
-    ConfigKey key = ConfigKey(111, 222);
-    int64_t metricId = 111;
-    int tagId = 1;
+TEST_F(DbUtilsTest, TestInsertInteger) {
     int64_t bucketStartTimeNs = 10000000000;
 
     AStatsEvent* statsEvent = makeAStatsEvent(tagId, bucketStartTimeNs + 10);
@@ -94,7 +100,6 @@ TEST(SqlUtils, TestInsertInteger) {
     std::vector<std::vector<std::string>> rows;
     string zSql = "SELECT * FROM metric_111 ORDER BY elapsedTimestampNs";
     EXPECT_TRUE(query(key, zSql, rows, columnTypes));
-    deleteDb(key);
 
     ASSERT_EQ(rows.size(), 1);
     ASSERT_EQ(columnTypes.size(), 5);
@@ -111,10 +116,7 @@ TEST(SqlUtils, TestInsertInteger) {
     EXPECT_EQ(columnTypes[4], SQLITE_INTEGER);
 }
 
-TEST(SqlUtils, TestInsertFloat) {
-    ConfigKey key = ConfigKey(111, 222);
-    int64_t metricId = 111;
-    int tagId = 1;
+TEST_F(DbUtilsTest, TestInsertFloat) {
     int64_t bucketStartTimeNs = 10000000000;
 
     AStatsEvent* statsEvent = makeAStatsEvent(tagId, bucketStartTimeNs + 10);
@@ -129,7 +131,6 @@ TEST(SqlUtils, TestInsertFloat) {
     std::vector<std::vector<std::string>> rows;
     string zSql = "SELECT * FROM metric_111 ORDER BY elapsedTimestampNs";
     EXPECT_TRUE(query(key, zSql, rows, columnTypes));
-    deleteDb(key);
 
     ASSERT_EQ(rows.size(), 1);
     ASSERT_EQ(columnTypes.size(), 4);
@@ -144,10 +145,7 @@ TEST(SqlUtils, TestInsertFloat) {
     EXPECT_EQ(columnTypes[3], SQLITE_FLOAT);
 }
 
-TEST(SqlUtils, TestInsertTwoEvents) {
-    ConfigKey key = ConfigKey(111, 222);
-    int64_t metricId = 111;
-    int tagId = 1;
+TEST_F(DbUtilsTest, TestInsertTwoEvents) {
     int64_t bucketStartTimeNs = 10000000000;
 
     AStatsEvent* statsEvent1 = makeAStatsEvent(tagId, bucketStartTimeNs + 10);
@@ -167,7 +165,6 @@ TEST(SqlUtils, TestInsertTwoEvents) {
     std::vector<std::vector<std::string>> rows;
     string zSql = "SELECT * FROM metric_111 ORDER BY elapsedTimestampNs";
     EXPECT_TRUE(query(key, zSql, rows, columnTypes));
-    deleteDb(key);
 
     ASSERT_EQ(rows.size(), 2);
     ASSERT_EQ(columnTypes.size(), 4);
@@ -184,6 +181,41 @@ TEST(SqlUtils, TestInsertTwoEvents) {
     EXPECT_EQ(columnTypes[1], SQLITE_INTEGER);
     EXPECT_EQ(columnTypes[2], SQLITE_INTEGER);
     EXPECT_EQ(columnTypes[3], SQLITE_TEXT);
+}
+
+TEST_F(DbUtilsTest, TestInsertTwoEventsEnforceTtl) {
+    int64_t eventElapsedTimeNs = 10000000000;
+    int64_t eventWallClockNs = 50000000000;
+
+    AStatsEvent* statsEvent1 = makeAStatsEvent(tagId, eventElapsedTimeNs + 10);
+    AStatsEvent_writeString(statsEvent1, "111");
+    LogEvent logEvent1 = makeLogEvent(statsEvent1);
+    logEvent1.setLogdWallClockTimestampNs(eventWallClockNs);
+
+    AStatsEvent* statsEvent2 = makeAStatsEvent(tagId, eventElapsedTimeNs + 20);
+    AStatsEvent_writeString(statsEvent2, "222");
+    LogEvent logEvent2 = makeLogEvent(statsEvent2);
+    logEvent2.setLogdWallClockTimestampNs(eventWallClockNs + eventElapsedTimeNs);
+
+    vector<LogEvent> events{logEvent1, logEvent2};
+
+    EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent1));
+    sqlite3* db = getDb(key);
+    EXPECT_TRUE(insert(db, metricId, events));
+    EXPECT_TRUE(flushTtl(db, metricId, eventWallClockNs));
+    closeDb(db);
+
+    std::vector<int32_t> columnTypes;
+    std::vector<std::vector<std::string>> rows;
+    string zSql = "SELECT * FROM metric_111 ORDER BY elapsedTimestampNs";
+    EXPECT_TRUE(query(key, zSql, rows, columnTypes));
+
+    ASSERT_EQ(rows.size(), 1);
+    ASSERT_EQ(columnTypes.size(), 4);
+    // LogEvent 2
+    EXPECT_EQ(/*tagId=*/rows[0][0], "1");
+    EXPECT_EQ(/*elapsedTimestampNs=*/rows[0][1], to_string(eventElapsedTimeNs + 20));
+    EXPECT_EQ(/*field1=*/rows[0][3], "222");
 }
 
 }  // namespace dbutils
