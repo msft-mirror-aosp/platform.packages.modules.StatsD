@@ -204,6 +204,7 @@ bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& row
     }
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db, zSql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
@@ -225,6 +226,7 @@ bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& row
         firstIter = false;
         result = sqlite3_step(stmt);
     }
+    sqlite3_finalize(stmt);
     sqlite3_close(db);
     if (result != SQLITE_DONE) {
         return false;
