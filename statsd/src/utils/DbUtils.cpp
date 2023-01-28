@@ -22,6 +22,7 @@
 
 #include "FieldValue.h"
 #include "android-base/stringprintf.h"
+#include "stats_log_util.h"
 #include "storage/StorageManager.h"
 
 namespace android {
@@ -36,13 +37,21 @@ using ::android::os::statsd::StorageManager;
 using ::android::os::statsd::STRING;
 using base::StringPrintf;
 
+const string TABLE_NAME_PREFIX = "metric_";
+const string COLUMN_NAME_ATOM_TAG = "atomId";
+const string COLUMN_NAME_EVENT_ELAPSED_CLOCK_NS = "elapsedTimestampNs";
+const string COLUMN_NAME_EVENT_WALL_CLOCK_NS = "wallTimestampNs";
+
 static string getDbName(const ConfigKey& key) {
     return StringPrintf("%s/%d_%lld.db", STATS_METADATA_DIR, key.GetUid(), (long long)key.GetId());
 }
 
 static string getCreateSqlString(const int64_t metricId, const LogEvent& event) {
-    string result = StringPrintf("CREATE TABLE IF NOT EXISTS metric_%lld", (long long)metricId);
-    result += "(atomId INTEGER,elapsedTimestampNs INTEGER,wallTimestampNs INTEGER,";
+    string result = StringPrintf("CREATE TABLE IF NOT EXISTS %s%lld", TABLE_NAME_PREFIX.c_str(),
+                                 (long long)metricId);
+    result += StringPrintf("(%s INTEGER,%s INTEGER,%s INTEGER,", COLUMN_NAME_ATOM_TAG.c_str(),
+                           COLUMN_NAME_EVENT_ELAPSED_CLOCK_NS.c_str(),
+                           COLUMN_NAME_EVENT_WALL_CLOCK_NS.c_str());
     for (size_t fieldId = 1; fieldId <= event.getValues().size(); ++fieldId) {
         const FieldValue& fieldValue = event.getValues()[fieldId - 1];
         if (fieldValue.mField.getDepth() > 0) {
@@ -195,6 +204,7 @@ bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& row
     }
     sqlite3_stmt* stmt;
     if (sqlite3_prepare_v2(db, zSql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
         sqlite3_close(db);
         return false;
     }
@@ -216,8 +226,23 @@ bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& row
         firstIter = false;
         result = sqlite3_step(stmt);
     }
+    sqlite3_finalize(stmt);
     sqlite3_close(db);
     if (result != SQLITE_DONE) {
+        return false;
+    }
+    return true;
+}
+
+bool flushTtl(sqlite3* db, const int64_t metricId, const int64_t ttlWallClockNs) {
+    string zSql = StringPrintf("DELETE FROM %s%lld WHERE %s <= %lld", TABLE_NAME_PREFIX.c_str(),
+                               (long long)metricId, COLUMN_NAME_EVENT_WALL_CLOCK_NS.c_str(),
+                               (long long)ttlWallClockNs);
+
+    char* error = nullptr;
+    sqlite3_exec(db, zSql.c_str(), nullptr, nullptr, &error);
+    if (error) {
+        ALOGW("Failed to enforce ttl: %s", error);
         return false;
     }
     return true;

@@ -55,10 +55,13 @@ bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>
 /* Inserts new data into the specified sqlite db handle. */
 bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events);
 
-/* Executes a sql query on the specified SQLite db. */
+/* Executes a sql query on the specified SQLite db.
+ * A temp sqlite handle is created using the ConfigKey.
+ */
 bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& rows,
            vector<int32_t>& columnTypes);
 
+bool flushTtl(sqlite3* db, const int64_t metricId, const int64_t ttlWallClockNs);
 }  // namespace dbutils
 }  // namespace statsd
 }  // namespace os

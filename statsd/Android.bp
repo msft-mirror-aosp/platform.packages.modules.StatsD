@@ -407,6 +407,7 @@ cc_benchmark {
         ":libprotobuf-internal-protos",
         ":libstats_internal_protos",
 
+        "benchmark/db_benchmark.cpp",
         "benchmark/duration_metric_benchmark.cpp",
         "benchmark/filter_value_benchmark.cpp",
         "benchmark/get_dimensions_for_condition_benchmark.cpp",
