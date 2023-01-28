@@ -118,6 +118,10 @@ package android.util {
     field public static final byte ANNOTATION_ID_STATE_NESTED = 8; // 0x8
     field public static final byte ANNOTATION_ID_TRIGGER_STATE_RESET = 7; // 0x7
     field public static final byte ANNOTATION_ID_TRUNCATE_TIMESTAMP = 2; // 0x2
+    field public static final byte FIELD_RESTRICTION_COARSE_APP_USAGE_PERSONALIZATION = 11; // 0xb
+    field public static final byte FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO = 10; // 0xa
+    field public static final byte RESTRICTION_CATEGORY = 9; // 0x9
+    field public static final int RESTRICTION_CATEGORY_DIAGNOSTIC = 1; // 0x1
   }
 
 }
