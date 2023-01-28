@@ -251,7 +251,7 @@ optional<InvalidConfigReason> handleMetricWithStateLink(const int64_t metricId,
 
 optional<InvalidConfigReason> handleMetricWithSampling(
         const int64_t metricId, const DimensionalSamplingInfo& dimSamplingInfo,
-        SamplingInfo& samplingInfo) {
+        const vector<Matcher>& dimensionsInWhat, SamplingInfo& samplingInfo) {
     if (!dimSamplingInfo.has_sampled_what_field()) {
         ALOGE("metric DimensionalSamplingInfo missing sampledWhatField");
         return InvalidConfigReason(
@@ -279,6 +279,10 @@ optional<InvalidConfigReason> handleMetricWithSampling(
         ALOGE("metric has incorrect number of sampled dimension fields");
         return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
                                    metricId);
+    }
+    if (!subsetDimensions(samplingInfo.sampledWhatFields, dimensionsInWhat)) {
+        return InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT, metricId);
     }
     return nullopt;
 }
@@ -530,7 +534,7 @@ optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
@@ -715,7 +719,7 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
@@ -939,7 +943,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
@@ -1090,7 +1094,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
@@ -1232,9 +1236,11 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
             dimensionHardLimit);
 
     SamplingInfo samplingInfo;
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
