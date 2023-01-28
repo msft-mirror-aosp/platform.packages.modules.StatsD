@@ -393,6 +393,18 @@ void LogEvent::parseRestrictionCategoryAnnotation(uint8_t annotationType) {
     return;
 }
 
+void LogEvent::parseFieldRestrictionAnnotation(uint8_t annotationType) {
+    // Allowed types: BOOL
+    if (mValues.empty() || annotationType != BOOL_TYPE) {
+        mValid = false;
+        return;
+    }
+    // Read the value so that the rest of the event is correctly parsed
+    // TODO: store the field annotations once the metrics need to parse them.
+    readNextValue<uint8_t>();
+    return;
+}
+
 // firstUidInChainIndex is a default parameter that is only needed when parsing
 // annotations for attribution chains.
 // numElements is a default param that is only needed when parsing annotations for repeated fields
@@ -428,6 +440,24 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
                 if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG,
                                                                 FLAG_FALSE)) {
                     parseRestrictionCategoryAnnotation(annotationType);
+                    break;
+                } else {
+                    mValid = false;
+                    return;
+                }
+            // Currently field restrictions are ignored, so we parse but do not store them.
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
+                if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG,
+                                                                FLAG_FALSE)) {
+                    parseFieldRestrictionAnnotation(annotationType);
                     break;
                 } else {
                     mValid = false;
