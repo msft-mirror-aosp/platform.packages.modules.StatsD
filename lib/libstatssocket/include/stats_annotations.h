@@ -80,6 +80,39 @@ enum AnnotationIds : uint8_t {
      * Introduced in API 31.
      */
     ASTATSLOG_ANNOTATION_ID_STATE_NESTED = 8,
+
+    /**
+     * Annotation ID constant to indicate the restriction category of an atom.
+     * This annotation must only be attached to the atom id. This is an int annotation.
+     *
+     * Introduced in API 34.
+     */
+    ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY = 9,
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains peripheral device info.
+     * This is a bool annotation.
+     *
+     * Introduced in API 34.
+     */
+    ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO = 10,
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains coarse app usage personalization.
+     * This is a bool annotation.
+     *
+     * Introduced in API 34.
+     */
+    ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_COARSE_APP_USAGE_PERSONALIZATION = 11,
 };
 
+enum AStatsLogRestrictionCategories : uint32_t {
+    /**
+     * Restriction category for atoms about diagnostics.
+     *
+     * Introduced in API 34.
+     */
+    ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC = 1,
+
+};
 __END_DECLS
