@@ -103,6 +103,8 @@ StatsLogProcessor::StatsLogProcessor(const sp<UidMap>& uidMap,
       mLastTimestampSeen(0) {
     mPullerManager->ForceClearPullerCache();
     StateManager::getInstance().updateLogSources(uidMap);
+    mIsRestrictedMetricsEnabled =
+            FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE);
 }
 
 StatsLogProcessor::~StatsLogProcessor() {
@@ -446,6 +448,8 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
 
     std::unordered_set<int> uidsWithActiveConfigsChanged;
     std::unordered_map<int, std::vector<int64_t>> activeConfigsPerUid;
+
+    enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
     // pass the event to metrics managers.
     for (auto& pair : mMetricsManagers) {
         int uid = pair.first.GetUid();
@@ -796,6 +800,32 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     if (mMetricsManagers.empty()) {
         mPullerManager->ForceClearPullerCache();
     }
+}
+
+// TODO(b/267501143): Add unit tests when metric producer is ready
+void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClockNs,
+                                                         const int64_t elapsedRealtimeNs) {
+    if (!mIsRestrictedMetricsEnabled) {
+        return;
+    }
+    if (elapsedRealtimeNs - mLastTtlTime < StatsdStats::kMinTtlCheckPeriodNs) {
+        return;
+    }
+    enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+}
+
+void StatsLogProcessor::enforceDataTtls(const int64_t wallClockNs,
+                                        const int64_t elapsedRealtimeNs) {
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+    enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+}
+
+void StatsLogProcessor::enforceDataTtlsLocked(const int64_t wallClockNs,
+                                              const int64_t elapsedRealtimeNs) {
+    for (const auto& itr : mMetricsManagers) {
+        itr.second->enforceRestrictedDataTtls(wallClockNs);
+    }
+    mLastTtlTime = elapsedRealtimeNs;
 }
 
 void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
