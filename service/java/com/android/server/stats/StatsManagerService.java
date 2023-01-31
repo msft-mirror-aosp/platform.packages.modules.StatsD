@@ -502,6 +502,7 @@ public class StatsManagerService extends IStatsManagerService.Stub {
     public void querySql(String sqlQuery, int minSqlClientVersion,
             StatsPolicyConfigParcel policyConfig, IStatsQueryCallback queryCallback,
             long configKey, String configPackage) {
+        int callingUid = Binder.getCallingUid();
         enforceRestrictedStatsPermission();
         final long token = Binder.clearCallingIdentity();
         try {
@@ -514,7 +515,8 @@ public class StatsManagerService extends IStatsManagerService.Stub {
                     policyConfig,
                     queryCallback,
                     configKey,
-                    configPackage);
+                    configPackage,
+                    callingUid);
             }
         } catch (RemoteException e) {
             throw new IllegalStateException(e.getMessage(), e);

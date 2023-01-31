@@ -16,6 +16,7 @@
 
 #include <aidl/android/os/BnPendingIntentRef.h>
 #include <aidl/android/os/BnPullAtomCallback.h>
+#include <aidl/android/os/BnStatsQueryCallback.h>
 #include <aidl/android/os/IPullAtomCallback.h>
 #include <aidl/android/os/IPullAtomResultReceiver.h>
 #include <gmock/gmock.h>
@@ -41,6 +42,7 @@ namespace statsd {
 
 using namespace testing;
 using ::aidl::android::os::BnPullAtomCallback;
+using ::aidl::android::os::BnStatsQueryCallback;
 using ::aidl::android::os::IPullAtomCallback;
 using ::aidl::android::os::IPullAtomResultReceiver;
 using android::util::ProtoReader;
@@ -89,6 +91,14 @@ public:
                  Status(int64_t configUid, int64_t configId, int64_t subscriptionId,
                         int64_t subscriptionRuleId, const vector<string>& cookies,
                         const StatsDimensionsValueParcel& dimensionsValueParcel));
+};
+
+class MockStatsQueryCallback : public BnStatsQueryCallback {
+public:
+    MOCK_METHOD4(sendResults,
+                 Status(const vector<string>& queryData, const vector<string>& columnNames,
+                        const vector<int32_t>& columnTypes, int32_t rowCount));
+    MOCK_METHOD1(sendFailure, Status(const string& in_error));
 };
 
 class StatsServiceConfigTest : public ::testing::Test {
@@ -493,7 +503,7 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         const vector<string>& repeatedStringField, const bool* repeatedBoolField,
         const size_t repeatedBoolFieldLength, const vector<int>& repeatedEnumField);
 
-std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int timestampNs = 0);
+std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int timestampNs = 0);
 
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         uint64_t timestampNs, const vector<int>& attributionUids,

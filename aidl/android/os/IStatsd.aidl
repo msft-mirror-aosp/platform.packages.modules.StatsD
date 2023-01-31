@@ -249,7 +249,7 @@ interface IStatsd {
      */
     oneway void querySql(in String sqlQuery, in int minSqlClientVersion,
         in StatsPolicyConfigParcel policyConfig, in IStatsQueryCallback queryCallback,
-        in long configKey, in String configPackage);
+        in long configKey, in String configPackage, in int callingUid);
     /**
      * Registers the operation that is called whenever there is a change in the restricted metrics
      * for a specified config that are present for this client. This operation allows statsd to inform the

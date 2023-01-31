@@ -442,7 +442,10 @@ public final class StatsManager {
             @NonNull OutcomeReceiver<StatsCursor, StatsQueryException> outcomeReceiver)
             throws StatsUnavailableException {
         if(query.getSqlDialect() != StatsQuery.DIALECT_SQLITE) {
-            // TODO: handle this in callback.
+            executor.execute(() -> {
+                outcomeReceiver.onError(new StatsQueryException("Unsupported Sql Dialect"));
+            });
+            return;
         }
 
         StatsQueryCallbackInternal callbackInternal =
@@ -841,6 +844,22 @@ public final class StatsManager {
                     StatsCursor cursor = new StatsCursor(queryData, columnNames, columnTypes,
                             rowCount);
                     queryCallback.onResult(cursor);
+                });
+            } finally {
+                Binder.restoreCallingIdentity(token);
+            }
+        }
+
+        @Override
+        public void sendFailure(String error) {
+            if (!SdkLevel.isAtLeastU()) {
+                throw new IllegalStateException(
+                        "StatsManager#query is not available before Android U");
+            }
+            final long token = Binder.clearCallingIdentity();
+            try {
+                mExecutor.execute(() -> {
+                    queryCallback.onError(new StatsQueryException(error));
                 });
             } finally {
                 Binder.restoreCallingIdentity(token);

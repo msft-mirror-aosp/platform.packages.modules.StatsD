@@ -18,26 +18,28 @@
 #include "Log.h"
 
 #include "StatsService.h"
-#include "stats_log_util.h"
-#include "android-base/stringprintf.h"
-#include "config/ConfigKey.h"
-#include "config/ConfigManager.h"
-#include "guardrail/StatsdStats.h"
-#include "storage/StorageManager.h"
-#include "subscriber/SubscriberReporter.h"
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
 #include <cutils/multiuser.h>
+#include <private/android_filesystem_config.h>
 #include <src/statsd_config.pb.h>
 #include <src/uid_data.pb.h>
-#include <private/android_filesystem_config.h>
 #include <statslog_statsd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <utils/String16.h>
+
+#include "android-base/stringprintf.h"
+#include "config/ConfigKey.h"
+#include "config/ConfigManager.h"
+#include "guardrail/StatsdStats.h"
+#include "stats_log_util.h"
+#include "storage/StorageManager.h"
+#include "subscriber/SubscriberReporter.h"
+#include "utils/DbUtils.h"
 
 using namespace android;
 
@@ -1359,21 +1361,11 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configKe
 Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
                               const StatsPolicyConfigParcel& policyConfig,
                               const shared_ptr<IStatsQueryCallback>& callback,
-                              const int64_t configKey, const string& configPackage) {
+                              const int64_t configKey, const string& configPackage,
+                              const int32_t callingUid) {
     ENFORCE_UID(AID_SYSTEM);
-    vector<string> columnNames = {"metric_name", "metric_value"};
-    vector<int32_t> columnTypes = {3, 2};
-    srand((unsigned)time(0));
-    float randomVal = (float)std::rand() / RAND_MAX;
-
-    // replace with actual db query.
-    // validate policyConfig here
-
-    vector<string> queryData;
-    queryData.push_back("test_metric");
-    queryData.push_back(to_string(randomVal));
-
-    callback->sendResults(queryData, columnNames, columnTypes, 1);
+    mProcessor->querySql(sqlQuery, minSqlClientVersion, policyConfig, callback, configKey,
+                         configPackage, callingUid);
     return Status::ok();
 }
 
