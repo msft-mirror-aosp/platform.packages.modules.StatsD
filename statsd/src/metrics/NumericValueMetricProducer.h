@@ -39,8 +39,14 @@ public:
                                const GuardrailOptions& guardrailOptions);
 
     // Process data pulled on bucket boundary.
-    void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data, bool pullSuccess,
+    void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& allData, PullResult pullResult,
                       int64_t originalPullTimeNs) override;
+
+    // Determine if metric needs to pull
+    bool isPullNeeded() const override {
+        std::lock_guard<std::mutex> lock(mMutex);
+        return mIsActive && (mCondition == ConditionState::kTrue);
+    }
 
     inline MetricType getMetricType() const override {
         return METRIC_TYPE_VALUE;

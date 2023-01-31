@@ -91,6 +91,15 @@ java_sdk_library {
     min_sdk_version: "30",
 }
 
+java_api_contribution {
+    name: "framework-statsd-public-stubs",
+    api_surface: "public",
+    api_file: "api/current.txt",
+    visibility: [
+        "//build/orchestrator/apis",
+    ],
+}
+
 // JNI library for StatsLog.write
 cc_library_shared {
     name: "libstats_jni",
