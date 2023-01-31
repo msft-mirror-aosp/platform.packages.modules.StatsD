@@ -534,6 +534,15 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
     // Create new config if this is not a modular update or if this is a new config.
     const auto& it = mMetricsManagers.find(key);
     bool configValid = false;
+
+    if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE) &&
+        it != mMetricsManagers.end() &&
+        (it->second->hasRestrictedMetricsDelegate() !=
+         config.has_restricted_metrics_delegate_package_name())) {
+        // Not a modular update if has_restricted_metrics_delegate changes
+        modularUpdate = false;
+    }
+
     if (!modularUpdate || it == mMetricsManagers.end()) {
         sp<MetricsManager> newMetricsManager =
                 new MetricsManager(key, config, mTimeBaseNs, timestampNs, mUidMap, mPullerManager,

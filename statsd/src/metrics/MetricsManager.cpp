@@ -79,9 +79,17 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mShouldPersistHistory(config.persist_locally()),
       mAtomMatcherOptimizationEnabled(FlagProvider::getInstance().getBootFlagBool(
               OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_FALSE)) {
+    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE) &&
+        config.has_restricted_metrics_delegate_package_name()) {
+        mInvalidConfigReason =
+                InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
+        return;
+    }
+    if (config.has_restricted_metrics_delegate_package_name()) {
+        mRestrictedMetricsDelegatePackageName = config.restricted_metrics_delegate_package_name();
+    }
     // Init the ttl end timestamp.
     refreshTtl(timeBaseNs);
-
     mInvalidConfigReason = initStatsdConfig(
             key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
             timeBaseNs, currentTimeNs, mTagIdsToMatchersMap, mAllAtomMatchingTrackers,
@@ -121,6 +129,17 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
                                   const int64_t currentTimeNs,
                                   const sp<AlarmMonitor>& anomalyAlarmMonitor,
                                   const sp<AlarmMonitor>& periodicAlarmMonitor) {
+    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE) &&
+        config.has_restricted_metrics_delegate_package_name()) {
+        mInvalidConfigReason =
+                InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
+        return false;
+    }
+    if (config.has_restricted_metrics_delegate_package_name()) {
+        mRestrictedMetricsDelegatePackageName = config.restricted_metrics_delegate_package_name();
+    } else {
+        mRestrictedMetricsDelegatePackageName = nullopt;
+    }
     vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     vector<sp<ConditionTracker>> newConditionTrackers;

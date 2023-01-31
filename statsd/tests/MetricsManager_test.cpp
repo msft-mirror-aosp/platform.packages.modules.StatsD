@@ -384,6 +384,30 @@ TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {
     EXPECT_FALSE(metricsManager.isConfigValid());
 }
 
+TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
+    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, GetParam().flagValue,
+                                             /*isBootFlag=*/true);
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+
+    StatsdConfig config = buildGoodConfig();
+    config.add_allowed_log_source("AID_SYSTEM");
+    config.set_restricted_metrics_delegate_package_name("rm");
+
+    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    if (GetParam().flagValue == FLAG_TRUE) {
+        EXPECT_TRUE(metricsManager.isConfigValid());
+    } else {
+        EXPECT_EQ(metricsManager.mInvalidConfigReason,
+                  INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
+        ASSERT_FALSE(metricsManager.isConfigValid());
+    }
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
