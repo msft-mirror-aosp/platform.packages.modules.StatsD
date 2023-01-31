@@ -132,6 +132,9 @@ private:
     FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate);
+    FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotation);
+    FRIEND_TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation);
+    FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled);
 };
 
 }  // namespace statsd

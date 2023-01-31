@@ -694,7 +694,6 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
             }
         }
     }
-
     // For matched AtomMatchers, tell relevant metrics that a matched event has come.
     for (size_t i = 0; i < mAllAtomMatchingTrackers.size(); i++) {
         if (matcherCache[i] == MatchingState::kMatched) {
