@@ -77,7 +77,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     // Initialize boot flags
     FlagProvider::getInstance().initBootFlags(
-            {OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, LIMIT_PULL_FLAG});
+            {LIMIT_PULL_FLAG, OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, RESTRICTED_METRICS_FLAG});
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
