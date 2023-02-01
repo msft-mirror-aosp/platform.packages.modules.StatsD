@@ -1748,6 +1748,11 @@ TEST_P(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
     vector<uint8_t> buffer;
     processor->onDumpReport(cfgKey1, configAddedTimeNs + NS_PER_SEC, false, true, ADB_DUMP, FAST,
                             &buffer);
+
+    service->removeConfiguration(configId, uid);
+    service->mProcessor->onDumpReport(cfgKey1, getElapsedRealtimeNs(),
+                                      false /* include_current_bucket*/, true /* erase_data */,
+                                      ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
 }
 
 TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogHostUid) {

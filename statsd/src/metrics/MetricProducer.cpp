@@ -74,10 +74,12 @@ MetricProducer::MetricProducer(
       mSlicedStateAtoms(slicedStateAtoms),
       mStateGroupMap(stateGroupMap),
       mSplitBucketForAppUpgrade(splitBucketForAppUpgrade),
-      mHasHitGuardrail(false) {
+      mHasHitGuardrail(false),
+      mSampledWhatFields({}),
+      mShardCount(0) {
 }
 
-bool MetricProducer::onConfigUpdatedLocked(
+optional<InvalidConfigReason> MetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -96,17 +98,18 @@ bool MetricProducer::onConfigUpdatedLocked(
 
     unordered_map<int, shared_ptr<Activation>> newEventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> newEventDeactivationMap;
-    if (!handleMetricActivationOnConfigUpdate(
-                config, mMetricId, metricIndex, metricToActivationMap, oldAtomMatchingTrackerMap,
-                newAtomMatchingTrackerMap, mEventActivationMap, activationAtomTrackerToMetricMap,
-                deactivationAtomTrackerToMetricMap, metricsWithActivation, newEventActivationMap,
-                newEventDeactivationMap)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason = handleMetricActivationOnConfigUpdate(
+            config, mMetricId, metricIndex, metricToActivationMap, oldAtomMatchingTrackerMap,
+            newAtomMatchingTrackerMap, mEventActivationMap, activationAtomTrackerToMetricMap,
+            deactivationAtomTrackerToMetricMap, metricsWithActivation, newEventActivationMap,
+            newEventDeactivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
     mEventActivationMap = newEventActivationMap;
     mEventDeactivationMap = newEventDeactivationMap;
     mAnomalyTrackers.clear();
-    return true;
+    return nullopt;
 }
 
 void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const LogEvent& event) {
@@ -116,6 +119,10 @@ void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const Lo
     int64_t eventTimeNs = event.GetElapsedTimestampNs();
     // this is old event, maybe statsd restarted?
     if (eventTimeNs < mTimeBaseNs) {
+        return;
+    }
+
+    if (!passesSampleCheckLocked(event.getValues())) {
         return;
     }
 
@@ -359,6 +366,21 @@ DropEvent MetricProducer::buildDropEvent(const int64_t dropTimeNs,
 
 bool MetricProducer::maxDropEventsReached() const {
     return mCurrentSkippedBucket.dropEvents.size() >= StatsdStats::kMaxLoggedBucketDropEvents;
+}
+
+bool MetricProducer::passesSampleCheckLocked(const vector<FieldValue>& values) const {
+    // Only perform sampling if shard count is correct and there is a sampled what field.
+    if (mShardCount <= 1 || mSampledWhatFields.size() == 0) {
+        return true;
+    }
+    // If filtering fails, don't perform sampling. Event could be a gauge trigger event or stop all
+    // event.
+    FieldValue sampleFieldValue;
+    if (!filterValues(mSampledWhatFields[0], values, &sampleFieldValue)) {
+        return true;
+    }
+    return shouldKeepSample(sampleFieldValue, ShardOffsetProvider::getInstance().getShardOffset(),
+                            mShardCount);
 }
 
 }  // namespace statsd
