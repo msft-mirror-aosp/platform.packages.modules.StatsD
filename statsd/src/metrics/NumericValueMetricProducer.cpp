@@ -183,14 +183,14 @@ int64_t NumericValueMetricProducer::calcPreviousBucketEndTime(const int64_t curr
 // By design, statsd pulls data at bucket boundaries using AlarmManager. These pulls are likely
 // to be delayed. Other events like condition changes or app upgrade which are not based on
 // AlarmManager might have arrived earlier and close the bucket.
-void NumericValueMetricProducer::onDataPulled(const vector<shared_ptr<LogEvent>>& allData,
-                                              bool pullSuccess, int64_t originalPullTimeNs) {
+void NumericValueMetricProducer::onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& allData,
+                                              PullResult pullResult, int64_t originalPullTimeNs) {
     lock_guard<mutex> lock(mMutex);
     if (mCondition == ConditionState::kTrue) {
         // If the pull failed, we won't be able to compute a diff.
-        if (!pullSuccess) {
+        if (pullResult == PullResult::PULL_RESULT_FAIL) {
             invalidateCurrentBucket(originalPullTimeNs, BucketDropReason::PULL_FAILED);
-        } else {
+        } else if (pullResult == PullResult::PULL_RESULT_SUCCESS) {
             bool isEventLate = originalPullTimeNs < getCurrentBucketEndTimeNs();
             if (isEventLate) {
                 // If the event is late, we are in the middle of a bucket. Just

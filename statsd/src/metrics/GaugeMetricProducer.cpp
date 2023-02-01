@@ -483,9 +483,9 @@ std::shared_ptr<vector<FieldValue>> GaugeMetricProducer::getGaugeFields(const Lo
 }
 
 void GaugeMetricProducer::onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& allData,
-                                       bool pullSuccess, int64_t originalPullTimeNs) {
+                                       PullResult pullResult, int64_t originalPullTimeNs) {
     std::lock_guard<std::mutex> lock(mMutex);
-    if (!pullSuccess || allData.size() == 0) {
+    if (pullResult != PullResult::PULL_RESULT_SUCCESS || allData.size() == 0) {
         return;
     }
     const int64_t pullDelayNs = getElapsedRealtimeNs() - originalPullTimeNs;
