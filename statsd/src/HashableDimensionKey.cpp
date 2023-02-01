@@ -154,6 +154,9 @@ android::hash_t hashDimension(const HashableDimensionKey& value) {
 
 bool filterValues(const Matcher& matcherField, const vector<FieldValue>& values,
                   FieldValue* output) {
+    if (matcherField.hasAllPositionMatcher()) {
+        return false;
+    }
     for (const auto& value : values) {
         if (value.mField.matches(matcherField)) {
             (*output) = value;
