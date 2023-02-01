@@ -1761,6 +1761,27 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
                                   metric.id()));
 }
 
+TEST_F(MetricsManagerUtilTest, TestMetricSampledFieldNotSubsetDimension) {
+    AtomMatcher appCrashMatcher =
+            CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = appCrashMatcher;
+
+    CountMetric metric =
+            createCountMetric("CountSampledAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
+                                metric.id()));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

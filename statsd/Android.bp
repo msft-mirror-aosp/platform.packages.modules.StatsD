@@ -87,6 +87,7 @@ cc_defaults {
         "src/subscriber/SubscriberReporter.cpp",
         "src/uid_data.proto",
         "src/utils/MultiConditionTrigger.cpp",
+        "src/utils/DbUtils.cpp",
         "src/utils/ShardOffsetProvider.cpp",
     ],
 
@@ -105,6 +106,7 @@ cc_defaults {
         "libutils",
         "server_configurable_flags",
         "statsd-aidl-ndk",
+        "libsqlite_static_noicu",
     ],
     shared_libs: [
         "libbinder_ndk",
@@ -371,6 +373,7 @@ cc_test {
         "tests/storage/StorageManager_test.cpp",
         "tests/UidMap_test.cpp",
         "tests/utils/MultiConditionTrigger_test.cpp",
+        "tests/utils/DbUtils_test.cpp",
     ],
 
     static_libs: [
@@ -404,6 +407,7 @@ cc_benchmark {
         ":libprotobuf-internal-protos",
         ":libstats_internal_protos",
 
+        "benchmark/db_benchmark.cpp",
         "benchmark/duration_metric_benchmark.cpp",
         "benchmark/filter_value_benchmark.cpp",
         "benchmark/get_dimensions_for_condition_benchmark.cpp",
