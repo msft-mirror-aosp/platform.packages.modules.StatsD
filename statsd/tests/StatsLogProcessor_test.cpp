@@ -64,6 +64,8 @@ public:
     MOCK_METHOD0(byteSize, size_t());
 
     MOCK_METHOD1(dropData, void(const int64_t dropTimeNs));
+
+    MOCK_METHOD(void, onLogEvent, (const LogEvent& event), (override));
 };
 
 // Setup for test fixture.
@@ -175,6 +177,28 @@ StatsdConfig MakeConfig(bool includeMetric) {
     }
     return config;
 }
+
+StatsdConfig makeRestrictedConfig() {
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    config.set_restricted_metrics_delegate_package_name("delegate");
+    return config;
+}
+class MockRestrictedMetricsManager : public MetricsManager {
+public:
+    MockRestrictedMetricsManager()
+        : MetricsManager(ConfigKey(1, 12345), makeRestrictedConfig(), 1000, 1000, new UidMap(),
+                         new StatsPullerManager(),
+                         new AlarmMonitor(
+                                 10, [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
+                                 [](const shared_ptr<IStatsCompanionService>&) {}),
+                         new AlarmMonitor(
+                                 10, [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
+                                 [](const shared_ptr<IStatsCompanionService>&) {})) {
+    }
+
+    MOCK_METHOD(void, onLogEvent, (const LogEvent& event), (override));
+};
 
 TEST_P(StatsLogProcessorTest, TestUidMapHasSnapshot) {
     // Setup simple config key corresponding to empty config.
@@ -2052,6 +2076,41 @@ TEST_P(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate) {
     ASSERT_NE(p.mMetricsManagers.find(key)->second, oldMetricsManager);
 }
 
+TEST_P(StatsLogProcessorTest, TestRestrictedLogEventNotPassed) {
+    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
+                                             /*isBootFlag=*/true);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, StatsdConfig(), ConfigKey());
+    ConfigKey key(3, 4);
+    sp<MockMetricsManager> metricsManager = new MockMetricsManager();
+    EXPECT_CALL(*metricsManager, onLogEvent).Times(0);
+
+    processor->mMetricsManagers[key] = metricsManager;
+    EXPECT_FALSE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
+
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent();
+    EXPECT_TRUE(event->isValid());
+    EXPECT_TRUE(event->isRestricted());
+    processor->OnLogEvent(event.get());
+}
+
+TEST_P(StatsLogProcessorTest, TestRestrictedLogEventPassed) {
+    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
+                                             /*isBootFlag=*/true);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, StatsdConfig(), ConfigKey());
+    ConfigKey key(3, 4);
+    sp<MockRestrictedMetricsManager> metricsManager = new MockRestrictedMetricsManager();
+    EXPECT_CALL(*metricsManager, onLogEvent).Times(1);
+
+    processor->mMetricsManagers[key] = metricsManager;
+    EXPECT_TRUE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
+
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent();
+    EXPECT_TRUE(event->isValid());
+    EXPECT_TRUE(event->isRestricted());
+    processor->OnLogEvent(event.get());
+}
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif

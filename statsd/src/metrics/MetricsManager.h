@@ -58,7 +58,7 @@ public:
 
     bool eventSanityCheck(const LogEvent& event);
 
-    void onLogEvent(const LogEvent& event);
+    virtual void onLogEvent(const LogEvent& event);
 
     void onAnomalyAlarmFired(
         const int64_t& timestampNs,

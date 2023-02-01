@@ -448,6 +448,9 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
     std::unordered_map<int, std::vector<int64_t>> activeConfigsPerUid;
     // pass the event to metrics managers.
     for (auto& pair : mMetricsManagers) {
+        if (event->isRestricted() && !pair.second->hasRestrictedMetricsDelegate()) {
+            continue;
+        }
         int uid = pair.first.GetUid();
         int64_t configId = pair.first.GetId();
         bool isPrevActive = pair.second->isActive();
