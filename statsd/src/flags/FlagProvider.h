@@ -39,6 +39,8 @@ const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
 const std::string OPTIMIZATION_ATOM_MATCHER_MAP_FLAG = "optimization_atom_matcher_map";
 
+const std::string LIMIT_PULL_FLAG = "limit_pull";
+
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
 const std::string FLAG_EMPTY = "";
@@ -103,6 +105,7 @@ private:
     friend class ConfigUpdateE2eTest;
     friend class ConfigUpdateTest;
     friend class EventMetricE2eTest;
+    friend class ValueMetricE2eTest;
     friend class GaugeMetricE2ePulledTest;
     friend class GaugeMetricE2ePushedTest;
     friend class EventMetricProducerTest;

@@ -164,6 +164,8 @@ private:
 
     int64_t mNextPullTimeNs;
 
+    const bool mLimitPull;
+
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);

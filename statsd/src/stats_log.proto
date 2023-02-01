@@ -22,6 +22,7 @@ option java_package = "com.android.os";
 option java_outer_classname = "StatsLog";
 
 import "frameworks/proto_logging/stats/atoms.proto";
+import "packages/modules/StatsD/statsd/src/guardrail/invalid_config_reason_enum.proto";
 
 message DimensionsValue {
   optional int32 field = 1;
@@ -141,6 +142,7 @@ message ValueBucketInfo {
           int64 value_long = 2;
           double value_double = 3;
       }
+      optional int32 sample_size = 4;
   }
 
   repeated Value values = 9;
@@ -438,6 +440,17 @@ message StatsdStatsReport {
 
     optional int32 stats_end_time_sec = 2;
 
+    message InvalidConfigReason {
+      optional InvalidConfigReasonEnum reason = 1;
+      optional int64 metric_id = 2;
+      optional int64 state_id = 3;
+      optional int64 alert_id = 4;
+      optional int64 alarm_id = 5;
+      optional int64 subscription_id = 6;
+      repeated int64 matcher_id = 7;
+      repeated int64 condition_id = 8;
+    }
+
     message MatcherStats {
         optional int64 id = 1;
         optional int32 matched_times = 2;
@@ -469,6 +482,7 @@ message StatsdStatsReport {
         optional int32 matcher_count = 7;
         optional int32 alert_count = 8;
         optional bool is_valid = 9;
+        optional InvalidConfigReason invalid_config_reason = 24;
         repeated int32 broadcast_sent_time_sec = 10;
         repeated int32 data_drop_time_sec = 11;
         repeated int64 data_drop_bytes = 21;
