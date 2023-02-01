@@ -15,11 +15,12 @@
 #include <android/binder_interface_utils.h>
 #include <gtest/gtest.h>
 
+#include <vector>
+
+#include "flags/FlagProvider.h"
 #include "src/StatsLogProcessor.h"
 #include "src/stats_log_util.h"
 #include "tests/statsd_test_util.h"
-
-#include <vector>
 
 using ::ndk::SharedRefBase;
 
@@ -143,6 +144,20 @@ StatsdConfig CreateStatsdConfigWithStates() {
 
 }  // namespace
 
+// Setup for test fixture.
+class ValueMetricE2eTest : public testing::TestWithParam<string> {
+    void SetUp() override {
+        FlagProvider::getInstance().overrideFlag(LIMIT_PULL_FLAG, GetParam(),
+                                                 /*isBootFlag=*/true);
+    }
+
+    void TearDown() override {
+        FlagProvider::getInstance().resetOverrides();
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(LimitPull, ValueMetricE2eTest, testing::Values(FLAG_FALSE, FLAG_TRUE));
+
 /**
  * Tests the initial condition and condition after the first log events for
  * value metrics with either a combination condition or simple condition.
@@ -202,7 +217,7 @@ TEST(ValueMetricE2eTest, TestInitialConditionChanges) {
     EXPECT_EQ(ConditionState::kTrue, metricProducer2->mCondition);
 }
 
-TEST(ValueMetricE2eTest, TestPulledEvents) {
+TEST_P(ValueMetricE2eTest, TestPulledEvents) {
     auto config = CreateStatsdConfig();
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -303,9 +318,26 @@ TEST(ValueMetricE2eTest, TestPulledEvents) {
     EXPECT_EQ(baseTimeNs + 7 * bucketSizeNs, data.bucket_info(3).start_bucket_elapsed_nanos());
     EXPECT_EQ(baseTimeNs + 8 * bucketSizeNs, data.bucket_info(3).end_bucket_elapsed_nanos());
     ASSERT_EQ(1, data.bucket_info(3).values_size());
+
+    valueMetrics = reports.reports(0).metrics(0).value_metrics();
+    ASSERT_EQ(2, valueMetrics.skipped_size());
+
+    StatsLogReport::SkippedBuckets skipped = valueMetrics.skipped(0);
+    EXPECT_EQ(BucketDropReason::CONDITION_UNKNOWN, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 2 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 3 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
+
+    skipped = valueMetrics.skipped(1);
+    EXPECT_EQ(BucketDropReason::NO_DATA, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 5 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 6 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
 }
 
-TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
+TEST_P(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
     auto config = CreateStatsdConfig();
     int64_t baseTimeNs = getElapsedRealtimeNs();
     // 10 mins == 2 bucket durations.
@@ -406,9 +438,33 @@ TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
     EXPECT_EQ(baseTimeNs + 9 * bucketSizeNs, data.bucket_info(2).start_bucket_elapsed_nanos());
     EXPECT_EQ(baseTimeNs + 10 * bucketSizeNs, data.bucket_info(2).end_bucket_elapsed_nanos());
     ASSERT_EQ(1, data.bucket_info(2).values_size());
+
+    valueMetrics = reports.reports(0).metrics(0).value_metrics();
+    ASSERT_EQ(3, valueMetrics.skipped_size());
+
+    StatsLogReport::SkippedBuckets skipped = valueMetrics.skipped(0);
+    EXPECT_EQ(BucketDropReason::CONDITION_UNKNOWN, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 2 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 5 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
+
+    skipped = valueMetrics.skipped(1);
+    EXPECT_EQ(BucketDropReason::NO_DATA, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 6 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 7 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
+
+    skipped = valueMetrics.skipped(2);
+    EXPECT_EQ(BucketDropReason::NO_DATA, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 7 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 8 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
 }
 
-TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
+TEST_P(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     auto config = CreateStatsdConfig(false);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -454,7 +510,8 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     processor->onStatsdInitCompleted(metricInitTimeNs);
 
     // Check no pull occurred since metric not active.
-    StatsdStatsReport_PulledAtomStats pulledAtomStats = getPulledAtomStats();
+    StatsdStatsReport_PulledAtomStats pulledAtomStats =
+            getPulledAtomStats(util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
@@ -477,7 +534,7 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     processor->notifyAppUpgrade(appUpgradeTimeNs, "appName", 1000 /* uid */, 2 /* version */);
 
     // Check no pull occurred since metric not active.
-    pulledAtomStats = getPulledAtomStats();
+    pulledAtomStats = getPulledAtomStats(util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
@@ -498,7 +555,7 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     buffer.clear();
     processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
                             true /* erase_data */, ADB_DUMP, NO_TIME_CONSTRAINTS, &buffer);
-    pulledAtomStats = getPulledAtomStats();
+    pulledAtomStats = getPulledAtomStats(util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
@@ -759,6 +816,36 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions) {
 
     // No StateTrackers are initialized.
     EXPECT_EQ(0, StateManager::getInstance().getStateTrackersCount());
+
+    // Config initialization fails.
+    ASSERT_EQ(0, processor->mMetricsManagers.size());
+}
+
+TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL) {
+    // Create config.
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
+
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    // Create value metric.
+    int64_t metricId = 123456;
+    ValueMetric* valueMetric = config.add_value_metric();
+    valueMetric->set_id(metricId);
+    valueMetric->set_bucket(TimeUnit::FIVE_MINUTES);
+    valueMetric->set_what(testAtomReportedMatcher.id());
+    *valueMetric->mutable_value_field() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::ALL});
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
 
     // Config initialization fails.
     ASSERT_EQ(0, processor->mMetricsManagers.size());

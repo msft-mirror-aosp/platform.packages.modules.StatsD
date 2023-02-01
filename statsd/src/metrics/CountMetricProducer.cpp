@@ -90,7 +90,7 @@ CountMetricProducer::CountMetricProducer(
         mContainANYPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
     }
 
-    mSliceByPositionALL = HasPositionALL(metric.dimensions_in_what());
+    mShouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     if (metric.links().size() > 0) {
         for (const auto& link : metric.links()) {
@@ -119,7 +119,7 @@ CountMetricProducer::CountMetricProducer(
     // Adjust start for partial bucket
     mCurrentBucketStartTimeNs = startTimeNs;
 
-    VLOG("metric %lld created. bucket size %lld start_time: %lld", (long long)metric.id(),
+    VLOG("metric %lld created. bucket size %lld start_time: %lld", (long long)mMetricId,
          (long long)mBucketSizeNs, (long long)mTimeBaseNs);
 }
 
@@ -127,7 +127,7 @@ CountMetricProducer::~CountMetricProducer() {
     VLOG("~CountMetricProducer() called");
 }
 
-bool CountMetricProducer::onConfigUpdatedLocked(
+optional<InvalidConfigReason> CountMetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -141,31 +141,35 @@ bool CountMetricProducer::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    if (!MetricProducer::onConfigUpdatedLocked(
-                config, configIndex, metricIndex, allAtomMatchingTrackers,
-                oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
-                allConditionTrackers, conditionTrackerMap, wizard, metricToActivationMap,
-                trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
-                deactivationAtomTrackerToMetricMap, metricsWithActivation)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+            config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
+            newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
+            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+            metricsWithActivation);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
     const CountMetric& metric = config.count_metric(configIndex);
     int trackerIndex;
     // Update appropriate indices, specifically mConditionIndex and MetricsManager maps.
-    if (!handleMetricWithAtomMatchingTrackers(metric.what(), metricIndex, false,
-                                              allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                              trackerToMetricMap, trackerIndex)) {
-        return false;
+    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+            metric.what(), mMetricId, metricIndex, false, allAtomMatchingTrackers,
+            newAtomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
-    if (metric.has_condition() &&
-        !handleMetricWithConditions(metric.condition(), metricIndex, conditionTrackerMap,
-                                    metric.links(), allConditionTrackers, mConditionTrackerIndex,
-                                    conditionToMetricMap)) {
-        return false;
+    if (metric.has_condition()) {
+        invalidConfigReason = handleMetricWithConditions(
+                metric.condition(), mMetricId, metricIndex, conditionTrackerMap, metric.links(),
+                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
     }
-    return true;
+    return nullopt;
 }
 
 void CountMetricProducer::onStateChanged(const int64_t eventTimeNs, const int32_t atomId,
@@ -224,8 +228,8 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
 
-    // Fills the dimension path if not slicing by ALL.
-    if (!mSliceByPositionALL) {
+    // Fills the dimension path if not slicing by a primitive repeated field or position ALL.
+    if (!mShouldUseNestedDimensions) {
         if (!mDimensionsInWhat.empty()) {
             uint64_t dimenPathToken = protoOutput->start(
                     FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_PATH_IN_WHAT);
@@ -244,7 +248,7 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                 protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_DATA);
 
         // First fill dimension.
-        if (mSliceByPositionALL) {
+        if (mShouldUseNestedDimensions) {
             uint64_t dimensionToken = protoOutput->start(
                     FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_IN_WHAT);
             writeDimensionToProto(dimensionKey.getDimensionKeyInWhat(), str_set, protoOutput);
@@ -312,8 +316,11 @@ bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
-            ALOGE("CountMetric %lld dropping data for dimension key %s",
-                (long long)mMetricId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("CountMetric %lld dropping data for dimension key %s", (long long)mMetricId,
+                      newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -450,6 +457,8 @@ void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
     // (Do not clear since the old one is still referenced in mAnomalyTrackers).
     mCurrentSlicedCounter = std::make_shared<DimToValMap>();
     mCurrentBucketStartTimeNs = nextBucketStartTimeNs;
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
 }
 
 // Rough estimate of CountMetricProducer buffer stored. This number will be

@@ -322,21 +322,23 @@ private:
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
+    FRIEND_TEST(GaugeMetricE2ePushedTest, TestRepeatedFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents);
 
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestSlicedCountMetric_single_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestCountMetric_save_refractory_to_disk_no_data_written);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestCountMetric_save_refractory_to_disk);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestCountMetric_load_refractory_from_disk);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest,
+                TestCountMetric_save_refractory_to_disk_no_data_written);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest, TestCountMetric_save_refractory_to_disk);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest, TestCountMetric_load_refractory_from_disk);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
 
     FRIEND_TEST(AlarmE2eTest, TestMultipleAlarms);
     FRIEND_TEST(ConfigTtlE2eTest, TestCountMetric);
@@ -359,6 +361,7 @@ private:
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithMap);
     FRIEND_TEST(CountMetricE2eTest, TestMultipleSlicedStates);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields);
+    FRIEND_TEST(CountMetricE2eTest, TestRepeatedFieldsAndEmptyArrays);
 
     FRIEND_TEST(DurationMetricE2eTest, TestOneBucket);
     FRIEND_TEST(DurationMetricE2eTest, TestTwoBuckets);
@@ -372,6 +375,7 @@ private:
     FRIEND_TEST(DurationMetricE2eTest, TestSlicedStatePrimaryFieldsNotSubsetDimInWhat);
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset);
     FRIEND_TEST(DurationMetricE2eTest, TestUploadThreshold);
+    FRIEND_TEST(DurationMetricE2eTest, TestConditionOnRepeatedEnumField);
 
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
     FRIEND_TEST(ValueMetricE2eTest, TestPulledEvents);
@@ -380,6 +384,9 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
+
+    FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
 };
 
 }  // namespace statsd

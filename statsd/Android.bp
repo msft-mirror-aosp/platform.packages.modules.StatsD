@@ -71,6 +71,7 @@ cc_defaults {
         "src/packages/UidMap.cpp",
         "src/shell/shell_config.proto",
         "src/shell/ShellSubscriber.cpp",
+        "src/shell/ShellSubscriberClient.cpp",
         "src/socket/StatsSocketListener.cpp",
         "src/state/StateManager.cpp",
         "src/state/StateTracker.cpp",
@@ -78,6 +79,7 @@ cc_defaults {
         "src/statscompanion_util.cpp",
         "src/statsd_config.proto",
         "src/statsd_metadata.proto",
+        "src/guardrail/invalid_config_reason_enum.proto",
         "src/StatsLogProcessor.cpp",
         "src/StatsService.cpp",
         "src/storage/StorageManager.cpp",
@@ -85,6 +87,7 @@ cc_defaults {
         "src/subscriber/SubscriberReporter.cpp",
         "src/uid_data.proto",
         "src/utils/MultiConditionTrigger.cpp",
+        "src/utils/ShardOffsetProvider.cpp",
     ],
 
     local_include_dirs: [
@@ -237,7 +240,10 @@ cc_binary {
 cc_test {
     name: "statsd_test",
     defaults: ["statsd_defaults"],
-    test_suites: ["device-tests", "mts-statsd"],
+    test_suites: [
+        "device-tests",
+        "mts-statsd",
+    ],
     test_config: "statsd_test.xml",
 
     //TODO(b/153588990): Remove when the build system properly separates
@@ -263,6 +269,42 @@ cc_test {
     ],
 
     require_root: true,
+
+    tidy_timeout_srcs: [
+        "tests/condition/SimpleConditionTracker_test.cpp",
+        "tests/ConfigManager_test.cpp",
+        "tests/e2e/Anomaly_count_e2e_test.cpp",
+        "tests/e2e/Anomaly_duration_sum_e2e_test.cpp",
+        "tests/e2e/ConfigUpdate_e2e_ab_test.cpp",
+        "tests/e2e/ConfigUpdate_e2e_test.cpp",
+        "tests/e2e/CountMetric_e2e_test.cpp",
+        "tests/e2e/DurationMetric_e2e_test.cpp",
+        "tests/e2e/GaugeMetric_e2e_pull_test.cpp",
+        "tests/e2e/MetricActivation_e2e_test.cpp",
+        "tests/e2e/PartialBucket_e2e_test.cpp",
+        "tests/e2e/ValueMetric_pull_e2e_test.cpp",
+        "tests/e2e/WakelockDuration_e2e_test.cpp",
+        "tests/external/puller_util_test.cpp",
+        "tests/external/StatsPuller_test.cpp",
+        "tests/FieldValue_test.cpp",
+        "tests/guardrail/StatsdStats_test.cpp",
+        "tests/LogEvent_test.cpp",
+        "tests/metrics/CountMetricProducer_test.cpp",
+        "tests/metrics/DurationMetricProducer_test.cpp",
+        "tests/metrics/EventMetricProducer_test.cpp",
+        "tests/metrics/GaugeMetricProducer_test.cpp",
+        "tests/metrics/KllMetricProducer_test.cpp",
+        "tests/metrics/MaxDurationTracker_test.cpp",
+        "tests/metrics/NumericValueMetricProducer_test.cpp",
+        "tests/metrics/OringDurationTracker_test.cpp",
+        "tests/MetricsManager_test.cpp",
+        "tests/metrics/parsing_utils/config_update_utils_test.cpp",
+        "tests/metrics/parsing_utils/metrics_manager_util_test.cpp",
+        "tests/state/StateTracker_test.cpp",
+        "tests/statsd_test_util.cpp",
+        "tests/StatsLogProcessor_test.cpp",
+        "tests/UidMap_test.cpp",
+    ],
 
     srcs: [
         ":libstats_internal_protos",
@@ -344,6 +386,7 @@ cc_test {
             "external/protobuf/src",
         ],
     },
+    min_sdk_version: "30",
 
 }
 
@@ -424,6 +467,7 @@ java_library {
         "src/shell/shell_data.proto",
         "src/stats_log.proto",
         "src/statsd_config.proto",
+        "src/guardrail/invalid_config_reason_enum.proto",
     ],
 
     static_libs: [
@@ -452,6 +496,7 @@ java_library {
         "src/shell/shell_data.proto",
         "src/stats_log.proto",
         "src/statsd_config.proto",
+        "src/guardrail/invalid_config_reason_enum.proto",
     ],
     static_libs: [
         "platformprotosnano",
@@ -480,5 +525,6 @@ filegroup {
         "src/statsd_metadata.proto",
         "src/stats_log.proto",
         "src/uid_data.proto",
+        "src/guardrail/invalid_config_reason_enum.proto",
     ],
 }
