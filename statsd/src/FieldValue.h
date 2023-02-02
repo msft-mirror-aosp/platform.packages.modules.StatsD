@@ -241,7 +241,7 @@ struct Matcher {
     }
 
     bool hasAllPositionMatcher() const {
-        return mMatcher.getDepth() >= 1 && getRawMaskAtDepth(1) == 0x7f;
+        return mMatcher.getDepth() >= 1 && mMatcher.getRawPosAtDepth(1) == 0;
     }
 
     inline bool operator!=(const Matcher& that) const {
@@ -465,6 +465,9 @@ bool subsetDimensions(const std::vector<Matcher>& dimension_a,
 // Estimate the memory size of the FieldValues. This is different from sizeof(FieldValue) because
 // the size is computed at runtime using the actual contents stored in the FieldValue.
 size_t getSize(const std::vector<FieldValue>& fieldValues);
+
+bool shouldKeepSample(const FieldValue& sampleFieldValue, int shardOffset, int shardCount);
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
