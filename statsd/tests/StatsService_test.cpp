@@ -22,6 +22,7 @@
 #include "config/ConfigKey.h"
 #include "packages/UidMap.h"
 #include "src/statsd_config.pb.h"
+#include "tests/statsd_test_util.h"
 
 using namespace android;
 using namespace testing;
@@ -39,12 +40,19 @@ TEST(StatsServiceTest, TestAddConfig_simple) {
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service =
             SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    const int kConfigKey = 12345;
+    const int kCallingUid = 123;
     StatsdConfig config;
-    config.set_id(12345);
+    config.set_id(kConfigKey);
     string serialized = config.SerializeAsString();
 
-    EXPECT_TRUE(
-            service->addConfigurationChecked(123, 12345, {serialized.begin(), serialized.end()}));
+    EXPECT_TRUE(service->addConfigurationChecked(kCallingUid, kConfigKey,
+                                                 {serialized.begin(), serialized.end()}));
+    service->removeConfiguration(kConfigKey, kCallingUid);
+    ConfigKey configKey(kCallingUid, kConfigKey);
+    service->mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(),
+                                      false /* include_current_bucket*/, true /* erase_data */,
+                                      ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
 }
 
 TEST(StatsServiceTest, TestAddConfig_empty) {
@@ -52,9 +60,15 @@ TEST(StatsServiceTest, TestAddConfig_empty) {
     shared_ptr<StatsService> service =
             SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
     string serialized = "";
-
-    EXPECT_TRUE(
-            service->addConfigurationChecked(123, 12345, {serialized.begin(), serialized.end()}));
+    const int kConfigKey = 12345;
+    const int kCallingUid = 123;
+    EXPECT_TRUE(service->addConfigurationChecked(kCallingUid, kConfigKey,
+                                                 {serialized.begin(), serialized.end()}));
+    service->removeConfiguration(kConfigKey, kCallingUid);
+    ConfigKey configKey(kCallingUid, kConfigKey);
+    service->mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(),
+                                      false /* include_current_bucket*/, true /* erase_data */,
+                                      ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
 }
 
 TEST(StatsServiceTest, TestAddConfig_invalid) {
