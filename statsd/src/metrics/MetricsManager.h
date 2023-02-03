@@ -166,6 +166,8 @@ public:
         return mRestrictedMetricsDelegatePackageName.has_value();
     }
 
+    void enforceRestrictedDataTtls(const int64_t wallClockNs);
+
 private:
     // For test only.
     inline int64_t getTtlEndNs() const { return mTtlEndNs; }

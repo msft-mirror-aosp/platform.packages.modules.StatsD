@@ -33,6 +33,7 @@
 #include "stats_log_util.h"
 #include "stats_util.h"
 #include "statslog_statsd.h"
+#include "utils/DbUtils.h"
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_INT32;
@@ -805,6 +806,17 @@ void MetricsManager::loadMetadata(const metadata::StatsMetadata& metadata,
                                                            currentWallClockTimeNs,
                                                            systemElapsedTimeNs);
     }
+}
+
+void MetricsManager::enforceRestrictedDataTtls(const int64_t wallClockNs) {
+    if (!hasRestrictedMetricsDelegate()) {
+        return;
+    }
+    sqlite3* db = dbutils::getDb(mConfigKey);
+    for (const auto& producer : mAllMetricProducers) {
+        producer->enforceRestrictedDataTtl(db, wallClockNs);
+    }
+    dbutils::closeDb(db);
 }
 
 }  // namespace statsd
