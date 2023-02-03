@@ -50,6 +50,9 @@ java_test_host {
         "guava",
     ],
     data: [
-        "test/external-atoms.proto",
+        "test/data/**/*.*",
+    ],
+    data_native_bins: [
+        "aprotoc",
     ],
 }

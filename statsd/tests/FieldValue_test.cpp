@@ -929,6 +929,111 @@ TEST(AtomMatcherTest, TestIsPrimitiveRepeatedField) {
     EXPECT_FALSE(isPrimitiveRepeatedField(field7));
 }
 
+TEST(FieldValueTest, TestShouldKeepSampleInt) {
+    int shardOffset = 5;
+    int shardCount = 2;
+    int pos1[] = {1, 1, 1};
+
+    Field field(1, pos1, 2);
+
+    Value value1((int32_t)1001);
+    Value value2((int32_t)1002);
+
+    FieldValue fieldValue1(field, value1);
+    FieldValue fieldValue2(field, value2);
+
+    EXPECT_TRUE(shouldKeepSample(fieldValue1, shardOffset, shardCount));
+    EXPECT_FALSE(shouldKeepSample(fieldValue2, shardOffset, shardCount));
+}
+
+TEST(FieldValueTest, TestShouldKeepSampleLong) {
+    int shardOffset = 5;
+    int shardCount = 2;
+    int pos1[] = {1, 1, 1};
+
+    Field field(1, pos1, 2);
+
+    Value value1((int64_t)1001L);
+    Value value2((int64_t)1005L);
+
+    FieldValue fieldValue1(field, value1);
+    FieldValue fieldValue2(field, value2);
+
+    EXPECT_FALSE(shouldKeepSample(fieldValue1, shardOffset, shardCount));
+    EXPECT_TRUE(shouldKeepSample(fieldValue2, shardOffset, shardCount));
+}
+
+TEST(FieldValueTest, TestShouldKeepSampleFloat) {
+    int shardOffset = 5;
+    int shardCount = 2;
+    int pos1[] = {1, 1, 1};
+
+    Field field(1, pos1, 2);
+
+    Value value1((float)10.5);
+    Value value2((float)3.9);
+
+    FieldValue fieldValue1(field, value1);
+    FieldValue fieldValue2(field, value2);
+
+    EXPECT_TRUE(shouldKeepSample(fieldValue1, shardOffset, shardCount));
+    EXPECT_FALSE(shouldKeepSample(fieldValue2, shardOffset, shardCount));
+}
+
+TEST(FieldValueTest, TestShouldKeepSampleDouble) {
+    int shardOffset = 5;
+    int shardCount = 2;
+    int pos1[] = {1, 1, 1};
+
+    Field field(1, pos1, 2);
+
+    Value value1((double)1.5);
+    Value value2((double)3.9);
+
+    FieldValue fieldValue1(field, value1);
+    FieldValue fieldValue2(field, value2);
+
+    EXPECT_TRUE(shouldKeepSample(fieldValue1, shardOffset, shardCount));
+    EXPECT_FALSE(shouldKeepSample(fieldValue2, shardOffset, shardCount));
+}
+
+TEST(FieldValueTest, TestShouldKeepSampleString) {
+    int shardOffset = 5;
+    int shardCount = 2;
+    int pos1[] = {1, 1, 1};
+
+    Field field(1, pos1, 2);
+
+    Value value1("str1");
+    Value value2("str2");
+
+    FieldValue fieldValue1(field, value1);
+    FieldValue fieldValue2(field, value2);
+
+    EXPECT_FALSE(shouldKeepSample(fieldValue1, shardOffset, shardCount));
+    EXPECT_TRUE(shouldKeepSample(fieldValue2, shardOffset, shardCount));
+}
+
+TEST(FieldValueTest, TestShouldKeepSampleByteArray) {
+    int shardOffset = 5;
+    int shardCount = 2;
+    int pos1[] = {1, 1, 1};
+
+    Field field(1, pos1, 2);
+
+    vector<uint8_t> message1 = {'\t', 'e', '\0', 's', 't'};
+    vector<uint8_t> message2 = {'\t', 'e', '\0', 's', 't', 't'};
+
+    Value value1(message1);
+    Value value2(message2);
+
+    FieldValue fieldValue1(field, value1);
+    FieldValue fieldValue2(field, value2);
+
+    EXPECT_FALSE(shouldKeepSample(fieldValue1, shardOffset, shardCount));
+    EXPECT_TRUE(shouldKeepSample(fieldValue2, shardOffset, shardCount));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
