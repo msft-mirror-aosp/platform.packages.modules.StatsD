@@ -452,6 +452,9 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
     enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
     // pass the event to metrics managers.
     for (auto& pair : mMetricsManagers) {
+        if (event->isRestricted() && !pair.second->hasRestrictedMetricsDelegate()) {
+            continue;
+        }
         int uid = pair.first.GetUid();
         int64_t configId = pair.first.GetId();
         bool isPrevActive = pair.second->isActive();
