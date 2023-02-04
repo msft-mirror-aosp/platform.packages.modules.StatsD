@@ -167,6 +167,9 @@ public:
     /* Min period between two checks of byte size per config key in nanoseconds. */
     static const int64_t kMinByteSizeCheckPeriodNs = 60 * NS_PER_SEC;
 
+    /* Min period between two checks of restricted metrics TTLs. */
+    static const int64_t kMinTtlCheckPeriodNs = 60 * 60 * NS_PER_SEC;
+
     /* Minimum period between two activation broadcasts in nanoseconds. */
     static const int64_t kMinActivationBroadcastPeriodNs = 10 * NS_PER_SEC;
 

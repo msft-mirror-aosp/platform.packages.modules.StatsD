@@ -22,7 +22,8 @@
 #include <log/log.h>
 #include <private/android_filesystem_config.h>
 
-#include "annotations.h"
+#include "flags/FlagProvider.h"
+#include "stats_annotations.h"
 #include "stats_log_util.h"
 #include "statslog_statsd.h"
 
@@ -328,7 +329,7 @@ void LogEvent::parsePrimaryFieldFirstUidAnnotation(uint8_t annotationType,
 
 void LogEvent::parseExclusiveStateAnnotation(uint8_t annotationType,
                                              std::optional<uint8_t> numElements) {
-    // Allowed types: INT
+    // Allowed types: BOOL
     if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
         mValid = false;
@@ -354,7 +355,7 @@ void LogEvent::parseTriggerStateResetAnnotation(uint8_t annotationType,
 
 void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
                                           std::optional<uint8_t> numElements) {
-    // Allowed types: INT
+    // Allowed types: BOOL
     if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
         mValid = false;
@@ -363,6 +364,25 @@ void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
 
     bool nested = readNextValue<uint8_t>();
     mValues[mValues.size() - 1].mAnnotations.setNested(nested);
+}
+
+void LogEvent::parseRestrictionCategoryAnnotation(uint8_t annotationType) {
+    // Allowed types: INT, field value should be empty since this is atom-level annotation.
+    if (!mValues.empty() || annotationType != INT32_TYPE) {
+        mValid = false;
+        return;
+    }
+    int value = readNextValue<int32_t>();
+    // should be one of predefined category in StatsLog.java
+    switch (value) {
+        case ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC:
+            break;
+        default:
+            mValid = false;
+            return;
+    }
+    mRestrictionCategory = value;
+    return;
 }
 
 // firstUidInChainIndex is a default parameter that is only needed when parsing
@@ -375,27 +395,36 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
         uint8_t annotationType = readNextValue<uint8_t>();
 
         switch (annotationId) {
-            case ANNOTATION_ID_IS_UID:
+            case ASTATSLOG_ANNOTATION_ID_IS_UID:
                 parseIsUidAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_TRUNCATE_TIMESTAMP:
+            case ASTATSLOG_ANNOTATION_ID_TRUNCATE_TIMESTAMP:
                 parseTruncateTimestampAnnotation(annotationType);
                 break;
-            case ANNOTATION_ID_PRIMARY_FIELD:
+            case ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD:
                 parsePrimaryFieldAnnotation(annotationType, numElements, firstUidInChainIndex);
                 break;
-            case ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID:
+            case ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID:
                 parsePrimaryFieldFirstUidAnnotation(annotationType, firstUidInChainIndex);
                 break;
-            case ANNOTATION_ID_EXCLUSIVE_STATE:
+            case ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE:
                 parseExclusiveStateAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_TRIGGER_STATE_RESET:
+            case ASTATSLOG_ANNOTATION_ID_TRIGGER_STATE_RESET:
                 parseTriggerStateResetAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_STATE_NESTED:
+            case ASTATSLOG_ANNOTATION_ID_STATE_NESTED:
                 parseStateNestedAnnotation(annotationType, numElements);
                 break;
+            case ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY:
+                if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG,
+                                                                FLAG_FALSE)) {
+                    parseRestrictionCategoryAnnotation(annotationType);
+                    break;
+                } else {
+                    mValid = false;
+                    return;
+                }
             default:
                 mValid = false;
                 return;

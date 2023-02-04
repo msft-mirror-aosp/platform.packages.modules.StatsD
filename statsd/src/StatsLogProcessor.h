@@ -151,6 +151,9 @@ public:
 
     void cancelAnomalyAlarm();
 
+    // Enforces restricted data ttls on all configs.
+    void enforceDataTtls(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
+
 private:
     // For testing only.
     inline sp<AlarmMonitor> getAnomalyAlarmMonitor() const {
@@ -177,6 +180,9 @@ private:
 
     // Tracks when we last checked the bytes consumed for each config key.
     std::unordered_map<ConfigKey, int64_t> mLastByteSizeTimes;
+
+    // Tracks when we last checked the ttl for restricted metrics.
+    int64_t mLastTtlTime;
 
     // Tracks which config keys has metric reports on disk
     std::set<ConfigKey> mOnDiskDataConfigs;
@@ -227,6 +233,14 @@ private:
             /*if dataSavedToDisk is true, it indicates the caller will write the data to disk
              (e.g., before reboot). So no need to further persist local history.*/
             const bool dataSavedToDisk, vector<uint8_t>* proto);
+
+    /* Check if it is time enforce data ttls for restricted metrics, and if it is, enforce ttls
+     * on all restricted metrics. */
+    void enforceDataTtlsIfNecessaryLocked(const int64_t wallClockNs,
+                                          const int64_t elapsedRealtimeNs);
+
+    // Enforces ttls on all restricted metrics.
+    void enforceDataTtlsLocked(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
 
     /* Check if we should send a broadcast if approaching memory limits and if we're over, we
      * actually delete the data. */
@@ -297,6 +311,8 @@ private:
     // The time for the next anomaly alarm for alerts.
     int64_t mNextAnomalyAlarmTime = 0;
 
+    bool mIsRestrictedMetricsEnabled;
+
     bool mPrintAllLogs = false;
 
     FRIEND_TEST(StatsLogProcessorTest, TestOutOfOrderLogs);
@@ -311,7 +327,8 @@ private:
             TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
     FRIEND_TEST(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate);
-
+    FRIEND_TEST(StatsLogProcessorTest, TestRestrictedLogEventPassed);
+    FRIEND_TEST(StatsLogProcessorTest, TestRestrictedLogEventNotPassed);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration1);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration2);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration3);

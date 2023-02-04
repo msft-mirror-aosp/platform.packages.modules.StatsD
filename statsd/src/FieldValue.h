@@ -16,7 +16,6 @@
 #pragma once
 
 #include "src/statsd_config.pb.h"
-#include "annotations.h"
 
 namespace android {
 namespace os {
