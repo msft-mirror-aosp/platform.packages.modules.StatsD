@@ -23,6 +23,7 @@
 #include <gtest/gtest.h>
 
 #include "src/StatsLogProcessor.h"
+#include "src/StatsService.h"
 #include "src/flags/FlagProvider.h"
 #include "src/hash.h"
 #include "src/logd/LogEvent.h"
@@ -48,6 +49,7 @@ using google::protobuf::util::MessageDifferencer;
 using Status = ::ndk::ScopedAStatus;
 using PackageInfoSnapshot = UidMapping_PackageInfoSnapshot;
 using PackageInfo = UidMapping_PackageInfoSnapshot_PackageInfo;
+using ::ndk::SharedRefBase;
 
 // Wrapper for assertion helpers called from tests to keep track of source location of failures.
 // Example usage:
@@ -87,6 +89,36 @@ public:
                  Status(int64_t configUid, int64_t configId, int64_t subscriptionId,
                         int64_t subscriptionRuleId, const vector<string>& cookies,
                         const StatsDimensionsValueParcel& dimensionsValueParcel));
+};
+
+class StatsServiceConfigTest : public ::testing::Test {
+protected:
+    shared_ptr<StatsService> service;
+    const int kConfigKey = 789130123;  // Randomly chosen
+    const int kCallingUid = 0;         // Randomly chosen
+    void SetUp() override {
+        service = SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+        // Removing config file from data/misc/stats-service and data/misc/stats-data if present
+        ConfigKey configKey(kCallingUid, kConfigKey);
+        service->removeConfiguration(kConfigKey, kCallingUid);
+        service->mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(),
+                                          false /* include_current_bucket*/, true /* erase_data */,
+                                          ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
+    }
+
+    void TearDown() override {
+        // Cleaning up data/misc/stats-service and data/misc/stats-data
+        ConfigKey configKey(kCallingUid, kConfigKey);
+        service->removeConfiguration(kConfigKey, kCallingUid);
+        service->mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(),
+                                          false /* include_current_bucket*/, true /* erase_data */,
+                                          ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
+    }
+
+    void sendConfig(const StatsdConfig& config);
+
+    ConfigMetricsReport getReports(sp<StatsLogProcessor> processor, int64_t timestamp,
+                                   bool include_current = false);
 };
 
 // Converts a ProtoOutputStream to a StatsLogReport proto.
