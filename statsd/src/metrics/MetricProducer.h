@@ -32,6 +32,7 @@
 #include "packages/PackageInfoListener.h"
 #include "state/StateListener.h"
 #include "state/StateManager.h"
+#include "utils/DbUtils.h"
 #include "utils/ShardOffsetProvider.h"
 
 namespace android {
@@ -333,6 +334,8 @@ public:
 
     void writeActiveMetricToProtoOutputStream(
             int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto);
+
+    virtual void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs){};
 
     // Start: getters/setters
     inline int64_t getMetricId() const {

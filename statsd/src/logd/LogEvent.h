@@ -234,6 +234,14 @@ public:
      */
     LogEvent(const LogEvent&) = default;
 
+    inline int getRestrictionCategory() const {
+        return mRestrictionCategory;
+    }
+
+    inline bool isRestricted() const {
+        return mRestrictionCategory != 0;
+    }
+
 private:
     void parseInt32(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
     void parseInt64(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
@@ -257,7 +265,9 @@ private:
     void parseTriggerStateResetAnnotation(uint8_t annotationType,
                                           std::optional<uint8_t> numElements);
     void parseStateNestedAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements);
+    void parseRestrictionCategoryAnnotation(uint8_t annotationType);
     bool checkPreviousValueType(Type expected);
+    bool getRestrictedMetricsFlag();
 
     /**
      * The below two variables are only valid during the execution of
@@ -335,6 +345,7 @@ private:
     // Annotations
     bool mTruncateTimestamp = false;
     int mResetState = -1;
+    int mRestrictionCategory = 0;
 
     size_t mNumUidFields = 0;
 

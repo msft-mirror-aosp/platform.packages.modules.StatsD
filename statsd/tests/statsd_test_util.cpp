@@ -812,7 +812,7 @@ AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int dat
     AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
 
     AStatsEvent_writeInt32(statsEvent, uid);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeInt32(statsEvent, data1);
     AStatsEvent_writeInt32(statsEvent, data2);
 
@@ -825,7 +825,7 @@ AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int dat
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
     AStatsEvent_writeInt32(statsEvent, uid);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeInt32(statsEvent, data1);
     AStatsEvent_writeInt32Array(statsEvent, data2.data(), data2.size());
 
@@ -855,7 +855,7 @@ shared_ptr<LogEvent> makeExtraUidsLogEvent(int atomId, int64_t eventTimeNs, int 
     AStatsEvent* statsEvent = makeUidStatsEvent(atomId, eventTimeNs, uid1, data1, data2);
     for (const int extraUid : extraUids) {
         AStatsEvent_writeInt32(statsEvent, extraUid);
-        AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+        AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     }
 
     shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
@@ -869,7 +869,7 @@ shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
     AStatsEvent_writeInt32Array(statsEvent, uids.data(), uids.size());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
 
     shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -883,7 +883,7 @@ shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
     AStatsEvent_writeInt32Array(statsEvent, uids.data(), uids.size());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeInt32(statsEvent, data1);
     AStatsEvent_writeInt32(statsEvent, data2);
 
@@ -900,7 +900,7 @@ shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
     AStatsEvent_writeInt32Array(statsEvent, uids.data(), uids.size());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeInt32(statsEvent, data1);
     AStatsEvent_writeInt32Array(statsEvent, data2.data(), data2.size());
 
@@ -953,8 +953,8 @@ std::unique_ptr<LogEvent> CreateScreenStateChangedEvent(uint64_t timestampNs,
     AStatsEvent_setAtomId(statsEvent, util::SCREEN_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(loggerUid, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -966,8 +966,8 @@ std::unique_ptr<LogEvent> CreateBatterySaverOnEvent(uint64_t timestampNs) {
     AStatsEvent_setAtomId(statsEvent, util::BATTERY_SAVER_MODE_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, BatterySaverModeStateChanged::ON);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -979,8 +979,8 @@ std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs) {
     AStatsEvent_setAtomId(statsEvent, util::BATTERY_SAVER_MODE_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, BatterySaverModeStateChanged::OFF);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1112,14 +1112,15 @@ std::unique_ptr<LogEvent> CreateWakelockStateChangedEvent(uint64_t timestampNs,
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     writeAttribution(statsEvent, attributionUids, attributionTags);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID,
+                                  true);
     AStatsEvent_writeInt32(statsEvent, android::os::WakeLockLevelEnum::PARTIAL_WAKE_LOCK);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeString(statsEvent, wakelockName.c_str());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, true);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1258,11 +1259,11 @@ std::unique_ptr<LogEvent> CreateUidProcessStateChangedEvent(
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     AStatsEvent_writeInt32(statsEvent, uid);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1280,20 +1281,21 @@ std::unique_ptr<LogEvent> CreateBleScanStateChangedEvent(uint64_t timestampNs,
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     writeAttribution(statsEvent, attributionUids, attributionTags);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID,
+                                  true);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, true);
     if (state == util::BLE_SCAN_STATE_CHANGED__STATE__RESET) {
-        AStatsEvent_addInt32Annotation(statsEvent, ANNOTATION_ID_TRIGGER_STATE_RESET,
+        AStatsEvent_addInt32Annotation(statsEvent, ASTATSLOG_ANNOTATION_ID_TRIGGER_STATE_RESET,
                                        util::BLE_SCAN_STATE_CHANGED__STATE__OFF);
     }
     AStatsEvent_writeBool(statsEvent, filtered);  // filtered
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeBool(statsEvent, firstMatch);  // first match
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeBool(statsEvent, opportunistic);  // opportunistic
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1309,14 +1311,14 @@ std::unique_ptr<LogEvent> CreateOverlayStateChangedEvent(int64_t timestampNs, co
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     AStatsEvent_writeInt32(statsEvent, uid);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeString(statsEvent, packageName.c_str());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true);
     AStatsEvent_writeBool(statsEvent, usingAlertWindow);
     AStatsEvent_writeInt32(statsEvent, state);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_EXCLUSIVE_STATE, true);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_STATE_NESTED, false);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1355,6 +1357,17 @@ std::unique_ptr<LogEvent> CreateBleScanResultReceivedEvent(uint64_t timestampNs,
     writeAttribution(statsEvent, attributionUids, attributionTags);
     AStatsEvent_writeInt32(statsEvent, numResults);
 
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+std::unique_ptr<LogEvent> CreateRestrictedLogEvent() {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, 123);
+    AStatsEvent_addInt32Annotation(statsEvent, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY,
+                                   ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC);
+    AStatsEvent_writeInt32(statsEvent, 10);
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
     return logEvent;
