@@ -612,6 +612,12 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
                                      const DumpLatency dumpLatency, ProtoOutputStream* proto) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
 
+    auto it = mMetricsManagers.find(key);
+    if (it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
+        VLOG("Unexpected call to StatsLogProcessor::onDumpReport for restricted metrics.");
+        return;
+    }
+
     // Start of ConfigKey.
     uint64_t configKeyToken = proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_KEY);
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_UID, key.GetUid());
@@ -620,7 +626,6 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
     // End of ConfigKey.
 
     bool keepFile = false;
-    auto it = mMetricsManagers.find(key);
     if (it != mMetricsManagers.end() && it->second->shouldPersistLocalHistory()) {
         keepFile = true;
     }
@@ -692,6 +697,12 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     // WriteDataToDisk.
     auto it = mMetricsManagers.find(key);
     if (it == mMetricsManagers.end()) {
+        return;
+    }
+    if (it->second->hasRestrictedMetricsDelegate()) {
+        VLOG("Unexpected call to StatsLogProcessor::onConfigMetricsReportLocked for restricted "
+             "metrics.");
+        // Do not call onDumpReport for restricted metrics.
         return;
     }
     int64_t lastReportTimeNs = it->second->getLastReportTimeNs();
