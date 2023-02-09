@@ -363,6 +363,7 @@ private:
 
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
+    FRIEND_TEST(MetricsManagerTest, TestOnMetricRemoveCalled);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
