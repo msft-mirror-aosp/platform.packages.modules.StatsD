@@ -493,7 +493,7 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         const vector<string>& repeatedStringField, const bool* repeatedBoolField,
         const size_t repeatedBoolFieldLength, const vector<int>& repeatedEnumField);
 
-std::unique_ptr<LogEvent> CreateRestrictedLogEvent();
+std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int timestampNs = 0);
 
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         uint64_t timestampNs, const vector<int>& attributionUids,

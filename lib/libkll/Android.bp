@@ -25,6 +25,7 @@ cc_library {
     name: "libkll",
     host_supported: true,
     vendor_available: true,
+    double_loadable: true,
     srcs: [
         "compactor_stack.cpp",
         "kll.cpp",

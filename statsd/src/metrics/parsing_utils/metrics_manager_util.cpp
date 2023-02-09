@@ -37,6 +37,7 @@
 #include "metrics/KllMetricProducer.h"
 #include "metrics/MetricProducer.h"
 #include "metrics/NumericValueMetricProducer.h"
+#include "metrics/RestrictedEventMetricProducer.h"
 #include "state/StateManager.h"
 #include "stats_util.h"
 
@@ -789,6 +790,11 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
+    if (config.has_restricted_metrics_delegate_package_name()) {
+        return {new RestrictedEventMetricProducer(
+                key, metric, conditionIndex, initialConditionCache, wizard, metricHash, timeBaseNs,
+                eventActivationMap, eventDeactivationMap)};
+    }
     return {new EventMetricProducer(key, metric, conditionIndex, initialConditionCache, wizard,
                                     metricHash, timeBaseNs, eventActivationMap,
                                     eventDeactivationMap)};
