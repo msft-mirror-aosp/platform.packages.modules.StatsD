@@ -115,6 +115,7 @@ private:
     friend class KllMetricE2eAbTest;
     friend class MetricsManagerTest;
     friend class StatsLogProcessorTest;
+    friend class RestrictedEventMetricProducerTest;
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
