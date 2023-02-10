@@ -165,6 +165,11 @@ private:
             std::unordered_map<int, std::vector<int>>& deactivationAtomTrackerToMetricMap,
             std::vector<int>& metricsWithActivation) override;
 
+    inline bool isRandomNSamples() const {
+        return (mTriggerAtomId == -1 && mSamplingType == GaugeMetric::FIRST_N_SAMPLES) ||
+               mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE;
+    }
+
     int mWhatMatcherIndex;
 
     sp<EventMatcherWizard> mEventMatcherWizard;
@@ -226,6 +231,7 @@ private:
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection);
     FRIEND_TEST(GaugeMetricProducerTest, TestFirstBucket);
     FRIEND_TEST(GaugeMetricProducerTest, TestPullOnTrigger);
+    FRIEND_TEST(GaugeMetricProducerTest, TestPullNWithoutTrigger);
     FRIEND_TEST(GaugeMetricProducerTest, TestRemoveDimensionInOutput);
     FRIEND_TEST(GaugeMetricProducerTest, TestPullDimensionalSampling);
 
