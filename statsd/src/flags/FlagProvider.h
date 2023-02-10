@@ -117,6 +117,7 @@ private:
     friend class StatsLogProcessorTest;
     friend class StatsLogProcessorTestRestricted;
     friend class RestrictedEventMetricProducerTest;
+    friend class RestrictedConfigE2ETest;
     friend class RestrictedEventMetricE2eTest;
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
