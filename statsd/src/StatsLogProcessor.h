@@ -315,6 +315,7 @@ private:
 
     bool mPrintAllLogs = false;
 
+    friend class StatsLogProcessorTestRestricted;
     FRIEND_TEST(StatsLogProcessorTest, TestOutOfOrderLogs);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitByteSize);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitBroadcast);
@@ -326,9 +327,15 @@ private:
     FRIEND_TEST(StatsLogProcessorTest,
             TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
-    FRIEND_TEST(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate);
-    FRIEND_TEST(StatsLogProcessorTest, TestRestrictedLogEventPassed);
-    FRIEND_TEST(StatsLogProcessorTest, TestRestrictedLogEventNotPassed);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigUpdate);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestRestrictedLogEventPassed);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestRestrictedLogEventNotPassed);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricsManagerOnDumpReportNotCalled);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricsManagerOnDumpReportCalled);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricOnDumpReportEmpty);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricOnDumpReportNotEmpty);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotWriteToDisk);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricWriteToDisk);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration1);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration2);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration3);

@@ -115,6 +115,7 @@ private:
     friend class KllMetricE2eAbTest;
     friend class MetricsManagerTest;
     friend class StatsLogProcessorTest;
+    friend class StatsLogProcessorTestRestricted;
     friend class RestrictedEventMetricProducerTest;
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
@@ -132,9 +133,6 @@ private:
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagFalse);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
-    FRIEND_TEST(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate);
-    FRIEND_TEST(StatsLogProcessorTest, TestRestrictedLogEventPassed);
-    FRIEND_TEST(StatsLogProcessorTest, TestRestrictedLogEventNotPassed);
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled);

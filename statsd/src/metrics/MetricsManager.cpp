@@ -443,6 +443,11 @@ void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t w
                                   const bool include_current_partial_bucket, const bool erase_data,
                                   const DumpLatency dumpLatency, std::set<string>* str_set,
                                   ProtoOutputStream* protoOutput) {
+    if (hasRestrictedMetricsDelegate()) {
+        // TODO(b/268150038): report error to statsdstats
+        VLOG("Unexpected call to onDumpReport in restricted metricsmanager.");
+        return;
+    }
     VLOG("=========================Metric Reports Start==========================");
     // one StatsLogReport per MetricProduer
     for (const auto& producer : mAllMetricProducers) {
