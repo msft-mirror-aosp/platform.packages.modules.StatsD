@@ -296,7 +296,8 @@ public class TestDrive {
         }
 
         void addAtom(Integer atom, List<String> protoIncludes) {
-            if (Atom.getDescriptor().findFieldByNumber(atom) == null) {
+            if (Atom.getDescriptor().findFieldByNumber(atom) == null &&
+                Atom.getDescriptor().isExtensionNumber(atom) == false) {
                 // try to look in alternative locations
                 if (protoIncludes != null) {
                     boolean isAtomDefined = false;
