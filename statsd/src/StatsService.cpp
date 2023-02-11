@@ -53,6 +53,8 @@ namespace statsd {
 
 constexpr const char* kPermissionDump = "android.permission.DUMP";
 
+constexpr const char* kPermissionReadLogs = "android.permission.READ_LOGS";
+
 constexpr const char* kPermissionRegisterPullAtom = "android.permission.REGISTER_STATS_PULL_ATOM";
 
 #define STATS_SERVICE_DIR "/data/misc/stats-service"
@@ -355,12 +357,7 @@ status_t StatsService::handleShellCommand(int in, int out, int err, const char**
         }
 
         if (!utf8Args[0].compare(String8("data-subscribe"))) {
-            {
-                std::lock_guard<std::mutex> lock(mShellSubscriberMutex);
-                if (mShellSubscriber == nullptr) {
-                    mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager);
-                }
-            }
+            initShellSubscriber();
             int timeoutSec = -1;
             if (argc >= 2) {
                 timeoutSec = atoi(utf8Args[1].c_str());
@@ -1344,6 +1341,56 @@ void StatsService::statsCompanionServiceDiedImpl() {
     mAnomalyAlarmMonitor->setStatsCompanionService(nullptr);
     mPeriodicAlarmMonitor->setStatsCompanionService(nullptr);
     mPullerManager->SetStatsCompanionService(nullptr);
+}
+
+Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,
+                                     const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ENFORCE_UID(AID_NOBODY);
+    if (!checkPermission(kPermissionReadLogs)) {
+        return exception(
+                EX_SECURITY,
+                StringPrintf(
+                        "Uid %d does not have the %s permission when subscribing to atom events",
+                        AIBinder_getCallingUid(), kPermissionReadLogs));
+    }
+    initShellSubscriber();
+
+    mShellSubscriber->startNewSubscription(subscriptionConfig, callback);
+
+    return Status::ok();
+}
+
+Status StatsService::removeSubscription(const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ENFORCE_UID(AID_NOBODY);
+    if (!checkPermission(kPermissionReadLogs)) {
+        return exception(EX_SECURITY, StringPrintf("Uid %d does not have the %s permission when "
+                                                   "unsubscribing from atom events",
+                                                   AIBinder_getCallingUid(), kPermissionReadLogs));
+    }
+    if (mShellSubscriber != nullptr) {
+        mShellSubscriber->unsubscribe(callback);
+    }
+    return Status::ok();
+}
+
+Status StatsService::flushSubscription(const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ENFORCE_UID(AID_NOBODY);
+    if (!checkPermission(kPermissionReadLogs)) {
+        return exception(EX_SECURITY, StringPrintf("Uid %d does not have the %s permission when "
+                                                   "flushing an atoms subscription",
+                                                   AIBinder_getCallingUid(), kPermissionReadLogs));
+    }
+    if (mShellSubscriber != nullptr) {
+        mShellSubscriber->flushSubscription(callback);
+    }
+    return Status::ok();
+}
+
+void StatsService::initShellSubscriber() {
+    std::lock_guard<std::mutex> lock(mShellSubscriberMutex);
+    if (mShellSubscriber == nullptr) {
+        mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager);
+    }
 }
 
 }  // namespace statsd

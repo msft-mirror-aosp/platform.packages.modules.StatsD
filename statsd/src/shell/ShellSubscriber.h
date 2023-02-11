@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <aidl/android/os/IStatsSubscriptionCallback.h>
+
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -59,9 +61,20 @@ public:
 
     ~ShellSubscriber();
 
+    // Create new ShellSubscriberClient with file descriptors to manage a new subscription.
     bool startNewSubscription(int inFd, int outFd, int64_t timeoutSec);
 
+    // Create new ShellSubscriberClient with Binder callback to manage a new subscription.
+    bool startNewSubscription(
+            const vector<uint8_t>& subscriptionConfig,
+            const shared_ptr<aidl::android::os::IStatsSubscriptionCallback>& callback);
+
     void onLogEvent(const LogEvent& event);
+
+    void flushSubscription(
+            const shared_ptr<aidl::android::os::IStatsSubscriptionCallback>& callback);
+
+    void unsubscribe(const shared_ptr<aidl::android::os::IStatsSubscriptionCallback>& callback);
 
     static size_t getMaxSizeKb() {
         return ShellSubscriberClient::getMaxSizeKb();
@@ -72,6 +85,8 @@ public:
     }
 
 private:
+    bool startNewSubscriptionLocked(unique_ptr<ShellSubscriberClient> client);
+
     void pullAndSendHeartbeats();
 
     sp<UidMap> mUidMap;
