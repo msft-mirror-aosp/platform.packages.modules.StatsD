@@ -224,6 +224,184 @@ TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
     EXPECT_GT(data.bucket_info(5).atom(0).subsystem_sleep_state().time_millis(), 0);
 }
 
+TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents_FIRST_N) {
+    StatsdConfig config = CreateStatsdConfig(GaugeMetric::FIRST_N_SAMPLES);
+    int64_t baseTimeNs = getElapsedRealtimeNs();
+    int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
+    int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.gauge_metric(0).bucket()) * 1000000;
+
+    ConfigKey cfgKey;
+    auto processor =
+            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
+                                    SharedRefBase::make<FakeSubsystemSleepCallback>(), ATOM_TAG);
+    ASSERT_EQ(processor->mMetricsManagers.size(), 1u);
+    EXPECT_TRUE(processor->mMetricsManagers.begin()->second->isConfigValid());
+    processor->mPullerManager->ForceClearPullerCache();
+
+    int startBucketNum = processor->mMetricsManagers.begin()
+                                 ->second->mAllMetricProducers[0]
+                                 ->getCurrentBucketNum();
+    EXPECT_GT(startBucketNum, (int64_t)0);
+    EXPECT_EQ(configAddedTimeNs, bucketSizeNs * startBucketNum + baseTimeNs);
+
+    // When creating the config, the gauge metric producer should register the alarm at the
+    // end of the current bucket.
+    ASSERT_EQ((size_t)1, processor->mPullerManager->mReceivers.size());
+    EXPECT_EQ(bucketSizeNs,
+              processor->mPullerManager->mReceivers.begin()->second.front().intervalNs);
+    int64_t& nextPullTimeNs =
+            processor->mPullerManager->mReceivers.begin()->second.front().nextPullTimeNs;
+    EXPECT_EQ(baseTimeNs + (startBucketNum + 1) * bucketSizeNs, nextPullTimeNs);
+
+    auto screenOffEvent = CreateScreenStateChangedEvent(
+            baseTimeNs + startBucketNum * bucketSizeNs + 55, android::view::DISPLAY_STATE_OFF);
+    processor->OnLogEvent(screenOffEvent.get());
+
+    auto screenOnEvent = CreateScreenStateChangedEvent(
+            baseTimeNs + startBucketNum * bucketSizeNs + 100, android::view::DISPLAY_STATE_ON);
+    processor->OnLogEvent(screenOnEvent.get());
+
+    screenOffEvent = CreateScreenStateChangedEvent(baseTimeNs + startBucketNum * bucketSizeNs + 150,
+                                                   android::view::DISPLAY_STATE_OFF);
+    processor->OnLogEvent(screenOffEvent.get());
+
+    screenOnEvent = CreateScreenStateChangedEvent(baseTimeNs + startBucketNum * bucketSizeNs + 200,
+                                                  android::view::DISPLAY_STATE_ON);
+    processor->OnLogEvent(screenOnEvent.get());
+
+    screenOffEvent = CreateScreenStateChangedEvent(baseTimeNs + startBucketNum * bucketSizeNs + 250,
+                                                   android::view::DISPLAY_STATE_OFF);
+    processor->OnLogEvent(screenOffEvent.get());
+
+    screenOnEvent = CreateScreenStateChangedEvent(baseTimeNs + startBucketNum * bucketSizeNs + 300,
+                                                  android::view::DISPLAY_STATE_ON);
+    processor->OnLogEvent(screenOnEvent.get());
+
+    screenOffEvent = CreateScreenStateChangedEvent(baseTimeNs + startBucketNum * bucketSizeNs + 325,
+                                                   android::view::DISPLAY_STATE_OFF);
+    processor->OnLogEvent(screenOffEvent.get());
+
+    // Pulling alarm arrives on time and reset the sequential pulling alarm.
+    processor->informPullAlarmFired(nextPullTimeNs + 1);
+    EXPECT_EQ(baseTimeNs + (startBucketNum + 2) * bucketSizeNs, nextPullTimeNs);
+
+    screenOnEvent = CreateScreenStateChangedEvent(
+            baseTimeNs + (startBucketNum + 1) * bucketSizeNs + 10, android::view::DISPLAY_STATE_ON);
+    processor->OnLogEvent(screenOnEvent.get());
+
+    screenOffEvent =
+            CreateScreenStateChangedEvent(baseTimeNs + (startBucketNum + 1) * bucketSizeNs + 100,
+                                          android::view::DISPLAY_STATE_OFF);
+    processor->OnLogEvent(screenOffEvent.get());
+
+    processor->informPullAlarmFired(nextPullTimeNs + 2);
+    EXPECT_EQ(baseTimeNs + (startBucketNum + 3) * bucketSizeNs, nextPullTimeNs);
+
+    processor->informPullAlarmFired(nextPullTimeNs + 3);
+    EXPECT_EQ(baseTimeNs + (startBucketNum + 4) * bucketSizeNs, nextPullTimeNs);
+
+    screenOnEvent = CreateScreenStateChangedEvent(
+            baseTimeNs + (startBucketNum + 3) * bucketSizeNs + 15, android::view::DISPLAY_STATE_ON);
+    processor->OnLogEvent(screenOnEvent.get());
+
+    processor->informPullAlarmFired(nextPullTimeNs + 4);
+    EXPECT_EQ(baseTimeNs + (startBucketNum + 5) * bucketSizeNs, nextPullTimeNs);
+
+    processor->informPullAlarmFired(nextPullTimeNs + 5);
+    EXPECT_EQ(baseTimeNs + (startBucketNum + 6) * bucketSizeNs, nextPullTimeNs);
+
+    screenOffEvent =
+            CreateScreenStateChangedEvent(baseTimeNs + (startBucketNum + 5) * bucketSizeNs + 20,
+                                          android::view::DISPLAY_STATE_OFF);
+    processor->OnLogEvent(screenOffEvent.get());
+
+    processor->informPullAlarmFired(nextPullTimeNs + 6);
+    EXPECT_EQ(baseTimeNs + (startBucketNum + 7) * bucketSizeNs, nextPullTimeNs);
+
+    screenOnEvent = CreateScreenStateChangedEvent(
+            baseTimeNs + (startBucketNum + 6) * bucketSizeNs + 10, android::view::DISPLAY_STATE_ON);
+    processor->OnLogEvent(screenOnEvent.get());
+
+    screenOffEvent =
+            CreateScreenStateChangedEvent(baseTimeNs + (startBucketNum + 6) * bucketSizeNs + 50,
+                                          android::view::DISPLAY_STATE_OFF);
+    processor->OnLogEvent(screenOffEvent.get());
+
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(cfgKey, baseTimeNs + (startBucketNum + 7) * bucketSizeNs + 10, false,
+                            true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(buffer.size() > 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;
+    sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).gauge_metrics(), &gaugeMetrics);
+    ASSERT_GT((int)gaugeMetrics.data_size(), 1);
+
+    auto data = gaugeMetrics.data(0);
+    EXPECT_EQ(ATOM_TAG, data.dimensions_in_what().field());
+    ASSERT_EQ(1, data.dimensions_in_what().value_tuple().dimensions_value_size());
+    EXPECT_EQ(1 /* subsystem name field */,
+              data.dimensions_in_what().value_tuple().dimensions_value(0).field());
+    EXPECT_FALSE(data.dimensions_in_what().value_tuple().dimensions_value(0).value_str().empty());
+    ASSERT_EQ(6, data.bucket_info_size());
+
+    ASSERT_EQ(4, data.bucket_info(0).atom_size());
+    ASSERT_EQ(4, data.bucket_info(0).elapsed_timestamp_nanos_size());
+    ValidateGaugeBucketTimes(data.bucket_info(0),
+                             /*startTimeNs=*/baseTimeNs + startBucketNum * bucketSizeNs,
+                             /*endTimeNs=*/baseTimeNs + (startBucketNum + 1) * bucketSizeNs,
+                             /*eventTimesNs=*/
+                             {(int64_t)(baseTimeNs + startBucketNum * bucketSizeNs + 55),
+                              (int64_t)(baseTimeNs + startBucketNum * bucketSizeNs + 150),
+                              (int64_t)(baseTimeNs + startBucketNum * bucketSizeNs + 250),
+                              (int64_t)(baseTimeNs + startBucketNum * bucketSizeNs + 325)});
+
+    ASSERT_EQ(2, data.bucket_info(1).atom_size());
+    ASSERT_EQ(2, data.bucket_info(1).elapsed_timestamp_nanos_size());
+    ValidateGaugeBucketTimes(data.bucket_info(1),
+                             /*startTimeNs=*/baseTimeNs + (startBucketNum + 1) * bucketSizeNs,
+                             /*endTimeNs=*/baseTimeNs + (startBucketNum + 2) * bucketSizeNs,
+                             /*eventTimesNs=*/
+                             {(int64_t)(baseTimeNs + (startBucketNum + 1) * bucketSizeNs + 1),
+                              (int64_t)(baseTimeNs + (startBucketNum + 1) * bucketSizeNs + 100)});
+
+    ASSERT_EQ(1, data.bucket_info(2).atom_size());
+    ASSERT_EQ(1, data.bucket_info(2).elapsed_timestamp_nanos_size());
+    ValidateGaugeBucketTimes(
+            data.bucket_info(2), /*startTimeNs=*/baseTimeNs + (startBucketNum + 2) * bucketSizeNs,
+            /*endTimeNs=*/baseTimeNs + (startBucketNum + 3) * bucketSizeNs,
+            /*eventTimesNs=*/{(int64_t)(baseTimeNs + (startBucketNum + 2) * bucketSizeNs + 2)});
+
+    ASSERT_EQ(1, data.bucket_info(3).atom_size());
+    ASSERT_EQ(1, data.bucket_info(3).elapsed_timestamp_nanos_size());
+    ValidateGaugeBucketTimes(
+            data.bucket_info(3), /*startTimeNs=*/baseTimeNs + (startBucketNum + 3) * bucketSizeNs,
+            /*endTimeNs=*/baseTimeNs + (startBucketNum + 4) * bucketSizeNs,
+            /*eventTimesNs=*/{(int64_t)(baseTimeNs + (startBucketNum + 3) * bucketSizeNs + 3)});
+
+    ASSERT_EQ(1, data.bucket_info(4).atom_size());
+    ASSERT_EQ(1, data.bucket_info(4).elapsed_timestamp_nanos_size());
+    ValidateGaugeBucketTimes(
+            data.bucket_info(4), /*startTimeNs=*/baseTimeNs + (startBucketNum + 5) * bucketSizeNs,
+            /*endTimeNs=*/baseTimeNs + (startBucketNum + 6) * bucketSizeNs,
+            /*eventTimesNs=*/{(int64_t)(baseTimeNs + (startBucketNum + 5) * bucketSizeNs + 20)});
+
+    ASSERT_EQ(2, data.bucket_info(5).atom_size());
+    ASSERT_EQ(2, data.bucket_info(5).elapsed_timestamp_nanos_size());
+    ValidateGaugeBucketTimes(data.bucket_info(5),
+                             /*startTimeNs=*/baseTimeNs + (startBucketNum + 6) * bucketSizeNs,
+                             /*endTimeNs=*/baseTimeNs + (startBucketNum + 7) * bucketSizeNs,
+                             /*eventTimesNs=*/
+                             {(int64_t)(baseTimeNs + (startBucketNum + 6) * bucketSizeNs + 6),
+                              (int64_t)(baseTimeNs + (startBucketNum + 6) * bucketSizeNs + 50)});
+}
+
 TEST_P(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
     auto config = CreateStatsdConfig(GaugeMetric::CONDITION_CHANGE_TO_TRUE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
