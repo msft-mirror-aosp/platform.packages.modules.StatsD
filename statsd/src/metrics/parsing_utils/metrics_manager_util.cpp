@@ -1190,14 +1190,6 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         triggerAtomId = *(triggerAtomMatcher->getAtomIds().begin());
     }
 
-    if (!metric.has_trigger_event() && pullTagId != -1 &&
-        metric.sampling_type() == GaugeMetric::FIRST_N_SAMPLES) {
-        ALOGW("FIRST_N_SAMPLES is only for pushed event or pull_on_trigger");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_GAUGE_METRIC_FIRST_N_SAMPLES_WITH_WRONG_EVENT, metric.id());
-        return nullopt;
-    }
-
     int conditionIndex = -1;
     if (metric.has_condition()) {
         invalidConfigReason = handleMetricWithConditions(
