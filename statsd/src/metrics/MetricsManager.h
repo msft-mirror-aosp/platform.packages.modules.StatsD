@@ -82,7 +82,9 @@ public:
     vector<int32_t> getPullAtomUids(int32_t atomId) override;
 
     bool shouldWriteToDisk() const {
-        return mNoReportMetricIds.size() != mAllMetricProducers.size();
+        return mNoReportMetricIds.size() != mAllMetricProducers.size()
+               // Restricted metrics should only be written to dedicated db.
+               && !hasRestrictedMetricsDelegate();
     }
 
     bool shouldPersistLocalHistory() const {
