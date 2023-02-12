@@ -9,7 +9,9 @@
 #include "utils/DbUtils.h"
 
 using namespace testing;
-using namespace std;
+using std::string;
+using std::stringstream;
+using std::vector;
 
 #ifdef __ANDROID__
 
@@ -17,9 +19,19 @@ namespace android {
 namespace os {
 namespace statsd {
 
+namespace {
 const ConfigKey configKey(/*uid=*/0, /*id=*/12345);
 const int64_t metricId1 = 123;
 const int64_t metricId2 = 456;
+
+bool metricTableExist(int64_t metricId) {
+    stringstream query;
+    query << "SELECT * FROM metric_" << metricId;
+    vector<int32_t> columnTypes;
+    vector<vector<string>> rows;
+    return dbutils::query(configKey, query.str(), rows, columnTypes);
+}
+}  // anonymous namespace
 
 class RestrictedEventMetricProducerTest : public Test {
 protected:
@@ -141,6 +153,24 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnDumpReportNoOp) {
 
     ASSERT_EQ(output.size(), 0);
     ASSERT_EQ(strSet.size(), 0);
+}
+
+TEST_F(RestrictedEventMetricProducerTest, TestOnMetricRemove) {
+    EventMetric metric;
+    metric.set_id(metricId1);
+    RestrictedEventMetricProducer producer(configKey, metric,
+                                           /*conditionIndex=*/-1,
+                                           /*initialConditionCache=*/{}, new ConditionWizard(),
+                                           /*protoHash=*/0x1234567890,
+                                           /*startTimeNs=*/0);
+    EXPECT_FALSE(metricTableExist(metricId1));
+
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(/*timestampNs=*/1);
+    producer.onMatchedLogEvent(/*matcherIndex=*/1, *event1);
+    EXPECT_TRUE(metricTableExist(metricId1));
+
+    producer.onMetricRemove();
+    EXPECT_FALSE(metricTableExist(metricId1));
 }
 
 }  // namespace statsd

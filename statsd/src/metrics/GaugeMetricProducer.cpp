@@ -93,6 +93,7 @@ GaugeMetricProducer::GaugeMetricProducer(
       mAtomId(atomId),
       mIsPulled(pullTagId != -1),
       mMinBucketSizeNs(metric.min_bucket_size_nanos()),
+      mSamplingType(metric.sampling_type()),
       mMaxPullDelayNs(metric.max_pull_delay_sec() > 0 ? metric.max_pull_delay_sec() * NS_PER_SEC
                                                       : StatsdStats::kPullMaxDelayNs),
       mDimensionSoftLimit(dimensionSoftLimit),
@@ -108,7 +109,6 @@ GaugeMetricProducer::GaugeMetricProducer(
     }
     mBucketSizeNs = bucketSizeMills * 1000000;
 
-    mSamplingType = metric.sampling_type();
     if (!metric.gauge_fields_filter().include_all()) {
         translateFieldMatcher(metric.gauge_fields_filter().fields(), &mFieldMatchers);
     }
@@ -132,7 +132,7 @@ GaugeMetricProducer::GaugeMetricProducer(
 
     flushIfNeededLocked(startTimeNs);
     // Kicks off the puller immediately.
-    if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mIsPulled && isRandomNSamples()) {
         mPullerManager->RegisterReceiver(mPullTagId, mConfigKey, this, getCurrentBucketEndTimeNs(),
                                          mBucketSizeNs);
     }
@@ -146,7 +146,7 @@ GaugeMetricProducer::GaugeMetricProducer(
 
 GaugeMetricProducer::~GaugeMetricProducer() {
     VLOG("~GaugeMetricProducer() called");
-    if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mIsPulled && isRandomNSamples()) {
         mPullerManager->UnRegisterReceiver(mPullTagId, mConfigKey, this);
     }
 }
@@ -210,8 +210,7 @@ optional<InvalidConfigReason> GaugeMetricProducer::onConfigUpdatedLocked(
 
     // If this is a config update, we must have just forced a partial bucket. Pull if needed to get
     // data for the new bucket.
-    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled &&
-        mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled && isRandomNSamples()) {
         pullAndMatchEventsLocked(mCurrentBucketStartTimeNs);
     }
     return nullopt;
@@ -363,8 +362,7 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 }
 
 void GaugeMetricProducer::prepareFirstBucketLocked() {
-    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled &&
-        mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled && isRandomNSamples()) {
         pullAndMatchEventsLocked(mCurrentBucketStartTimeNs);
     }
 }
@@ -420,7 +418,7 @@ void GaugeMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
         return;
     }
 
-    if (isActive && mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (isActive && mIsPulled && isRandomNSamples()) {
         pullAndMatchEventsLocked(eventTimeNs);
     }
 }
@@ -436,8 +434,7 @@ void GaugeMetricProducer::onConditionChangedLocked(const bool conditionMet,
 
     flushIfNeededLocked(eventTimeNs);
     if (conditionMet && mIsPulled &&
-        (mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE ||
-         mSamplingType == GaugeMetric::CONDITION_CHANGE_TO_TRUE)) {
+        (isRandomNSamples() || mSamplingType == GaugeMetric::CONDITION_CHANGE_TO_TRUE)) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }
@@ -454,7 +451,7 @@ void GaugeMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
     flushIfNeededLocked(eventTimeNs);
     // If the condition is sliced, mCondition is true if any of the dimensions is true. And we will
     // pull for every dimension.
-    if (overallCondition && mIsPulled && mTriggerAtomId == -1) {
+    if (overallCondition && mIsPulled) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }

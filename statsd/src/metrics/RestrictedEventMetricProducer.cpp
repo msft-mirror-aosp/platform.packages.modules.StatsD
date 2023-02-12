@@ -32,6 +32,7 @@ void RestrictedEventMetricProducer::onMatchedLogEventInternalLocked(
     if (!condition) {
         return;
     }
+
     if (!mIsMetricTableCreated) {
         if (!dbutils::createTableIfNeeded(mConfigKey, mMetricId, event)) {
             VLOG("Failed to create table for metric %lld", (long long)mMetricId);
@@ -40,6 +41,7 @@ void RestrictedEventMetricProducer::onMatchedLogEventInternalLocked(
         }
         mIsMetricTableCreated = true;
     }
+
     vector<LogEvent> logEvents{event};
     if (!dbutils::insert(mConfigKey, mMetricId, logEvents)) {
         // TODO(b/268150038): report error to statsdstats
@@ -53,6 +55,17 @@ void RestrictedEventMetricProducer::onDumpReportLocked(
         android::util::ProtoOutputStream* protoOutput) {
     // TODO(b/268150038): report error to statsdstats
     VLOG("Unexpected call to onDumpReportLocked() in RestrictedEventMetricProducer");
+}
+
+void RestrictedEventMetricProducer::onMetricRemove() {
+    std::lock_guard<std::mutex> lock(mMutex);
+    if (!mIsMetricTableCreated) {
+        return;
+    }
+    if (!dbutils::deleteTable(mConfigKey, mMetricId)) {
+        // TODO(b/268150038): report error to statsdstats
+        VLOG("Failed to delete table for metric %lld", (long long)mMetricId);
+    }
 }
 
 }  // namespace statsd
