@@ -79,6 +79,8 @@ message CountBucketInfo {
   optional int64 start_bucket_elapsed_millis = 5;
 
   optional int64 end_bucket_elapsed_millis = 6;
+
+  optional int64 condition_true_nanos = 7;
 }
 
 message CountMetricData {
