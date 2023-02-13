@@ -121,6 +121,7 @@ private:
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
+    FRIEND_TEST(ConfigUpdateE2eTest, TestConfigUpdateRestrictedDelegateCleared);
     FRIEND_TEST(EventMetricE2eTest, TestEventMetricDataAggregated);
     FRIEND_TEST(EventMetricProducerTest, TestOneAtomTagAggregatedEvents);
     FRIEND_TEST(EventMetricProducerTest, TestTwoAtomTagAggregatedEvents);
