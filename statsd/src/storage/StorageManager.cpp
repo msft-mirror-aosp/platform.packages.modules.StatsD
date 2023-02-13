@@ -79,7 +79,7 @@ static string findTrainInfoFileNameLocked(const string& trainName) {
     dirent* de;
     while ((de = readdir(dir.get()))) {
         char* fileName = de->d_name;
-        if (fileName[0] == '.') continue;
+        if (fileName[0] == '.' || de->d_type == DT_DIR) continue;
 
         size_t fileNameLength = strlen(fileName);
         if (fileNameLength >= trainName.length()) {
@@ -430,7 +430,7 @@ vector<InstallTrainInfo> StorageManager::readAllTrainInfo() {
     dirent* de;
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') {
+        if (name[0] == '.' || de->d_type == DT_DIR) {
             continue;
         }
 
@@ -462,7 +462,7 @@ void StorageManager::deleteAllFiles(const char* path) {
     dirent* de;
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') continue;
+        if (name[0] == '.' || de->d_type == DT_DIR) continue;
         deleteFile(StringPrintf("%s/%s", path, name).c_str());
     }
 }
@@ -477,7 +477,7 @@ void StorageManager::deleteSuffixedFiles(const char* path, const char* suffix) {
     dirent* de;
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') {
+        if (name[0] == '.' || de->d_type == DT_DIR) {
             continue;
         }
         size_t nameLen = strlen(name);
@@ -499,7 +499,7 @@ void StorageManager::sendBroadcast(const char* path,
     dirent* de;
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') continue;
+        if (name[0] == '.' || de->d_type == DT_DIR) continue;
         VLOG("file %s", name);
 
         FileName output;
@@ -521,7 +521,7 @@ bool StorageManager::hasConfigMetricsReport(const ConfigKey& key) {
     dirent* de;
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') continue;
+        if (name[0] == '.' || de->d_type == DT_DIR) continue;
 
         size_t nameLen = strlen(name);
         size_t suffixLen = suffix.length();
@@ -549,7 +549,7 @@ void StorageManager::appendConfigMetricsReport(const ConfigKey& key, ProtoOutput
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
         string fileName(name);
-        if (name[0] == '.') continue;
+        if (name[0] == '.' || de->d_type == DT_DIR) continue;
         FileName output;
         parseFileName(name, &output);
 
@@ -610,7 +610,7 @@ void StorageManager::readConfigFromDisk(map<ConfigKey, StatsdConfig>& configsMap
     dirent* de;
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') continue;
+        if (name[0] == '.' || de->d_type == DT_DIR) continue;
 
         FileName output;
         parseFileName(name, &output);
@@ -650,7 +650,7 @@ bool StorageManager::readConfigFromDisk(const ConfigKey& key, string* content) {
     dirent* de;
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') {
+        if (name[0] == '.' || de->d_type == DT_DIR) {
             continue;
         }
         size_t nameLen = strlen(name);
@@ -718,7 +718,7 @@ void StorageManager::trimToFit(const char* path, bool parseTimestampOnly) {
     auto nowSec = getWallClockSec();
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') continue;
+        if (name[0] == '.' || de->d_type == DT_DIR) continue;
 
         FileName output;
         string file_name;
@@ -782,7 +782,7 @@ void StorageManager::printDirStats(int outFd, const char* path) {
     int totalFileSize = 0;
     while ((de = readdir(dir.get()))) {
         char* name = de->d_name;
-        if (name[0] == '.') {
+        if (name[0] == '.' || de->d_type == DT_DIR) {
             continue;
         }
         FileName output;
