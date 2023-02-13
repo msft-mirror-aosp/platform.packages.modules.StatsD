@@ -1058,6 +1058,15 @@ optional<InvalidConfigReason> updateMetrics(
             newMetricProducers[i]->prepareFirstBucket();
         }
     }
+
+    for (const sp<MetricProducer>& oldMetricProducer : oldMetricProducers) {
+        const auto& it = newMetricProducerMap.find(oldMetricProducer->getMetricId());
+        // Consider metric removed if it's not present in newMetricProducerMap or it's replaced.
+        if (it == newMetricProducerMap.end() ||
+            replacedMetrics.find(oldMetricProducer->getMetricId()) != replacedMetrics.end()) {
+            oldMetricProducer->onMetricRemove();
+        }
+    }
     return nullopt;
 }
 

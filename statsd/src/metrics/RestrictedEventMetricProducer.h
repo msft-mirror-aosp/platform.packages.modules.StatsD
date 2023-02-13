@@ -21,6 +21,8 @@ public:
             const vector<int>& slicedStateAtoms = {},
             const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap = {});
 
+    void onMetricRemove() override;
+
 private:
     void onMatchedLogEventInternalLocked(
             const size_t matcherIndex, const MetricDimensionKey& eventKey,
@@ -33,8 +35,6 @@ private:
                             android::util::ProtoOutputStream* protoOutput) override;
 
     bool mIsMetricTableCreated = false;
-
-    friend class RestrictedEventMetricProducerTest;
 };
 
 }  // namespace statsd
