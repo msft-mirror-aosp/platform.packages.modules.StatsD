@@ -222,7 +222,8 @@ public:
     virtual Status querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
                             const aidl::android::os::StatsPolicyConfigParcel& policyConfig,
                             const shared_ptr<IStatsQueryCallback>& callback,
-                            const int64_t configKey, const string& configPackage);
+                            const int64_t configKey, const string& configPackage,
+                            const int32_t callingUid);
 
 private:
     /**

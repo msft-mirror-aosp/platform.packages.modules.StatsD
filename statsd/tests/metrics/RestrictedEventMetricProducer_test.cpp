@@ -29,7 +29,9 @@ bool metricTableExist(int64_t metricId) {
     query << "SELECT * FROM metric_" << metricId;
     vector<int32_t> columnTypes;
     vector<vector<string>> rows;
-    return dbutils::query(configKey, query.str(), rows, columnTypes);
+    vector<string> columnNames;
+    string err;
+    return dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err);
 }
 }  // anonymous namespace
 
@@ -53,23 +55,28 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventMultipleEvents) {
                                            /*initialConditionCache=*/{}, new ConditionWizard(),
                                            /*protoHash=*/0x1234567890,
                                            /*startTimeNs=*/0);
-    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(/*timestampNs=*/1);
-    std::unique_ptr<LogEvent> event2 = CreateRestrictedLogEvent(/*timestampNs=*/3);
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(/*atomTag=*/123, /*timestampNs=*/1);
+    std::unique_ptr<LogEvent> event2 = CreateRestrictedLogEvent(/*atomTag=*/123, /*timestampNs=*/3);
 
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event1);
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event2);
 
     stringstream query;
     query << "SELECT * FROM metric_" << metricId1;
+    string err;
     vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
     vector<vector<string>> rows;
-    dbutils::query(configKey, query.str(), rows, columnTypes);
+    dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err);
     ASSERT_EQ(rows.size(), 2);
     EXPECT_EQ(columnTypes.size(),
               3 + event1->getValues().size());  // col 0:2 are reserved for metadata.
     EXPECT_EQ(/*tagId=*/rows[0][0], to_string(event1->GetTagId()));
     EXPECT_EQ(/*elapsedTimestampNs=*/rows[0][1], to_string(event1->GetElapsedTimestampNs()));
     EXPECT_EQ(/*elapsedTimestampNs=*/rows[1][1], to_string(event2->GetElapsedTimestampNs()));
+
+    EXPECT_THAT(columnNames,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
 }
 
 TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventMultipleFields) {
@@ -96,15 +103,20 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventMultipleFields) {
 
     stringstream query;
     query << "SELECT * FROM metric_" << metricId2;
+    string err;
     vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
     vector<vector<string>> rows;
-    EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes));
+    EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
     ASSERT_EQ(rows.size(), 1);
     EXPECT_EQ(columnTypes.size(),
               3 + logEvent.getValues().size());  // col 0:2 are reserved for metadata.
     EXPECT_EQ(/*field1=*/rows[0][3], "111");
     EXPECT_EQ(/*field2=*/rows[0][4], "11");
     EXPECT_FLOAT_EQ(/*field3=*/std::stof(rows[0][5]), 11.0);
+
+    EXPECT_THAT(columnNames, ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs",
+                                         "field_1", "field_2", "field_3"));
 }
 
 TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventWithCondition) {
@@ -117,8 +129,8 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventWithCondition) {
                                            new ConditionWizard(),
                                            /*protoHash=*/0x1234567890,
                                            /*startTimeNs=*/0);
-    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(/*timestampNs=*/1);
-    std::unique_ptr<LogEvent> event2 = CreateRestrictedLogEvent(/*timestampNs=*/3);
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(/*atomTag=*/123, /*timestampNs=*/1);
+    std::unique_ptr<LogEvent> event2 = CreateRestrictedLogEvent(/*atomTag=*/123, /*timestampNs=*/3);
 
     producer.onConditionChanged(true, 0);
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event1);
@@ -127,12 +139,17 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventWithCondition) {
 
     std::stringstream query;
     query << "SELECT * FROM metric_" << metricId1;
+    string err;
     std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
-    dbutils::query(configKey, query.str(), rows, columnTypes);
+    dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err);
     ASSERT_EQ(rows.size(), 1);
     EXPECT_EQ(columnTypes.size(), 3 + event1->getValues().size());
     EXPECT_EQ(/*elapsedTimestampNs=*/rows[0][1], to_string(event1->GetElapsedTimestampNs()));
+
+    EXPECT_THAT(columnNames,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
 }
 
 TEST_F(RestrictedEventMetricProducerTest, TestOnDumpReportNoOp) {

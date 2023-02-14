@@ -170,6 +170,8 @@ public:
 
     void enforceRestrictedDataTtls(const int64_t wallClockNs);
 
+    bool validateRestrictedMetricsDelegate(const int32_t callingUid);
+
 private:
     // For test only.
     inline int64_t getTtlEndNs() const { return mTtlEndNs; }

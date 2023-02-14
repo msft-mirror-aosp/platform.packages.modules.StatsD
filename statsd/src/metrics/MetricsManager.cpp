@@ -824,6 +824,16 @@ void MetricsManager::enforceRestrictedDataTtls(const int64_t wallClockNs) {
     dbutils::closeDb(db);
 }
 
+bool MetricsManager::validateRestrictedMetricsDelegate(const int32_t callingUid) {
+    if (!hasRestrictedMetricsDelegate()) {
+        return false;
+    }
+
+    set<int32_t> possibleUids = mUidMap->getAppUid(mRestrictedMetricsDelegatePackageName.value());
+
+    return possibleUids.find(callingUid) != possibleUids.end();
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

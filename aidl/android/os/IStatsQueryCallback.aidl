@@ -23,4 +23,6 @@ package android.os;
 interface IStatsQueryCallback {
       oneway void sendResults(in String[] queryData, in String[] columnNames,
         in int[] columnTypes, int rowCount);
+
+      oneway void sendFailure(String error);
 }
