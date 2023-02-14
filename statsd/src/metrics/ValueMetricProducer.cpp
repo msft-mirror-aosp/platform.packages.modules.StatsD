@@ -90,8 +90,6 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
       mDimensionSoftLimit(guardrailOptions.dimensionSoftLimit),
       mDimensionHardLimit(guardrailOptions.dimensionHardLimit),
       mCurrentBucketIsSkipped(false),
-      // Condition timer will be set later within the constructor after pulling events
-      mConditionTimer(false, bucketOptions.timeBaseNs),
       mConditionCorrectionThresholdNs(bucketOptions.conditionCorrectionThresholdNs) {
     // TODO(b/185722221): inject directly via initializer list in MetricProducer.
     mBucketSizeNs = bucketOptions.bucketSizeNs;
