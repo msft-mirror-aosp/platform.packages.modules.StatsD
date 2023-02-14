@@ -1548,10 +1548,11 @@ void ValidateStateValue(const google::protobuf::RepeatedPtrField<StateValue>& st
 }
 
 void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs, int64_t endTimeNs,
-                         int64_t count) {
+                         int64_t count, int64_t conditionTrueNs) {
     EXPECT_EQ(countBucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(countBucket.end_bucket_elapsed_nanos(), endTimeNs);
     EXPECT_EQ(countBucket.count(), count);
+    EXPECT_EQ(countBucket.condition_true_nanos(), conditionTrueNs);
 }
 
 void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,

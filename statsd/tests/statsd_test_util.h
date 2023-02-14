@@ -121,6 +121,15 @@ protected:
                                    bool include_current = false);
 };
 
+static void assertConditionTimer(const ConditionTimer& conditionTimer, bool condition,
+                                 int64_t timerNs, int64_t lastConditionTrueTimestampNs,
+                                 int64_t currentBucketStartDelayNs = 0) {
+    EXPECT_EQ(condition, conditionTimer.mCondition);
+    EXPECT_EQ(timerNs, conditionTimer.mTimerNs);
+    EXPECT_EQ(lastConditionTrueTimestampNs, conditionTimer.mLastConditionChangeTimestampNs);
+    EXPECT_EQ(currentBucketStartDelayNs, conditionTimer.mCurrentBucketStartDelayNs);
+}
+
 // Converts a ProtoOutputStream to a StatsLogReport proto.
 StatsLogReport outputStreamToProto(ProtoOutputStream* proto);
 
@@ -536,7 +545,7 @@ void ValidateStateValue(const google::protobuf::RepeatedPtrField<StateValue>& st
                         int atomId, int64_t value);
 
 void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs, int64_t endTimeNs,
-                         int64_t count);
+                         int64_t count, int64_t conditionTrueNs = 0);
 void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,
                             int64_t endTimeNs, int64_t durationNs);
 void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
