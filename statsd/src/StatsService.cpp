@@ -41,6 +41,7 @@
 
 using namespace android;
 
+using aidl::android::os::StatsPolicyConfigParcel;
 using android::base::StringPrintf;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
@@ -1345,6 +1346,35 @@ void StatsService::statsCompanionServiceDiedImpl() {
     mAnomalyAlarmMonitor->setStatsCompanionService(nullptr);
     mPeriodicAlarmMonitor->setStatsCompanionService(nullptr);
     mPullerManager->SetStatsCompanionService(nullptr);
+}
+
+Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configKey,
+                                                          const string& configPackage,
+                                                          vector<int64_t>* output) {
+    ENFORCE_UID(AID_SYSTEM);
+    // query db using configKey and populate output.
+    return Status::ok();
+}
+
+Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                              const StatsPolicyConfigParcel& policyConfig,
+                              const shared_ptr<IStatsQueryCallback>& callback,
+                              const int64_t configKey, const string& configPackage) {
+    ENFORCE_UID(AID_SYSTEM);
+    vector<string> columnNames = {"metric_name", "metric_value"};
+    vector<int32_t> columnTypes = {3, 2};
+    srand((unsigned)time(0));
+    float randomVal = (float)std::rand() / RAND_MAX;
+
+    // replace with actual db query.
+    // validate policyConfig here
+
+    vector<string> queryData;
+    queryData.push_back("test_metric");
+    queryData.push_back(to_string(randomVal));
+
+    callback->sendResults(queryData, columnNames, columnTypes, 1);
+    return Status::ok();
 }
 
 }  // namespace statsd
