@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#pragma once
 
 #include <sqlite3.h>
 
@@ -29,6 +30,12 @@ namespace dbutils {
 
 // TODO(b/264407489): Update this to a new directory once ready.
 #define STATS_METADATA_DIR "/data/misc/stats-metadata"
+
+inline int32_t getDbVersion() {
+    return SQLITE_VERSION_NUMBER;
+};
+
+string reformatMetricId(const int64_t metricId);
 
 /* Creates a new data table for a specified metric if one does not yet exist. */
 bool createTableIfNeeded(const ConfigKey& key, const int64_t metricId, const LogEvent& event);
@@ -59,9 +66,10 @@ bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events)
  * A temp sqlite handle is created using the ConfigKey.
  */
 bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& rows,
-           vector<int32_t>& columnTypes);
+           vector<int32_t>& columnTypes, vector<string>& columnNames, string& err);
 
 bool flushTtl(sqlite3* db, const int64_t metricId, const int64_t ttlWallClockNs);
+
 }  // namespace dbutils
 }  // namespace statsd
 }  // namespace os

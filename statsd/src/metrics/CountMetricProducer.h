@@ -24,9 +24,10 @@
 
 #include "MetricProducer.h"
 #include "anomaly/AnomalyTracker.h"
+#include "condition/ConditionTimer.h"
 #include "condition/ConditionTracker.h"
-#include "src/statsd_config.pb.h"
 #include "matchers/matcher_util.h"
+#include "src/statsd_config.pb.h"
 #include "stats_util.h"
 
 namespace android {
@@ -37,6 +38,7 @@ struct CountBucket {
     int64_t mBucketStartNs;
     int64_t mBucketEndNs;
     int64_t mCount;
+    int64_t mConditionTrueNs;
 };
 
 class CountMetricProducer : public MetricProducer {
@@ -96,6 +98,8 @@ private:
 
     void flushCurrentBucketLocked(const int64_t& eventTimeNs,
                                   const int64_t& nextBucketStartTimeNs) override;
+
+    void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) override;
 
     optional<InvalidConfigReason> onConfigUpdatedLocked(
             const StatsdConfig& config, const int configIndex, const int metricIndex,
