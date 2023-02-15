@@ -35,6 +35,7 @@
 #include "android-base/stringprintf.h"
 #include "config/ConfigKey.h"
 #include "config/ConfigManager.h"
+#include "flags/FlagProvider.h"
 #include "guardrail/StatsdStats.h"
 #include "stats_log_util.h"
 #include "storage/StorageManager.h"
@@ -163,6 +164,13 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                 }
                 VLOG("StatsService::active configs broadcast failed for uid %d", uid);
                 return false;
+            },
+            [this](const ConfigKey& key, const string& delegatePackage,
+                   const vector<int64_t>& restrictedMetrics) {
+                set<string> configPackages = mUidMap->getAppNamesFromUid(key.GetUid(), true);
+                set<int32_t> delegateUids = mUidMap->getAppUid(delegatePackage);
+                mConfigManager->SendRestrictedMetricsBroadcast(configPackages, key.GetId(),
+                                                               delegateUids, restrictedMetrics);
             });
 
     mUidMap->setListener(mProcessor);
@@ -1350,11 +1358,32 @@ void StatsService::statsCompanionServiceDiedImpl() {
     mPullerManager->SetStatsCompanionService(nullptr);
 }
 
-Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configKey,
+Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId,
                                                           const string& configPackage,
+                                                          const shared_ptr<IPendingIntentRef>& pir,
+                                                          const int32_t callingUid,
                                                           vector<int64_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
-    // query db using configKey and populate output.
+    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        return Status::ok();
+    }
+    mConfigManager->SetRestrictedMetricsChangedReceiver(configPackage, configId, callingUid, pir);
+    if (output != nullptr) {
+        // TODO(b/269419485): implement getting the current restricted metrics.
+    } else {
+        ALOGW("StatsService::setRestrictedMetricsChangedOperation output was nullptr");
+    }
+    return Status::ok();
+}
+
+Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t configId,
+                                                             const string& configPackage,
+                                                             const int32_t callingUid) {
+    ENFORCE_UID(AID_SYSTEM);
+    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        return Status::ok();
+    }
+    mConfigManager->RemoveRestrictedMetricsChangedReceiver(configPackage, configId, callingUid);
     return Status::ok();
 }
 

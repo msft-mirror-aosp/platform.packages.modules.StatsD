@@ -68,6 +68,9 @@ public class StatsManagerService extends IStatsManagerService.Stub {
     @GuardedBy("mLock")
     private ArrayMap<ConfigKey, ArrayMap<Long, PendingIntentRef>> mBroadcastSubscriberPirMap =
             new ArrayMap<>();
+    @GuardedBy("mLock")
+    private ArrayMap<ConfigKeyWithPackage, ArrayMap<Integer, PendingIntentRef>>
+            mRestrictedMetricsPirMap = new ArrayMap<>();
 
     public StatsManagerService(Context context) {
         super();
@@ -101,6 +104,39 @@ public class StatsManagerService extends IStatsManagerService.Stub {
             if (obj instanceof ConfigKey) {
                 ConfigKey other = (ConfigKey) obj;
                 return this.mUid == other.getUid() && this.mConfigId == other.getConfigId();
+            }
+            return false;
+        }
+    }
+
+    private static class ConfigKeyWithPackage {
+        private final String mConfigPackage;
+        private final long mConfigId;
+
+        ConfigKeyWithPackage(String configPackage, long configId) {
+            mConfigPackage = configPackage;
+            mConfigId = configId;
+        }
+
+        public String getConfigPackage() {
+            return mConfigPackage;
+        }
+
+        public long getConfigId() {
+            return mConfigId;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(mConfigPackage, mConfigId);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj instanceof ConfigKeyWithPackage) {
+                ConfigKeyWithPackage other = (ConfigKeyWithPackage) obj;
+                return this.mConfigPackage.equals(other.getConfigPackage())
+                        && this.mConfigId == other.getConfigId();
             }
             return false;
         }
@@ -481,21 +517,57 @@ public class StatsManagerService extends IStatsManagerService.Stub {
 
     @Override
     public long[] setRestrictedMetricsChangedOperation(PendingIntent pendingIntent,
-            long configKey, String configPackage) {
+            long configId, String configPackage) {
         enforceRestrictedStatsPermission();
+        int callingUid = Binder.getCallingUid();
         final long token = Binder.clearCallingIdentity();
-        // TODO: create aidl interface for pendingIntent similar to PendingIntentRef.
+        PendingIntentRef pir = new PendingIntentRef(pendingIntent, mContext);
+        ConfigKeyWithPackage key = new ConfigKeyWithPackage(configPackage, configId);
+        // Add the PIR to a map so we can re-register if statsd is unavailable.
+        synchronized (mLock) {
+            ArrayMap<Integer, PendingIntentRef> innerMap = mRestrictedMetricsPirMap.getOrDefault(
+                    key, new ArrayMap<>());
+            innerMap.put(callingUid, pir);
+            mRestrictedMetricsPirMap.put(key, innerMap);
+        }
         try {
             IStatsd statsd = getStatsdNonblocking();
             if (statsd != null) {
-                return statsd.setRestrictedMetricsChangedOperation(configKey, configPackage);
+                return statsd.setRestrictedMetricsChangedOperation(configId, configPackage, pir,
+                        callingUid);
             }
         } catch (RemoteException e) {
             Log.e(TAG, "Failed to setRestrictedMetricsChangedOperation with statsd");
         } finally {
             Binder.restoreCallingIdentity(token);
         }
-        return new long[] {};
+        return new long[]{};
+    }
+
+    @Override
+    public void removeRestrictedMetricsChangedOperation(long configId, String configPackage) {
+        enforceRestrictedStatsPermission();
+        int callingUid = Binder.getCallingUid();
+        final long token = Binder.clearCallingIdentity();
+        ConfigKeyWithPackage key = new ConfigKeyWithPackage(configPackage, configId);
+        synchronized (mLock) {
+            ArrayMap<Integer, PendingIntentRef> innerMap = mRestrictedMetricsPirMap.getOrDefault(
+                    key, new ArrayMap<>());
+            innerMap.remove(callingUid);
+            if (innerMap.isEmpty()) {
+                mRestrictedMetricsPirMap.remove(key);
+            }
+        }
+        try {
+            IStatsd statsd = getStatsdNonblocking();
+            if (statsd != null) {
+                statsd.removeRestrictedMetricsChangedOperation(configId, configPackage, callingUid);
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to removeRestrictedMetricsChangedOperation with statsd");
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
     }
 
     @Override
@@ -642,6 +714,7 @@ public class StatsManagerService extends IStatsManagerService.Stub {
             registerAllDataFetchOperations(statsd);
             registerAllActiveConfigsChangedOperations(statsd);
             registerAllBroadcastSubscribers(statsd);
+            // TODO (b/269419485): register all restricted metric operations.
         } catch (RemoteException e) {
             Log.e(TAG, "StatsManager failed to (re-)register data with statsd");
         } finally {

@@ -148,7 +148,16 @@ interface IStatsManagerService {
      * for a specified config that are present for this client. This operation allows statsd to
      * inform the client about the current restricted metrics available to be queried for
      * the specified config.
+     *
+     * Requires Manifest.permission.READ_RESTRICTED_STATS.
      */
     long[] setRestrictedMetricsChangedOperation(in PendingIntent pendingIntent, in long configKey,
             in String configPackage);
+
+    /**
+     * Removes the restricted metrics changed operation for the specified config key/package.
+     *
+     * Requires Manifest.permission.READ_RESTRICTED_STATS.
+     */
+    void removeRestrictedMetricsChangedOperation(in long configKey, in String configPackage);
 }

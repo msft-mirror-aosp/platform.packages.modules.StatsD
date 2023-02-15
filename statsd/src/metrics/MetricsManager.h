@@ -168,9 +168,16 @@ public:
         return mRestrictedMetricsDelegatePackageName.has_value();
     }
 
+    inline string getRestrictedMetricsDelegate() const {
+        return hasRestrictedMetricsDelegate() ? mRestrictedMetricsDelegatePackageName.value() : "";
+    }
+
     void enforceRestrictedDataTtls(const int64_t wallClockNs);
 
     bool validateRestrictedMetricsDelegate(const int32_t callingUid);
+
+    // Slow, should not be called in a hotpath.
+    vector<int64_t> getAllMetricIds() const;
 
 private:
     // For test only.

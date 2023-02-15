@@ -250,10 +250,22 @@ interface IStatsd {
     oneway void querySql(in String sqlQuery, in int minSqlClientVersion,
         in StatsPolicyConfigParcel policyConfig, in IStatsQueryCallback queryCallback,
         in long configKey, in String configPackage, in int callingUid);
+
     /**
      * Registers the operation that is called whenever there is a change in the restricted metrics
      * for a specified config that are present for this client. This operation allows statsd to inform the
      * client about the current restricted metrics available to be queried for the specified config.
+     *
+     * Requires Manifest.permission.READ_RESTRICTED_STATS
      */
-    long[] setRestrictedMetricsChangedOperation(in long configKey, in String configPackage);
+    long[] setRestrictedMetricsChangedOperation(in long configKey, in String configPackage,
+            in IPendingIntentRef pir, int callingUid);
+
+    /**
+     * Removes the restricted metrics changed operation for the specified config package/id.
+     *
+     * Requires Manifest.permission.READ_RESTRICTED_STATS.
+     */
+    void removeRestrictedMetricsChangedOperation(in long configKey, in String configPackage,
+            in int callingUid);
 }

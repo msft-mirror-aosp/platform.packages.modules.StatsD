@@ -96,9 +96,11 @@ TEST_P(StatsLogProcessorTest, TestRateLimitByteSize) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> periodicAlarmMonitor;
     // Construct the processor with a no-op sendBroadcast function that does nothing.
-    StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
-                        [](const ConfigKey& key) { return true; },
-                        [](const int&, const vector<int64_t>&) {return true;});
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
+            [](const ConfigKey& key) { return true; },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     MockMetricsManager mockMetricsManager;
 
@@ -117,12 +119,14 @@ TEST_P(StatsLogProcessorTest, TestRateLimitBroadcast) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
-    StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
-                        [&broadcastCount](const ConfigKey& key) {
-                            broadcastCount++;
-                            return true;
-                        },
-                        [](const int&, const vector<int64_t>&) {return true;});
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
+            [&broadcastCount](const ConfigKey& key) {
+                broadcastCount++;
+                return true;
+            },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     MockMetricsManager mockMetricsManager;
 
@@ -149,12 +153,14 @@ TEST_P(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
-    StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
-                        [&broadcastCount](const ConfigKey& key) {
-                            broadcastCount++;
-                            return true;
-                        },
-                        [](const int&, const vector<int64_t>&) {return true;});
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
+            [&broadcastCount](const ConfigKey& key) {
+                broadcastCount++;
+                return true;
+            },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     MockMetricsManager mockMetricsManager;
 
@@ -223,12 +229,14 @@ TEST_P(StatsLogProcessorTest, TestUidMapHasSnapshot) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
-    StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
-                        [&broadcastCount](const ConfigKey& key) {
-                            broadcastCount++;
-                            return true;
-                        },
-                        [](const int&, const vector<int64_t>&) {return true;});
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
+            [&broadcastCount](const ConfigKey& key) {
+                broadcastCount++;
+                return true;
+            },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(true);
     p.OnConfigUpdated(0, key, config);
@@ -255,12 +263,14 @@ TEST_P(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
-    StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
-                        [&broadcastCount](const ConfigKey& key) {
-                            broadcastCount++;
-                            return true;
-                        },
-                        [](const int&, const vector<int64_t>&) {return true;});
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
+            [&broadcastCount](const ConfigKey& key) {
+                broadcastCount++;
+                return true;
+            },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(false);
     p.OnConfigUpdated(0, key, config);
@@ -282,12 +292,14 @@ TEST_P(StatsLogProcessorTest, TestReportIncludesSubConfig) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
-    StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
-                        [&broadcastCount](const ConfigKey& key) {
-                            broadcastCount++;
-                            return true;
-                        },
-                        [](const int&, const vector<int64_t>&) {return true;});
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
+            [&broadcastCount](const ConfigKey& key) {
+                broadcastCount++;
+                return true;
+            },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     ConfigKey key(3, 4);
     StatsdConfig config;
     auto annotation = config.add_annotation();
@@ -366,7 +378,8 @@ TEST_P(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate) {
     StatsLogProcessor p(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; });
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(false);
     p.OnConfigUpdated(0, key, config);
@@ -389,9 +402,11 @@ TEST_P(StatsLogProcessorTest, InvalidConfigRemoved) {
                  /* certificateHash */ {{}, {}});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
-    StatsLogProcessor p(m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
-                        [](const ConfigKey& key) { return true; },
-                        [](const int&, const vector<int64_t>&) {return true;});
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
+            [](const ConfigKey& key) { return true; },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(true);
     // Remove the config mConfigStats so that the Icebox starts at 0 configs.
@@ -526,7 +541,8 @@ TEST_P(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     processor.OnConfigUpdated(1, cfgKey1, config1);
     processor.OnConfigUpdated(2, cfgKey2, config2);
@@ -2081,7 +2097,8 @@ TEST_F(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigU
     StatsLogProcessor p(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; });
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(true);
     config.set_restricted_metrics_delegate_package_name("rm_package");
