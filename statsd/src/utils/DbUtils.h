@@ -28,8 +28,7 @@ namespace os {
 namespace statsd {
 namespace dbutils {
 
-// TODO(b/264407489): Update this to a new directory once ready.
-#define STATS_METADATA_DIR "/data/misc/stats-metadata"
+#define STATS_RESTRICTED_DATA_DIR "/data/misc/stats-data/restricted-data"
 
 inline int32_t getDbVersion() {
     return SQLITE_VERSION_NUMBER;
