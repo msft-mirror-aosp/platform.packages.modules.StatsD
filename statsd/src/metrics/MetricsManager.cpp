@@ -818,6 +818,11 @@ void MetricsManager::enforceRestrictedDataTtls(const int64_t wallClockNs) {
         return;
     }
     sqlite3* db = dbutils::getDb(mConfigKey);
+    if (db == nullptr) {
+        ALOGE("Failed to open sqlite db");
+        dbutils::closeDb(db);
+        return;
+    }
     for (const auto& producer : mAllMetricProducers) {
         producer->enforceRestrictedDataTtl(db, wallClockNs);
     }
