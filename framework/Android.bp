@@ -58,6 +58,11 @@ java_sdk_library {
         ":framework-statsd-sources",
     ],
 
+    libs: [
+        "androidx.annotation_annotation",
+        "modules-utils-build",
+    ],
+
     permitted_packages: [
         "android.app",
         "android.os",

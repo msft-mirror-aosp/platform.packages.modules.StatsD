@@ -2108,7 +2108,7 @@ TEST_F(StatsLogProcessorTestRestricted, TestRestrictedLogEventNotPassed) {
     processor->mMetricsManagers[key] = metricsManager;
     EXPECT_FALSE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
 
-    unique_ptr<LogEvent> event = CreateRestrictedLogEvent();
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent(123);
     EXPECT_TRUE(event->isValid());
     EXPECT_TRUE(event->isRestricted());
     processor->OnLogEvent(event.get());
@@ -2124,7 +2124,7 @@ TEST_F(StatsLogProcessorTestRestricted, TestRestrictedLogEventPassed) {
     processor->mMetricsManagers[key] = metricsManager;
     EXPECT_TRUE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
 
-    unique_ptr<LogEvent> event = CreateRestrictedLogEvent();
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent(123);
     EXPECT_TRUE(event->isValid());
     EXPECT_TRUE(event->isRestricted());
     processor->OnLogEvent(event.get());

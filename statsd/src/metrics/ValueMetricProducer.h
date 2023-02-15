@@ -24,7 +24,6 @@
 #include "HashableDimensionKey.h"
 #include "MetricProducer.h"
 #include "anomaly/AnomalyTracker.h"
-#include "condition/ConditionTimer.h"
 #include "condition/ConditionTracker.h"
 #include "external/PullDataReceiver.h"
 #include "external/StatsPullerManager.h"
@@ -355,8 +354,6 @@ protected:
     // This is to track whether or not the bucket is skipped for any of the reasons listed in
     // BucketDropReason, many of which make the bucket potentially invalid.
     bool mCurrentBucketIsSkipped;
-
-    ConditionTimer mConditionTimer;
 
     /** Stores condition correction threshold from the ValueMetric configuration */
     optional<int64_t> mConditionCorrectionThresholdNs;

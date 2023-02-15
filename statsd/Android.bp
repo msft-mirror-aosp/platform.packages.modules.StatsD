@@ -340,6 +340,7 @@ cc_test {
         "tests/e2e/PartialBucket_e2e_test.cpp",
         "tests/e2e/ValueMetric_pull_e2e_test.cpp",
         "tests/e2e/WakelockDuration_e2e_test.cpp",
+        "tests/e2e/RestrictedEventMetric_e2e_test.cpp",
         "tests/external/puller_util_test.cpp",
         "tests/external/StatsCallbackPuller_test.cpp",
         "tests/external/StatsPuller_test.cpp",
