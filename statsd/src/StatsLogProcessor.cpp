@@ -87,15 +87,13 @@ constexpr const char* kPermissionUsage = "android.permission.PACKAGE_USAGE_STATS
 // Cool down period for writing data to disk to avoid overwriting files.
 #define WRITE_DATA_COOL_DOWN_SEC 15
 
-StatsLogProcessor::StatsLogProcessor(const sp<UidMap>& uidMap,
-                                     const sp<StatsPullerManager>& pullerManager,
-                                     const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                                     const sp<AlarmMonitor>& periodicAlarmMonitor,
-                                     const int64_t timeBaseNs,
-                                     const std::function<bool(const ConfigKey&)>& sendBroadcast,
-                                     const std::function<bool(
-                                            const int&, const vector<int64_t>&)>& activateBroadcast)
-    : mUidMap(uidMap),
+StatsLogProcessor::StatsLogProcessor(
+        const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
+        const sp<AlarmMonitor>& anomalyAlarmMonitor, const sp<AlarmMonitor>& periodicAlarmMonitor,
+        const int64_t timeBaseNs, const std::function<bool(const ConfigKey&)>& sendBroadcast,
+        const std::function<bool(const int&, const vector<int64_t>&)>& activateBroadcast)
+    : mLastTtlTime(0),
+      mUidMap(uidMap),
       mPullerManager(pullerManager),
       mAnomalyAlarmMonitor(anomalyAlarmMonitor),
       mPeriodicAlarmMonitor(periodicAlarmMonitor),
