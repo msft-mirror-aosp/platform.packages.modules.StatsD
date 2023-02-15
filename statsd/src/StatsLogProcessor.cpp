@@ -898,7 +898,7 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
 }
 
 set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
-        const int32_t callingUid, const int64_t configId, const set<int32_t> configPackageUids,
+        const int32_t callingUid, const int64_t configId, const set<int32_t>& configPackageUids,
         string& err) {
     set<ConfigKey> matchedConfigKeys;
     for (auto uid : configPackageUids) {
