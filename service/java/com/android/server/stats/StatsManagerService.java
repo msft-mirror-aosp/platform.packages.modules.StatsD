@@ -26,10 +26,12 @@ import android.content.Context;
 import android.os.Binder;
 import android.os.IPullAtomCallback;
 import android.os.IStatsManagerService;
+import android.os.IStatsQueryCallback;
 import android.os.IStatsd;
 import android.os.PowerManager;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.StatsPolicyConfigParcel;
 import android.util.ArrayMap;
 import android.util.Log;
 
@@ -477,8 +479,59 @@ public class StatsManagerService extends IStatsManagerService.Stub {
         throw new IllegalStateException("Failed to connect to statsd to removeConfig");
     }
 
+    @Override
+    public long[] setRestrictedMetricsChangedOperation(PendingIntent pendingIntent,
+            long configKey, String configPackage) {
+        enforceRestrictedStatsPermission();
+        final long token = Binder.clearCallingIdentity();
+        // TODO: create aidl interface for pendingIntent similar to PendingIntentRef.
+        try {
+            IStatsd statsd = getStatsdNonblocking();
+            if (statsd != null) {
+                return statsd.setRestrictedMetricsChangedOperation(configKey, configPackage);
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to setRestrictedMetricsChangedOperation with statsd");
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+        return new long[] {};
+    }
+
+    @Override
+    public void querySql(String sqlQuery, int minSqlClientVersion,
+            StatsPolicyConfigParcel policyConfig, IStatsQueryCallback queryCallback,
+            long configKey, String configPackage) {
+        int callingUid = Binder.getCallingUid();
+        enforceRestrictedStatsPermission();
+        final long token = Binder.clearCallingIdentity();
+        try {
+            IStatsd statsd = waitForStatsd();
+            // TODO(b/266654123): Queue queries if statsd is unavailable.
+            if (statsd != null) {
+                statsd.querySql(
+                    sqlQuery,
+                    minSqlClientVersion,
+                    policyConfig,
+                    queryCallback,
+                    configKey,
+                    configPackage,
+                    callingUid);
+            }
+        } catch (RemoteException e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
     void setStatsCompanionService(StatsCompanionService statsCompanionService) {
         mStatsCompanionService = statsCompanionService;
+    }
+
+    /** Checks that the caller has READ_RESTRICTED_STATS permission. */
+    private void enforceRestrictedStatsPermission() {
+        mContext.enforceCallingPermission(Manifest.permission.READ_RESTRICTED_STATS, null);
     }
 
     /**

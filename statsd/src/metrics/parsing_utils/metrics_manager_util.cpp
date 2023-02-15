@@ -37,6 +37,7 @@
 #include "metrics/KllMetricProducer.h"
 #include "metrics/MetricProducer.h"
 #include "metrics/NumericValueMetricProducer.h"
+#include "metrics/RestrictedEventMetricProducer.h"
 #include "state/StateManager.h"
 #include "stats_util.h"
 
@@ -789,6 +790,11 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
+    if (config.has_restricted_metrics_delegate_package_name()) {
+        return {new RestrictedEventMetricProducer(
+                key, metric, conditionIndex, initialConditionCache, wizard, metricHash, timeBaseNs,
+                eventActivationMap, eventDeactivationMap)};
+    }
     return {new EventMetricProducer(key, metric, conditionIndex, initialConditionCache, wizard,
                                     metricHash, timeBaseNs, eventActivationMap,
                                     eventDeactivationMap)};
@@ -1182,14 +1188,6 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         sp<AtomMatchingTracker> triggerAtomMatcher =
                 allAtomMatchingTrackers.at(triggerTrackerIndex);
         triggerAtomId = *(triggerAtomMatcher->getAtomIds().begin());
-    }
-
-    if (!metric.has_trigger_event() && pullTagId != -1 &&
-        metric.sampling_type() == GaugeMetric::FIRST_N_SAMPLES) {
-        ALOGW("FIRST_N_SAMPLES is only for pushed event or pull_on_trigger");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_GAUGE_METRIC_FIRST_N_SAMPLES_WITH_WRONG_EVENT, metric.id());
-        return nullopt;
     }
 
     int conditionIndex = -1;

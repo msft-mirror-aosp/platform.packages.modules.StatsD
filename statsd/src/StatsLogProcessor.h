@@ -16,23 +16,23 @@
 
 #pragma once
 
+#include <aidl/android/os/BnStatsd.h>
 #include <gtest/gtest_prod.h>
+#include <stdio.h>
+
+#include <unordered_map>
+
 #include "config/ConfigListener.h"
+#include "external/StatsPullerManager.h"
 #include "logd/LogEvent.h"
 #include "metrics/MetricsManager.h"
 #include "packages/UidMap.h"
-#include "external/StatsPullerManager.h"
-
 #include "src/statsd_config.pb.h"
 #include "src/statsd_metadata.pb.h"
-
-#include <stdio.h>
-#include <unordered_map>
 
 namespace android {
 namespace os {
 namespace statsd {
-
 
 class StatsLogProcessor : public ConfigListener, public virtual PackageInfoListener {
 public:
@@ -151,8 +151,10 @@ public:
 
     void cancelAnomalyAlarm();
 
-    // Enforces restricted data ttls on all configs.
-    void enforceDataTtls(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
+    void querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                  const aidl::android::os::StatsPolicyConfigParcel& policyConfig,
+                  const shared_ptr<aidl::android::os::IStatsQueryCallback>& callback,
+                  const int64_t configId, const string& configPackage, const int32_t callingUid);
 
 private:
     // For testing only.
@@ -246,6 +248,11 @@ private:
      * actually delete the data. */
     void flushIfNecessaryLocked(const ConfigKey& key, MetricsManager& metricsManager);
 
+    set<ConfigKey> getRestrictedConfigKeysToQueryLocked(const int32_t callingUid,
+                                                        const int64_t configId,
+                                                        const set<int32_t> configPackageUids,
+                                                        string& err);
+
     // Maps the isolated uid in the log event to host uid if the log event contains uid fields.
     void mapIsolatedUidToHostUidIfNecessaryLocked(LogEvent* event) const;
 
@@ -315,6 +322,7 @@ private:
 
     bool mPrintAllLogs = false;
 
+    friend class StatsLogProcessorTestRestricted;
     FRIEND_TEST(StatsLogProcessorTest, TestOutOfOrderLogs);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitByteSize);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitBroadcast);
@@ -326,9 +334,15 @@ private:
     FRIEND_TEST(StatsLogProcessorTest,
             TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
-    FRIEND_TEST(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate);
-    FRIEND_TEST(StatsLogProcessorTest, TestRestrictedLogEventPassed);
-    FRIEND_TEST(StatsLogProcessorTest, TestRestrictedLogEventNotPassed);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigUpdate);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestRestrictedLogEventPassed);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestRestrictedLogEventNotPassed);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricsManagerOnDumpReportNotCalled);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricsManagerOnDumpReportCalled);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricOnDumpReportEmpty);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricOnDumpReportNotEmpty);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotWriteToDisk);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricWriteToDisk);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration1);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration2);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration3);
@@ -342,10 +356,12 @@ private:
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestRepeatedFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents_FIRST_N);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlagDisabled);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);

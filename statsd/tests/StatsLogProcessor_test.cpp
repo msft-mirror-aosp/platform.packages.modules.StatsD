@@ -66,6 +66,13 @@ public:
     MOCK_METHOD1(dropData, void(const int64_t dropTimeNs));
 
     MOCK_METHOD(void, onLogEvent, (const LogEvent& event), (override));
+
+    MOCK_METHOD(void, onDumpReport,
+                (const int64_t dumpTimeNs, const int64_t wallClockNs,
+                 const bool include_current_partial_bucket, const bool erase_data,
+                 const DumpLatency dumpLatency, std::set<string>* str_set,
+                 android::util::ProtoOutputStream* protoOutput),
+                (override));
 };
 
 // Setup for test fixture.
@@ -178,12 +185,12 @@ StatsdConfig MakeConfig(bool includeMetric) {
     return config;
 }
 
-StatsdConfig makeRestrictedConfig() {
-    StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
+StatsdConfig makeRestrictedConfig(bool includeMetric = false) {
+    StatsdConfig config = MakeConfig(includeMetric);
     config.set_restricted_metrics_delegate_package_name("delegate");
     return config;
 }
+
 class MockRestrictedMetricsManager : public MetricsManager {
 public:
     MockRestrictedMetricsManager()
@@ -198,6 +205,12 @@ public:
     }
 
     MOCK_METHOD(void, onLogEvent, (const LogEvent& event), (override));
+    MOCK_METHOD(void, onDumpReport,
+                (const int64_t dumpTimeNs, const int64_t wallClockNs,
+                 const bool include_current_partial_bucket, const bool erase_data,
+                 const DumpLatency dumpLatency, std::set<string>* str_set,
+                 android::util::ProtoOutputStream* protoOutput),
+                (override));
 };
 
 TEST_P(StatsLogProcessorTest, TestUidMapHasSnapshot) {
@@ -2045,10 +2058,19 @@ TEST_P(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimes
     EXPECT_EQ(output.reports(0).last_report_elapsed_nanos(), dumpTime1Ns);
 }
 
-TEST_P(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
+class StatsLogProcessorTestRestricted : public Test {
+protected:
+    void SetUp() override {
+        FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
+                                                 /*isBootFlag=*/true);
+    }
+    void TearDown() override {
+        FlagProvider::getInstance().resetOverrides();
+        StorageManager::deleteAllFiles(STATS_DATA_DIR);
+    }
+};
 
+TEST_F(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigUpdate) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
@@ -2076,9 +2098,7 @@ TEST_P(StatsLogProcessorTest, TestInconsistentRestrictedMetricsConfigUpdate) {
     ASSERT_NE(p.mMetricsManagers.find(key)->second, oldMetricsManager);
 }
 
-TEST_P(StatsLogProcessorTest, TestRestrictedLogEventNotPassed) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
+TEST_F(StatsLogProcessorTestRestricted, TestRestrictedLogEventNotPassed) {
     sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
             /*timeBaseNs=*/1, /*currentTimeNs=*/1, StatsdConfig(), ConfigKey());
     ConfigKey key(3, 4);
@@ -2088,15 +2108,13 @@ TEST_P(StatsLogProcessorTest, TestRestrictedLogEventNotPassed) {
     processor->mMetricsManagers[key] = metricsManager;
     EXPECT_FALSE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
 
-    unique_ptr<LogEvent> event = CreateRestrictedLogEvent();
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent(123);
     EXPECT_TRUE(event->isValid());
     EXPECT_TRUE(event->isRestricted());
     processor->OnLogEvent(event.get());
 }
 
-TEST_P(StatsLogProcessorTest, TestRestrictedLogEventPassed) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
+TEST_F(StatsLogProcessorTestRestricted, TestRestrictedLogEventPassed) {
     sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
             /*timeBaseNs=*/1, /*currentTimeNs=*/1, StatsdConfig(), ConfigKey());
     ConfigKey key(3, 4);
@@ -2106,11 +2124,94 @@ TEST_P(StatsLogProcessorTest, TestRestrictedLogEventPassed) {
     processor->mMetricsManagers[key] = metricsManager;
     EXPECT_TRUE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
 
-    unique_ptr<LogEvent> event = CreateRestrictedLogEvent();
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent(123);
     EXPECT_TRUE(event->isValid());
     EXPECT_TRUE(event->isRestricted());
     processor->OnLogEvent(event.get());
 }
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricsManagerOnDumpReportNotCalled) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            ConfigKey());
+    ConfigKey key(3, 4);
+    sp<MockRestrictedMetricsManager> metricsManager = new MockRestrictedMetricsManager();
+    EXPECT_CALL(*metricsManager, onDumpReport).Times(0);
+
+    processor->mMetricsManagers[key] = metricsManager;
+    EXPECT_TRUE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
+
+    vector<uint8_t> buffer;
+    processor->onConfigMetricsReportLocked(key, /*dumpTimeStampNs=*/1, /*wallClockNs=*/0,
+                                           /*include_current_partial_bucket=*/true,
+                                           /*erase_data=*/true, GET_DATA_CALLED, FAST,
+                                           /*dataSavedToDisk=*/true, &buffer);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, NonRestrictedMetricsManagerOnDumpReportCalled) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, MakeConfig(/*includeMetric=*/true), ConfigKey());
+    ConfigKey key(3, 4);
+    sp<MockMetricsManager> metricsManager = new MockMetricsManager();
+    EXPECT_CALL(*metricsManager, onDumpReport).Times(1);
+
+    processor->mMetricsManagers[key] = metricsManager;
+    EXPECT_FALSE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
+
+    vector<uint8_t> buffer;
+    processor->onConfigMetricsReportLocked(key, /*dumpTimeStampNs=*/1, /*wallClockNs=*/0,
+                                           /*include_current_partial_bucket=*/true,
+                                           /*erase_data=*/true, GET_DATA_CALLED, FAST,
+                                           /*dataSavedToDisk=*/true, &buffer);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricOnDumpReportEmpty) {
+    ConfigKey key(3, 4);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            key);
+    ProtoOutputStream proto;
+    processor->onDumpReport(key, /*dumpTimeStampNs=*/1, /*wallClockNs=*/2,
+                            /*include_current_partial_bucket=*/true, /*erase_data=*/true,
+                            DEVICE_SHUTDOWN, FAST, &proto);
+    ASSERT_EQ(proto.size(), 0);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, NonRestrictedMetricOnDumpReportNotEmpty) {
+    ConfigKey key(3, 4);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, MakeConfig(/*includeMetric=*/true), key);
+
+    ProtoOutputStream proto;
+    processor->onDumpReport(key, /*dumpTimeStampNs=*/1, /*wallClockNs=*/2,
+                            /*include_current_partial_bucket=*/true, /*erase_data=*/true,
+                            DEVICE_SHUTDOWN, FAST, &proto);
+    ASSERT_NE(proto.size(), 0);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricNotWriteToDisk) {
+    ConfigKey key(3, 4);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            key);
+
+    processor->WriteDataToDiskLocked(key, /*timestampNs=*/0, /*wallClockNs=*/0, CONFIG_UPDATED,
+                                     FAST);
+
+    ASSERT_FALSE(StorageManager::hasConfigMetricsReport(key));
+}
+
+TEST_F(StatsLogProcessorTestRestricted, NonRestrictedMetricWriteToDisk) {
+    ConfigKey key(3, 4);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, MakeConfig(true), key);
+
+    processor->WriteDataToDiskLocked(key, /*timestampNs=*/0, /*wallClockNs=*/0, CONFIG_UPDATED,
+                                     FAST);
+
+    ASSERT_TRUE(StorageManager::hasConfigMetricsReport(key));
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif

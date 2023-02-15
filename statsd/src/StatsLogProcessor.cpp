@@ -38,6 +38,7 @@
 #include "storage/StorageManager.h"
 
 using namespace android;
+using aidl::android::os::StatsPolicyConfigParcel;
 using android::base::StringPrintf;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
@@ -52,6 +53,8 @@ using std::vector;
 namespace android {
 namespace os {
 namespace statsd {
+
+using aidl::android::os::IStatsQueryCallback;
 
 // for ConfigMetricsReportList
 const int FIELD_ID_CONFIG_KEY = 1;
@@ -612,6 +615,12 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
                                      const DumpLatency dumpLatency, ProtoOutputStream* proto) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
 
+    auto it = mMetricsManagers.find(key);
+    if (it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
+        VLOG("Unexpected call to StatsLogProcessor::onDumpReport for restricted metrics.");
+        return;
+    }
+
     // Start of ConfigKey.
     uint64_t configKeyToken = proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_KEY);
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_UID, key.GetUid());
@@ -620,7 +629,6 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
     // End of ConfigKey.
 
     bool keepFile = false;
-    auto it = mMetricsManagers.find(key);
     if (it != mMetricsManagers.end() && it->second->shouldPersistLocalHistory()) {
         keepFile = true;
     }
@@ -692,6 +700,12 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     // WriteDataToDisk.
     auto it = mMetricsManagers.find(key);
     if (it == mMetricsManagers.end()) {
+        return;
+    }
+    if (it->second->hasRestrictedMetricsDelegate()) {
+        VLOG("Unexpected call to StatsLogProcessor::onConfigMetricsReportLocked for restricted "
+             "metrics.");
+        // Do not call onDumpReport for restricted metrics.
         return;
     }
     int64_t lastReportTimeNs = it->second->getLastReportTimeNs();
@@ -817,10 +831,101 @@ void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClock
     enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
 }
 
-void StatsLogProcessor::enforceDataTtls(const int64_t wallClockNs,
-                                        const int64_t elapsedRealtimeNs) {
+// TODO(b/268150038): Add StatsdStats reporting to this method.
+void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                                 const StatsPolicyConfigParcel& policyConfig,
+                                 const shared_ptr<IStatsQueryCallback>& callback,
+                                 const int64_t configId, const string& configPackage,
+                                 const int32_t callingUid) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
-    enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+    string err = "";
+    if (!mIsRestrictedMetricsEnabled) {
+        err = "Restricted metrics are not enabled";
+        callback->sendFailure(err);
+        return;
+    }
+
+    // TODO(b/268416460): validate policyConfig here
+
+    if (minSqlClientVersion > dbutils::getDbVersion()) {
+        callback->sendFailure(StringPrintf(
+                "Unsupported sqlite version. Installed Version: %d, Requested Version: %d.",
+                dbutils::getDbVersion(), minSqlClientVersion));
+        return;
+    }
+
+    set<int32_t> configPackageUids = mUidMap->getAppUid(configPackage);
+
+    set<ConfigKey> keysToQuery =
+            getRestrictedConfigKeysToQueryLocked(callingUid, configId, configPackageUids, err);
+
+    if (keysToQuery.empty()) {
+        callback->sendFailure(err);
+        return;
+    }
+
+    if (keysToQuery.size() > 1) {
+        err = "Ambiguous ConfigKey";
+        callback->sendFailure(err);
+        return;
+    }
+
+    enforceDataTtlsLocked(getWallClockNs(), getElapsedRealtimeNs());
+
+    std::vector<std::vector<std::string>> rows;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    if (!dbutils::query(*(keysToQuery.begin()), sqlQuery, rows, columnTypes, columnNames, err)) {
+        callback->sendFailure(StringPrintf("failed to query db %s:", err.c_str()));
+        return;
+    }
+
+    vector<string> queryData;
+    queryData.reserve(rows.size() * columnNames.size());
+    // TODO(b/268415904): avoid this vector transformation.
+    if (columnNames.size() != columnTypes.size()) {
+        callback->sendFailure("Inconsistent row sizes");
+    }
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].size() != columnNames.size()) {
+            callback->sendFailure("Inconsistent row sizes");
+            return;
+        }
+        queryData.insert(std::end(queryData), std::make_move_iterator(std::begin(rows[i])),
+                         std::make_move_iterator(std::end(rows[i])));
+    }
+    callback->sendResults(queryData, columnNames, columnTypes, rows.size());
+}
+
+set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
+        const int32_t callingUid, const int64_t configId, const set<int32_t> configPackageUids,
+        string& err) {
+    set<ConfigKey> matchedConfigKeys;
+    for (auto uid : configPackageUids) {
+        ConfigKey configKey(uid, configId);
+        if (mMetricsManagers.find(configKey) != mMetricsManagers.end()) {
+            matchedConfigKeys.insert(configKey);
+        }
+    }
+
+    set<ConfigKey> excludedKeys;
+    for (auto& configKey : matchedConfigKeys) {
+        auto it = mMetricsManagers.find(configKey);
+        if (!it->second->validateRestrictedMetricsDelegate(callingUid)) {
+            excludedKeys.insert(configKey);
+        };
+    }
+
+    set<ConfigKey> result;
+    std::set_difference(matchedConfigKeys.begin(), matchedConfigKeys.end(), excludedKeys.begin(),
+                        excludedKeys.end(), std::inserter(result, result.end()));
+    if (matchedConfigKeys.empty()) {
+        err = "No configs found matching the config key";
+    } else if (result.empty()) {
+        err = "No matching configs for restricted metrics delegate";
+    }
+
+    return result;
 }
 
 void StatsLogProcessor::enforceDataTtlsLocked(const int64_t wallClockNs,

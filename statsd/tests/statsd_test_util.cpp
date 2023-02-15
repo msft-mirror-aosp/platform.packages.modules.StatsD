@@ -1362,12 +1362,13 @@ std::unique_ptr<LogEvent> CreateBleScanResultReceivedEvent(uint64_t timestampNs,
     return logEvent;
 }
 
-std::unique_ptr<LogEvent> CreateRestrictedLogEvent() {
+std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int timestampNs) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
-    AStatsEvent_setAtomId(statsEvent, 123);
+    AStatsEvent_setAtomId(statsEvent, atomTag);
     AStatsEvent_addInt32Annotation(statsEvent, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY,
                                    ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC);
     AStatsEvent_writeInt32(statsEvent, 10);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
     return logEvent;
@@ -1547,10 +1548,11 @@ void ValidateStateValue(const google::protobuf::RepeatedPtrField<StateValue>& st
 }
 
 void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs, int64_t endTimeNs,
-                         int64_t count) {
+                         int64_t count, int64_t conditionTrueNs) {
     EXPECT_EQ(countBucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(countBucket.end_bucket_elapsed_nanos(), endTimeNs);
     EXPECT_EQ(countBucket.count(), count);
+    EXPECT_EQ(countBucket.condition_true_nanos(), conditionTrueNs);
 }
 
 void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,

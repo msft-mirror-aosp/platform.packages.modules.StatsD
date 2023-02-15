@@ -82,7 +82,9 @@ public:
     vector<int32_t> getPullAtomUids(int32_t atomId) override;
 
     bool shouldWriteToDisk() const {
-        return mNoReportMetricIds.size() != mAllMetricProducers.size();
+        return mNoReportMetricIds.size() != mAllMetricProducers.size()
+               // Restricted metrics should only be written to dedicated db.
+               && !hasRestrictedMetricsDelegate();
     }
 
     bool shouldPersistLocalHistory() const {
@@ -167,6 +169,8 @@ public:
     }
 
     void enforceRestrictedDataTtls(const int64_t wallClockNs);
+
+    bool validateRestrictedMetricsDelegate(const int32_t callingUid);
 
 private:
     // For test only.
@@ -336,6 +340,7 @@ private:
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents_FIRST_N);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
@@ -363,6 +368,7 @@ private:
 
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
+    FRIEND_TEST(MetricsManagerTest, TestOnMetricRemoveCalled);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
