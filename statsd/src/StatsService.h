@@ -20,6 +20,7 @@
 #include <aidl/android/os/BnStatsd.h>
 #include <aidl/android/os/IPendingIntentRef.h>
 #include <aidl/android/os/IPullAtomCallback.h>
+#include <aidl/android/os/StatsPolicyConfigParcel.h>
 #include <aidl/android/util/PropertyParcel.h>
 #include <gtest/gtest_prod.h>
 #include <utils/Looper.h>
@@ -44,6 +45,7 @@ using Status = ::ndk::ScopedAStatus;
 using aidl::android::os::BnStatsd;
 using aidl::android::os::IPendingIntentRef;
 using aidl::android::os::IPullAtomCallback;
+using aidl::android::os::IStatsQueryCallback;
 using aidl::android::util::PropertyParcel;
 using ::ndk::ScopedAIBinder_DeathRecipient;
 using ::ndk::ScopedFileDescriptor;
@@ -206,6 +208,22 @@ public:
      * Binder call to update properties in statsd_java namespace.
      */
     virtual Status updateProperties(const std::vector<PropertyParcel>& properties);
+
+    /**
+     * Binder call to let clients register the active configs changed operation.
+     */
+    virtual Status setRestrictedMetricsChangedOperation(const int64_t configKey,
+                                                        const string& configPackage,
+                                                        vector<int64_t>* output);
+
+    /**
+     * Binder call to query data in statsd sql store.
+     */
+    virtual Status querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                            const aidl::android::os::StatsPolicyConfigParcel& policyConfig,
+                            const shared_ptr<IStatsQueryCallback>& callback,
+                            const int64_t configKey, const string& configPackage,
+                            const int32_t callingUid);
 
 private:
     /**
