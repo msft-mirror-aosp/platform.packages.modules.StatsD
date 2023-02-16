@@ -43,7 +43,8 @@ const string COLUMN_NAME_EVENT_ELAPSED_CLOCK_NS = "elapsedTimestampNs";
 const string COLUMN_NAME_EVENT_WALL_CLOCK_NS = "wallTimestampNs";
 
 static string getDbName(const ConfigKey& key) {
-    return StringPrintf("%s/%d_%lld.db", STATS_METADATA_DIR, key.GetUid(), (long long)key.GetId());
+    return StringPrintf("%s/%d_%lld.db", STATS_RESTRICTED_DATA_DIR, key.GetUid(),
+                        (long long)key.GetId());
 }
 
 static string getCreateSqlString(const int64_t metricId, const LogEvent& event) {

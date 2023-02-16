@@ -190,6 +190,44 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMetricRemove) {
     EXPECT_FALSE(metricTableExist(metricId1));
 }
 
+TEST_F(RestrictedEventMetricProducerTest, TestRestrictedEventMetricTtlDeletesFirstEvent) {
+    EventMetric metric;
+    metric.set_id(metricId1);
+    RestrictedEventMetricProducer producer(configKey, metric,
+                                           /*conditionIndex=*/-1,
+                                           /*initialConditionCache=*/{}, new ConditionWizard(),
+                                           /*protoHash=*/0x1234567890,
+                                           /*startTimeNs=*/0);
+
+    int64_t currentTimeNs = getWallClockNs();
+    int64_t eightDaysAgo = currentTimeNs - 8 * 24 * 3600 * NS_PER_SEC;
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(/*atomTag=*/123, /*timestampNs=*/1);
+    event1->setLogdWallClockTimestampNs(eightDaysAgo);
+    std::unique_ptr<LogEvent> event2 = CreateRestrictedLogEvent(/*atomTag=*/123, /*timestampNs=*/3);
+    event2->setLogdWallClockTimestampNs(currentTimeNs);
+
+    producer.onMatchedLogEvent(/*matcherIndex=*/1, *event1);
+    producer.onMatchedLogEvent(/*matcherIndex=*/1, *event2);
+    sqlite3* dbHandle = dbutils::getDb(configKey);
+    producer.enforceRestrictedDataTtl(dbHandle, currentTimeNs + 100);
+    dbutils::closeDb(dbHandle);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << metricId1;
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err);
+    ASSERT_EQ(rows.size(), 1);
+    EXPECT_EQ(columnTypes.size(), 3 + event1->getValues().size());
+    EXPECT_THAT(columnNames,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
+    EXPECT_THAT(rows[0], ElementsAre(to_string(event2->GetTagId()),
+                                     to_string(event2->GetElapsedTimestampNs()),
+                                     to_string(currentTimeNs), _));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

@@ -19,9 +19,12 @@ public:
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
             const vector<int>& slicedStateAtoms = {},
-            const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap = {});
+            const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap = {},
+            const int restrictedDataTtlInDays = 7);
 
     void onMetricRemove() override;
+
+    void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs);
 
 private:
     void onMatchedLogEventInternalLocked(
@@ -35,6 +38,8 @@ private:
                             android::util::ProtoOutputStream* protoOutput) override;
 
     bool mIsMetricTableCreated = false;
+
+    const int32_t mRestrictedDataTtlInDays;
 };
 
 }  // namespace statsd

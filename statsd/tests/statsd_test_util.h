@@ -557,7 +557,7 @@ void ValidateStateValue(const google::protobuf::RepeatedPtrField<StateValue>& st
 void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs, int64_t endTimeNs,
                          int64_t count, int64_t conditionTrueNs = 0);
 void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,
-                            int64_t endTimeNs, int64_t durationNs);
+                            int64_t endTimeNs, int64_t durationNs, int64_t conditionTrueNs = 0);
 void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
                               int64_t endTimeNs, vector<int64_t> eventTimesNs);
 void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
