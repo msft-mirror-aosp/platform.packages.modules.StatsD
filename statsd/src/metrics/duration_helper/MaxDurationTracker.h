@@ -47,6 +47,7 @@ public:
             std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) override;
     bool flushCurrentBucket(
             const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+            const int64_t globalConditionTrueNs,
             std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>*) override;
 
     void onSlicedConditionMayChange(bool overallCondition, const int64_t timestamp) override;

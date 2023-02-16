@@ -785,7 +785,8 @@ TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
     ASSERT_EQ(durationMetrics.data_size(), 1);
     data = durationMetrics.data(0);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateDurationBucket(data.bucket_info(0), bucketStartTimeNs, updateTimeNs, 30 * NS_PER_SEC);
+    ValidateDurationBucket(data.bucket_info(0), bucketStartTimeNs, updateTimeNs, 30 * NS_PER_SEC,
+                           35000000000);
 
     // Report from after update.
     report = reports.reports(1);
@@ -799,7 +800,8 @@ TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
     ASSERT_EQ(durationMetrics.data_size(), 1);
     data = durationMetrics.data(0);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateDurationBucket(data.bucket_info(0), updateTimeNs, bucketEndTimeNs, 21 * NS_PER_SEC);
+    ValidateDurationBucket(data.bucket_info(0), updateTimeNs, bucketEndTimeNs, 21 * NS_PER_SEC,
+                           21000000000);
 
     // Duration of syncs. Always true since at least 1 uid is always syncing.
     StatsLogReport durationNewAfter = report.metrics(1);

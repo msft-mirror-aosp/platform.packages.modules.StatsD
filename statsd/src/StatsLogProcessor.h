@@ -250,7 +250,7 @@ private:
 
     set<ConfigKey> getRestrictedConfigKeysToQueryLocked(const int32_t callingUid,
                                                         const int64_t configId,
-                                                        const set<int32_t> configPackageUids,
+                                                        const set<int32_t>& configPackageUids,
                                                         string& err);
 
     // Maps the isolated uid in the log event to host uid if the log event contains uid fields.

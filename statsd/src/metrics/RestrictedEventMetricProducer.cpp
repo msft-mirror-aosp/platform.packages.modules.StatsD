@@ -12,6 +12,8 @@ namespace android {
 namespace os {
 namespace statsd {
 
+#define NS_PER_DAY (24 * 3600 * NS_PER_SEC)
+
 RestrictedEventMetricProducer::RestrictedEventMetricProducer(
         const ConfigKey& key, const EventMetric& metric, const int conditionIndex,
         const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
@@ -19,10 +21,12 @@ RestrictedEventMetricProducer::RestrictedEventMetricProducer(
         const unordered_map<int, shared_ptr<Activation>>& eventActivationMap,
         const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap,
         const vector<int>& slicedStateAtoms,
-        const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
+        const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap,
+        int restrictedDataTtlInDays)
     : EventMetricProducer(key, metric, conditionIndex, initialConditionCache, wizard, protoHash,
                           startTimeNs, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                          stateGroupMap) {
+                          stateGroupMap),
+      mRestrictedDataTtlInDays(restrictedDataTtlInDays) {
 }
 
 void RestrictedEventMetricProducer::onMatchedLogEventInternalLocked(
@@ -66,6 +70,12 @@ void RestrictedEventMetricProducer::onMetricRemove() {
         // TODO(b/268150038): report error to statsdstats
         VLOG("Failed to delete table for metric %lld", (long long)mMetricId);
     }
+}
+
+void RestrictedEventMetricProducer::enforceRestrictedDataTtl(sqlite3* db,
+                                                             const int64_t wallClockNs) {
+    int64_t ttlTime = wallClockNs - mRestrictedDataTtlInDays * NS_PER_DAY;
+    dbutils::flushTtl(db, mMetricId, ttlTime);
 }
 
 }  // namespace statsd
