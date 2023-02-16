@@ -601,6 +601,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         if (mIsRestrictedMetricsEnabled && it != mMetricsManagers.end() &&
             it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+            dbutils::deleteDb(key);
         }
         mMetricsManagers.erase(key);
     }

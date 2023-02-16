@@ -473,6 +473,31 @@ TEST_F(RestrictedEventMetricE2eTest, TestNonModularConfigUpdateRestrictedDelegat
     dbutils::deleteDb(configKey);
 }
 
+TEST_F(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    EventMetric metricWithoutMatcher = createEventMetric("metricWithoutMatcher", 999999, nullopt);
+    *config.add_event_metric() = metricWithoutMatcher;
+    // Update the existing config with an invalid config update
+    processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    EXPECT_EQ(rows.size(), 0);
+    EXPECT_THAT(err, StartsWith("no such table"));
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif
