@@ -338,6 +338,7 @@ cc_test {
         "tests/e2e/MetricActivation_e2e_test.cpp",
         "tests/e2e/MetricConditionLink_e2e_test.cpp",
         "tests/e2e/PartialBucket_e2e_test.cpp",
+        "tests/e2e/RestrictedConfig_e2e_test.cpp",
         "tests/e2e/ValueMetric_pull_e2e_test.cpp",
         "tests/e2e/WakelockDuration_e2e_test.cpp",
         "tests/e2e/RestrictedEventMetric_e2e_test.cpp",
