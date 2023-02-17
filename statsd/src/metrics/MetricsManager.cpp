@@ -839,6 +839,15 @@ bool MetricsManager::validateRestrictedMetricsDelegate(const int32_t callingUid)
     return possibleUids.find(callingUid) != possibleUids.end();
 }
 
+vector<int64_t> MetricsManager::getAllMetricIds() const {
+    vector<int64_t> metricIds;
+    metricIds.reserve(mMetricProducerMap.size());
+    for (const auto& [metricId, _] : mMetricProducerMap) {
+        metricIds.push_back(metricId);
+    }
+    return metricIds;
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

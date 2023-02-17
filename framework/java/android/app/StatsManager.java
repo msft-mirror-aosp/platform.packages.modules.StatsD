@@ -404,7 +404,7 @@ public final class StatsManager {
             try {
                 IStatsManagerService service = getIStatsManagerServiceLocked();
                 if (pendingIntent == null) {
-                    // TODO
+                    service.removeRestrictedMetricsChangedOperation(configKey, configPackage);
                     return new long[0];
                 } else {
                     return service.setRestrictedMetricsChangedOperation(pendingIntent,

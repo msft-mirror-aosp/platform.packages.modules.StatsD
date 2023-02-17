@@ -114,7 +114,8 @@ TEST(UidMapTest, TestIsolatedUID) {
     StatsLogProcessor p(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; });
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     std::unique_ptr<LogEvent> addEvent = CreateIsolatedUidChangedEvent(
             1 /*timestamp*/, 100 /*hostUid*/, 101 /*isolatedUid*/, 1 /*is_create*/);

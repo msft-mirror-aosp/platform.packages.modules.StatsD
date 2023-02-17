@@ -91,7 +91,9 @@ StatsLogProcessor::StatsLogProcessor(
         const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
         const sp<AlarmMonitor>& anomalyAlarmMonitor, const sp<AlarmMonitor>& periodicAlarmMonitor,
         const int64_t timeBaseNs, const std::function<bool(const ConfigKey&)>& sendBroadcast,
-        const std::function<bool(const int&, const vector<int64_t>&)>& activateBroadcast)
+        const std::function<bool(const int&, const vector<int64_t>&)>& activateBroadcast,
+        const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
+                sendRestrictedMetricsBroadcast)
     : mLastTtlTime(0),
       mUidMap(uidMap),
       mPullerManager(pullerManager),
@@ -99,6 +101,7 @@ StatsLogProcessor::StatsLogProcessor(
       mPeriodicAlarmMonitor(periodicAlarmMonitor),
       mSendBroadcast(sendBroadcast),
       mSendActivationBroadcast(activateBroadcast),
+      mSendRestrictedMetricsBroadcast(sendRestrictedMetricsBroadcast),
       mTimeBaseNs(timeBaseNs),
       mLargestTimestampSeen(0),
       mLastTimestampSeen(0) {
@@ -564,6 +567,17 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
             newMetricsManager->init();
             mUidMap->OnConfigUpdated(key);
             newMetricsManager->refreshTtl(timestampNs);
+            if (mIsRestrictedMetricsEnabled) {
+                if (newMetricsManager->hasRestrictedMetricsDelegate()) {
+                    mSendRestrictedMetricsBroadcast(
+                            key, newMetricsManager->getRestrictedMetricsDelegate(),
+                            newMetricsManager->getAllMetricIds());
+                } else if (it != mMetricsManagers.end() &&
+                           it->second->hasRestrictedMetricsDelegate()) {
+                    mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
+                                                    {});
+                }
+            }
             mMetricsManagers[key] = newMetricsManager;
             VLOG("StatsdConfig valid");
         }
@@ -573,12 +587,21 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
                                                mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
         if (configValid) {
             mUidMap->OnConfigUpdated(key);
+            if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
+                mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
+                                                it->second->getAllMetricIds());
+            }
         }
     }
     if (!configValid) {
         // If there is any error in the config, don't use it.
         // Remove any existing config with the same key.
         ALOGE("StatsdConfig NOT valid");
+        // Send an empty restricted metrics broadcast if the previous config was restricted.
+        if (mIsRestrictedMetricsEnabled && it != mMetricsManagers.end() &&
+            it->second->hasRestrictedMetricsDelegate()) {
+            mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+        }
         mMetricsManagers.erase(key);
     }
 }
@@ -800,6 +823,9 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
         }
         WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
                               NO_TIME_CONSTRAINTS);
+        if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
+            mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+        }
         mMetricsManagers.erase(it);
         mUidMap->OnConfigRemoved(key);
     }
