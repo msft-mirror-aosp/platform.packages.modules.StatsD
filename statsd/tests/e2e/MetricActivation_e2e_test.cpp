@@ -263,7 +263,8 @@ TEST(MetricActivationE2eTest, TestCountMetric) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
@@ -474,7 +475,8 @@ TEST(MetricActivationE2eTest, TestCountMetricWithOneDeactivation) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
@@ -795,7 +797,8 @@ TEST(MetricActivationE2eTest, TestCountMetricWithTwoDeactivations) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
@@ -1128,7 +1131,8 @@ TEST(MetricActivationE2eTest, TestCountMetricWithSameDeactivation) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
@@ -1325,7 +1329,8 @@ TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 

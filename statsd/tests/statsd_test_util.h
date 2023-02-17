@@ -87,6 +87,7 @@ class MockPendingIntentRef : public aidl::android::os::BnPendingIntentRef {
 public:
     MOCK_METHOD1(sendDataBroadcast, Status(int64_t lastReportTimeNs));
     MOCK_METHOD1(sendActiveConfigsChangedBroadcast, Status(const vector<int64_t>& configIds));
+    MOCK_METHOD1(sendRestrictedMetricsChangedBroadcast, Status(const vector<int64_t>& metricIds));
     MOCK_METHOD6(sendSubscriberBroadcast,
                  Status(int64_t configUid, int64_t configId, int64_t subscriptionId,
                         int64_t subscriptionRuleId, const vector<string>& cookies,

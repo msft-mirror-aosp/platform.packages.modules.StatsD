@@ -1391,10 +1391,11 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const in
         new AlarmMonitor(1,
                          [](const shared_ptr<IStatsCompanionService>&, int64_t){},
                          [](const shared_ptr<IStatsCompanionService>&){});
-    sp<StatsLogProcessor> processor =
-            new StatsLogProcessor(uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-                                  timeBaseNs, [](const ConfigKey&) { return true; },
-                                  [](const int&, const vector<int64_t>&) {return true;});
+    sp<StatsLogProcessor> processor = new StatsLogProcessor(
+            uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, timeBaseNs,
+            [](const ConfigKey&) { return true; },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     processor->OnConfigUpdated(currentTimeNs, key, config);
     return processor;
 }
