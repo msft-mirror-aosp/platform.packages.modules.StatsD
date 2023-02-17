@@ -60,6 +60,7 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventMultipleEvents) {
 
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event1);
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event2);
+    producer.flushRestrictedData();
 
     stringstream query;
     query << "SELECT * FROM metric_" << metricId1;
@@ -100,6 +101,7 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventMultipleFields) {
     parseStatsEventToLogEvent(statsEvent, &logEvent);
 
     producer.onMatchedLogEvent(/*matcherIndex=1*/ 1, logEvent);
+    producer.flushRestrictedData();
 
     stringstream query;
     query << "SELECT * FROM metric_" << metricId2;
@@ -136,6 +138,7 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMatchedLogEventWithCondition) {
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event1);
     producer.onConditionChanged(false, 1);
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event2);
+    producer.flushRestrictedData();
 
     std::stringstream query;
     query << "SELECT * FROM metric_" << metricId1;
@@ -184,6 +187,7 @@ TEST_F(RestrictedEventMetricProducerTest, TestOnMetricRemove) {
 
     std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(/*timestampNs=*/1);
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event1);
+    producer.flushRestrictedData();
     EXPECT_TRUE(metricTableExist(metricId1));
 
     producer.onMetricRemove();
@@ -208,6 +212,7 @@ TEST_F(RestrictedEventMetricProducerTest, TestRestrictedEventMetricTtlDeletesFir
 
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event1);
     producer.onMatchedLogEvent(/*matcherIndex=*/1, *event2);
+    producer.flushRestrictedData();
     sqlite3* dbHandle = dbutils::getDb(configKey);
     producer.enforceRestrictedDataTtl(dbHandle, currentTimeNs + 100);
     dbutils::closeDb(dbHandle);

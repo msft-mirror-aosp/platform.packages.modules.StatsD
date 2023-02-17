@@ -82,9 +82,7 @@ public:
     vector<int32_t> getPullAtomUids(int32_t atomId) override;
 
     bool shouldWriteToDisk() const {
-        return mNoReportMetricIds.size() != mAllMetricProducers.size()
-               // Restricted metrics should only be written to dedicated db.
-               && !hasRestrictedMetricsDelegate();
+        return mNoReportMetricIds.size() != mAllMetricProducers.size();
     }
 
     bool shouldPersistLocalHistory() const {
@@ -175,6 +173,8 @@ public:
     void enforceRestrictedDataTtls(const int64_t wallClockNs);
 
     bool validateRestrictedMetricsDelegate(const int32_t callingUid);
+
+    virtual void flushRestrictedData();
 
     // Slow, should not be called in a hotpath.
     vector<int64_t> getAllMetricIds() const;

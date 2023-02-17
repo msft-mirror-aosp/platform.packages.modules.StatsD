@@ -36,21 +36,8 @@ void RestrictedEventMetricProducer::onMatchedLogEventInternalLocked(
     if (!condition) {
         return;
     }
-
-    if (!mIsMetricTableCreated) {
-        if (!dbutils::createTableIfNeeded(mConfigKey, mMetricId, event)) {
-            VLOG("Failed to create table for metric %lld", (long long)mMetricId);
-            // TODO(b/268150038): report error to statsdstats
-            return;
-        }
-        mIsMetricTableCreated = true;
-    }
-
-    vector<LogEvent> logEvents{event};
-    if (!dbutils::insert(mConfigKey, mMetricId, logEvents)) {
-        // TODO(b/268150038): report error to statsdstats
-        VLOG("Failed to insert logEvent to table for metric %lld", (long long)mMetricId);
-    }
+    mLogEvents.push_back(event);
+    mTotalSize += getSize(event.getValues()) + sizeof(event);
 }
 
 void RestrictedEventMetricProducer::onDumpReportLocked(
@@ -76,6 +63,38 @@ void RestrictedEventMetricProducer::enforceRestrictedDataTtl(sqlite3* db,
                                                              const int64_t wallClockNs) {
     int64_t ttlTime = wallClockNs - mRestrictedDataTtlInDays * NS_PER_DAY;
     dbutils::flushTtl(db, mMetricId, ttlTime);
+}
+
+void RestrictedEventMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
+    VLOG("Unexpected call to clearPastBucketsLocked in RestrictedEventMetricProducer");
+}
+
+void RestrictedEventMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
+    mLogEvents.clear();
+    mTotalSize = 0;
+    StatsdStats::getInstance().noteBucketDropped(mMetricId);
+}
+
+void RestrictedEventMetricProducer::flushRestrictedData() {
+    std::lock_guard<std::mutex> lock(mMutex);
+    if (mLogEvents.empty()) {
+        return;
+    }
+    if (!mIsMetricTableCreated) {
+        // TODO(b/271481944): add retry.
+        if (!dbutils::createTableIfNeeded(mConfigKey, mMetricId, mLogEvents[0])) {
+            VLOG("Failed to create table for metric %lld", (long long)mMetricId);
+            // TODO(b/268150038): report error to statsdstats
+            return;
+        }
+        mIsMetricTableCreated = true;
+    }
+    if (!dbutils::insert(mConfigKey, mMetricId, mLogEvents)) {
+        // TODO(b/268150038): report error to statsdstats
+        VLOG("Failed to insert logEvent to table for metric %lld", (long long)mMetricId);
+    }
+    mLogEvents.clear();
+    mTotalSize = 0;
 }
 
 }  // namespace statsd

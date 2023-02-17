@@ -26,6 +26,8 @@ public:
 
     void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs);
 
+    void flushRestrictedData() override;
+
 private:
     void onMatchedLogEventInternalLocked(
             const size_t matcherIndex, const MetricDimensionKey& eventKey,
@@ -37,9 +39,15 @@ private:
                             std::set<string>* str_set,
                             android::util::ProtoOutputStream* protoOutput) override;
 
+    void clearPastBucketsLocked(const int64_t dumpTimeNs) override;
+
+    void dropDataLocked(const int64_t dropTimeNs) override;
+
     bool mIsMetricTableCreated = false;
 
     const int32_t mRestrictedDataTtlInDays;
+
+    vector<LogEvent> mLogEvents;
 };
 
 }  // namespace statsd
