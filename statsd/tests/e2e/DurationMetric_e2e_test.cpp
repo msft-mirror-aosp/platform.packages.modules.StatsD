@@ -249,7 +249,8 @@ TEST(DurationMetricE2eTest, TestWithActivation) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);  // 0:00
 
