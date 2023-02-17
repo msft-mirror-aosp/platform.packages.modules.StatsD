@@ -1374,6 +1374,16 @@ std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int64_t timestam
     return logEvent;
 }
 
+std::unique_ptr<LogEvent> CreateNonRestrictedLogEvent(int atomTag, int64_t timestampNs) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomTag);
+    AStatsEvent_writeInt32(statsEvent, 10);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
 sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const int64_t currentTimeNs,
                                               const StatsdConfig& config, const ConfigKey& key,
                                               const shared_ptr<IPullAtomCallback>& puller,

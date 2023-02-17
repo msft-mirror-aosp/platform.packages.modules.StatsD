@@ -450,6 +450,7 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         mLastPullerCacheClearTimeSec = curTimeSec;
     }
 
+    flushRestrictedDataIfNecessaryLocked(elapsedRealtimeNs);
     enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
 
     std::unordered_set<int> uidsWithActiveConfigsChanged;
@@ -820,11 +821,11 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     auto it = mMetricsManagers.find(key);
     if (it != mMetricsManagers.end()) {
+        WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
+                              NO_TIME_CONSTRAINTS);
         if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
             dbutils::deleteDb(key);
         }
-        WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
-                              NO_TIME_CONSTRAINTS);
         if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
         }
@@ -862,6 +863,16 @@ void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClock
         return;
     }
     enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+}
+
+void StatsLogProcessor::flushRestrictedDataIfNecessaryLocked(const int64_t elapsedRealtimeNs) {
+    if (!mIsRestrictedMetricsEnabled) {
+        return;
+    }
+    if (elapsedRealtimeNs - mLastFlushRestrictedTime < StatsdStats::kMinFlushRestrictedPeriodNs) {
+        return;
+    }
+    flushRestrictedDataLocked(elapsedRealtimeNs);
 }
 
 // TODO(b/268150038): Add StatsdStats reporting to this method.
@@ -903,7 +914,9 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
         return;
     }
 
-    enforceDataTtlsLocked(getWallClockNs(), getElapsedRealtimeNs());
+    const int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
+    flushRestrictedDataLocked(elapsedRealtimeNs);
+    enforceDataTtlsLocked(getWallClockNs(), elapsedRealtimeNs);
 
     std::vector<std::vector<std::string>> rows;
     std::vector<int32_t> columnTypes;
@@ -978,6 +991,15 @@ void StatsLogProcessor::enforceDataTtlsLocked(const int64_t wallClockNs,
     mLastTtlTime = elapsedRealtimeNs;
 }
 
+void StatsLogProcessor::flushRestrictedDataLocked(const int64_t elapsedRealtimeNs) {
+    for (const auto& it : mMetricsManagers) {
+        // no-op if metricsManager is not restricted
+        it.second->flushRestrictedData();
+    }
+
+    mLastFlushRestrictedTime = elapsedRealtimeNs;
+}
+
 void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
                                                MetricsManager& metricsManager) {
     int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
@@ -990,22 +1012,31 @@ void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
 
     // We suspect that the byteSize() computation is expensive, so we set a rate limit.
     size_t totalBytes = metricsManager.byteSize();
+
     mLastByteSizeTimes[key] = elapsedRealtimeNs;
+    const size_t kBytesPerConfig = metricsManager.hasRestrictedMetricsDelegate()
+                                           ? StatsdStats::kBytesPerRestrictedConfigTriggerFlush
+                                           : StatsdStats::kBytesPerConfigTriggerGetData;
     bool requestDump = false;
     if (totalBytes > StatsdStats::kMaxMetricsBytesPerConfig) {
         // Too late. We need to start clearing data.
         metricsManager.dropData(elapsedRealtimeNs);
         StatsdStats::getInstance().noteDataDropped(key, totalBytes);
         VLOG("StatsD had to toss out metrics for %s", key.ToString().c_str());
-    } else if ((totalBytes > StatsdStats::kBytesPerConfigTriggerGetData) ||
+    } else if ((totalBytes > kBytesPerConfig) ||
                (mOnDiskDataConfigs.find(key) != mOnDiskDataConfigs.end())) {
-        // Request to send a broadcast if:
+        // Request to dump if:
         // 1. in memory data > threshold   OR
         // 2. config has old data report on disk.
         requestDump = true;
     }
 
     if (requestDump) {
+        if (metricsManager.hasRestrictedMetricsDelegate()) {
+            metricsManager.flushRestrictedData();
+            // No need to send broadcast for restricted metrics.
+            return;
+        }
         // Send broadcast so that receivers can pull data.
         auto lastBroadcastTime = mLastBroadcastTimes.find(key);
         if (lastBroadcastTime != mLastBroadcastTimes.end()) {
@@ -1030,6 +1061,10 @@ void StatsLogProcessor::WriteDataToDiskLocked(const ConfigKey& key, const int64_
                                               const DumpLatency dumpLatency) {
     if (mMetricsManagers.find(key) == mMetricsManagers.end() ||
         !mMetricsManagers.find(key)->second->shouldWriteToDisk()) {
+        return;
+    }
+    if (mMetricsManagers.find(key)->second->hasRestrictedMetricsDelegate()) {
+        mMetricsManagers.find(key)->second->flushRestrictedData();
         return;
     }
     vector<uint8_t> buffer;
