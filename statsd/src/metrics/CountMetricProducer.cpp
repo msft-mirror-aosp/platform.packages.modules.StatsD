@@ -66,6 +66,7 @@ const int FIELD_ID_COUNT = 3;
 const int FIELD_ID_BUCKET_NUM = 4;
 const int FIELD_ID_START_BUCKET_ELAPSED_MILLIS = 5;
 const int FIELD_ID_END_BUCKET_ELAPSED_MILLIS = 6;
+const int FIELD_ID_CONDITION_TRUE_NS = 7;
 
 CountMetricProducer::CountMetricProducer(
         const ConfigKey& key, const CountMetric& metric, const int conditionIndex,
@@ -118,6 +119,9 @@ CountMetricProducer::CountMetricProducer(
     flushIfNeededLocked(startTimeNs);
     // Adjust start for partial bucket
     mCurrentBucketStartTimeNs = startTimeNs;
+
+    mConditionTimer.onConditionChanged(mIsActive && mCondition == ConditionState::kTrue,
+                                       mCurrentBucketStartTimeNs);
 
     VLOG("metric %lld created. bucket size %lld start_time: %lld", (long long)mMetricId,
          (long long)mBucketSizeNs, (long long)mTimeBaseNs);
@@ -279,6 +283,15 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                    (long long)(getBucketNumFromEndTimeNs(bucket.mBucketEndNs)));
             }
             protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_COUNT, (long long)bucket.mCount);
+
+            // We only write the condition timer value if the metric has a
+            // condition and isn't sliced by state.
+            // TODO: Slice the condition timer by state
+            if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty()) {
+                protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_CONDITION_TRUE_NS,
+                                   (long long)bucket.mConditionTrueNs);
+            }
+
             protoOutput->end(bucketInfoToken);
             VLOG("\t bucket [%lld - %lld] count: %lld", (long long)bucket.mBucketStartNs,
                  (long long)bucket.mBucketEndNs, (long long)bucket.mCount);
@@ -303,6 +316,8 @@ void CountMetricProducer::onConditionChangedLocked(const bool conditionMet,
                                                    const int64_t eventTime) {
     VLOG("Metric %lld onConditionChanged", (long long)mMetricId);
     mCondition = conditionMet ? ConditionState::kTrue : ConditionState::kFalse;
+
+    mConditionTimer.onConditionChanged(mCondition, eventTime);
 }
 
 bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
@@ -415,6 +430,11 @@ void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
     } else {
         info.mBucketEndNs = fullBucketEndTimeNs;
     }
+
+    const auto [globalConditionTrueNs, globalConditionCorrectionNs] =
+            mConditionTimer.newBucketStart(eventTimeNs, nextBucketStartTimeNs);
+    info.mConditionTrueNs = globalConditionTrueNs;
+
     for (const auto& counter : *mCurrentSlicedCounter) {
         if (countPassesThreshold(counter.second)) {
             info.mCount = counter.second;
@@ -470,6 +490,17 @@ size_t CountMetricProducer::byteSizeLocked() const {
         totalSize += pair.second.size() * kBucketSize;
     }
     return totalSize;
+}
+
+void CountMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
+                                                     const bool isActive) {
+    MetricProducer::onActiveStateChangedLocked(eventTimeNs, isActive);
+
+    if (ConditionState::kTrue != mCondition) {
+        return;
+    }
+
+    mConditionTimer.onConditionChanged(isActive, eventTimeNs);
 }
 
 }  // namespace statsd
