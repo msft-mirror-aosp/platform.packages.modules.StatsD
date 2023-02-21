@@ -36,13 +36,15 @@ namespace statsd {
 
 class StatsLogProcessor : public ConfigListener, public virtual PackageInfoListener {
 public:
-    StatsLogProcessor(const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
-                      const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                      const sp<AlarmMonitor>& subscriberTriggerAlarmMonitor,
-                      const int64_t timeBaseNs,
-                      const std::function<bool(const ConfigKey&)>& sendBroadcast,
-                      const std::function<bool(const int&,
-                                               const vector<int64_t>&)>& sendActivationBroadcast);
+    StatsLogProcessor(
+            const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
+            const sp<AlarmMonitor>& anomalyAlarmMonitor,
+            const sp<AlarmMonitor>& subscriberTriggerAlarmMonitor, const int64_t timeBaseNs,
+            const std::function<bool(const ConfigKey&)>& sendBroadcast,
+            const std::function<bool(const int&, const vector<int64_t>&)>& sendActivationBroadcast,
+            const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
+                    sendRestrictedMetricsBroadcast);
+
     virtual ~StatsLogProcessor();
 
     void OnLogEvent(LogEvent* event);
@@ -250,7 +252,7 @@ private:
 
     set<ConfigKey> getRestrictedConfigKeysToQueryLocked(const int32_t callingUid,
                                                         const int64_t configId,
-                                                        const set<int32_t> configPackageUids,
+                                                        const set<int32_t>& configPackageUids,
                                                         string& err);
 
     // Maps the isolated uid in the log event to host uid if the log event contains uid fields.
@@ -296,6 +298,12 @@ private:
     // Function used to send a broadcast so that receiver can be notified of which configs
     // are currently active.
     std::function<bool(const int& uid, const vector<int64_t>& configIds)> mSendActivationBroadcast;
+
+    // Function used to send a broadcast if necessary so the receiver can be notified of the
+    // restricted metrics for the given config.
+    std::function<void(const ConfigKey& key, const string& delegatePackage,
+                       const vector<int64_t>& restrictedMetricIds)>
+            mSendRestrictedMetricsBroadcast;
 
     const int64_t mTimeBaseNs;
 

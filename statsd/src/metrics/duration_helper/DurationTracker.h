@@ -55,6 +55,7 @@ struct DurationBucket {
     int64_t mBucketStartNs;
     int64_t mBucketEndNs;
     int64_t mDuration;
+    int64_t mConditionTrueNs;
 };
 
 struct DurationValues {
@@ -120,6 +121,7 @@ public:
     // an app upgrade, we assume that we're trying to form a partial bucket.
     virtual bool flushCurrentBucket(
             const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+            const int64_t globalConditionTrueNs,
             std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) = 0;
 
     // Predict the anomaly timestamp given the current status.

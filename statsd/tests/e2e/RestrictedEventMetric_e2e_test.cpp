@@ -401,6 +401,78 @@ TEST_F(RestrictedEventMetricE2eTest, TestFlagDisabled) {
     EXPECT_EQ(error, "Restricted metrics are not enabled");
 }
 
+TEST_F(RestrictedEventMetricE2eTest, TestConfigRemovalDeletesData) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    processor->OnConfigRemoved(configKey);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+
+    EXPECT_THAT(err, StartsWith("no such table"));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestConfigUpdateRestrictedDelegateCleared) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Update the existing config with no delegate
+    config.clear_restricted_metrics_delegate_package_name();
+    processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    EXPECT_EQ(rows.size(), 0);
+    EXPECT_THAT(err, StartsWith("no such table"));
+    dbutils::deleteDb(configKey);
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestNonModularConfigUpdateRestrictedDelegate) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Update the existing config without modular update
+    processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config, false);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    EXPECT_EQ(rows.size(), 0);
+    EXPECT_THAT(err, StartsWith("no such table"));
+    dbutils::deleteDb(configKey);
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif

@@ -818,6 +818,11 @@ void MetricsManager::enforceRestrictedDataTtls(const int64_t wallClockNs) {
         return;
     }
     sqlite3* db = dbutils::getDb(mConfigKey);
+    if (db == nullptr) {
+        ALOGE("Failed to open sqlite db");
+        dbutils::closeDb(db);
+        return;
+    }
     for (const auto& producer : mAllMetricProducers) {
         producer->enforceRestrictedDataTtl(db, wallClockNs);
     }
@@ -832,6 +837,15 @@ bool MetricsManager::validateRestrictedMetricsDelegate(const int32_t callingUid)
     set<int32_t> possibleUids = mUidMap->getAppUid(mRestrictedMetricsDelegatePackageName.value());
 
     return possibleUids.find(callingUid) != possibleUids.end();
+}
+
+vector<int64_t> MetricsManager::getAllMetricIds() const {
+    vector<int64_t> metricIds;
+    metricIds.reserve(mMetricProducerMap.size());
+    for (const auto& [metricId, _] : mMetricProducerMap) {
+        metricIds.push_back(metricId);
+    }
+    return metricIds;
 }
 
 }  // namespace statsd

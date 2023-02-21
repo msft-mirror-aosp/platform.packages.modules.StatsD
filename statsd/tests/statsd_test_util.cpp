@@ -1391,10 +1391,11 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const in
         new AlarmMonitor(1,
                          [](const shared_ptr<IStatsCompanionService>&, int64_t){},
                          [](const shared_ptr<IStatsCompanionService>&){});
-    sp<StatsLogProcessor> processor =
-            new StatsLogProcessor(uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-                                  timeBaseNs, [](const ConfigKey&) { return true; },
-                                  [](const int&, const vector<int64_t>&) {return true;});
+    sp<StatsLogProcessor> processor = new StatsLogProcessor(
+            uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, timeBaseNs,
+            [](const ConfigKey&) { return true; },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     processor->OnConfigUpdated(currentTimeNs, key, config);
     return processor;
 }
@@ -1556,10 +1557,11 @@ void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs
 }
 
 void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,
-                            int64_t endTimeNs, int64_t durationNs) {
+                            int64_t endTimeNs, int64_t durationNs, int64_t conditionTrueNs) {
     EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
     EXPECT_EQ(bucket.duration_nanos(), durationNs);
+    EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
 }
 
 void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
