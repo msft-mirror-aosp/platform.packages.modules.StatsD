@@ -18,20 +18,13 @@
 #include "Log.h"
 
 #include "StatsService.h"
-#include "stats_log_util.h"
-#include "android-base/stringprintf.h"
-#include "config/ConfigKey.h"
-#include "config/ConfigManager.h"
-#include "guardrail/StatsdStats.h"
-#include "storage/StorageManager.h"
-#include "subscriber/SubscriberReporter.h"
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
 #include <cutils/multiuser.h>
+#include <private/android_filesystem_config.h>
 #include <src/statsd_config.pb.h>
 #include <src/uid_data.pb.h>
-#include <private/android_filesystem_config.h>
 #include <statslog_statsd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,8 +32,19 @@
 #include <unistd.h>
 #include <utils/String16.h>
 
+#include "android-base/stringprintf.h"
+#include "config/ConfigKey.h"
+#include "config/ConfigManager.h"
+#include "flags/FlagProvider.h"
+#include "guardrail/StatsdStats.h"
+#include "stats_log_util.h"
+#include "storage/StorageManager.h"
+#include "subscriber/SubscriberReporter.h"
+#include "utils/DbUtils.h"
+
 using namespace android;
 
+using aidl::android::os::StatsPolicyConfigParcel;
 using android::base::StringPrintf;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
@@ -160,6 +164,13 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                 }
                 VLOG("StatsService::active configs broadcast failed for uid %d", uid);
                 return false;
+            },
+            [this](const ConfigKey& key, const string& delegatePackage,
+                   const vector<int64_t>& restrictedMetrics) {
+                set<string> configPackages = mUidMap->getAppNamesFromUid(key.GetUid(), true);
+                set<int32_t> delegateUids = mUidMap->getAppUid(delegatePackage);
+                mConfigManager->SendRestrictedMetricsBroadcast(configPackages, key.GetId(),
+                                                               delegateUids, restrictedMetrics);
             });
 
     mUidMap->setListener(mProcessor);
@@ -1345,6 +1356,46 @@ void StatsService::statsCompanionServiceDiedImpl() {
     mAnomalyAlarmMonitor->setStatsCompanionService(nullptr);
     mPeriodicAlarmMonitor->setStatsCompanionService(nullptr);
     mPullerManager->SetStatsCompanionService(nullptr);
+}
+
+Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId,
+                                                          const string& configPackage,
+                                                          const shared_ptr<IPendingIntentRef>& pir,
+                                                          const int32_t callingUid,
+                                                          vector<int64_t>* output) {
+    ENFORCE_UID(AID_SYSTEM);
+    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        return Status::ok();
+    }
+    mConfigManager->SetRestrictedMetricsChangedReceiver(configPackage, configId, callingUid, pir);
+    if (output != nullptr) {
+        // TODO(b/269419485): implement getting the current restricted metrics.
+    } else {
+        ALOGW("StatsService::setRestrictedMetricsChangedOperation output was nullptr");
+    }
+    return Status::ok();
+}
+
+Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t configId,
+                                                             const string& configPackage,
+                                                             const int32_t callingUid) {
+    ENFORCE_UID(AID_SYSTEM);
+    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        return Status::ok();
+    }
+    mConfigManager->RemoveRestrictedMetricsChangedReceiver(configPackage, configId, callingUid);
+    return Status::ok();
+}
+
+Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                              const StatsPolicyConfigParcel& policyConfig,
+                              const shared_ptr<IStatsQueryCallback>& callback,
+                              const int64_t configKey, const string& configPackage,
+                              const int32_t callingUid) {
+    ENFORCE_UID(AID_SYSTEM);
+    mProcessor->querySql(sqlQuery, minSqlClientVersion, policyConfig, callback, configKey,
+                         configPackage, callingUid);
+    return Status::ok();
 }
 
 }  // namespace statsd

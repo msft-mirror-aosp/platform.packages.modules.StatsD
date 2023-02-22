@@ -117,9 +117,12 @@ private:
     friend class StatsLogProcessorTest;
     friend class StatsLogProcessorTestRestricted;
     friend class RestrictedEventMetricProducerTest;
+    friend class RestrictedConfigE2ETest;
+    friend class RestrictedEventMetricE2eTest;
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
+    FRIEND_TEST(ConfigUpdateE2eTest, TestConfigUpdateRestrictedDelegateCleared);
     FRIEND_TEST(EventMetricE2eTest, TestEventMetricDataAggregated);
     FRIEND_TEST(EventMetricProducerTest, TestOneAtomTagAggregatedEvents);
     FRIEND_TEST(EventMetricProducerTest, TestTwoAtomTagAggregatedEvents);
@@ -133,6 +136,7 @@ private:
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagFalse);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlagDisabled);
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled);

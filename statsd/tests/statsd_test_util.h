@@ -16,6 +16,7 @@
 
 #include <aidl/android/os/BnPendingIntentRef.h>
 #include <aidl/android/os/BnPullAtomCallback.h>
+#include <aidl/android/os/BnStatsQueryCallback.h>
 #include <aidl/android/os/IPullAtomCallback.h>
 #include <aidl/android/os/IPullAtomResultReceiver.h>
 #include <gmock/gmock.h>
@@ -41,6 +42,7 @@ namespace statsd {
 
 using namespace testing;
 using ::aidl::android::os::BnPullAtomCallback;
+using ::aidl::android::os::BnStatsQueryCallback;
 using ::aidl::android::os::IPullAtomCallback;
 using ::aidl::android::os::IPullAtomResultReceiver;
 using android::util::ProtoReader;
@@ -85,10 +87,19 @@ class MockPendingIntentRef : public aidl::android::os::BnPendingIntentRef {
 public:
     MOCK_METHOD1(sendDataBroadcast, Status(int64_t lastReportTimeNs));
     MOCK_METHOD1(sendActiveConfigsChangedBroadcast, Status(const vector<int64_t>& configIds));
+    MOCK_METHOD1(sendRestrictedMetricsChangedBroadcast, Status(const vector<int64_t>& metricIds));
     MOCK_METHOD6(sendSubscriberBroadcast,
                  Status(int64_t configUid, int64_t configId, int64_t subscriptionId,
                         int64_t subscriptionRuleId, const vector<string>& cookies,
                         const StatsDimensionsValueParcel& dimensionsValueParcel));
+};
+
+class MockStatsQueryCallback : public BnStatsQueryCallback {
+public:
+    MOCK_METHOD4(sendResults,
+                 Status(const vector<string>& queryData, const vector<string>& columnNames,
+                        const vector<int32_t>& columnTypes, int32_t rowCount));
+    MOCK_METHOD1(sendFailure, Status(const string& in_error));
 };
 
 class StatsServiceConfigTest : public ::testing::Test {
@@ -120,6 +131,15 @@ protected:
     ConfigMetricsReport getReports(sp<StatsLogProcessor> processor, int64_t timestamp,
                                    bool include_current = false);
 };
+
+static void assertConditionTimer(const ConditionTimer& conditionTimer, bool condition,
+                                 int64_t timerNs, int64_t lastConditionTrueTimestampNs,
+                                 int64_t currentBucketStartDelayNs = 0) {
+    EXPECT_EQ(condition, conditionTimer.mCondition);
+    EXPECT_EQ(timerNs, conditionTimer.mTimerNs);
+    EXPECT_EQ(lastConditionTrueTimestampNs, conditionTimer.mLastConditionChangeTimestampNs);
+    EXPECT_EQ(currentBucketStartDelayNs, conditionTimer.mCurrentBucketStartDelayNs);
+}
 
 // Converts a ProtoOutputStream to a StatsLogReport proto.
 StatsLogReport outputStreamToProto(ProtoOutputStream* proto);
@@ -493,7 +513,7 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         const vector<string>& repeatedStringField, const bool* repeatedBoolField,
         const size_t repeatedBoolFieldLength, const vector<int>& repeatedEnumField);
 
-std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int timestampNs = 0);
+std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int timestampNs = 0);
 
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         uint64_t timestampNs, const vector<int>& attributionUids,
@@ -536,9 +556,9 @@ void ValidateStateValue(const google::protobuf::RepeatedPtrField<StateValue>& st
                         int atomId, int64_t value);
 
 void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs, int64_t endTimeNs,
-                         int64_t count);
+                         int64_t count, int64_t conditionTrueNs = 0);
 void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,
-                            int64_t endTimeNs, int64_t durationNs);
+                            int64_t endTimeNs, int64_t durationNs, int64_t conditionTrueNs = 0);
 void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
                               int64_t endTimeNs, vector<int64_t> eventTimesNs);
 void ValidateValueBucket(const ValueBucketInfo& bucket, int64_t startTimeNs, int64_t endTimeNs,
