@@ -959,6 +959,15 @@ set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
     return result;
 }
 
+void StatsLogProcessor::EnforceDataTtls(const int64_t wallClockNs,
+                                        const int64_t elapsedRealtimeNs) {
+    if (!mIsRestrictedMetricsEnabled) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+    enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+}
+
 void StatsLogProcessor::enforceDataTtlsLocked(const int64_t wallClockNs,
                                               const int64_t elapsedRealtimeNs) {
     for (const auto& itr : mMetricsManagers) {
