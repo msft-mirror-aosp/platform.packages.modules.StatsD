@@ -232,8 +232,7 @@ bool OringDurationTracker::flushIfNeeded(
     return flushCurrentBucket(eventTimeNs, uploadThreshold, output);
 }
 
-void OringDurationTracker::onSlicedConditionMayChange(bool overallCondition,
-                                                      const int64_t timestamp) {
+void OringDurationTracker::onSlicedConditionMayChange(const int64_t timestamp) {
     vector<pair<HashableDimensionKey, int>> startedToPaused;
     vector<pair<HashableDimensionKey, int>> pausedToStarted;
     if (!mStarted.empty()) {

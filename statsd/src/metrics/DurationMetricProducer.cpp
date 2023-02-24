@@ -344,8 +344,7 @@ unique_ptr<DurationTracker> DurationMetricProducer::createDurationTracker(
 // SlicedConditionChange optimization case 1:
 // 1. If combination condition, logical operation is AND, only one sliced child predicate.
 // 2. The links covers all dimension fields in the sliced child condition predicate.
-void DurationMetricProducer::onSlicedConditionMayChangeLocked_opt1(bool condition,
-                                                                   const int64_t eventTime) {
+void DurationMetricProducer::onSlicedConditionMayChangeLocked_opt1(const int64_t eventTime) {
     if (mMetric2ConditionLinks.size() != 1 ||
         !mHasLinksToAllConditionDimensionsInTracker) {
         return;
@@ -403,17 +402,16 @@ void DurationMetricProducer::onSlicedConditionMayChangeLocked_opt1(bool conditio
     }
 }
 
-void DurationMetricProducer::onSlicedConditionMayChangeInternalLocked(bool overallCondition,
-        const int64_t eventTimeNs) {
+void DurationMetricProducer::onSlicedConditionMayChangeInternalLocked(const int64_t eventTimeNs) {
     bool changeDimTrackable = mWizard->IsChangedDimensionTrackable(mConditionTrackerIndex);
     if (changeDimTrackable && mHasLinksToAllConditionDimensionsInTracker) {
-        onSlicedConditionMayChangeLocked_opt1(overallCondition, eventTimeNs);
+        onSlicedConditionMayChangeLocked_opt1(eventTimeNs);
         return;
     }
 
     // Now for each of the on-going event, check if the condition has changed for them.
     for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-        whatIt.second->onSlicedConditionMayChange(overallCondition, eventTimeNs);
+        whatIt.second->onSlicedConditionMayChange(eventTimeNs);
     }
 }
 
@@ -431,7 +429,7 @@ void DurationMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondit
         return;
     }
 
-    onSlicedConditionMayChangeInternalLocked(overallCondition, eventTime);
+    onSlicedConditionMayChangeInternalLocked(eventTime);
 }
 
 void DurationMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
@@ -452,7 +450,7 @@ void DurationMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeN
         }
     } else if (isActive) {
         flushIfNeededLocked(eventTimeNs);
-        onSlicedConditionMayChangeInternalLocked(isActive, eventTimeNs);
+        onSlicedConditionMayChangeInternalLocked(eventTimeNs);
     } else {  // mConditionSliced == true && !isActive
         for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
             whatIt.second->onConditionChanged(isActive, eventTimeNs);
