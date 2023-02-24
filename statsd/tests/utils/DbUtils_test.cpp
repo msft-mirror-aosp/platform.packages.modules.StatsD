@@ -231,6 +231,26 @@ TEST_F(DbUtilsTest, TestInsertTwoEventsEnforceTtl) {
                 ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
 }
 
+TEST_F(DbUtilsTest, TestMaliciousQuery) {
+    int64_t eventElapsedTimeNs = 10000000000;
+
+    AStatsEvent* statsEvent = makeAStatsEvent(tagId, eventElapsedTimeNs + 10);
+    AStatsEvent_writeString(statsEvent, "111");
+    LogEvent logEvent = makeLogEvent(statsEvent);
+    vector<LogEvent> events{logEvent};
+
+    EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
+    EXPECT_TRUE(insert(key, metricId, events));
+
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    string zSql = "DROP TABLE metric_111";
+    EXPECT_FALSE(query(key, zSql, rows, columnTypes, columnNames, err));
+    EXPECT_THAT(err, StartsWith("attempt to write a readonly database"));
+}
+
 }  // namespace dbutils
 }  // namespace statsd
 }  // namespace os
