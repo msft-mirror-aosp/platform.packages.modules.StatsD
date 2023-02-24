@@ -49,10 +49,13 @@ filegroup {
         "//packages/modules/StatsD/framework:__subpackages__",
     ],
 }
+
 java_sdk_library {
     name: "framework-statsd",
     defaults: ["framework-module-defaults"],
     installable: true,
+
+    jarjar_rules: "jarjar-rules.txt",
 
     srcs: [
         ":framework-statsd-sources",
@@ -60,7 +63,10 @@ java_sdk_library {
 
     libs: [
         "androidx.annotation_annotation",
-        "modules-utils-build",
+    ],
+
+    static_libs: [
+         "modules-utils-build",
     ],
 
     permitted_packages: [
