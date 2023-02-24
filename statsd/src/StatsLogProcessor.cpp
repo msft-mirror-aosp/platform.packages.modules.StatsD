@@ -453,7 +453,6 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
     std::unordered_set<int> uidsWithActiveConfigsChanged;
     std::unordered_map<int, std::vector<int64_t>> activeConfigsPerUid;
 
-    enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
     // pass the event to metrics managers.
     for (auto& pair : mMetricsManagers) {
         if (event->isRestricted() && !pair.second->hasRestrictedMetricsDelegate()) {
@@ -483,6 +482,9 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         }
         flushIfNecessaryLocked(pair.first, *(pair.second));
     }
+
+    // Enforce TTLs after onLogEvent. Otherwise metric tables may not yet have been created.
+    enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
 
     // Don't use the event timestamp for the guardrail.
     for (int uid : uidsWithActiveConfigsChanged) {
@@ -601,6 +603,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         if (mIsRestrictedMetricsEnabled && it != mMetricsManagers.end() &&
             it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+            dbutils::deleteDb(key);
         }
         mMetricsManagers.erase(key);
     }
