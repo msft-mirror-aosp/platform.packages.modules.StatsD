@@ -205,7 +205,7 @@ bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& row
            vector<int32_t>& columnTypes, vector<string>& columnNames, string& err) {
     const string dbName = getDbName(key);
     sqlite3* db;
-    if (sqlite3_open(dbName.c_str(), &db) != SQLITE_OK) {
+    if (sqlite3_open_v2(dbName.c_str(), &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
         err = sqlite3_errmsg(db);
         sqlite3_close(db);
         return false;

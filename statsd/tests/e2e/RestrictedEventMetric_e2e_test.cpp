@@ -421,7 +421,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestConfigRemovalDeletesData) {
     std::vector<std::vector<std::string>> rows;
     EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
 
-    EXPECT_THAT(err, StartsWith("no such table"));
+    EXPECT_THAT(err, StartsWith("unable to open database file"));
 }
 
 TEST_F(RestrictedEventMetricE2eTest, TestConfigUpdateRestrictedDelegateCleared) {
@@ -445,7 +445,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestConfigUpdateRestrictedDelegateCleared) 
     std::vector<std::vector<std::string>> rows;
     EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
     EXPECT_EQ(rows.size(), 0);
-    EXPECT_THAT(err, StartsWith("no such table"));
+    EXPECT_THAT(err, StartsWith("unable to open database file"));
     dbutils::deleteDb(configKey);
 }
 
@@ -469,7 +469,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestNonModularConfigUpdateRestrictedDelegat
     std::vector<std::vector<std::string>> rows;
     EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
     EXPECT_EQ(rows.size(), 0);
-    EXPECT_THAT(err, StartsWith("no such table"));
+    EXPECT_THAT(err, StartsWith("unable to open database file"));
     dbutils::deleteDb(configKey);
 }
 
