@@ -66,6 +66,7 @@ const int FIELD_ID_COUNT = 3;
 const int FIELD_ID_BUCKET_NUM = 4;
 const int FIELD_ID_START_BUCKET_ELAPSED_MILLIS = 5;
 const int FIELD_ID_END_BUCKET_ELAPSED_MILLIS = 6;
+const int FIELD_ID_CONDITION_TRUE_NS = 7;
 
 CountMetricProducer::CountMetricProducer(
         const ConfigKey& key, const CountMetric& metric, const int conditionIndex,
@@ -119,7 +120,10 @@ CountMetricProducer::CountMetricProducer(
     // Adjust start for partial bucket
     mCurrentBucketStartTimeNs = startTimeNs;
 
-    VLOG("metric %lld created. bucket size %lld start_time: %lld", (long long)metric.id(),
+    mConditionTimer.onConditionChanged(mIsActive && mCondition == ConditionState::kTrue,
+                                       mCurrentBucketStartTimeNs);
+
+    VLOG("metric %lld created. bucket size %lld start_time: %lld", (long long)mMetricId,
          (long long)mBucketSizeNs, (long long)mTimeBaseNs);
 }
 
@@ -127,7 +131,7 @@ CountMetricProducer::~CountMetricProducer() {
     VLOG("~CountMetricProducer() called");
 }
 
-bool CountMetricProducer::onConfigUpdatedLocked(
+optional<InvalidConfigReason> CountMetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -141,31 +145,35 @@ bool CountMetricProducer::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    if (!MetricProducer::onConfigUpdatedLocked(
-                config, configIndex, metricIndex, allAtomMatchingTrackers,
-                oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
-                allConditionTrackers, conditionTrackerMap, wizard, metricToActivationMap,
-                trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
-                deactivationAtomTrackerToMetricMap, metricsWithActivation)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+            config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
+            newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
+            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+            metricsWithActivation);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
     const CountMetric& metric = config.count_metric(configIndex);
     int trackerIndex;
     // Update appropriate indices, specifically mConditionIndex and MetricsManager maps.
-    if (!handleMetricWithAtomMatchingTrackers(metric.what(), metricIndex, false,
-                                              allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                              trackerToMetricMap, trackerIndex)) {
-        return false;
+    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+            metric.what(), mMetricId, metricIndex, false, allAtomMatchingTrackers,
+            newAtomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
-    if (metric.has_condition() &&
-        !handleMetricWithConditions(metric.condition(), metricIndex, conditionTrackerMap,
-                                    metric.links(), allConditionTrackers, mConditionTrackerIndex,
-                                    conditionToMetricMap)) {
-        return false;
+    if (metric.has_condition()) {
+        invalidConfigReason = handleMetricWithConditions(
+                metric.condition(), mMetricId, metricIndex, conditionTrackerMap, metric.links(),
+                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
     }
-    return true;
+    return nullopt;
 }
 
 void CountMetricProducer::onStateChanged(const int64_t eventTimeNs, const int32_t atomId,
@@ -275,6 +283,15 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                    (long long)(getBucketNumFromEndTimeNs(bucket.mBucketEndNs)));
             }
             protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_COUNT, (long long)bucket.mCount);
+
+            // We only write the condition timer value if the metric has a
+            // condition and isn't sliced by state.
+            // TODO: Slice the condition timer by state
+            if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty()) {
+                protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_CONDITION_TRUE_NS,
+                                   (long long)bucket.mConditionTrueNs);
+            }
+
             protoOutput->end(bucketInfoToken);
             VLOG("\t bucket [%lld - %lld] count: %lld", (long long)bucket.mBucketStartNs,
                  (long long)bucket.mBucketEndNs, (long long)bucket.mCount);
@@ -299,6 +316,8 @@ void CountMetricProducer::onConditionChangedLocked(const bool conditionMet,
                                                    const int64_t eventTime) {
     VLOG("Metric %lld onConditionChanged", (long long)mMetricId);
     mCondition = conditionMet ? ConditionState::kTrue : ConditionState::kFalse;
+
+    mConditionTimer.onConditionChanged(mCondition, eventTime);
 }
 
 bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
@@ -411,6 +430,11 @@ void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
     } else {
         info.mBucketEndNs = fullBucketEndTimeNs;
     }
+
+    const auto [globalConditionTrueNs, globalConditionCorrectionNs] =
+            mConditionTimer.newBucketStart(eventTimeNs, nextBucketStartTimeNs);
+    info.mConditionTrueNs = globalConditionTrueNs;
+
     for (const auto& counter : *mCurrentSlicedCounter) {
         if (countPassesThreshold(counter.second)) {
             info.mCount = counter.second;
@@ -466,6 +490,17 @@ size_t CountMetricProducer::byteSizeLocked() const {
         totalSize += pair.second.size() * kBucketSize;
     }
     return totalSize;
+}
+
+void CountMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
+                                                     const bool isActive) {
+    MetricProducer::onActiveStateChangedLocked(eventTimeNs, isActive);
+
+    if (ConditionState::kTrue != mCondition) {
+        return;
+    }
+
+    mConditionTimer.onConditionChanged(isActive, eventTimeNs);
 }
 
 }  // namespace statsd

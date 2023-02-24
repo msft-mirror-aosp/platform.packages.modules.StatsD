@@ -93,6 +93,7 @@ GaugeMetricProducer::GaugeMetricProducer(
       mAtomId(atomId),
       mIsPulled(pullTagId != -1),
       mMinBucketSizeNs(metric.min_bucket_size_nanos()),
+      mSamplingType(metric.sampling_type()),
       mMaxPullDelayNs(metric.max_pull_delay_sec() > 0 ? metric.max_pull_delay_sec() * NS_PER_SEC
                                                       : StatsdStats::kPullMaxDelayNs),
       mDimensionSoftLimit(dimensionSoftLimit),
@@ -108,7 +109,6 @@ GaugeMetricProducer::GaugeMetricProducer(
     }
     mBucketSizeNs = bucketSizeMills * 1000000;
 
-    mSamplingType = metric.sampling_type();
     if (!metric.gauge_fields_filter().include_all()) {
         translateFieldMatcher(metric.gauge_fields_filter().fields(), &mFieldMatchers);
     }
@@ -132,7 +132,7 @@ GaugeMetricProducer::GaugeMetricProducer(
 
     flushIfNeededLocked(startTimeNs);
     // Kicks off the puller immediately.
-    if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mIsPulled && isRandomNSamples()) {
         mPullerManager->RegisterReceiver(mPullTagId, mConfigKey, this, getCurrentBucketEndTimeNs(),
                                          mBucketSizeNs);
     }
@@ -141,18 +141,17 @@ GaugeMetricProducer::GaugeMetricProducer(
     mCurrentBucketStartTimeNs = startTimeNs;
 
     VLOG("Gauge metric %lld created. bucket size %lld start_time: %lld sliced %d",
-         (long long)metric.id(), (long long)mBucketSizeNs, (long long)mTimeBaseNs,
-         mConditionSliced);
+         (long long)mMetricId, (long long)mBucketSizeNs, (long long)mTimeBaseNs, mConditionSliced);
 }
 
 GaugeMetricProducer::~GaugeMetricProducer() {
     VLOG("~GaugeMetricProducer() called");
-    if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mIsPulled && isRandomNSamples()) {
         mPullerManager->UnRegisterReceiver(mPullTagId, mConfigKey, this);
     }
 }
 
-bool GaugeMetricProducer::onConfigUpdatedLocked(
+optional<InvalidConfigReason> GaugeMetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -166,49 +165,55 @@ bool GaugeMetricProducer::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    if (!MetricProducer::onConfigUpdatedLocked(
-                config, configIndex, metricIndex, allAtomMatchingTrackers,
-                oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
-                allConditionTrackers, conditionTrackerMap, wizard, metricToActivationMap,
-                trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
-                deactivationAtomTrackerToMetricMap, metricsWithActivation)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+            config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
+            newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
+            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+            metricsWithActivation);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
     const GaugeMetric& metric = config.gauge_metric(configIndex);
     // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
-    if (!handleMetricWithAtomMatchingTrackers(metric.what(), metricIndex, /*enforceOneAtom=*/false,
-                                              allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                              trackerToMetricMap, mWhatMatcherIndex)) {
-        return false;
+    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+            metric.what(), mMetricId, metricIndex, /*enforceOneAtom=*/false,
+            allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap,
+            mWhatMatcherIndex);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
 
     // Need to update maps since the index changed, but mTriggerAtomId will not change.
     int triggerTrackerIndex;
-    if (metric.has_trigger_event() &&
-        !handleMetricWithAtomMatchingTrackers(metric.trigger_event(), metricIndex,
-                                              /*enforceOneAtom=*/true, allAtomMatchingTrackers,
-                                              newAtomMatchingTrackerMap, trackerToMetricMap,
-                                              triggerTrackerIndex)) {
-        return false;
+    if (metric.has_trigger_event()) {
+        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+                metric.trigger_event(), mMetricId, metricIndex,
+                /*enforceOneAtom=*/true, allAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                trackerToMetricMap, triggerTrackerIndex);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
     }
 
-    if (metric.has_condition() &&
-        !handleMetricWithConditions(metric.condition(), metricIndex, conditionTrackerMap,
-                                    metric.links(), allConditionTrackers, mConditionTrackerIndex,
-                                    conditionToMetricMap)) {
-        return false;
+    if (metric.has_condition()) {
+        invalidConfigReason = handleMetricWithConditions(
+                metric.condition(), mMetricId, metricIndex, conditionTrackerMap, metric.links(),
+                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
     }
     sp<EventMatcherWizard> tmpEventWizard = mEventMatcherWizard;
     mEventMatcherWizard = matcherWizard;
 
     // If this is a config update, we must have just forced a partial bucket. Pull if needed to get
     // data for the new bucket.
-    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled &&
-        mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled && isRandomNSamples()) {
         pullAndMatchEventsLocked(mCurrentBucketStartTimeNs);
     }
-    return true;
+    return nullopt;
 }
 
 void GaugeMetricProducer::dumpStatesLocked(FILE* out, bool verbose) const {
@@ -357,8 +362,7 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 }
 
 void GaugeMetricProducer::prepareFirstBucketLocked() {
-    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled &&
-        mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (mCondition == ConditionState::kTrue && mIsActive && mIsPulled && isRandomNSamples()) {
         pullAndMatchEventsLocked(mCurrentBucketStartTimeNs);
     }
 }
@@ -414,7 +418,7 @@ void GaugeMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
         return;
     }
 
-    if (isActive && mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE) {
+    if (isActive && mIsPulled && isRandomNSamples()) {
         pullAndMatchEventsLocked(eventTimeNs);
     }
 }
@@ -430,8 +434,7 @@ void GaugeMetricProducer::onConditionChangedLocked(const bool conditionMet,
 
     flushIfNeededLocked(eventTimeNs);
     if (conditionMet && mIsPulled &&
-        (mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE ||
-         mSamplingType == GaugeMetric::CONDITION_CHANGE_TO_TRUE)) {
+        (isRandomNSamples() || mSamplingType == GaugeMetric::CONDITION_CHANGE_TO_TRUE)) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }
@@ -448,7 +451,7 @@ void GaugeMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
     flushIfNeededLocked(eventTimeNs);
     // If the condition is sliced, mCondition is true if any of the dimensions is true. And we will
     // pull for every dimension.
-    if (overallCondition && mIsPulled && mTriggerAtomId == -1) {
+    if (overallCondition && mIsPulled) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }
@@ -477,9 +480,9 @@ std::shared_ptr<vector<FieldValue>> GaugeMetricProducer::getGaugeFields(const Lo
 }
 
 void GaugeMetricProducer::onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& allData,
-                                       bool pullSuccess, int64_t originalPullTimeNs) {
+                                       PullResult pullResult, int64_t originalPullTimeNs) {
     std::lock_guard<std::mutex> lock(mMutex);
-    if (!pullSuccess || allData.size() == 0) {
+    if (pullResult != PullResult::PULL_RESULT_SUCCESS || allData.size() == 0) {
         return;
     }
     const int64_t pullDelayNs = getElapsedRealtimeNs() - originalPullTimeNs;
