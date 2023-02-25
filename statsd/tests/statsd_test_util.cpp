@@ -1362,7 +1362,7 @@ std::unique_ptr<LogEvent> CreateBleScanResultReceivedEvent(uint64_t timestampNs,
     return logEvent;
 }
 
-std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int timestampNs) {
+std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int64_t timestampNs) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, atomTag);
     AStatsEvent_addInt32Annotation(statsEvent, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY,
