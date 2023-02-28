@@ -52,7 +52,9 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the numbers of rows in the cursor.
+     *
+     * @return the number of rows in the cursor.
      */
     @Override
     public int getCount() {
@@ -60,7 +62,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns a string array holding the names of all of the columns in the
+     * result set in the order in which they were listed in the result.
+     *
+     * @return the names of the columns returned in this query.
      */
     @Override
     @NonNull
@@ -69,7 +74,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the value of the requested column as a String.
+     *
+     * @param column the zero-based index of the target column.
+     * @return the value of that column as a String.
      */
     @Override
     @NonNull
@@ -78,7 +86,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the value of the requested column as a short.
+     *
+     * @param column the zero-based index of the target column.
+     * @return the value of that column as a short.
      */
     @Override
     @SuppressLint("NoByteOrShort")
@@ -87,7 +98,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the value of the requested column as an int.
+     *
+     * @param column the zero-based index of the target column.
+     * @return the value of that column as an int.
      */
     @Override
     public int getInt(int column) {
@@ -95,7 +109,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the value of the requested column as a long.
+     *
+     * @param column the zero-based index of the target column.
+     * @return the value of that column as a long.
      */
     @Override
     public long getLong(int column) {
@@ -103,7 +120,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the value of the requested column as a float.
+     *
+     * @param column the zero-based index of the target column.
+     * @return the value of that column as a float.
      */
     @Override
     public float getFloat(int column) {
@@ -111,7 +131,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the value of the requested column as a double.
+     *
+     * @param column the zero-based index of the target column.
+     * @return the value of that column as a double.
      */
     @Override
     public double getDouble(int column) {
@@ -119,7 +142,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns <code>true</code> if the value in the indicated column is null.
+     *
+     * @param column the zero-based index of the target column.
+     * @return whether the column value is null.
      */
     @Override
     public boolean isNull(int column) {
@@ -127,7 +153,10 @@ public class StatsCursor extends AbstractCursor {
     }
 
     /**
-     * {@inheritDoc}
+     * Returns the data type of the given column's value.
+     *
+     * @param column the zero-based index of the target column.
+     * @return column value type
      */
     @Override
     public int getType(int column) {

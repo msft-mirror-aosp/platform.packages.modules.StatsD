@@ -31,7 +31,6 @@ import android.os.IPullAtomCallback;
 import android.os.IPullAtomResultReceiver;
 import android.os.IStatsManagerService;
 import android.os.IStatsQueryCallback;
-import android.os.StatsPolicyConfigParcel;
 import android.os.OutcomeReceiver;
 import android.os.RemoteException;
 import android.os.StatsFrameworkInitializer;
@@ -383,6 +382,10 @@ public final class StatsManager {
      * inform the client about the current restricted metric ids available to be queried for the
      * specified config. This call can block on statsd.
      *
+     * If there is no config in statsd that matches the provided config package and key, an empty
+     * list is returned. The pending intent will be tracked, and the operation will be called
+     * whenever a matching config is added.
+     *
      * @param configKey The configKey passed by the package that added the config in
      *                  StatsManager#addConfig
      * @param configPackage The package that added the config in StatsManager#addConfig
@@ -454,7 +457,7 @@ public final class StatsManager {
             try {
                 IStatsManagerService service = getIStatsManagerServiceLocked();
                 service.querySql(query.getRawSql(), query.getMinSqlClientVersion(),
-                        query.getPolicyConfig().getInner(), callbackInternal, configKey,
+                        query.getPolicyConfig(), callbackInternal, configKey,
                         configPackage);
             } catch (RemoteException | IllegalStateException e) {
                 throw new StatsUnavailableException("could not connect", e);
