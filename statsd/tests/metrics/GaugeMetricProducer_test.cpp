@@ -707,6 +707,78 @@ TEST(GaugeMetricProducerTest, TestPullOnTrigger) {
     EXPECT_THAT(atomValues, UnorderedElementsAre(4, 5));
 }
 
+TEST(GaugeMetricProducerTest, TestPullNWithoutTrigger) {
+    GaugeMetric metric;
+    metric.set_id(metricId);
+    metric.set_bucket(ONE_MINUTE);
+    metric.set_sampling_type(GaugeMetric::FIRST_N_SAMPLES);
+    metric.set_max_pull_delay_sec(INT_MAX);
+    auto gaugeFieldMatcher = metric.mutable_gauge_fields_filter()->mutable_fields();
+    gaugeFieldMatcher->set_field(tagId);
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+
+    sp<EventMatcherWizard> eventMatcherWizard =
+            createEventMatcherWizard(tagId, logEventMatcherIndex);
+
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+    EXPECT_CALL(*pullerManager, RegisterReceiver(tagId, kConfigKey, _, _, _)).WillOnce(Return());
+    EXPECT_CALL(*pullerManager, UnRegisterReceiver(tagId, kConfigKey, _)).WillOnce(Return());
+    EXPECT_CALL(*pullerManager, Pull(tagId, kConfigKey, _, _))
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                EXPECT_EQ(eventTimeNs, bucketStartTimeNs);
+                data->clear();
+                data->push_back(CreateRepeatedValueLogEvent(tagId, eventTimeNs, 4));
+                return true;
+            }))
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                EXPECT_EQ(eventTimeNs, bucketStartTimeNs + 10);
+                data->clear();
+                data->push_back(CreateRepeatedValueLogEvent(tagId, eventTimeNs, 5));
+                return true;
+            }))
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                EXPECT_EQ(eventTimeNs, bucketStartTimeNs + 20);
+                data->clear();
+                data->push_back(CreateRepeatedValueLogEvent(tagId, eventTimeNs, 6));
+                return true;
+            }))
+            .WillOnce(Return(true));
+
+    GaugeMetricProducer gaugeProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
+                                      wizard, protoHash, logEventMatcherIndex, eventMatcherWizard,
+                                      tagId, /*triggerId=*/-1, tagId, bucketStartTimeNs,
+                                      bucketStartTimeNs, pullerManager);
+
+    ASSERT_EQ(0UL, gaugeProducer.mCurrentSlicedBucket->size());
+    gaugeProducer.prepareFirstBucket();
+    ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
+
+    LogEvent triggerEvent(/*uid=*/0, /*pid=*/0);
+    CreateNoValuesLogEvent(&triggerEvent, /*triggerId=*/-1, bucketStartTimeNs + 10);
+    gaugeProducer.onMatchedLogEvent(1 /*log matcher index*/, triggerEvent);
+    ASSERT_EQ(2UL, gaugeProducer.mCurrentSlicedBucket->begin()->second.size());
+    triggerEvent.setElapsedTimestampNs(bucketStartTimeNs + 20);
+    gaugeProducer.onMatchedLogEvent(1 /*log matcher index*/, triggerEvent);
+    ASSERT_EQ(3UL, gaugeProducer.mCurrentSlicedBucket->begin()->second.size());
+    triggerEvent.setElapsedTimestampNs(bucket2StartTimeNs + 1);
+    gaugeProducer.onMatchedLogEvent(1 /*log matcher index*/, triggerEvent);
+
+    ASSERT_EQ(1UL, gaugeProducer.mPastBuckets.size());
+    ASSERT_EQ(3UL, gaugeProducer.mPastBuckets.begin()->second.back().mAggregatedAtoms.size());
+    auto it = gaugeProducer.mPastBuckets.begin()->second.back().mAggregatedAtoms.begin();
+    vector<int> atomValues;
+    atomValues.emplace_back(it->first.getAtomFieldValues().getValues().begin()->mValue.int_value);
+    it++;
+    atomValues.emplace_back(it->first.getAtomFieldValues().getValues().begin()->mValue.int_value);
+    it++;
+    atomValues.emplace_back(it->first.getAtomFieldValues().getValues().begin()->mValue.int_value);
+    EXPECT_THAT(atomValues, UnorderedElementsAre(4, 5, 6));
+}
+
 TEST(GaugeMetricProducerTest, TestRemoveDimensionInOutput) {
     GaugeMetric metric;
     metric.set_id(metricId);
