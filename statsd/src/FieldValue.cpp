@@ -449,6 +449,26 @@ size_t Value::getSize() const {
     return size;
 }
 
+std::string Annotations::toString() const {
+    std::string annotations;
+    if (isUidField()) {
+        annotations += "UID";
+    }
+    if (isPrimaryField()) {
+        annotations += annotations.size() > 0 ? ",PRIMARY" : "PRIMARY";
+    }
+    if (isExclusiveState()) {
+        annotations += annotations.size() > 0 ? ",EXCLUSIVE" : "EXCLUSIVE";
+    }
+    if (isNested()) {
+        annotations += annotations.size() > 0 ? ",NESTED" : "NESTED";
+    }
+    if (annotations.size()) {
+        annotations = "[" + annotations + "]";
+    }
+    return annotations;
+}
+
 bool equalDimensions(const std::vector<Matcher>& dimension_a,
                      const std::vector<Matcher>& dimension_b) {
     bool eq = dimension_a.size() == dimension_b.size();
