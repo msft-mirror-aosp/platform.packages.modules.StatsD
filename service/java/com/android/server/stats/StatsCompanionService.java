@@ -160,7 +160,7 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
         String installerPackageName = null;
         if (installSourceInfo != null) {
             installerPackageName = installSourceInfo.getInitiatingPackageName();
-            if (installerPackageName == null) {
+            if (installerPackageName == null || installerPackageName.equals("com.android.shell")) {
                 installerPackageName = installSourceInfo.getInstallingPackageName();
             }
         }
