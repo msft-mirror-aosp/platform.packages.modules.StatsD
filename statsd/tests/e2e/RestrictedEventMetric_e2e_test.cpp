@@ -16,16 +16,20 @@
 
 #include <vector>
 
+#include "android-base/stringprintf.h"
 #include "flags/FlagProvider.h"
 #include "src/StatsLogProcessor.h"
 #include "src/state/StateTracker.h"
 #include "src/stats_log_util.h"
+#include "src/storage/StorageManager.h"
 #include "stats_annotations.h"
 #include "tests/statsd_test_util.h"
 
 namespace android {
 namespace os {
 namespace statsd {
+
+using base::StringPrintf;
 
 #ifdef __ANDROID__
 
@@ -842,6 +846,25 @@ TEST_F(RestrictedEventMetricE2eTest, TestFlushPeriodically) {
     EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
     // Only first event is flushed when second event is logged.
     EXPECT_EQ(rows.size(), 1);
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestOnLogEventMalformedDbNameDeleted) {
+    vector<string> emptyData;
+    string fileName = StringPrintf("%s/malformedname.db", STATS_RESTRICTED_DATA_DIR);
+    StorageManager::writeFile(fileName.c_str(), emptyData.data(), emptyData.size());
+    EXPECT_TRUE(StorageManager::hasFile(fileName.c_str()));
+    int64_t originalEventElapsedTime = configAddedTimeNs + 100;
+    // 2 hours used here because the TTL check period is 1 hour.
+    int64_t newEventElapsedTime = configAddedTimeNs + 2 * 3600 * NS_PER_SEC + 1;  // 2 hrs later
+    std::unique_ptr<LogEvent> event2 = CreateRestrictedLogEvent(atomTag, newEventElapsedTime);
+    event2->setLogdWallClockTimestampNs(getWallClockNs());
+
+    processor->mLastTtlTime = originalEventElapsedTime;
+    // Send log events to StatsLogProcessor.
+    processor->OnLogEvent(event2.get(), newEventElapsedTime);
+
+    EXPECT_FALSE(StorageManager::hasFile(fileName.c_str()));
+    StorageManager::deleteFile(fileName.c_str());
 }
 
 #else
