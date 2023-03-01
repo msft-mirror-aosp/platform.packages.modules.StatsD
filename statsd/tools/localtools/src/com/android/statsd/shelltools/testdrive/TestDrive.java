@@ -24,6 +24,7 @@ import com.android.internal.os.StatsdConfigProto.PullAtomPackages;
 import com.android.internal.os.StatsdConfigProto.SimpleAtomMatcher;
 import com.android.internal.os.StatsdConfigProto.StatsdConfig;
 import com.android.internal.os.StatsdConfigProto.TimeUnit;
+import com.android.os.AtomsProto;
 import com.android.os.AtomsProto.Atom;
 import com.android.os.StatsLog;
 import com.android.os.StatsLog.ConfigMetricsReport;
@@ -33,9 +34,14 @@ import com.android.statsd.shelltools.Utils;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.io.Files;
+import com.google.protobuf.CodedInputStream;
+import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
+import com.google.protobuf.DynamicMessage;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -275,12 +281,14 @@ public class TestDrive {
         private final Set<Long> mTrackedMetrics = new HashSet<>();
         private final String mAndroidBuildTop = System.getenv("ANDROID_BUILD_TOP");
 
+        private Descriptors.Descriptor externalDescriptor = null;
+
         private void dumpMetrics(ConfigMetricsReportList reportList, Dumper dumper) {
             // We may get multiple reports. Take the last one.
             ConfigMetricsReport report = reportList.getReports(reportList.getReportsCount() - 1);
             for (StatsLogReport statsLog : report.getMetricsList()) {
                 if (isTrackedMetric(statsLog.getMetricId())) {
-                    dumper.dump(statsLog);
+                    dumper.dump(statsLog, externalDescriptor);
                 }
             }
         }
@@ -296,7 +304,7 @@ public class TestDrive {
 
         void addAtom(Integer atom, List<String> protoIncludes) {
             if (Atom.getDescriptor().findFieldByNumber(atom) == null &&
-                Atom.getDescriptor().isExtensionNumber(atom) == false) {
+                    Atom.getDescriptor().isExtensionNumber(atom) == false) {
                 // try to look in alternative locations
                 if (protoIncludes != null) {
                     boolean isAtomDefined = false;
@@ -451,6 +459,7 @@ public class TestDrive {
                     }
 
                     if (atomMsgDesc != null && atomMsgDesc.findFieldByNumber(atom) != null) {
+                        externalDescriptor = atomMsgDesc;
                         return true;
                     }
                 }
@@ -590,28 +599,29 @@ public class TestDrive {
     }
 
     interface Dumper {
-        void dump(StatsLogReport report);
+        void dump(StatsLogReport report, Descriptors.Descriptor externalDescriptor);
     }
 
     static class BasicDumper implements Dumper {
         @Override
-        public void dump(StatsLogReport report) {
+        public void dump(StatsLogReport report, Descriptors.Descriptor externalDescriptor) {
             System.out.println(report.toString());
         }
     }
 
     static class TerseDumper extends BasicDumper {
         @Override
-        public void dump(StatsLogReport report) {
+        public void dump(StatsLogReport report, Descriptors.Descriptor externalDescriptor) {
             if (report.hasGaugeMetrics()) {
                 dumpGaugeMetrics(report);
             }
             if (report.hasEventMetrics()) {
-                dumpEventMetrics(report);
+                dumpEventMetrics(report, externalDescriptor);
             }
         }
 
-        void dumpEventMetrics(StatsLogReport report) {
+        void dumpEventMetrics(StatsLogReport report,
+                Descriptors.Descriptor externalDescriptor) {
             final List<StatsLog.EventMetricData> data = Utils.getEventMetricData(report);
             if (data.isEmpty()) {
                 return;
@@ -620,8 +630,8 @@ public class TestDrive {
             for (StatsLog.EventMetricData event : data) {
                 final double deltaSec =
                         (event.getElapsedTimestampNanos() - firstTimestampNanos) / 1e9;
-                System.out.println(
-                        String.format("+%.3fs: %s", deltaSec, event.getAtom().toString()));
+                System.out.println(String.format("+%.3fs: %s", deltaSec,
+                        dumpAtom(event.getAtom(), externalDescriptor)));
             }
         }
 
@@ -635,6 +645,33 @@ public class TestDrive {
             }
         }
     }
+
+    private static String dumpAtom(AtomsProto.Atom atom,
+            Descriptors.Descriptor externalDescriptor) {
+        if (atom.getPushedCase().getNumber() != 0 || atom.getPulledCase().getNumber() != 0) {
+            return atom.toString();
+        } else {
+            try {
+                return convertToExternalAtom(atom, externalDescriptor).toString();
+            } catch (Exception e) {
+                LOGGER.severe("Failed to parse an atom: " + e.getMessage());
+                return "";
+            }
+        }
+    }
+
+    private static DynamicMessage convertToExternalAtom(AtomsProto.Atom atom,
+            Descriptors.Descriptor externalDescriptor) throws Exception {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        CodedOutputStream cos = CodedOutputStream.newInstance(outputStream);
+        atom.writeTo(cos);
+        cos.flush();
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(
+                outputStream.toByteArray());
+        CodedInputStream cis = CodedInputStream.newInstance(inputStream);
+        return DynamicMessage.parseFrom(externalDescriptor, cis);
+    }
+
 
     private static String pushConfig(StatsdConfig config, String deviceSerial)
             throws IOException, InterruptedException {
