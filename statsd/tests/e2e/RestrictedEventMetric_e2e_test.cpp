@@ -401,6 +401,28 @@ TEST_F(RestrictedEventMetricE2eTest, TestFlagDisabled) {
     EXPECT_EQ(error, "Restricted metrics are not enabled");
 }
 
+TEST_F(RestrictedEventMetricE2eTest, TestEnforceTtlRemovesOldEvents) {
+    int64_t currentWallTimeNs = getWallClockNs();
+    // 8 days are used here because the TTL threshold is 7 days.
+    int64_t eightDaysAgo = currentWallTimeNs - 8 * 24 * 3600 * NS_PER_SEC;
+    int64_t originalEventElapsedTime = configAddedTimeNs + 100;
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(atomTag, originalEventElapsedTime);
+    event1->setLogdWallClockTimestampNs(eightDaysAgo);
+
+    // Send log events to StatsLogProcessor.
+    processor->OnLogEvent(event1.get(), originalEventElapsedTime);
+    processor->EnforceDataTtls(currentWallTimeNs, originalEventElapsedTime + 100);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    ASSERT_EQ(rows.size(), 0);
+}
+
 TEST_F(RestrictedEventMetricE2eTest, TestConfigRemovalDeletesData) {
     std::vector<std::unique_ptr<LogEvent>> events;
 
