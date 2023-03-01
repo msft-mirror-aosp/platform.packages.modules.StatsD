@@ -136,6 +136,7 @@ void OringDurationTracker::noteStopAll(const int64_t timestamp) {
 
 bool OringDurationTracker::flushCurrentBucket(
         const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+        const int64_t globalConditionTrueNs,
         std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) {
     VLOG("OringDurationTracker Flushing.............");
 
@@ -172,6 +173,7 @@ bool OringDurationTracker::flushCurrentBucket(
             current_info.mBucketStartNs = mCurrentBucketStartTimeNs;
             current_info.mBucketEndNs = currentBucketEndTimeNs;
             current_info.mDuration = durationIt.second.mDuration;
+            current_info.mConditionTrueNs = globalConditionTrueNs;
             (*output)[MetricDimensionKey(mEventKey.getDimensionKeyInWhat(), durationIt.first)]
                     .push_back(current_info);
 
@@ -234,11 +236,10 @@ bool OringDurationTracker::flushIfNeeded(
     if (eventTimeNs < getCurrentBucketEndTimeNs()) {
         return false;
     }
-    return flushCurrentBucket(eventTimeNs, uploadThreshold, output);
+    return flushCurrentBucket(eventTimeNs, uploadThreshold, /*globalConditionTrueNs=*/0, output);
 }
 
-void OringDurationTracker::onSlicedConditionMayChange(bool overallCondition,
-                                                      const int64_t timestamp) {
+void OringDurationTracker::onSlicedConditionMayChange(const int64_t timestamp) {
     vector<pair<HashableDimensionKey, int>> startedToPaused;
     vector<pair<HashableDimensionKey, int>> pausedToStarted;
     if (!mStarted.empty()) {
