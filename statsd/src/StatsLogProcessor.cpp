@@ -450,6 +450,8 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         mLastPullerCacheClearTimeSec = curTimeSec;
     }
 
+    enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
+
     std::unordered_set<int> uidsWithActiveConfigsChanged;
     std::unordered_map<int, std::vector<int64_t>> activeConfigsPerUid;
 
@@ -482,9 +484,6 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         }
         flushIfNecessaryLocked(pair.first, *(pair.second));
     }
-
-    // Enforce TTLs after onLogEvent. Otherwise metric tables may not yet have been created.
-    enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
 
     // Don't use the event timestamp for the guardrail.
     for (int uid : uidsWithActiveConfigsChanged) {
