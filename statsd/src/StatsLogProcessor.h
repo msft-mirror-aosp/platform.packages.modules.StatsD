@@ -110,6 +110,9 @@ public:
                           int64_t currentWallClockTimeNs,
                           int64_t systemElapsedTimeNs);
 
+    /* Enforces ttls for restricted metrics */
+    void EnforceDataTtls(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
+
     /* Sets the active status/ttl for all configs and metrics to the status in ActiveConfigList. */
     void SetConfigsActiveState(const ActiveConfigList& activeConfigList, int64_t currentTimeNs);
 
@@ -370,6 +373,7 @@ private:
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceTtlRemovesOldEvents);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlagDisabled);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestQueryEnforceTtls);
