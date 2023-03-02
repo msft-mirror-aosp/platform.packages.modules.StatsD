@@ -498,6 +498,23 @@ TEST_F(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate) 
     EXPECT_THAT(err, StartsWith("unable to open database file"));
 }
 
+TEST_F(RestrictedEventMetricE2eTest, TestRestrictedConfigUpdateDoesNotUpdateUidMap) {
+    auto& configKeyMap = processor->getUidMap()->mLastUpdatePerConfigKey;
+    EXPECT_EQ(configKeyMap.find(configKey), configKeyMap.end());
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestRestrictedConfigUpdateAddsDelegateRemovesUidMapEntry) {
+    auto& configKeyMap = processor->getUidMap()->mLastUpdatePerConfigKey;
+    config.clear_restricted_metrics_delegate_package_name();
+    // Update the existing config without a restricted delegate
+    processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config);
+    EXPECT_NE(configKeyMap.find(configKey), configKeyMap.end());
+    // Update the existing config with a new restricted delegate
+    config.set_restricted_metrics_delegate_package_name(delegate_package_name.c_str());
+    processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config);
+    EXPECT_EQ(configKeyMap.find(configKey), configKeyMap.end());
+}
+
 TEST_F(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls) {
     int64_t currentWallTimeNs = getWallClockNs();
     // 8 days are used here because the TTL threshold is 7 days.
