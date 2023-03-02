@@ -24,6 +24,7 @@
 
 #include "HashableDimensionKey.h"
 #include "anomaly/AnomalyTracker.h"
+#include "condition/ConditionTimer.h"
 #include "condition/ConditionWizard.h"
 #include "config/ConfigKey.h"
 #include "guardrail/StatsdStats.h"
@@ -527,6 +528,8 @@ protected:
     int64_t mBucketSizeNs;
 
     ConditionState mCondition;
+
+    ConditionTimer mConditionTimer;
 
     int mConditionTrackerIndex;
 

@@ -101,15 +101,6 @@ static void assertPastBucketValuesSingleKey(
     }
 }
 
-static void assertConditionTimer(const ConditionTimer& conditionTimer, bool condition,
-                                 int64_t timerNs, int64_t lastConditionTrueTimestampNs,
-                                 int64_t currentBucketStartDelayNs = 0) {
-    EXPECT_EQ(condition, conditionTimer.mCondition);
-    EXPECT_EQ(timerNs, conditionTimer.mTimerNs);
-    EXPECT_EQ(lastConditionTrueTimestampNs, conditionTimer.mLastConditionChangeTimestampNs);
-    EXPECT_EQ(currentBucketStartDelayNs, conditionTimer.mCurrentBucketStartDelayNs);
-}
-
 }  // anonymous namespace
 
 class NumericValueMetricProducerTestHelper {
