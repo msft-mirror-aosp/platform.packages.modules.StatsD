@@ -34,6 +34,25 @@ namespace android {
 namespace os {
 namespace statsd {
 
+void StatsServiceConfigTest::sendConfig(const StatsdConfig& config) {
+    string str;
+    config.SerializeToString(&str);
+    std::vector<uint8_t> configAsVec(str.begin(), str.end());
+    service->addConfiguration(kConfigKey, configAsVec, kCallingUid);
+}
+
+ConfigMetricsReport StatsServiceConfigTest::getReports(sp<StatsLogProcessor> processor,
+                                                       int64_t timestamp, bool include_current) {
+    vector<uint8_t> output;
+    ConfigKey configKey(kCallingUid, kConfigKey);
+    processor->onDumpReport(configKey, timestamp, include_current /* include_current_bucket*/,
+                            true /* erase_data */, ADB_DUMP, NO_TIME_CONSTRAINTS, &output);
+    ConfigMetricsReportList reports;
+    reports.ParseFromArray(output.data(), output.size());
+    EXPECT_EQ(1, reports.reports_size());
+    return reports.reports(kCallingUid);
+}
+
 StatsLogReport outputStreamToProto(ProtoOutputStream* proto) {
     vector<uint8_t> bytes;
     bytes.resize(proto->size());
@@ -84,6 +103,11 @@ AtomMatcher CreateStartScheduledJobAtomMatcher() {
 AtomMatcher CreateFinishScheduledJobAtomMatcher() {
     return CreateScheduledJobStateChangedAtomMatcher("ScheduledJobFinish",
                                                      ScheduledJobStateChanged::FINISHED);
+}
+
+AtomMatcher CreateScheduleScheduledJobAtomMatcher() {
+    return CreateScheduledJobStateChangedAtomMatcher("ScheduledJobSchedule",
+                                                     ScheduledJobStateChanged::SCHEDULED);
 }
 
 AtomMatcher CreateScreenBrightnessChangedAtomMatcher() {
@@ -255,10 +279,8 @@ AtomMatcher CreateAppStartOccurredAtomMatcher() {
 AtomMatcher CreateTestAtomRepeatedStateAtomMatcher(const string& name,
                                                    TestAtomReported::State state,
                                                    Position position) {
-    AtomMatcher atom_matcher;
-    atom_matcher.set_id(StringToId(name));
+    AtomMatcher atom_matcher = CreateSimpleAtomMatcher(name, util::TEST_ATOM_REPORTED);
     auto simple_atom_matcher = atom_matcher.mutable_simple_atom_matcher();
-    simple_atom_matcher->set_atom_id(util::TEST_ATOM_REPORTED);
     auto field_value_matcher = simple_atom_matcher->add_field_value_matcher();
     field_value_matcher->set_field(14);  // Repeated enum field.
     field_value_matcher->set_eq_int(state);
@@ -319,7 +341,7 @@ Predicate CreateScreenIsOnPredicate() {
 
 Predicate CreateScreenIsOffPredicate() {
     Predicate predicate;
-    predicate.set_id(1111123);
+    predicate.set_id(StringToId("ScreenIsOff"));
     predicate.mutable_simple_predicate()->set_start(StringToId("ScreenTurnedOff"));
     predicate.mutable_simple_predicate()->set_stop(StringToId("ScreenTurnedOn"));
     return predicate;
@@ -335,7 +357,7 @@ Predicate CreateHoldingWakelockPredicate() {
 
 Predicate CreateIsSyncingPredicate() {
     Predicate predicate;
-    predicate.set_id(33333333333333);
+    predicate.set_id(StringToId("IsSyncing"));
     predicate.mutable_simple_predicate()->set_start(StringToId("SyncStart"));
     predicate.mutable_simple_predicate()->set_stop(StringToId("SyncEnd"));
     return predicate;
@@ -592,14 +614,14 @@ ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const
     return metric;
 }
 
-KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int valueField,
+KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int kllField,
                           const optional<int64_t>& condition) {
     KllMetric metric;
     metric.set_id(StringToId(name));
     metric.set_what(what.id());
     metric.set_bucket(TEN_MINUTES);
     metric.mutable_kll_field()->set_field(what.simple_atom_matcher().atom_id());
-    metric.mutable_kll_field()->add_child()->set_field(valueField);
+    metric.mutable_kll_field()->add_child()->set_field(kllField);
     if (condition) {
         metric.set_condition(condition.value());
     }
@@ -1020,6 +1042,15 @@ std::unique_ptr<LogEvent> CreateFinishScheduledJobEvent(uint64_t timestampNs,
                                                ScheduledJobStateChanged::FINISHED, timestampNs);
 }
 
+// Create log event when scheduled job is scheduled.
+std::unique_ptr<LogEvent> CreateScheduleScheduledJobEvent(uint64_t timestampNs,
+                                                          const vector<int>& attributionUids,
+                                                          const vector<string>& attributionTags,
+                                                          const string& jobName) {
+    return CreateScheduledJobStateChangedEvent(attributionUids, attributionTags, jobName,
+                                               ScheduledJobStateChanged::SCHEDULED, timestampNs);
+}
+
 std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         uint64_t timestampNs, const vector<int>& repeatedIntField,
         const vector<int64_t>& repeatedLongField, const vector<float>& repeatedFloatField,
@@ -1313,6 +1344,22 @@ std::unique_ptr<LogEvent> CreateAppStartOccurredEvent(
     return logEvent;
 }
 
+std::unique_ptr<LogEvent> CreateBleScanResultReceivedEvent(uint64_t timestampNs,
+                                                           const vector<int>& attributionUids,
+                                                           const vector<string>& attributionTags,
+                                                           const int numResults) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, util::BLE_SCAN_RESULT_RECEIVED);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+
+    writeAttribution(statsEvent, attributionUids, attributionTags);
+    AStatsEvent_writeInt32(statsEvent, numResults);
+
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
 sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const int64_t currentTimeNs,
                                               const StatsdConfig& config, const ConfigKey& key,
                                               const shared_ptr<IPullAtomCallback>& puller,
@@ -1487,17 +1534,19 @@ void ValidateStateValue(const google::protobuf::RepeatedPtrField<StateValue>& st
 }
 
 void ValidateCountBucket(const CountBucketInfo& countBucket, int64_t startTimeNs, int64_t endTimeNs,
-                         int64_t count) {
+                         int64_t count, int64_t conditionTrueNs) {
     EXPECT_EQ(countBucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(countBucket.end_bucket_elapsed_nanos(), endTimeNs);
     EXPECT_EQ(countBucket.count(), count);
+    EXPECT_EQ(countBucket.condition_true_nanos(), conditionTrueNs);
 }
 
 void ValidateDurationBucket(const DurationBucketInfo& bucket, int64_t startTimeNs,
-                            int64_t endTimeNs, int64_t durationNs) {
+                            int64_t endTimeNs, int64_t durationNs, int64_t conditionTrueNs) {
     EXPECT_EQ(bucket.start_bucket_elapsed_nanos(), startTimeNs);
     EXPECT_EQ(bucket.end_bucket_elapsed_nanos(), endTimeNs);
     EXPECT_EQ(bucket.duration_nanos(), durationNs);
+    EXPECT_EQ(bucket.condition_true_nanos(), conditionTrueNs);
 }
 
 void ValidateGaugeBucketTimes(const GaugeBucketInfo& gaugeBucket, int64_t startTimeNs,
@@ -1692,6 +1741,8 @@ void backfillStringInReport(ConfigMetricsReport *config_report) {
             backfillStringInDimension(str_map, metric_report->mutable_gauge_metrics());
         } else if (metric_report->has_value_metrics()) {
             backfillStringInDimension(str_map, metric_report->mutable_value_metrics());
+        } else if (metric_report->has_kll_metrics()) {
+            backfillStringInDimension(str_map, metric_report->mutable_kll_metrics());
         }
     }
     // Backfill the package names.
@@ -1764,20 +1815,20 @@ bool backfillDimensionPath(const DimensionsValue& path,
 }
 
 void backfillDimensionPath(StatsLogReport* report) {
-    if (report->has_dimensions_path_in_what() || report->has_dimensions_path_in_condition()) {
+    if (report->has_dimensions_path_in_what()) {
         auto whatPath = report->dimensions_path_in_what();
-        auto conditionPath = report->dimensions_path_in_condition();
         if (report->has_count_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_count_metrics());
+            backfillDimensionPath(whatPath, report->mutable_count_metrics());
         } else if (report->has_duration_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_duration_metrics());
+            backfillDimensionPath(whatPath, report->mutable_duration_metrics());
         } else if (report->has_gauge_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_gauge_metrics());
+            backfillDimensionPath(whatPath, report->mutable_gauge_metrics());
         } else if (report->has_value_metrics()) {
-            backfillDimensionPath(whatPath, conditionPath, report->mutable_value_metrics());
+            backfillDimensionPath(whatPath, report->mutable_value_metrics());
+        } else if (report->has_kll_metrics()) {
+            backfillDimensionPath(whatPath, report->mutable_kll_metrics());
         }
         report->clear_dimensions_path_in_what();
-        report->clear_dimensions_path_in_condition();
     }
 }
 
@@ -2038,7 +2089,7 @@ vector<PackageInfo> buildPackageInfos(
     return packageInfos;
 }
 
-StatsdStatsReport_PulledAtomStats getPulledAtomStats() {
+StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {
     vector<uint8_t> statsBuffer;
     StatsdStats::getInstance().dumpStats(&statsBuffer, false /*reset stats*/);
     StatsdStatsReport statsReport;
@@ -2049,7 +2100,12 @@ StatsdStatsReport_PulledAtomStats getPulledAtomStats() {
     if (statsReport.pulled_atom_stats_size() == 0) {
         return pulledAtomStats;
     }
-    return statsReport.pulled_atom_stats(0);
+    for (size_t i = 0; i < statsReport.pulled_atom_stats_size(); i++) {
+        if (statsReport.pulled_atom_stats(i).atom_id() == atom_id) {
+            return statsReport.pulled_atom_stats(i);
+        }
+    }
+    return pulledAtomStats;
 }
 
 }  // namespace statsd

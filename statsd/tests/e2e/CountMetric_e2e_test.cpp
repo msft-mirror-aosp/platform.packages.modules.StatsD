@@ -113,6 +113,93 @@ TEST(CountMetricE2eTest, TestInitialConditionChanges) {
     EXPECT_EQ(ConditionState::kTrue, metricProducer2->mCondition);
 }
 
+TEST(CountMetricE2eTest, TestConditionTrueNanos) {
+    // Initialize config.
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");     // LogEvent defaults to UID of root.
+    config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
+
+    AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
+    *config.add_atom_matcher() = syncStartMatcher;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+    *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
+
+    Predicate screenOnPredicate = CreateScreenIsOnPredicate();
+    *config.add_predicate() = screenOnPredicate;
+
+    CountMetric* countMetric = config.add_count_metric();
+    countMetric->set_id(StringToId("CountSyncStartWhileScreenOn"));
+    countMetric->set_what(syncStartMatcher.id());
+    countMetric->set_condition(screenOnPredicate.id());
+    countMetric->set_bucket(FIVE_MINUTES);
+
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    const uint64_t bucketSizeNs =
+            TimeUnitToBucketSizeInMillis(config.count_metric(0).bucket()) * 1000000LL;
+    const uint64_t bucket2StartTimeNs = bucketStartTimeNs + bucketSizeNs;
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
+
+    std::vector<int> attributionUids1 = {123};
+    std::vector<string> attributionTags1 = {"App1"};
+    int64_t conditionStart1Ns = bucketStartTimeNs + 50 * NS_PER_SEC;
+    int64_t conditionEndNs = bucket2StartTimeNs + 50 * NS_PER_SEC;
+    int64_t conditionStart2Ns = bucket2StartTimeNs + 150 * NS_PER_SEC;
+
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateScreenStateChangedEvent(
+            conditionStart1Ns,
+            android::view::DisplayStateEnum::DISPLAY_STATE_ON));  // 1:00
+    events.push_back(CreateSyncStartEvent(bucketStartTimeNs + 75 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 1:25
+
+    // Bucket 2 starts. 5:10
+    events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 20 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 5:30
+    events.push_back(CreateScreenStateChangedEvent(
+            conditionEndNs,
+            android::view::DisplayStateEnum::DISPLAY_STATE_OFF));  // 5:60
+    events.push_back(CreateScreenStateChangedEvent(
+            conditionStart2Ns,
+            android::view::DisplayStateEnum::DISPLAY_STATE_ON));  // 7:40
+    events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 175 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 8:05
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Check dump report.
+    vector<uint8_t> buffer;
+    ConfigMetricsReportList reports;
+    int64_t dumpReportTimeNs = bucket2StartTimeNs + 180 * NS_PER_SEC;  // 8:10
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    ASSERT_GT(buffer.size(), 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    EXPECT_TRUE(reports.reports(0).metrics(0).has_count_metrics());
+    StatsLogReport::CountMetricDataWrapper countMetrics;
+    sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).count_metrics(), &countMetrics);
+    ASSERT_EQ(1, countMetrics.data_size());
+
+    CountMetricData data = countMetrics.data(0);
+    ASSERT_EQ(2, data.bucket_info_size());
+    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs, 1,
+                        bucket2StartTimeNs - conditionStart1Ns);
+    ValidateCountBucket(
+            data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, 2,
+            (conditionEndNs - bucket2StartTimeNs) + (dumpReportTimeNs - conditionStart2Ns));
+}
+
 /**
 * Test a count metric that has one slice_by_state with no primary fields.
 *
@@ -469,6 +556,8 @@ TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields) {
     countMetric->set_what(appCrashMatcher.id());
     countMetric->set_bucket(TimeUnit::FIVE_MINUTES);
     countMetric->add_slice_by_state(state.id());
+    *countMetric->mutable_dimensions_in_what() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
     MetricStateLink* stateLink = countMetric->add_state_link();
     stateLink->set_state_atom_id(UID_PROCESS_STATE_ATOM_ID);
     auto fieldsInWhat = stateLink->mutable_fields_in_what();
@@ -592,7 +681,7 @@ TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields) {
     EXPECT_TRUE(reports.reports(0).metrics(0).has_count_metrics());
     StatsLogReport::CountMetricDataWrapper countMetrics;
     sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).count_metrics(), &countMetrics);
-    ASSERT_EQ(5, countMetrics.data_size());
+    ASSERT_EQ(6, countMetrics.data_size());
 
     // For each CountMetricData, check StateValue info is correct and buckets
     // have correct counts.
@@ -601,6 +690,7 @@ TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields) {
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
     EXPECT_TRUE(data.slice_by_state(0).has_value());
     EXPECT_EQ(-1 /* StateTracker::kStateUnknown */, data.slice_by_state(0).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
     ASSERT_EQ(1, data.bucket_info_size());
     EXPECT_EQ(1, data.bucket_info(0).count());
 
@@ -609,14 +699,16 @@ TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields) {
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
     EXPECT_TRUE(data.slice_by_state(0).has_value());
     EXPECT_EQ(android::app::PROCESS_STATE_TOP, data.slice_by_state(0).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
     ASSERT_EQ(1, data.bucket_info_size());
-    EXPECT_EQ(2, data.bucket_info(0).count());
+    EXPECT_EQ(1, data.bucket_info(0).count());
 
     data = countMetrics.data(2);
     ASSERT_EQ(1, data.slice_by_state_size());
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
     EXPECT_TRUE(data.slice_by_state(0).has_value());
     EXPECT_EQ(android::app::PROCESS_STATE_FOREGROUND_SERVICE, data.slice_by_state(0).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
     ASSERT_EQ(2, data.bucket_info_size());
     EXPECT_EQ(1, data.bucket_info(0).count());
     EXPECT_EQ(2, data.bucket_info(1).count());
@@ -626,6 +718,7 @@ TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields) {
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
     EXPECT_TRUE(data.slice_by_state(0).has_value());
     EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_FOREGROUND, data.slice_by_state(0).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
     ASSERT_EQ(1, data.bucket_info_size());
     EXPECT_EQ(2, data.bucket_info(0).count());
 
@@ -633,7 +726,17 @@ TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields) {
     ASSERT_EQ(1, data.slice_by_state_size());
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
     EXPECT_TRUE(data.slice_by_state(0).has_value());
+    EXPECT_EQ(android::app::PROCESS_STATE_TOP, data.slice_by_state(0).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 2);
+    ASSERT_EQ(1, data.bucket_info_size());
+    EXPECT_EQ(1, data.bucket_info(0).count());
+
+    data = countMetrics.data(5);
+    ASSERT_EQ(1, data.slice_by_state_size());
+    EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
+    EXPECT_TRUE(data.slice_by_state(0).has_value());
     EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_BACKGROUND, data.slice_by_state(0).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 2);
     ASSERT_EQ(1, data.bucket_info_size());
     EXPECT_EQ(1, data.bucket_info(0).count());
 }
@@ -663,6 +766,8 @@ TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
     countMetric->set_bucket(TimeUnit::FIVE_MINUTES);
     countMetric->add_slice_by_state(state1.id());
     countMetric->add_slice_by_state(state2.id());
+    *countMetric->mutable_dimensions_in_what() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
     MetricStateLink* stateLink = countMetric->add_state_link();
     stateLink->set_state_atom_id(UID_PROCESS_STATE_ATOM_ID);
     auto fieldsInWhat = stateLink->mutable_fields_in_what();
@@ -821,7 +926,7 @@ TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
     EXPECT_TRUE(reports.reports(0).metrics(0).has_count_metrics());
     StatsLogReport::CountMetricDataWrapper countMetrics;
     sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).count_metrics(), &countMetrics);
-    ASSERT_EQ(6, countMetrics.data_size());
+    ASSERT_EQ(7, countMetrics.data_size());
 
     // For each CountMetricData, check StateValue info is correct and buckets
     // have correct counts.
@@ -833,6 +938,7 @@ TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(1).atom_id());
     EXPECT_TRUE(data.slice_by_state(1).has_value());
     EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_FOREGROUND, data.slice_by_state(1).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
     ASSERT_EQ(1, data.bucket_info_size());
     EXPECT_EQ(1, data.bucket_info(0).count());
 
@@ -844,6 +950,7 @@ TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(1).atom_id());
     EXPECT_TRUE(data.slice_by_state(1).has_value());
     EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_FOREGROUND, data.slice_by_state(1).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
     ASSERT_EQ(1, data.bucket_info_size());
     EXPECT_EQ(1, data.bucket_info(0).count());
 
@@ -851,10 +958,11 @@ TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
     ASSERT_EQ(2, data.slice_by_state_size());
     EXPECT_EQ(SCREEN_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
     EXPECT_TRUE(data.slice_by_state(0).has_group_id());
-    EXPECT_EQ(screenOnId, data.slice_by_state(0).group_id());
+    EXPECT_EQ(screenOffId, data.slice_by_state(0).group_id());
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(1).atom_id());
     EXPECT_TRUE(data.slice_by_state(1).has_value());
-    EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_BACKGROUND, data.slice_by_state(1).value());
+    EXPECT_EQ(android::app::PROCESS_STATE_TOP, data.slice_by_state(1).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
     ASSERT_EQ(1, data.bucket_info_size());
     EXPECT_EQ(1, data.bucket_info(0).count());
 
@@ -865,9 +973,10 @@ TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
     EXPECT_EQ(screenOffId, data.slice_by_state(0).group_id());
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(1).atom_id());
     EXPECT_TRUE(data.slice_by_state(1).has_value());
-    EXPECT_EQ(android::app::PROCESS_STATE_TOP, data.slice_by_state(1).value());
+    EXPECT_EQ(android::app::PROCESS_STATE_FOREGROUND_SERVICE, data.slice_by_state(1).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
     ASSERT_EQ(1, data.bucket_info_size());
-    EXPECT_EQ(2, data.bucket_info(0).count());
+    EXPECT_EQ(1, data.bucket_info(0).count());
 
     data = countMetrics.data(4);
     ASSERT_EQ(2, data.slice_by_state_size());
@@ -876,21 +985,35 @@ TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
     EXPECT_EQ(screenOffId, data.slice_by_state(0).group_id());
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(1).atom_id());
     EXPECT_TRUE(data.slice_by_state(1).has_value());
-    EXPECT_EQ(android::app::PROCESS_STATE_FOREGROUND_SERVICE, data.slice_by_state(1).value());
+    EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_FOREGROUND, data.slice_by_state(1).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 1);
+    ASSERT_EQ(2, data.bucket_info_size());
+    EXPECT_EQ(2, data.bucket_info(0).count());
+    EXPECT_EQ(1, data.bucket_info(1).count());
+
+    data = countMetrics.data(5);
+    ASSERT_EQ(2, data.slice_by_state_size());
+    EXPECT_EQ(SCREEN_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
+    EXPECT_TRUE(data.slice_by_state(0).has_group_id());
+    EXPECT_EQ(screenOnId, data.slice_by_state(0).group_id());
+    EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(1).atom_id());
+    EXPECT_TRUE(data.slice_by_state(1).has_value());
+    EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_BACKGROUND, data.slice_by_state(1).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 2);
     ASSERT_EQ(1, data.bucket_info_size());
     EXPECT_EQ(1, data.bucket_info(0).count());
 
-    data = countMetrics.data(5);
+    data = countMetrics.data(6);
     ASSERT_EQ(2, data.slice_by_state_size());
     EXPECT_EQ(SCREEN_STATE_ATOM_ID, data.slice_by_state(0).atom_id());
     EXPECT_TRUE(data.slice_by_state(0).has_group_id());
     EXPECT_EQ(screenOffId, data.slice_by_state(0).group_id());
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, data.slice_by_state(1).atom_id());
     EXPECT_TRUE(data.slice_by_state(1).has_value());
-    EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_FOREGROUND, data.slice_by_state(1).value());
-    ASSERT_EQ(2, data.bucket_info_size());
-    EXPECT_EQ(2, data.bucket_info(0).count());
-    EXPECT_EQ(1, data.bucket_info(1).count());
+    EXPECT_EQ(android::app::PROCESS_STATE_TOP, data.slice_by_state(1).value());
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, 2);
+    ASSERT_EQ(1, data.bucket_info_size());
+    EXPECT_EQ(1, data.bucket_info(0).count());
 }
 
 TEST(CountMetricE2eTest, TestUploadThreshold) {
@@ -1745,6 +1868,89 @@ TEST(CountMetricE2eTest, TestConditionSlicedByRepeatedUidWithUidDimension) {
                         1);
     ValidateCountBucket(data.bucket_info(1), bucket2StartTimeNs, bucket2StartTimeNs + bucketSizeNs,
                         1);
+}
+
+TEST(CountMetricE2eTest, TestDimensionalSampling) {
+    ShardOffsetProvider::getInstance().setShardOffset(5);
+
+    // Initialize config.
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
+
+    AtomMatcher appCrashMatcher =
+            CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
+    *config.add_atom_matcher() = appCrashMatcher;
+
+    CountMetric sampledCountMetric =
+            createCountMetric("CountSampledAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *sampledCountMetric.mutable_dimensions_in_what() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    *sampledCountMetric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    sampledCountMetric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = sampledCountMetric;
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    const uint64_t bucketSizeNs =
+            TimeUnitToBucketSizeInMillis(config.count_metric(0).bucket()) * 1000000LL;
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            bucketStartTimeNs, bucketStartTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+
+    int appUid1 = 1001;  // odd hash value
+    int appUid2 = 1002;  // even hash value
+    int appUid3 = 1003;  // odd hash value
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 20 * NS_PER_SEC, appUid1));  // 0:30
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 40 * NS_PER_SEC, appUid2));  // 0:50
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 60 * NS_PER_SEC, appUid3));  // 1:10
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 80 * NS_PER_SEC, appUid1));  // 1:20
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 90 * NS_PER_SEC, appUid2));  // 1:30
+    events.push_back(
+            CreateAppCrashOccurredEvent(bucketStartTimeNs + 100 * NS_PER_SEC, appUid3));  // 1:40
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Check dump report.
+    vector<uint8_t> buffer;
+    ConfigMetricsReportList reports;
+    processor->onDumpReport(cfgKey, bucketStartTimeNs + bucketSizeNs + 1, false, true, ADB_DUMP,
+                            FAST, &buffer);
+    ASSERT_GT(buffer.size(), 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    EXPECT_TRUE(reports.reports(0).metrics(0).has_count_metrics());
+    StatsLogReport::CountMetricDataWrapper countMetrics;
+    sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).count_metrics(), &countMetrics);
+    ASSERT_EQ(2, countMetrics.data_size());
+
+    // Only Uid 1 and 3 are logged. (odd hash value) + (offset of 5) % (shard count of 2) = 0
+    CountMetricData data = countMetrics.data(0);
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, appUid1);
+    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + bucketSizeNs,
+                        2);
+
+    data = countMetrics.data(1);
+    ValidateUidDimension(data.dimensions_in_what(), util::APP_CRASH_OCCURRED, appUid3);
+    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + bucketSizeNs,
+                        2);
 }
 
 }  // namespace statsd
