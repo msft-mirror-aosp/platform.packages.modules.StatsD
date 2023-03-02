@@ -1090,8 +1090,11 @@ Status StatsService::bootCompleted() {
 
 void StatsService::Startup() {
     mConfigManager->Startup();
+    int64_t wallClockNs = getWallClockNs();
+    int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
     mProcessor->LoadActiveConfigsFromDisk();
-    mProcessor->LoadMetadataFromDisk(getWallClockNs(), getElapsedRealtimeNs());
+    mProcessor->LoadMetadataFromDisk(wallClockNs, elapsedRealtimeNs);
+    mProcessor->EnforceDataTtls(wallClockNs, elapsedRealtimeNs);
 }
 
 void StatsService::Terminate() {

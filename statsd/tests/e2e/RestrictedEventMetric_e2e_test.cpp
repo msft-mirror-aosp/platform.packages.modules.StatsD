@@ -36,6 +36,8 @@ const int32_t delegate_uid = 1005;
 const string config_package_name = "com.test.config.package";
 const int32_t config_app_uid = 123;
 const ConfigKey configKey(config_app_uid, configId);
+const int64_t eightDaysAgo = getWallClockNs() - 8 * 24 * 3600 * NS_PER_SEC;
+const int64_t oneDayAgo = getWallClockNs() - 1 * 24 * 3600 * NS_PER_SEC;
 }  // anonymous namespace
 
 // Setup for test fixture.
@@ -401,6 +403,28 @@ TEST_F(RestrictedEventMetricE2eTest, TestFlagDisabled) {
     EXPECT_EQ(error, "Restricted metrics are not enabled");
 }
 
+TEST_F(RestrictedEventMetricE2eTest, TestEnforceTtlRemovesOldEvents) {
+    int64_t currentWallTimeNs = getWallClockNs();
+    // 8 days are used here because the TTL threshold is 7 days.
+    int64_t eightDaysAgo = currentWallTimeNs - 8 * 24 * 3600 * NS_PER_SEC;
+    int64_t originalEventElapsedTime = configAddedTimeNs + 100;
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(atomTag, originalEventElapsedTime);
+    event1->setLogdWallClockTimestampNs(eightDaysAgo);
+
+    // Send log events to StatsLogProcessor.
+    processor->OnLogEvent(event1.get(), originalEventElapsedTime);
+    processor->EnforceDataTtls(currentWallTimeNs, originalEventElapsedTime + 100);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    ASSERT_EQ(rows.size(), 0);
+}
+
 TEST_F(RestrictedEventMetricE2eTest, TestConfigRemovalDeletesData) {
     std::vector<std::unique_ptr<LogEvent>> events;
 
@@ -500,20 +524,22 @@ TEST_F(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate) 
 
 TEST_F(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls) {
     int64_t currentWallTimeNs = getWallClockNs();
-    // 8 days are used here because the TTL threshold is 7 days.
-    int64_t eightDaysAgo = currentWallTimeNs - 8 * 24 * 3600 * NS_PER_SEC;
     int64_t originalEventElapsedTime = configAddedTimeNs + 100;
     // 2 hours used here because the TTL check period is 1 hour.
     int64_t newEventElapsedTime = configAddedTimeNs + 2 * 3600 * NS_PER_SEC + 1;  // 2 hrs later
     std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(atomTag, originalEventElapsedTime);
     event1->setLogdWallClockTimestampNs(eightDaysAgo);
-    std::unique_ptr<LogEvent> event2 = CreateRestrictedLogEvent(atomTag, newEventElapsedTime);
-    event2->setLogdWallClockTimestampNs(currentWallTimeNs);
+    std::unique_ptr<LogEvent> event2 =
+            CreateRestrictedLogEvent(atomTag, originalEventElapsedTime + 100);
+    event2->setLogdWallClockTimestampNs(oneDayAgo);
+    std::unique_ptr<LogEvent> event3 = CreateRestrictedLogEvent(atomTag, newEventElapsedTime);
+    event3->setLogdWallClockTimestampNs(currentWallTimeNs);
 
     processor->mLastTtlTime = originalEventElapsedTime;
     // Send log events to StatsLogProcessor.
     processor->OnLogEvent(event1.get(), originalEventElapsedTime);
     processor->OnLogEvent(event2.get(), newEventElapsedTime);
+    processor->OnLogEvent(event3.get(), newEventElapsedTime + 100);
 
     std::stringstream query;
     query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
@@ -522,19 +548,19 @@ TEST_F(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls) {
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
     EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
-    ASSERT_EQ(rows.size(), 1);
+    ASSERT_EQ(rows.size(), 2);
     EXPECT_THAT(columnNames,
                 ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
     EXPECT_THAT(columnTypes,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
-    EXPECT_THAT(rows[0], ElementsAre(to_string(atomTag), to_string(newEventElapsedTime),
+    EXPECT_THAT(rows[0], ElementsAre(to_string(atomTag), to_string(originalEventElapsedTime + 100),
+                                     to_string(oneDayAgo), _));
+    EXPECT_THAT(rows[1], ElementsAre(to_string(atomTag), to_string(newEventElapsedTime),
                                      to_string(currentWallTimeNs), _));
 }
 
 TEST_F(RestrictedEventMetricE2eTest, TestLogEventsDoesNotEnforceTtls) {
     int64_t currentWallTimeNs = getWallClockNs();
-    // 8 days are used here because the TTL threshold is 7 days.
-    int64_t eightDaysAgo = currentWallTimeNs - 8 * 24 * 3600 * NS_PER_SEC;
     int64_t originalEventElapsedTime = configAddedTimeNs + 100;
     // 30 min used here because the TTL check period is 1 hour.
     int64_t newEventElapsedTime = configAddedTimeNs + (3600 * NS_PER_SEC) / 2;  // 30 min later
@@ -568,7 +594,6 @@ TEST_F(RestrictedEventMetricE2eTest, TestLogEventsDoesNotEnforceTtls) {
 
 TEST_F(RestrictedEventMetricE2eTest, TestQueryEnforceTtls) {
     int64_t currentWallTimeNs = getWallClockNs();
-    int64_t eightDaysAgo = currentWallTimeNs - 8 * 24 * 3600 * NS_PER_SEC;
     int64_t originalEventElapsedTime = configAddedTimeNs + 100;
     // 30 min used here because the TTL check period is 1 hour.
     int64_t newEventElapsedTime = configAddedTimeNs + (3600 * NS_PER_SEC) / 2;  // 30 min later
