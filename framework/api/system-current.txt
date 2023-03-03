@@ -75,7 +75,7 @@ package android.app {
 
   public final class StatsQuery {
     method public int getMinSqlClientVersion();
-    method @NonNull public android.app.StatsQuery.StatsPolicyConfig getPolicyConfig();
+    method @Nullable public byte[] getPolicyConfig();
     method @NonNull public String getRawSql();
     method public int getSqlDialect();
     field public static final int DIALECT_SQLITE = 1; // 0x1
@@ -86,18 +86,8 @@ package android.app {
     ctor public StatsQuery.Builder(@NonNull String);
     method @NonNull public android.app.StatsQuery build();
     method @NonNull public android.app.StatsQuery.Builder setMinSqlClientVersion(int);
-    method @NonNull public android.app.StatsQuery.Builder setPolicyConfig(@NonNull android.app.StatsQuery.StatsPolicyConfig);
+    method @NonNull public android.app.StatsQuery.Builder setPolicyConfig(@NonNull byte[]);
     method @NonNull public android.app.StatsQuery.Builder setSqlDialect(int);
-  }
-
-  public static final class StatsQuery.StatsPolicyConfig {
-    method @IntRange(from=1) public int getMinimumClientsInAggregateResult();
-  }
-
-  public static final class StatsQuery.StatsPolicyConfig.Builder {
-    ctor public StatsQuery.StatsPolicyConfig.Builder();
-    method @NonNull public android.app.StatsQuery.StatsPolicyConfig build();
-    method @NonNull public android.app.StatsQuery.StatsPolicyConfig.Builder setMinimumClientsInAggregateResult(@IntRange(from=1) int);
   }
 
 }

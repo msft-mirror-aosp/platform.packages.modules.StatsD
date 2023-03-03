@@ -31,7 +31,6 @@ import android.os.IStatsd;
 import android.os.PowerManager;
 import android.os.Process;
 import android.os.RemoteException;
-import android.os.StatsPolicyConfigParcel;
 import android.util.ArrayMap;
 import android.util.Log;
 
@@ -571,9 +570,8 @@ public class StatsManagerService extends IStatsManagerService.Stub {
     }
 
     @Override
-    public void querySql(String sqlQuery, int minSqlClientVersion,
-            StatsPolicyConfigParcel policyConfig, IStatsQueryCallback queryCallback,
-            long configKey, String configPackage) {
+    public void querySql(String sqlQuery, int minSqlClientVersion, byte[] policyConfig,
+            IStatsQueryCallback queryCallback, long configKey, String configPackage) {
         int callingUid = Binder.getCallingUid();
         enforceRestrictedStatsPermission();
         final long token = Binder.clearCallingIdentity();

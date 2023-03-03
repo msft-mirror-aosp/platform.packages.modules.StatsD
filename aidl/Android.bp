@@ -33,7 +33,6 @@ aidl_interface {
         "android/os/IStatsd.aidl",
         "android/os/IStatsQueryCallback.aidl",
         "android/os/StatsDimensionsValueParcel.aidl",
-        "android/os/StatsPolicyConfigParcel.aidl",
         "android/util/PropertyParcel.aidl",
         "android/util/StatsEventParcel.aidl",
     ],
