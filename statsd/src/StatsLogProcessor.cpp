@@ -38,7 +38,6 @@
 #include "storage/StorageManager.h"
 
 using namespace android;
-using aidl::android::os::StatsPolicyConfigParcel;
 using android::base::StringPrintf;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
@@ -866,7 +865,7 @@ void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClock
 
 // TODO(b/268150038): Add StatsdStats reporting to this method.
 void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
-                                 const StatsPolicyConfigParcel& policyConfig,
+                                 const optional<vector<uint8_t>>& policyConfig,
                                  const shared_ptr<IStatsQueryCallback>& callback,
                                  const int64_t configId, const string& configPackage,
                                  const int32_t callingUid) {
