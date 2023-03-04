@@ -19,7 +19,6 @@ package android.os;
 import android.os.IPendingIntentRef;
 import android.os.IPullAtomCallback;
 import android.os.ParcelFileDescriptor;
-import android.os.StatsPolicyConfigParcel;
 import android.util.PropertyParcel;
 import android.os.IStatsQueryCallback;
 
@@ -248,7 +247,7 @@ interface IStatsd {
      * Queries data from underlying statsd sql store.
      */
     oneway void querySql(in String sqlQuery, in int minSqlClientVersion,
-        in StatsPolicyConfigParcel policyConfig, in IStatsQueryCallback queryCallback,
+        in @nullable byte[] policyConfig, in IStatsQueryCallback queryCallback,
         in long configKey, in String configPackage, in int callingUid);
 
     /**

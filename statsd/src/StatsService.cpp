@@ -44,7 +44,6 @@
 
 using namespace android;
 
-using aidl::android::os::StatsPolicyConfigParcel;
 using android::base::StringPrintf;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
@@ -1391,7 +1390,7 @@ Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t confi
 }
 
 Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
-                              const StatsPolicyConfigParcel& policyConfig,
+                              const optional<vector<uint8_t>>& policyConfig,
                               const shared_ptr<IStatsQueryCallback>& callback,
                               const int64_t configKey, const string& configPackage,
                               const int32_t callingUid) {
