@@ -17,12 +17,9 @@
 package android.app;
 
 import android.annotation.IntDef;
-import android.annotation.IntRange;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.SystemApi;
-
-import android.os.StatsPolicyConfigParcel;
 
 /**
  * Represents a query that contains information required for StatsManager to return relevant metric
@@ -52,13 +49,13 @@ public final class StatsQuery {
     private final int sqlDialect;
     private final String rawSql;
     private final int minClientSqlVersion;
-    private final StatsPolicyConfig policyConfig;
+    private final byte[] policyConfig;
     private StatsQuery(int sqlDialect, @NonNull String rawSql, int minClientSqlVersion,
-            @Nullable StatsPolicyConfig policyConfig) {
+            @Nullable byte[] policyConfig) {
         this.sqlDialect = sqlDialect;
         this.rawSql = rawSql;
         this.minClientSqlVersion = minClientSqlVersion;
-        this.policyConfig = policyConfig == null ? new StatsPolicyConfig() : policyConfig;
+        this.policyConfig = policyConfig;
     }
 
     /**
@@ -84,11 +81,11 @@ public final class StatsQuery {
     }
 
     /**
-     * Returns the StatsPolicyConfig object that contains information to verify the query against a
-     * policy defined on the underlying data.
+     * Returns the wire-encoded StatsPolicyConfig proto that contains information to verify the
+     * query against a policy defined on the underlying data. Returns null if no policy was set.
      */
-    @NonNull
-    public StatsPolicyConfig getPolicyConfig() {
+    @Nullable
+    public byte[] getPolicyConfig() {
         return policyConfig;
     }
 
@@ -106,7 +103,7 @@ public final class StatsQuery {
         private int sqlDialect;
         private String rawSql;
         private int minSqlClientVersion;
-        private StatsPolicyConfig policyConfig;
+        private byte[] policyConfig;
 
         /**
          * Returns a new StatsQuery.Builder object for constructing StatsQuery for
@@ -145,13 +142,13 @@ public final class StatsQuery {
         }
 
         /**
-         * Sets the StatsPolicyConfig that contains information to verify the query against a
-         * policy defined on the underlying data.
+         * Sets the wire-encoded StatsPolicyConfig proto that contains information to verify the
+         * query against a policy defined on the underlying data.
          *
-         * @param policyConfig The StatsPolicyConfig object.
+         * @param policyConfig The wire-encoded StatsPolicyConfig proto.
          */
         @NonNull
-        public Builder setPolicyConfig(@NonNull final StatsPolicyConfig policyConfig) {
+        public Builder setPolicyConfig(@NonNull final byte[] policyConfig) {
             this.policyConfig = policyConfig;
             return this;
         }
@@ -165,87 +162,5 @@ public final class StatsQuery {
         public StatsQuery build() {
             return new StatsQuery(sqlDialect, rawSql, minSqlClientVersion, policyConfig);
         }
-    }
-
-    /**
-     * Represents a policy object that contains information to verify the query against a policy
-     * defined for the underlying data.
-     */
-    public static final class StatsPolicyConfig {
-        private final StatsPolicyConfigParcel inner;
-
-        private StatsPolicyConfig(final @NonNull StatsPolicyConfigParcel inner) {
-            this.inner = inner;
-        }
-
-        /** @hide */
-        public StatsPolicyConfig() {
-            inner = new StatsPolicyConfigParcel();
-        }
-
-        /**  @hide */
-        @NonNull StatsPolicyConfigParcel getInner() {
-            return inner;
-        }
-
-        /**
-         * Returns the minimum number of clients that will be visible in the aggregate result
-         * of the query.
-         */
-        public @IntRange(from = 1) int getMinimumClientsInAggregateResult() {
-            return inner.minimumClientsInAggregateResult;
-        }
-
-        /**
-         * Builder for constructing a StatsPolicyConfig object.
-         * <p>Usage:</p>
-         * <code>
-         * StatsPolicyConfig config = new StatsPolicyConfig.Builder()
-         * .setMinimumClientsInAggregateResult(10)
-         * .build();
-         * </code>
-         */
-        public static final class Builder {
-            private StatsPolicyConfigParcel inner;
-
-            /**
-             * Returns a new StatsPolicyConfig.Builder object for constructing StatsPolicyConfig for
-             * StatsQuery
-             */
-            public Builder() {
-                inner = new StatsPolicyConfigParcel();
-            }
-
-            /**
-             * Sets the minimum number of clients that will be visible in the aggregate result
-             * of the query.
-             *
-             * @param minimumClientsInAggregateResult The minimum number of clients that will be
-             *                                        visible in the aggregate result.
-             *                                        Must be at least 1.
-             */
-            @NonNull
-            public StatsPolicyConfig.Builder setMinimumClientsInAggregateResult(
-                    @IntRange(from = 1) final int minimumClientsInAggregateResult) {
-                if (minimumClientsInAggregateResult < 1) {
-                    throw new IllegalArgumentException(
-                            "minimumClientsInAggregateResult must be at least 1");
-                }
-                inner.minimumClientsInAggregateResult = minimumClientsInAggregateResult;
-                return this;
-            }
-
-            /**
-             * Builds a new instance of {@link StatsPolicyConfig}.
-             *
-             * @return A new instance of {@link StatsPolicyConfig}.
-             */
-            @NonNull
-            public StatsPolicyConfig build() {
-                return new StatsPolicyConfig(inner);
-            }
-
-        }
-
     }
 }

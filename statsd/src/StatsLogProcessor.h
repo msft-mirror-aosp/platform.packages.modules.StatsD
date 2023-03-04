@@ -157,7 +157,7 @@ public:
     void cancelAnomalyAlarm();
 
     void querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
-                  const aidl::android::os::StatsPolicyConfigParcel& policyConfig,
+                  const optional<vector<uint8_t>>& policyConfig,
                   const shared_ptr<aidl::android::os::IStatsQueryCallback>& callback,
                   const int64_t configId, const string& configPackage, const int32_t callingUid);
 

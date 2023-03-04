@@ -77,6 +77,7 @@ cc_defaults {
         "src/state/StateManager.cpp",
         "src/state/StateTracker.cpp",
         "src/stats_log_util.cpp",
+        "src/stats_policy_config.proto",
         "src/statscompanion_util.cpp",
         "src/statsd_config.proto",
         "src/statsd_metadata.proto",

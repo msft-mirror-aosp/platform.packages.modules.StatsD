@@ -20,7 +20,6 @@
 #include <aidl/android/os/BnStatsd.h>
 #include <aidl/android/os/IPendingIntentRef.h>
 #include <aidl/android/os/IPullAtomCallback.h>
-#include <aidl/android/os/StatsPolicyConfigParcel.h>
 #include <aidl/android/util/PropertyParcel.h>
 #include <gtest/gtest_prod.h>
 #include <utils/Looper.h>
@@ -231,7 +230,7 @@ public:
      * Binder call to query data in statsd sql store.
      */
     virtual Status querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
-                            const aidl::android::os::StatsPolicyConfigParcel& policyConfig,
+                            const optional<vector<uint8_t>>& policyConfig,
                             const shared_ptr<IStatsQueryCallback>& callback,
                             const int64_t configKey, const string& configPackage,
                             const int32_t callingUid);
