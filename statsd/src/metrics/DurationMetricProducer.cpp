@@ -164,6 +164,7 @@ DurationMetricProducer::DurationMetricProducer(
          (long long)mBucketSizeNs, (long long)mTimeBaseNs);
 
     initTrueDimensions(whatIndex, startTimeNs);
+    mConditionTimer.newBucketStart(mCurrentBucketStartTimeNs, mCurrentBucketStartTimeNs);
     mConditionTimer.onConditionChanged(mIsActive && mCondition == ConditionState::kTrue,
                                        mCurrentBucketStartTimeNs);
 }
@@ -462,6 +463,7 @@ void DurationMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeN
         for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
             whatIt.second->onConditionChanged(isActive, eventTimeNs);
         }
+        mConditionTimer.onConditionChanged(isActive, eventTimeNs);
     } else if (isActive) {
         flushIfNeededLocked(eventTimeNs);
         onSlicedConditionMayChangeInternalLocked(eventTimeNs);
@@ -470,7 +472,6 @@ void DurationMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeN
             whatIt.second->onConditionChanged(isActive, eventTimeNs);
         }
     }
-    mConditionTimer.onConditionChanged(isActive, eventTimeNs);
 }
 
 void DurationMetricProducer::onConditionChangedLocked(const bool conditionMet,
@@ -576,9 +577,9 @@ void DurationMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
             protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_DURATION, (long long)bucket.mDuration);
 
             // We only write the condition timer value if the metric has a
-            // condition and isn't sliced by state.
-            // TODO(b/268531762): Slice the condition timer by state
-            if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty()) {
+            // condition and isn't sliced by state or condition.
+            // TODO(b/268531762): Slice the condition timer by state and condition
+            if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty() && !mConditionSliced) {
                 protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_CONDITION_TRUE_NS,
                                    (long long)bucket.mConditionTrueNs);
             }
