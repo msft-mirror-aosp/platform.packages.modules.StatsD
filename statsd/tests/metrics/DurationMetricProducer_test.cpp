@@ -176,6 +176,7 @@ TEST(DurationMetricTrackerTest, TestNonSlicedCondition) {
     EXPECT_EQ(bucketStartTimeNs + bucketSizeNs, buckets2[0].mBucketStartNs);
     EXPECT_EQ(bucket2EndTimeNs, buckets2[0].mBucketEndNs);
     EXPECT_EQ(1LL, buckets2[0].mDuration);
+    EXPECT_EQ(bucket2EndTimeNs - conditionStartTimeNs, buckets2[0].mConditionTrueNs);
 }
 
 TEST(DurationMetricTrackerTest, TestNonSlicedConditionUnknownState) {
