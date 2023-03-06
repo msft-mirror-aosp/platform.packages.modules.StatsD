@@ -62,6 +62,8 @@ MetricProducer::MetricProducer(
       mCurrentBucketStartTimeNs(timeBaseNs),
       mCurrentBucketNum(0),
       mCondition(initialCondition(conditionIndex, initialConditionCache)),
+      // For metrics with pull events, condition timer will be set later within the constructor
+      mConditionTimer(false, timeBaseNs),
       mConditionTrackerIndex(conditionIndex),
       mConditionSliced(false),
       mWizard(wizard),
