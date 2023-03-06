@@ -390,6 +390,8 @@ public:
     // Default value = false
     inline bool isUidField() const { return getValueFromBitmask(UID_POS); }
 
+    std::string toString() const;
+
 private:
     inline void setBitmaskAtPos(int pos, bool value) {
         mBooleanBitmask &= ~(1 << pos); // clear
