@@ -48,6 +48,7 @@ cc_defaults {
         },
     },
 }
+
 cc_library {
     name: "libstatspull",
     defaults: [
@@ -120,7 +121,10 @@ cc_test {
         "libstatspull",
         "libstatssocket",
     ],
-    test_suites: ["general-tests", "mts-statsd"],
+    test_suites: [
+        "general-tests",
+        "mts-statsd",
+    ],
     test_config: "libstatspull_test.xml",
 
     //TODO(b/153588990): Remove when the build system properly separates
@@ -143,4 +147,5 @@ cc_test {
         "-Wno-unused-parameter",
     ],
     require_root: true,
+    min_sdk_version: "30",
 }

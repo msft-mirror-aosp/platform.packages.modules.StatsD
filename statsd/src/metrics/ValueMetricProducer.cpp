@@ -90,8 +90,6 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
       mDimensionSoftLimit(guardrailOptions.dimensionSoftLimit),
       mDimensionHardLimit(guardrailOptions.dimensionHardLimit),
       mCurrentBucketIsSkipped(false),
-      // Condition timer will be set later within the constructor after pulling events
-      mConditionTimer(false, bucketOptions.timeBaseNs),
       mConditionCorrectionThresholdNs(bucketOptions.conditionCorrectionThresholdNs) {
     // TODO(b/185722221): inject directly via initializer list in MetricProducer.
     mBucketSizeNs = bucketOptions.bucketSizeNs;
@@ -174,7 +172,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::notifyAppUpgradeInternalLo
 }
 
 template <typename AggregatedValue, typename DimExtras>
-bool ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
+optional<InvalidConfigReason>
+ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -188,35 +187,37 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    if (!MetricProducer::onConfigUpdatedLocked(
-                config, configIndex, metricIndex, allAtomMatchingTrackers,
-                oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
-                allConditionTrackers, conditionTrackerMap, wizard, metricToActivationMap,
-                trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
-                deactivationAtomTrackerToMetricMap, metricsWithActivation)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+            config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
+            newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
+            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+            metricsWithActivation);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
-
     // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
     const int64_t atomMatcherId = getWhatAtomMatcherIdForMetric(config, configIndex);
-    if (!handleMetricWithAtomMatchingTrackers(atomMatcherId, metricIndex, /*enforceOneAtom=*/false,
-                                              allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                              trackerToMetricMap, mWhatMatcherIndex)) {
-        return false;
+    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+            atomMatcherId, mMetricId, metricIndex, /*enforceOneAtom=*/false,
+            allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap,
+            mWhatMatcherIndex);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
-
     const optional<int64_t>& conditionIdOpt = getConditionIdForMetric(config, configIndex);
     const ConditionLinks& conditionLinks = getConditionLinksForMetric(config, configIndex);
-    if (conditionIdOpt.has_value() &&
-        !handleMetricWithConditions(conditionIdOpt.value(), metricIndex, conditionTrackerMap,
-                                    conditionLinks, allConditionTrackers, mConditionTrackerIndex,
-                                    conditionToMetricMap)) {
-        return false;
+    if (conditionIdOpt.has_value()) {
+        invalidConfigReason = handleMetricWithConditions(
+                conditionIdOpt.value(), mMetricId, metricIndex, conditionTrackerMap, conditionLinks,
+                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
     }
-
     sp<EventMatcherWizard> tmpEventWizard = mEventMatcherWizard;
     mEventMatcherWizard = matcherWizard;
-    return true;
+    return nullopt;
 }
 
 template <typename AggregatedValue, typename DimExtras>
@@ -422,8 +423,9 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
             for (int i = 0; i < (int)bucket.aggIndex.size(); i++) {
                 VLOG("\t bucket [%lld - %lld]", (long long)bucket.mBucketStartNs,
                      (long long)bucket.mBucketEndNs);
+                int sampleSize = !bucket.sampleSizes.empty() ? bucket.sampleSizes[i] : 0;
                 writePastBucketAggregateToProto(bucket.aggIndex[i], bucket.aggregates[i],
-                                                protoOutput);
+                                                sampleSize, protoOutput);
             }
             protoOutput->end(bucketInfoToken);
         }
