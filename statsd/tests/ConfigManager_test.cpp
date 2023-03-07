@@ -147,6 +147,8 @@ TEST(ConfigManagerTest, TestRemoveUid) {
     EXPECT_CALL(*(listener.get()), OnConfigRemoved(ConfigKeyEq(2, StringToId("xxx"))));
     EXPECT_CALL(*(listener.get()), OnConfigRemoved(ConfigKeyEq(2, StringToId("yyy"))));
     EXPECT_CALL(*(listener.get()), OnConfigRemoved(ConfigKeyEq(2, StringToId("zzz"))));
+    EXPECT_CALL(*(listener.get()), OnConfigRemoved(ConfigKeyEq(1, StringToId("aaa"))));
+    EXPECT_CALL(*(listener.get()), OnConfigRemoved(ConfigKeyEq(3, StringToId("bbb"))));
 
     manager->StartupForTest();
     manager->UpdateConfig(ConfigKey(1, StringToId("aaa")), config);
@@ -156,4 +158,6 @@ TEST(ConfigManagerTest, TestRemoveUid) {
     manager->UpdateConfig(ConfigKey(3, StringToId("bbb")), config);
 
     manager->RemoveConfigs(2);
+    manager->RemoveConfigs(1);
+    manager->RemoveConfigs(3);
 }
