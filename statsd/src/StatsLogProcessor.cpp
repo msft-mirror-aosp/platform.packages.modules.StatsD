@@ -566,7 +566,6 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         configValid = newMetricsManager->isConfigValid();
         if (configValid) {
             newMetricsManager->init();
-            mUidMap->OnConfigUpdated(key);
             newMetricsManager->refreshTtl(timestampNs);
             if (mIsRestrictedMetricsEnabled) {
                 if (newMetricsManager->hasRestrictedMetricsDelegate()) {
@@ -587,12 +586,20 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         configValid = it->second->updateConfig(config, mTimeBaseNs, timestampNs,
                                                mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
         if (configValid) {
-            mUidMap->OnConfigUpdated(key);
             if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
                 mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
                                                 it->second->getAllMetricIds());
             }
         }
+    }
+    if (!mIsRestrictedMetricsEnabled && configValid) {
+        mUidMap->OnConfigUpdated(key);
+    } else if (mIsRestrictedMetricsEnabled && configValid &&
+               !config.has_restricted_metrics_delegate_package_name()) {
+        mUidMap->OnConfigUpdated(key);
+    } else if (mIsRestrictedMetricsEnabled && configValid &&
+               config.has_restricted_metrics_delegate_package_name()) {
+        mUidMap->OnConfigRemoved(key);
     }
     if (!configValid) {
         // If there is any error in the config, don't use it.
@@ -605,6 +612,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
             dbutils::deleteDb(key);
         }
         mMetricsManagers.erase(key);
+        mUidMap->OnConfigRemoved(key);
     }
 }
 
