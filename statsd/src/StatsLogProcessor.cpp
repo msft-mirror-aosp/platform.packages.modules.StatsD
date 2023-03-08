@@ -53,6 +53,8 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using aidl::android::os::IStatsQueryCallback;
+
 // for ConfigMetricsReportList
 const int FIELD_ID_CONFIG_KEY = 1;
 const int FIELD_ID_REPORTS = 2;
@@ -84,25 +86,28 @@ constexpr const char* kPermissionUsage = "android.permission.PACKAGE_USAGE_STATS
 // Cool down period for writing data to disk to avoid overwriting files.
 #define WRITE_DATA_COOL_DOWN_SEC 15
 
-StatsLogProcessor::StatsLogProcessor(const sp<UidMap>& uidMap,
-                                     const sp<StatsPullerManager>& pullerManager,
-                                     const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                                     const sp<AlarmMonitor>& periodicAlarmMonitor,
-                                     const int64_t timeBaseNs,
-                                     const std::function<bool(const ConfigKey&)>& sendBroadcast,
-                                     const std::function<bool(
-                                            const int&, const vector<int64_t>&)>& activateBroadcast)
-    : mUidMap(uidMap),
+StatsLogProcessor::StatsLogProcessor(
+        const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
+        const sp<AlarmMonitor>& anomalyAlarmMonitor, const sp<AlarmMonitor>& periodicAlarmMonitor,
+        const int64_t timeBaseNs, const std::function<bool(const ConfigKey&)>& sendBroadcast,
+        const std::function<bool(const int&, const vector<int64_t>&)>& activateBroadcast,
+        const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
+                sendRestrictedMetricsBroadcast)
+    : mLastTtlTime(0),
+      mUidMap(uidMap),
       mPullerManager(pullerManager),
       mAnomalyAlarmMonitor(anomalyAlarmMonitor),
       mPeriodicAlarmMonitor(periodicAlarmMonitor),
       mSendBroadcast(sendBroadcast),
       mSendActivationBroadcast(activateBroadcast),
+      mSendRestrictedMetricsBroadcast(sendRestrictedMetricsBroadcast),
       mTimeBaseNs(timeBaseNs),
       mLargestTimestampSeen(0),
       mLastTimestampSeen(0) {
     mPullerManager->ForceClearPullerCache();
     StateManager::getInstance().updateLogSources(uidMap);
+    mIsRestrictedMetricsEnabled =
+            FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE);
 }
 
 StatsLogProcessor::~StatsLogProcessor() {
@@ -444,10 +449,16 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         mLastPullerCacheClearTimeSec = curTimeSec;
     }
 
+    enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
+
     std::unordered_set<int> uidsWithActiveConfigsChanged;
     std::unordered_map<int, std::vector<int64_t>> activeConfigsPerUid;
+
     // pass the event to metrics managers.
     for (auto& pair : mMetricsManagers) {
+        if (event->isRestricted() && !pair.second->hasRestrictedMetricsDelegate()) {
+            continue;
+        }
         int uid = pair.first.GetUid();
         int64_t configId = pair.first.GetId();
         bool isPrevActive = pair.second->isActive();
@@ -534,13 +545,17 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
     // Create new config if this is not a modular update or if this is a new config.
     const auto& it = mMetricsManagers.find(key);
     bool configValid = false;
-
     if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE) &&
-        it != mMetricsManagers.end() &&
-        (it->second->hasRestrictedMetricsDelegate() !=
-         config.has_restricted_metrics_delegate_package_name())) {
-        // Not a modular update if has_restricted_metrics_delegate changes
-        modularUpdate = false;
+        it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
+        if (!config.has_restricted_metrics_delegate_package_name()) {
+            // Not a modular update if has_restricted_metrics_delegate changes
+            modularUpdate = false;
+        }
+        if (!modularUpdate) {
+            // Always delete the db if restricted metrics config is not a
+            // modular update.
+            dbutils::deleteDb(key);
+        }
     }
 
     if (!modularUpdate || it == mMetricsManagers.end()) {
@@ -552,6 +567,17 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
             newMetricsManager->init();
             mUidMap->OnConfigUpdated(key);
             newMetricsManager->refreshTtl(timestampNs);
+            if (mIsRestrictedMetricsEnabled) {
+                if (newMetricsManager->hasRestrictedMetricsDelegate()) {
+                    mSendRestrictedMetricsBroadcast(
+                            key, newMetricsManager->getRestrictedMetricsDelegate(),
+                            newMetricsManager->getAllMetricIds());
+                } else if (it != mMetricsManagers.end() &&
+                           it->second->hasRestrictedMetricsDelegate()) {
+                    mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
+                                                    {});
+                }
+            }
             mMetricsManagers[key] = newMetricsManager;
             VLOG("StatsdConfig valid");
         }
@@ -561,12 +587,22 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
                                                mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
         if (configValid) {
             mUidMap->OnConfigUpdated(key);
+            if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
+                mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
+                                                it->second->getAllMetricIds());
+            }
         }
     }
     if (!configValid) {
         // If there is any error in the config, don't use it.
         // Remove any existing config with the same key.
         ALOGE("StatsdConfig NOT valid");
+        // Send an empty restricted metrics broadcast if the previous config was restricted.
+        if (mIsRestrictedMetricsEnabled && it != mMetricsManagers.end() &&
+            it->second->hasRestrictedMetricsDelegate()) {
+            mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+            dbutils::deleteDb(key);
+        }
         mMetricsManagers.erase(key);
     }
 }
@@ -605,6 +641,12 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
                                      const DumpLatency dumpLatency, ProtoOutputStream* proto) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
 
+    auto it = mMetricsManagers.find(key);
+    if (it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
+        VLOG("Unexpected call to StatsLogProcessor::onDumpReport for restricted metrics.");
+        return;
+    }
+
     // Start of ConfigKey.
     uint64_t configKeyToken = proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_KEY);
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_UID, key.GetUid());
@@ -613,7 +655,6 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
     // End of ConfigKey.
 
     bool keepFile = false;
-    auto it = mMetricsManagers.find(key);
     if (it != mMetricsManagers.end() && it->second->shouldPersistLocalHistory()) {
         keepFile = true;
     }
@@ -685,6 +726,12 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     // WriteDataToDisk.
     auto it = mMetricsManagers.find(key);
     if (it == mMetricsManagers.end()) {
+        return;
+    }
+    if (it->second->hasRestrictedMetricsDelegate()) {
+        VLOG("Unexpected call to StatsLogProcessor::onConfigMetricsReportLocked for restricted "
+             "metrics.");
+        // Do not call onDumpReport for restricted metrics.
         return;
     }
     int64_t lastReportTimeNs = it->second->getLastReportTimeNs();
@@ -772,8 +819,14 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     auto it = mMetricsManagers.find(key);
     if (it != mMetricsManagers.end()) {
+        if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
+            dbutils::deleteDb(key);
+        }
         WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
                               NO_TIME_CONSTRAINTS);
+        if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
+            mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+        }
         mMetricsManagers.erase(it);
         mUidMap->OnConfigRemoved(key);
     }
@@ -796,6 +849,132 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     if (mMetricsManagers.empty()) {
         mPullerManager->ForceClearPullerCache();
     }
+}
+
+// TODO(b/267501143): Add unit tests when metric producer is ready
+void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClockNs,
+                                                         const int64_t elapsedRealtimeNs) {
+    if (!mIsRestrictedMetricsEnabled) {
+        return;
+    }
+    if (elapsedRealtimeNs - mLastTtlTime < StatsdStats::kMinTtlCheckPeriodNs) {
+        return;
+    }
+    enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+}
+
+// TODO(b/268150038): Add StatsdStats reporting to this method.
+void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                                 const optional<vector<uint8_t>>& policyConfig,
+                                 const shared_ptr<IStatsQueryCallback>& callback,
+                                 const int64_t configId, const string& configPackage,
+                                 const int32_t callingUid) {
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+    string err = "";
+    if (!mIsRestrictedMetricsEnabled) {
+        err = "Restricted metrics are not enabled";
+        callback->sendFailure(err);
+        return;
+    }
+
+    // TODO(b/268416460): validate policyConfig here
+
+    if (minSqlClientVersion > dbutils::getDbVersion()) {
+        callback->sendFailure(StringPrintf(
+                "Unsupported sqlite version. Installed Version: %d, Requested Version: %d.",
+                dbutils::getDbVersion(), minSqlClientVersion));
+        return;
+    }
+
+    set<int32_t> configPackageUids = mUidMap->getAppUid(configPackage);
+
+    set<ConfigKey> keysToQuery =
+            getRestrictedConfigKeysToQueryLocked(callingUid, configId, configPackageUids, err);
+
+    if (keysToQuery.empty()) {
+        callback->sendFailure(err);
+        return;
+    }
+
+    if (keysToQuery.size() > 1) {
+        err = "Ambiguous ConfigKey";
+        callback->sendFailure(err);
+        return;
+    }
+
+    enforceDataTtlsLocked(getWallClockNs(), getElapsedRealtimeNs());
+
+    std::vector<std::vector<std::string>> rows;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    if (!dbutils::query(*(keysToQuery.begin()), sqlQuery, rows, columnTypes, columnNames, err)) {
+        callback->sendFailure(StringPrintf("failed to query db %s:", err.c_str()));
+        return;
+    }
+
+    vector<string> queryData;
+    queryData.reserve(rows.size() * columnNames.size());
+    // TODO(b/268415904): avoid this vector transformation.
+    if (columnNames.size() != columnTypes.size()) {
+        callback->sendFailure("Inconsistent row sizes");
+    }
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].size() != columnNames.size()) {
+            callback->sendFailure("Inconsistent row sizes");
+            return;
+        }
+        queryData.insert(std::end(queryData), std::make_move_iterator(std::begin(rows[i])),
+                         std::make_move_iterator(std::end(rows[i])));
+    }
+    callback->sendResults(queryData, columnNames, columnTypes, rows.size());
+}
+
+set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
+        const int32_t callingUid, const int64_t configId, const set<int32_t>& configPackageUids,
+        string& err) {
+    set<ConfigKey> matchedConfigKeys;
+    for (auto uid : configPackageUids) {
+        ConfigKey configKey(uid, configId);
+        if (mMetricsManagers.find(configKey) != mMetricsManagers.end()) {
+            matchedConfigKeys.insert(configKey);
+        }
+    }
+
+    set<ConfigKey> excludedKeys;
+    for (auto& configKey : matchedConfigKeys) {
+        auto it = mMetricsManagers.find(configKey);
+        if (!it->second->validateRestrictedMetricsDelegate(callingUid)) {
+            excludedKeys.insert(configKey);
+        };
+    }
+
+    set<ConfigKey> result;
+    std::set_difference(matchedConfigKeys.begin(), matchedConfigKeys.end(), excludedKeys.begin(),
+                        excludedKeys.end(), std::inserter(result, result.end()));
+    if (matchedConfigKeys.empty()) {
+        err = "No configs found matching the config key";
+    } else if (result.empty()) {
+        err = "No matching configs for restricted metrics delegate";
+    }
+
+    return result;
+}
+
+void StatsLogProcessor::EnforceDataTtls(const int64_t wallClockNs,
+                                        const int64_t elapsedRealtimeNs) {
+    if (!mIsRestrictedMetricsEnabled) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+    enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+}
+
+void StatsLogProcessor::enforceDataTtlsLocked(const int64_t wallClockNs,
+                                              const int64_t elapsedRealtimeNs) {
+    for (const auto& itr : mMetricsManagers) {
+        itr.second->enforceRestrictedDataTtls(wallClockNs);
+    }
+    mLastTtlTime = elapsedRealtimeNs;
 }
 
 void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,

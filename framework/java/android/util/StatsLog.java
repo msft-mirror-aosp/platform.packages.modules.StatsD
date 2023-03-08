@@ -159,7 +159,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
-    public static final byte RESTRICTION_CATEGORY = 9;
+    public static final byte ANNOTATION_ID_RESTRICTION_CATEGORY = 9;
 
     /**
      * Annotation ID to indicate that a field of an atom contains peripheral device info.
@@ -172,10 +172,10 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
-    public static final byte FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO = 10;
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO = 10;
 
     /**
-     * Annotation ID to indicate that a field of an atom contains coarse app usage personalization.
+     * Annotation ID to indicate that a field of an atom contains app usage information.
      * This is a bool annotation.
      *
      * The ID is a byte since StatsEvent.addBooleanAnnotation() and StatsEvent.addIntAnnotation()
@@ -185,12 +185,106 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
-    public static final byte FIELD_RESTRICTION_COARSE_APP_USAGE_PERSONALIZATION = 11;
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE = 11;
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains app activity information.
+     * This is a bool annotation.
+     *
+     * The ID is a byte since StatsEvent.addBooleanAnnotation() and StatsEvent.addIntAnnotation()
+     * accept byte as the type for annotation ids to save space.
+     *
+     * @hide
+     */
+    @SuppressLint("NoByteOrShort")
+    @SystemApi
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY = 12;
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains health connect information.
+     * This is a bool annotation.
+     *
+     * The ID is a byte since StatsEvent.addBooleanAnnotation() and StatsEvent.addIntAnnotation()
+     * accept byte as the type for annotation ids to save space.
+     *
+     * @hide
+     */
+    @SuppressLint("NoByteOrShort")
+    @SystemApi
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT = 13;
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains accessibility information.
+     * This is a bool annotation.
+     *
+     * The ID is a byte since StatsEvent.addBooleanAnnotation() and StatsEvent.addIntAnnotation()
+     * accept byte as the type for annotation ids to save space.
+     *
+     * @hide
+     */
+    @SuppressLint("NoByteOrShort")
+    @SystemApi
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY = 14;
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains system search information.
+     * This is a bool annotation.
+     *
+     * The ID is a byte since StatsEvent.addBooleanAnnotation() and StatsEvent.addIntAnnotation()
+     * accept byte as the type for annotation ids to save space.
+     *
+     * @hide
+     */
+    @SuppressLint("NoByteOrShort")
+    @SystemApi
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH = 15;
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains user engagement information.
+     * This is a bool annotation.
+     *
+     * The ID is a byte since StatsEvent.addBooleanAnnotation() and StatsEvent.addIntAnnotation()
+     * accept byte as the type for annotation ids to save space.
+     *
+     * @hide
+     */
+    @SuppressLint("NoByteOrShort")
+    @SystemApi
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT = 16;
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains ambient sensing information.
+     * This is a bool annotation.
+     *
+     * The ID is a byte since StatsEvent.addBooleanAnnotation() and StatsEvent.addIntAnnotation()
+     * accept byte as the type for annotation ids to save space.
+     *
+     * @hide
+     */
+    @SuppressLint("NoByteOrShort")
+    @SystemApi
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING = 17;
+
+    /**
+     * Annotation ID to indicate that a field of an atom contains demographic classification
+     * information. This is a bool annotation.
+     *
+     * The ID is a byte since StatsEvent.addBooleanAnnotation() and StatsEvent.addIntAnnotation()
+     * accept byte as the type for annotation ids to save space.
+     *
+     * @hide
+     */
+    @SuppressLint("NoByteOrShort")
+    @SystemApi
+    public static final byte ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION = 18;
 
 
     /** @hide */
     @IntDef(prefix = { "RESTRICTION_CATEGORY_" }, value = {
-            RESTRICTION_CATEGORY_DIAGNOSTIC})
+            RESTRICTION_CATEGORY_DIAGNOSTIC,
+            RESTRICTION_CATEGORY_SYSTEM_INTELLIGENCE,
+            RESTRICTION_CATEGORY_AUTHENTICATION,
+            RESTRICTION_CATEGORY_FRAUD_AND_ABUSE})
     @Retention(RetentionPolicy.SOURCE)
     public @interface RestrictionCategory {}
 
@@ -201,6 +295,30 @@ public final class StatsLog {
      */
     @SystemApi
     public static final int RESTRICTION_CATEGORY_DIAGNOSTIC = 1;
+
+    /**
+     * Restriction category for atoms about system intelligence.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final int RESTRICTION_CATEGORY_SYSTEM_INTELLIGENCE = 2;
+
+    /**
+     * Restriction category for atoms about authentication.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final int RESTRICTION_CATEGORY_AUTHENTICATION = 3;
+
+    /**
+     * Restriction category for atoms about fraud and abuse.
+     *
+     * @hide
+     */
+    @SystemApi
+    public static final int RESTRICTION_CATEGORY_FRAUD_AND_ABUSE = 4;
 
     private StatsLog() {
     }

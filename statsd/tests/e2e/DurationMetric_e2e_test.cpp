@@ -249,7 +249,8 @@ TEST(DurationMetricE2eTest, TestWithActivation) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);  // 0:00
 
@@ -406,28 +407,36 @@ TEST(DurationMetricE2eTest, TestWithCondition) {
     int appUid = 123;
     vector<int> attributionUids1 = {appUid};
     vector<string> attributionTags1 = {"App1"};
+    int64_t conditionStartTime1Ns = bucketStartTimeNs + 22 * NS_PER_SEC;
+    int64_t conditionEndTimeNs = bucketStartTimeNs + (3 * 60 + 15) * NS_PER_SEC;
+    int64_t conditionStartTime2Ns = bucketStartTimeNs + (4 * 60 + 20) * NS_PER_SEC;
+    int64_t bucket2StartTimeNs = bucketStartTimeNs + bucketSizeNs;
 
-    auto event = CreateAcquireWakelockEvent(bucketStartTimeNs + 10 * NS_PER_SEC, attributionUids1,
-                                            attributionTags1,
-                                            "wl1");  // 0:10
-    processor->OnLogEvent(event.get());
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateAcquireWakelockEvent(bucketStartTimeNs + 10 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl1"));                           // 0:10
+    events.push_back(CreateMoveToBackgroundEvent(conditionStartTime1Ns, appUid));  // 0:22
+    events.push_back(CreateMoveToForegroundEvent(conditionEndTimeNs,
+                                                 appUid));  // 3:15
+    events.push_back(CreateReleaseWakelockEvent(bucketStartTimeNs + 4 * 60 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl1"));                           // 4:00
+    events.push_back(CreateMoveToBackgroundEvent(conditionStartTime2Ns, appUid));  // 4:20
 
-    event = CreateMoveToBackgroundEvent(bucketStartTimeNs + 22 * NS_PER_SEC, appUid);  // 0:22
-    processor->OnLogEvent(event.get());
-
-    event = CreateMoveToForegroundEvent(bucketStartTimeNs + (3 * 60 + 15) * NS_PER_SEC,
-                                        appUid);  // 3:15
-    processor->OnLogEvent(event.get());
-
-    event = CreateReleaseWakelockEvent(bucketStartTimeNs + 4 * 60 * NS_PER_SEC, attributionUids1,
-                                       attributionTags1,
-                                       "wl1");  // 4:00
-    processor->OnLogEvent(event.get());
+    // Bucket 2.
+    events.push_back(CreateAcquireWakelockEvent(bucket2StartTimeNs + 10 * NS_PER_SEC,
+                                                attributionUids1, attributionTags1,
+                                                "wl1"));  // 5:10
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
 
     vector<uint8_t> buffer;
     ConfigMetricsReportList reports;
-    processor->onDumpReport(cfgKey, bucketStartTimeNs + bucketSizeNs + 1, false, true, ADB_DUMP,
-                            FAST, &buffer);
+    int64_t dumpReportTimeNs = bucket2StartTimeNs + 40 * NS_PER_SEC;
+    processor->onDumpReport(cfgKey, dumpReportTimeNs, true, true, ADB_DUMP, FAST, &buffer);  // 5:40
     ASSERT_GT(buffer.size(), 0);
     EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
     backfillDimensionPath(&reports);
@@ -441,15 +450,15 @@ TEST(DurationMetricE2eTest, TestWithCondition) {
                                     &durationMetrics);
     ASSERT_EQ(1, durationMetrics.data_size());
 
-    DurationMetricData data = durationMetrics.data(0);
-
     // Validate bucket info.
-    ASSERT_EQ(1, data.bucket_info_size());
-
-    auto bucketInfo = data.bucket_info(0);
-    EXPECT_EQ(bucketStartTimeNs, bucketInfo.start_bucket_elapsed_nanos());
-    EXPECT_EQ(bucketStartTimeNs + bucketSizeNs, bucketInfo.end_bucket_elapsed_nanos());
-    EXPECT_EQ((2 * 60 + 53) * NS_PER_SEC, bucketInfo.duration_nanos());
+    ASSERT_EQ(2, durationMetrics.data(0).bucket_info_size());
+    ValidateDurationBucket(durationMetrics.data(0).bucket_info(0), bucketStartTimeNs,
+                           bucket2StartTimeNs, conditionEndTimeNs - conditionStartTime1Ns,
+                           (conditionEndTimeNs - conditionStartTime1Ns) +
+                                   (bucket2StartTimeNs - conditionStartTime2Ns));
+    ValidateDurationBucket(durationMetrics.data(0).bucket_info(1), bucket2StartTimeNs,
+                           dumpReportTimeNs, 30 * NS_PER_SEC,
+                           dumpReportTimeNs - bucket2StartTimeNs);
 }
 
 TEST(DurationMetricE2eTest, TestWithSlicedCondition) {

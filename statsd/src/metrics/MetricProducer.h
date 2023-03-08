@@ -24,6 +24,7 @@
 
 #include "HashableDimensionKey.h"
 #include "anomaly/AnomalyTracker.h"
+#include "condition/ConditionTimer.h"
 #include "condition/ConditionWizard.h"
 #include "config/ConfigKey.h"
 #include "guardrail/StatsdStats.h"
@@ -32,6 +33,7 @@
 #include "packages/PackageInfoListener.h"
 #include "state/StateListener.h"
 #include "state/StateManager.h"
+#include "utils/DbUtils.h"
 #include "utils/ShardOffsetProvider.h"
 
 namespace android {
@@ -334,6 +336,12 @@ public:
     void writeActiveMetricToProtoOutputStream(
             int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto);
 
+    virtual void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs){};
+
+    /* Called when the metric is to about to be removed from config. */
+    virtual void onMetricRemove() {
+    }
+
     // Start: getters/setters
     inline int64_t getMetricId() const {
         return mMetricId;
@@ -527,6 +535,8 @@ protected:
     int64_t mBucketSizeNs;
 
     ConditionState mCondition;
+
+    ConditionTimer mConditionTimer;
 
     int mConditionTrackerIndex;
 

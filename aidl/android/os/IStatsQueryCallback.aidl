@@ -1,5 +1,5 @@
-/*
- * Copyright (C) 2020 The Android Open Source Project
+/* *
+ * Copyright (C) 2022 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,15 @@
  * limitations under the License.
  */
 
-#pragma once
+package android.os;
 
-namespace android {
-namespace os {
-namespace statsd {
+/**
+  * Binder interface to hold a Callback for Stats SQL queries.
+  * {@hide}
+  */
+interface IStatsQueryCallback {
+      oneway void sendResults(in String[] queryData, in String[] columnNames,
+        in int[] columnTypes, int rowCount);
 
-const uint8_t ANNOTATION_ID_IS_UID = 1;
-const uint8_t ANNOTATION_ID_TRUNCATE_TIMESTAMP = 2;
-const uint8_t ANNOTATION_ID_PRIMARY_FIELD = 3;
-const uint8_t ANNOTATION_ID_EXCLUSIVE_STATE = 4;
-const uint8_t ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID = 5;
-const uint8_t ANNOTATION_ID_TRIGGER_STATE_RESET = 7;
-const uint8_t ANNOTATION_ID_STATE_NESTED = 8;
-
-} // namespace statsd
-} // namespace os
-} // namespace android
+      oneway void sendFailure(String error);
+}
