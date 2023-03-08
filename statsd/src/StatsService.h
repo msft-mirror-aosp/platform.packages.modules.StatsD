@@ -427,6 +427,7 @@ private:
     ScopedAIBinder_DeathRecipient mStatsCompanionServiceDeathRecipient;
 
     friend class StatsServiceConfigTest;
+    friend class RestrictedConfigE2ETest;
 
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
     FRIEND_TEST(StatsServiceTest, TestAddConfig_simple);
