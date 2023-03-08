@@ -546,13 +546,14 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
     const auto& it = mMetricsManagers.find(key);
     bool configValid = false;
     if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE) &&
-        it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
-        if (!config.has_restricted_metrics_delegate_package_name()) {
+        it != mMetricsManagers.end()) {
+        if (it->second->hasRestrictedMetricsDelegate() !=
+            config.has_restricted_metrics_delegate_package_name()) {
             // Not a modular update if has_restricted_metrics_delegate changes
             modularUpdate = false;
         }
-        if (!modularUpdate) {
-            // Always delete the db if restricted metrics config is not a
+        if (!modularUpdate && it->second->hasRestrictedMetricsDelegate()) {
+            // Always delete the old db if restricted metrics config is not a
             // modular update.
             dbutils::deleteDb(key);
         }
