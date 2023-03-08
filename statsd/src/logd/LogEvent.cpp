@@ -15,11 +15,12 @@
  */
 
 #define STATSD_DEBUG false  // STOPSHIP if true
+#include "Log.h"
+
 #include "logd/LogEvent.h"
 
 #include <android-base/stringprintf.h>
 #include <android/binder_ibinder.h>
-#include <log/log.h>
 #include <private/android_filesystem_config.h>
 
 #include "annotations.h"
@@ -271,6 +272,7 @@ void LogEvent::parseIsUidAnnotation(uint8_t annotationType, std::optional<uint8_
     // Allowed types: INT, repeated INT
     if (numElements > mValues.size() || !checkPreviousValueType(INT) ||
         annotationType != BOOL_TYPE) {
+        VLOG("Atom ID %d error while parseIsUidAnnotation()", mTagId);
         mValid = false;
         return;
     }
@@ -287,6 +289,7 @@ void LogEvent::parseIsUidAnnotation(uint8_t annotationType, std::optional<uint8_
 
 void LogEvent::parseTruncateTimestampAnnotation(uint8_t annotationType) {
     if (!mValues.empty() || annotationType != BOOL_TYPE) {
+        VLOG("Atom ID %d error while parseTruncateTimestampAnnotation()", mTagId);
         mValid = false;
         return;
     }
@@ -299,6 +302,7 @@ void LogEvent::parsePrimaryFieldAnnotation(uint8_t annotationType,
                                            std::optional<size_t> firstUidInChainIndex) {
     // Allowed types: all types except for attribution chains and repeated fields.
     if (mValues.empty() || annotationType != BOOL_TYPE || firstUidInChainIndex || numElements) {
+        VLOG("Atom ID %d error while parsePrimaryFieldAnnotation()", mTagId);
         mValid = false;
         return;
     }
@@ -311,11 +315,13 @@ void LogEvent::parsePrimaryFieldFirstUidAnnotation(uint8_t annotationType,
                                                    std::optional<size_t> firstUidInChainIndex) {
     // Allowed types: attribution chains
     if (mValues.empty() || annotationType != BOOL_TYPE || !firstUidInChainIndex) {
+        VLOG("Atom ID %d error while parsePrimaryFieldFirstUidAnnotation()", mTagId);
         mValid = false;
         return;
     }
 
     if (mValues.size() < firstUidInChainIndex.value() + 1) {  // AttributionChain is empty.
+        VLOG("Atom ID %d error while parsePrimaryFieldFirstUidAnnotation()", mTagId);
         mValid = false;
         android_errorWriteLog(0x534e4554, "174485572");
         return;
@@ -330,6 +336,7 @@ void LogEvent::parseExclusiveStateAnnotation(uint8_t annotationType,
     // Allowed types: INT
     if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
+        VLOG("Atom ID %d error while parseExclusiveStateAnnotation()", mTagId);
         mValid = false;
         return;
     }
@@ -344,6 +351,7 @@ void LogEvent::parseTriggerStateResetAnnotation(uint8_t annotationType,
     // Allowed types: INT
     if (mValues.empty() || annotationType != INT32_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
+        VLOG("Atom ID %d error while parseTriggerStateResetAnnotation()", mTagId);
         mValid = false;
         return;
     }
@@ -356,6 +364,7 @@ void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
     // Allowed types: INT
     if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
+        VLOG("Atom ID %d error while parseStateNestedAnnotation()", mTagId);
         mValid = false;
         return;
     }
@@ -396,6 +405,8 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
                 parseStateNestedAnnotation(annotationType, numElements);
                 break;
             default:
+                VLOG("Atom ID %d error while parseAnnotations() - wrong annotationId(%d)", mTagId,
+                     annotationId);
                 mValid = false;
                 return;
         }
@@ -464,7 +475,7 @@ bool LogEvent::parseBuffer(uint8_t* buf, size_t len) {
                 parseArray(pos, /*depth=*/0, last, getNumAnnotations(typeInfo));
                 break;
             case ERROR_TYPE:
-                /* mErrorBitmask =*/ readNextValue<int32_t>();
+                /* mErrorBitmask =*/readNextValue<int32_t>();
                 mValid = false;
                 break;
             default:
@@ -615,9 +626,20 @@ string LogEvent::ToString() const {
     string result;
     result += StringPrintf("{ uid(%d) %lld %lld (%d)", mLogUid, (long long)mLogdTimestampNs,
                            (long long)mElapsedTimestampNs, mTagId);
+    string annotations;
+    if (mTruncateTimestamp) {
+        annotations = "TRUNCATE_TS";
+    }
+    if (mResetState != -1) {
+        annotations += annotations.size() ? ", RESET_STATE" : "RESET_STATE";
+    }
+    if (annotations.size()) {
+        result += " [" + annotations + "] ";
+    }
+
     for (const auto& value : mValues) {
-        result +=
-                StringPrintf("%#x", value.mField.getField()) + "->" + value.mValue.toString() + " ";
+        result += StringPrintf("%#x", value.mField.getField()) + "->" + value.mValue.toString();
+        result += value.mAnnotations.toString() + " ";
     }
     result += " }";
     return result;
