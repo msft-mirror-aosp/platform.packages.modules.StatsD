@@ -546,13 +546,14 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
     const auto& it = mMetricsManagers.find(key);
     bool configValid = false;
     if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE) &&
-        it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
-        if (!config.has_restricted_metrics_delegate_package_name()) {
+        it != mMetricsManagers.end()) {
+        if (it->second->hasRestrictedMetricsDelegate() !=
+            config.has_restricted_metrics_delegate_package_name()) {
             // Not a modular update if has_restricted_metrics_delegate changes
             modularUpdate = false;
         }
-        if (!modularUpdate) {
-            // Always delete the db if restricted metrics config is not a
+        if (!modularUpdate && it->second->hasRestrictedMetricsDelegate()) {
+            // Always delete the old db if restricted metrics config is not a
             // modular update.
             dbutils::deleteDb(key);
         }
@@ -565,7 +566,6 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         configValid = newMetricsManager->isConfigValid();
         if (configValid) {
             newMetricsManager->init();
-            mUidMap->OnConfigUpdated(key);
             newMetricsManager->refreshTtl(timestampNs);
             if (mIsRestrictedMetricsEnabled) {
                 if (newMetricsManager->hasRestrictedMetricsDelegate()) {
@@ -586,12 +586,20 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         configValid = it->second->updateConfig(config, mTimeBaseNs, timestampNs,
                                                mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
         if (configValid) {
-            mUidMap->OnConfigUpdated(key);
             if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
                 mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
                                                 it->second->getAllMetricIds());
             }
         }
+    }
+    if (!mIsRestrictedMetricsEnabled && configValid) {
+        mUidMap->OnConfigUpdated(key);
+    } else if (mIsRestrictedMetricsEnabled && configValid &&
+               !config.has_restricted_metrics_delegate_package_name()) {
+        mUidMap->OnConfigUpdated(key);
+    } else if (mIsRestrictedMetricsEnabled && configValid &&
+               config.has_restricted_metrics_delegate_package_name()) {
+        mUidMap->OnConfigRemoved(key);
     }
     if (!configValid) {
         // If there is any error in the config, don't use it.
@@ -604,6 +612,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
             dbutils::deleteDb(key);
         }
         mMetricsManagers.erase(key);
+        mUidMap->OnConfigRemoved(key);
     }
 }
 
