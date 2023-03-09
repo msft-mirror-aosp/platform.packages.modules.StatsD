@@ -497,6 +497,86 @@ TEST_F(RestrictedEventMetricE2eTest, TestNonModularConfigUpdateRestrictedDelegat
     dbutils::deleteDb(configKey);
 }
 
+TEST_F(RestrictedEventMetricE2eTest, TestModularConfigUpdateNewRestrictedDelegate) {
+    config.clear_restricted_metrics_delegate_package_name();
+    // Update the existing config without a restricted delegate
+    processor->OnConfigUpdated(configAddedTimeNs + 10, configKey, config);
+
+    // Update the existing config with a new restricted delegate
+    config.set_restricted_metrics_delegate_package_name("new.delegate.package");
+    processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config);
+
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 2 * NS_PER_SEC));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    uint64_t dumpTimeNs = configAddedTimeNs + 100 * NS_PER_SEC;
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(configKey, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(reports.reports_size(), 0);
+
+    //  Assert the config update was not modular and a RestrictedEventMetricProducer was created.
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    EXPECT_EQ(rows.size(), 1);
+    EXPECT_THAT(rows[0],
+                ElementsAre(to_string(atomTag), to_string(configAddedTimeNs + 2 * NS_PER_SEC),
+                            _,  // wallClockNs
+                            _   // field_1
+                            ));
+    EXPECT_THAT(columnNames,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
+    EXPECT_THAT(columnTypes,
+                ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestModularConfigUpdateChangeRestrictedDelegate) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Update the existing config with a new restricted delegate
+    int32_t newDelegateUid = delegate_uid + 1;
+    config.set_restricted_metrics_delegate_package_name("new.delegate.package");
+    uidMap->updateApp(configAddedTimeNs, String16("new.delegate.package"),
+                      /*uid=*/newDelegateUid, /*versionCode=*/1,
+                      /*versionString=*/String16("v2"),
+                      /*installer=*/String16(""), /*certificateHash=*/{});
+    processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/newDelegateUid);
+
+    EXPECT_EQ(rowCountResult, 1);
+    EXPECT_THAT(queryDataResult, ElementsAre(to_string(atomTag), to_string(configAddedTimeNs + 100),
+                                             _,  // wallClockNs
+                                             _   // field_1
+                                             ));
+    EXPECT_THAT(columnNamesResult,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
+    EXPECT_THAT(columnTypesResult,
+                ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+}
+
 TEST_F(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate) {
     std::vector<std::unique_ptr<LogEvent>> events;
     events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
