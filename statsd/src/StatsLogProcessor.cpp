@@ -997,6 +997,8 @@ void StatsLogProcessor::enforceDataTtlsLocked(const int64_t wallClockNs,
         itr.second->enforceRestrictedDataTtls(wallClockNs);
     }
     mLastTtlTime = elapsedRealtimeNs;
+    StorageManager::enforceDbGuardrails(STATS_RESTRICTED_DATA_DIR, wallClockNs / NS_PER_SEC,
+                                        StatsdStats::kMaxFileSize);
 }
 
 void StatsLogProcessor::flushRestrictedDataLocked(const int64_t elapsedRealtimeNs) {
