@@ -782,27 +782,78 @@ TEST_F(RestrictedEventMetricE2eTest, TestNotFlushed) {
     EXPECT_EQ(rows.size(), 0);
 }
 
-TEST_F(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails) {
+TEST_F(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails) {
     int64_t currentWallTimeNs = getWallClockNs();
-    int64_t originalEventElapsedTime = configAddedTimeNs + 100;
-    // 30 min used here because the TTL check period is 1 hour.
-    int64_t newEventElapsedTime = configAddedTimeNs + (3600 * NS_PER_SEC) / 2;  // 30 min later
+    int64_t originalEventElapsedTime =
+            configAddedTimeNs + (3600 * NS_PER_SEC) * 2;  // 2 hours after boot
+    // 2 hours used here because the TTL check period is 1 hour.
+    int64_t dbEnforcementTimeNs =
+            configAddedTimeNs + (3600 * NS_PER_SEC) * 4;  // 4 hours after boot
     std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(atomTag, originalEventElapsedTime);
     event1->setLogdWallClockTimestampNs(currentWallTimeNs);
     // Send log events to StatsLogProcessor.
     processor->OnLogEvent(event1.get(), originalEventElapsedTime);
 
-    processor->enforceDataTtlsLocked(oneMonthLater, originalEventElapsedTime);
-
+    EXPECT_TRUE(StorageManager::hasFile(
+            base::StringPrintf("%s/%s", STATS_RESTRICTED_DATA_DIR, "123_12345.db").c_str()));
     std::stringstream query;
     query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
-    string err;
-    std::vector<int32_t> columnTypes;
-    std::vector<string> columnNames;
-    std::vector<std::vector<std::string>> rows;
-    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
-    EXPECT_EQ(rows.size(), 0);
-    EXPECT_THAT(err, StartsWith("unable to open database file"));
+    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/delegate_uid);
+    EXPECT_EQ(rowCountResult, 1);
+    EXPECT_THAT(queryDataResult,
+                ElementsAre(to_string(atomTag), to_string(originalEventElapsedTime),
+                            to_string(currentWallTimeNs),
+                            _  // field_1
+                            ));
+    EXPECT_THAT(columnNamesResult,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
+    EXPECT_THAT(columnTypesResult,
+                ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+
+    processor->mIsRestrictedMetricsEnabled = false;
+    processor->enforceDbGuardrailsIfNecessaryLocked(oneMonthLater, dbEnforcementTimeNs);
+
+    EXPECT_FALSE(StorageManager::hasFile(
+            base::StringPrintf("%s/%s", STATS_RESTRICTED_DATA_DIR, "123_12345.db").c_str()));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeGuardrail) {
+    int64_t currentWallTimeNs = getWallClockNs();
+    int64_t originalEventElapsedTime =
+            configAddedTimeNs + (3600 * NS_PER_SEC) * 2;  // 2 hours after boot
+    // 2 hours used here because the TTL check period is 1 hour.
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(atomTag, originalEventElapsedTime);
+    event1->setLogdWallClockTimestampNs(currentWallTimeNs);
+    // Send log events to StatsLogProcessor.
+    processor->OnLogEvent(event1.get(), originalEventElapsedTime);
+
+    EXPECT_TRUE(StorageManager::hasFile(
+            base::StringPrintf("%s/%s", STATS_RESTRICTED_DATA_DIR, "123_12345.db").c_str()));
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/delegate_uid);
+    EXPECT_EQ(rowCountResult, 1);
+    EXPECT_THAT(queryDataResult,
+                ElementsAre(to_string(atomTag), to_string(originalEventElapsedTime),
+                            to_string(currentWallTimeNs),
+                            _  // field_1
+                            ));
+    EXPECT_THAT(columnNamesResult,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
+    EXPECT_THAT(columnTypesResult,
+                ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+
+    processor->mIsRestrictedMetricsEnabled = false;
+    processor->enforceDbGuardrailsIfNecessaryLocked(oneMonthLater, originalEventElapsedTime);
+
+    EXPECT_TRUE(StorageManager::hasFile(
+            base::StringPrintf("%s/%s", STATS_RESTRICTED_DATA_DIR, "123_12345.db").c_str()));
 }
 
 TEST_F(RestrictedEventMetricE2eTest, TestFlushInWriteDataToDisk) {
