@@ -342,6 +342,9 @@ public:
     virtual void onMetricRemove() {
     }
 
+    virtual void flushRestrictedData() {
+    }
+
     // Start: getters/setters
     inline int64_t getMetricId() const {
         return mMetricId;
