@@ -839,6 +839,15 @@ bool MetricsManager::validateRestrictedMetricsDelegate(const int32_t callingUid)
     return possibleUids.find(callingUid) != possibleUids.end();
 }
 
+void MetricsManager::flushRestrictedData() {
+    if (!hasRestrictedMetricsDelegate()) {
+        return;
+    }
+    for (const auto& producer : mAllMetricProducers) {
+        producer->flushRestrictedData();
+    }
+}
+
 vector<int64_t> MetricsManager::getAllMetricIds() const {
     vector<int64_t> metricIds;
     metricIds.reserve(mMetricProducerMap.size());

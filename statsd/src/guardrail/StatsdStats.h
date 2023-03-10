@@ -154,6 +154,10 @@ public:
     // data subscriber that it's time to call getData.
     static const size_t kBytesPerConfigTriggerGetData = 192 * 1024;
 
+    // Soft memory limit per restricted configuration. Once this limit is exceeded,
+    // we begin flush in-memory restricted metrics to database.
+    static const size_t kBytesPerRestrictedConfigTriggerFlush = 25 * 1024;
+
     // Cap the UID map's memory usage to this. This should be fairly high since the UID information
     // is critical for understanding the metrics.
     const static size_t kMaxBytesUsedUidMap = 50 * 1024;
@@ -169,6 +173,9 @@ public:
 
     /* Min period between two checks of restricted metrics TTLs. */
     static const int64_t kMinTtlCheckPeriodNs = 60 * 60 * NS_PER_SEC;
+
+    /* Min period between two flush operations of restricted metrics. */
+    static const int64_t kMinFlushRestrictedPeriodNs = 60 * 60 * NS_PER_SEC;
 
     /* Minimum period between two activation broadcasts in nanoseconds. */
     static const int64_t kMinActivationBroadcastPeriodNs = 10 * NS_PER_SEC;

@@ -111,7 +111,7 @@ bool deleteTable(const ConfigKey& key, const int64_t metricId) {
         sqlite3_close(db);
         return false;
     }
-    string zSql = StringPrintf("DROP TABLE metric_%lld", (long long)metricId);
+    string zSql = StringPrintf("DROP TABLE metric_%s", reformatMetricId(metricId).c_str());
     char* error = nullptr;
     sqlite3_exec(db, zSql.c_str(), nullptr, nullptr, &error);
     sqlite3_close(db);
