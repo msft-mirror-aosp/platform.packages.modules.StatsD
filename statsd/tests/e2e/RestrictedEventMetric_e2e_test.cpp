@@ -30,6 +30,7 @@ namespace statsd {
 #ifdef __ANDROID__
 
 namespace {
+const int64_t oneMonthLater = getWallClockNs() + 31 * 24 * 3600 * NS_PER_SEC;
 const int64_t configId = 12345;
 const string delegate_package_name = "com.test.restricted.metrics.package";
 const int32_t delegate_uid = 1005;
@@ -187,6 +188,9 @@ TEST_F(RestrictedEventMetricE2eTest, TestInvalidSchemaIncreasingFieldCount) {
     // Send log events to StatsLogProcessor.
     for (auto& event : events) {
         processor->OnLogEvent(event.get());
+        processor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST,
+                                   event->GetElapsedTimestampNs() + 20 * NS_PER_SEC,
+                                   getWallClockNs());
     }
 
     std::stringstream query;
@@ -230,6 +234,9 @@ TEST_F(RestrictedEventMetricE2eTest, TestInvalidSchemaDecreasingFieldCount) {
     // Send log events to StatsLogProcessor.
     for (auto& event : events) {
         processor->OnLogEvent(event.get());
+        processor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST,
+                                   event->GetElapsedTimestampNs() + 20 * NS_PER_SEC,
+                                   getWallClockNs());
     }
 
     std::stringstream query;
@@ -413,6 +420,8 @@ TEST_F(RestrictedEventMetricE2eTest, TestEnforceTtlRemovesOldEvents) {
 
     // Send log events to StatsLogProcessor.
     processor->OnLogEvent(event1.get(), originalEventElapsedTime);
+    processor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST, originalEventElapsedTime + 20 * NS_PER_SEC,
+                               getWallClockNs());
     processor->EnforceDataTtls(currentWallTimeNs, originalEventElapsedTime + 100);
 
     std::stringstream query;
@@ -434,7 +443,34 @@ TEST_F(RestrictedEventMetricE2eTest, TestConfigRemovalDeletesData) {
     for (auto& event : events) {
         processor->OnLogEvent(event.get());
     }
+    // Query to make sure data is flushed
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/delegate_uid);
 
+    processor->OnConfigRemoved(configKey);
+
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+
+    EXPECT_THAT(err, StartsWith("unable to open database file"));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestConfigRemovalDeletesDataWithoutFlush) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
     processor->OnConfigRemoved(configKey);
 
     std::stringstream query;
@@ -637,6 +673,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls) {
     processor->OnLogEvent(event1.get(), originalEventElapsedTime);
     processor->OnLogEvent(event2.get(), newEventElapsedTime);
     processor->OnLogEvent(event3.get(), newEventElapsedTime + 100);
+    processor->flushRestrictedDataLocked(newEventElapsedTime);
 
     std::stringstream query;
     query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
@@ -670,6 +707,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestLogEventsDoesNotEnforceTtls) {
     // Send log events to StatsLogProcessor.
     processor->OnLogEvent(event1.get(), originalEventElapsedTime);
     processor->OnLogEvent(event2.get(), newEventElapsedTime);
+    processor->flushRestrictedDataLocked(newEventElapsedTime);
 
     std::stringstream query;
     query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
@@ -720,6 +758,90 @@ TEST_F(RestrictedEventMetricE2eTest, TestQueryEnforceTtls) {
                 ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
     EXPECT_THAT(columnTypesResult,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestNotFlushed) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get(), event->GetElapsedTimestampNs());
+    }
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    EXPECT_EQ(rows.size(), 0);
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails) {
+    int64_t currentWallTimeNs = getWallClockNs();
+    int64_t originalEventElapsedTime = configAddedTimeNs + 100;
+    // 30 min used here because the TTL check period is 1 hour.
+    int64_t newEventElapsedTime = configAddedTimeNs + (3600 * NS_PER_SEC) / 2;  // 30 min later
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(atomTag, originalEventElapsedTime);
+    event1->setLogdWallClockTimestampNs(currentWallTimeNs);
+    // Send log events to StatsLogProcessor.
+    processor->OnLogEvent(event1.get(), originalEventElapsedTime);
+
+    processor->enforceDataTtlsLocked(oneMonthLater, originalEventElapsedTime);
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    EXPECT_EQ(rows.size(), 0);
+    EXPECT_THAT(err, StartsWith("unable to open database file"));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestFlushInWriteDataToDisk) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get(), event->GetElapsedTimestampNs());
+    }
+
+    // Call WriteDataToDisk after 20 second because cooldown period is 15 second.
+    processor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST, 20 * NS_PER_SEC, getWallClockNs());
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    EXPECT_EQ(rows.size(), 1);
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestFlushPeriodically) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+    events.push_back(CreateRestrictedLogEvent(
+            atomTag, configAddedTimeNs + StatsdStats::kMinFlushRestrictedPeriodNs + 1));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get(), event->GetElapsedTimestampNs());
+    }
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_TRUE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    // Only first event is flushed when second event is logged.
+    EXPECT_EQ(rows.size(), 1);
 }
 
 #else

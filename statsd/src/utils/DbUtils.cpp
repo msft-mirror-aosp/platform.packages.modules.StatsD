@@ -62,17 +62,17 @@ static string getCreateSqlString(const int64_t metricId, const LogEvent& event) 
         switch (fieldValue.mValue.getType()) {
             case INT:
             case LONG:
-                result += StringPrintf("field_%zu INTEGER,", fieldId);
+                result += StringPrintf("field_%d INTEGER,", fieldValue.mField.getPosAtDepth(0));
                 break;
             case STRING:
-                result += StringPrintf("field_%zu TEXT,", fieldId);
+                result += StringPrintf("field_%d TEXT,", fieldValue.mField.getPosAtDepth(0));
                 break;
             case FLOAT:
-                result += StringPrintf("field_%zu REAL,", fieldId);
+                result += StringPrintf("field_%d REAL,", fieldValue.mField.getPosAtDepth(0));
                 break;
             default:
                 // Byte array fields are not supported.
-                result += StringPrintf("field_%zu NULL,", fieldId);
+                break;
         }
     }
     result.pop_back();
@@ -111,7 +111,7 @@ bool deleteTable(const ConfigKey& key, const int64_t metricId) {
         sqlite3_close(db);
         return false;
     }
-    string zSql = StringPrintf("DROP TABLE metric_%lld", (long long)metricId);
+    string zSql = StringPrintf("DROP TABLE metric_%s", reformatMetricId(metricId).c_str());
     char* error = nullptr;
     sqlite3_exec(db, zSql.c_str(), nullptr, nullptr, &error);
     sqlite3_close(db);
@@ -140,7 +140,8 @@ void closeDb(sqlite3* db) {
     sqlite3_close(db);
 }
 
-static string getInsertSqlString(const int64_t metricId, const vector<LogEvent>& events) {
+static bool getInsertSqlStmt(sqlite3* db, sqlite3_stmt** stmt, const int64_t metricId,
+                             const vector<LogEvent>& events, string& err) {
     string result =
             StringPrintf("INSERT INTO metric_%s VALUES", reformatMetricId(metricId).c_str());
     for (auto& logEvent : events) {
@@ -148,34 +149,52 @@ static string getInsertSqlString(const int64_t metricId, const vector<LogEvent>&
                                (long long)logEvent.GetElapsedTimestampNs(),
                                (long long)logEvent.GetLogdTimestampNs());
         for (auto& fieldValue : logEvent.getValues()) {
-            if (fieldValue.mField.getDepth() > 0) {
-                // Repeated fields are not supported.
+            if (fieldValue.mField.getDepth() > 0 || fieldValue.mValue.getType() == STORAGE) {
+                // Repeated fields and byte fields are not supported.
                 continue;
             }
-            switch (fieldValue.mValue.getType()) {
-                case INT:
-                    result += StringPrintf("%s,", to_string(fieldValue.mValue.int_value).c_str());
-                    break;
-                case LONG:
-                    result += StringPrintf("%s,", to_string(fieldValue.mValue.long_value).c_str());
-                    break;
-                case STRING:
-                    result += StringPrintf("%s,", fieldValue.mValue.str_value.c_str());
-                    break;
-                case FLOAT:
-                    result += StringPrintf("%s,", to_string(fieldValue.mValue.float_value).c_str());
-                    break;
-                default:
-                    // Byte array fields are not supported.
-                    result += "null,";
-            }
+            result += "?,";
         }
         result.pop_back();
         result += "),";
     }
     result.pop_back();
     result += ";";
-    return result;
+    if (sqlite3_prepare_v2(db, result.c_str(), -1, stmt, nullptr) != SQLITE_OK) {
+        err = sqlite3_errmsg(db);
+        return false;
+    }
+    // ? parameters start with an index of 1 from start of query string to the
+    // end.
+    int32_t index = 1;
+    for (auto& logEvent : events) {
+        for (auto& fieldValue : logEvent.getValues()) {
+            if (fieldValue.mField.getDepth() > 0 || fieldValue.mValue.getType() == STORAGE) {
+                // Repeated fields and byte fields are not supported.
+                continue;
+            }
+            switch (fieldValue.mValue.getType()) {
+                case INT:
+                    sqlite3_bind_int(*stmt, index, fieldValue.mValue.int_value);
+                    break;
+                case LONG:
+                    sqlite3_bind_int64(*stmt, index, fieldValue.mValue.long_value);
+                    break;
+                case STRING:
+                    sqlite3_bind_text(*stmt, index, fieldValue.mValue.str_value.c_str(), -1,
+                                      SQLITE_STATIC);
+                    break;
+                case FLOAT:
+                    sqlite3_bind_double(*stmt, index, fieldValue.mValue.float_value);
+                    break;
+                default:
+                    // Byte array fields are not supported.
+                    break;
+            }
+            ++index;
+        }
+    }
+    return true;
 }
 
 bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>& events) {
@@ -191,13 +210,20 @@ bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>
 }
 
 bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events) {
-    char* error = nullptr;
-    string zSql = getInsertSqlString(metricId, events);
-    sqlite3_exec(db, zSql.c_str(), nullptr, nullptr, &error);
-    if (error) {
-        ALOGW("Failed to insert data to db: %s", error);
+    string error;
+    sqlite3_stmt* stmt = nullptr;
+    if (!getInsertSqlStmt(db, &stmt, metricId, events, error)) {
+        ALOGW("Failed to generate prepared sql insert query %s", error.c_str());
+        sqlite3_finalize(stmt);
         return false;
     }
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        error = sqlite3_errmsg(db);
+        ALOGW("Failed to insert data to db: %s", error.c_str());
+        sqlite3_finalize(stmt);
+        return false;
+    }
+    sqlite3_finalize(stmt);
     return true;
 }
 

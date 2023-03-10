@@ -59,7 +59,7 @@ TEST_F(DbUtilsTest, TestInsertString) {
     int64_t eventElapsedTimeNs = 10000000000;
 
     AStatsEvent* statsEvent = makeAStatsEvent(tagId, eventElapsedTimeNs + 10);
-    AStatsEvent_writeString(statsEvent, "111");
+    AStatsEvent_writeString(statsEvent, "test_string");
     LogEvent logEvent = makeLogEvent(statsEvent);
     vector<LogEvent> events{logEvent};
 
@@ -74,7 +74,34 @@ TEST_F(DbUtilsTest, TestInsertString) {
     EXPECT_TRUE(query(key, zSql, rows, columnTypes, columnNames, err));
 
     ASSERT_EQ(rows.size(), 1);
-    EXPECT_THAT(rows[0], ElementsAre("1", to_string(eventElapsedTimeNs + 10), _, "111"));
+    EXPECT_THAT(rows[0], ElementsAre("1", to_string(eventElapsedTimeNs + 10), _, "test_string"));
+    EXPECT_THAT(columnTypes,
+                ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_TEXT));
+    EXPECT_THAT(columnNames,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
+}
+
+TEST_F(DbUtilsTest, TestMaliciousString) {
+    int64_t eventElapsedTimeNs = 10000000000;
+
+    AStatsEvent* statsEvent = makeAStatsEvent(tagId, eventElapsedTimeNs + 10);
+    AStatsEvent_writeString(statsEvent, "111); DROP TABLE metric_111;--");
+    LogEvent logEvent = makeLogEvent(statsEvent);
+    vector<LogEvent> events{logEvent};
+
+    EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
+    EXPECT_TRUE(insert(key, metricId, events));
+
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    string zSql = "SELECT * FROM metric_111 ORDER BY elapsedTimestampNs";
+    EXPECT_TRUE(query(key, zSql, rows, columnTypes, columnNames, err));
+
+    ASSERT_EQ(rows.size(), 1);
+    EXPECT_THAT(rows[0], ElementsAre("1", to_string(eventElapsedTimeNs + 10), _,
+                                     "111); DROP TABLE metric_111;--"));
     EXPECT_THAT(columnTypes,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_TEXT));
     EXPECT_THAT(columnNames,

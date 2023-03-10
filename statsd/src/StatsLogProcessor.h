@@ -191,6 +191,9 @@ private:
     // Tracks when we last checked the ttl for restricted metrics.
     int64_t mLastTtlTime;
 
+    // Tracks when we last flushed restricted metrics.
+    int64_t mLastFlushRestrictedTime;
+
     // Tracks which config keys has metric reports on disk
     std::set<ConfigKey> mOnDiskDataConfigs;
 
@@ -294,6 +297,10 @@ private:
             const int64_t& timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
 
+    void flushRestrictedDataLocked(const int64_t elapsedRealtimeNs);
+
+    void flushRestrictedDataIfNecessaryLocked(const int64_t elapsedRealtimeNs);
+
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
     std::function<bool(const ConfigKey& key)> mSendBroadcast;
@@ -354,6 +361,8 @@ private:
     FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricOnDumpReportNotEmpty);
     FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotWriteToDisk);
     FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricWriteToDisk);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricFlushIfReachMemoryLimit);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotFlushIfNotReachMemoryLimit);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration1);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration2);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration3);
@@ -378,6 +387,10 @@ private:
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestQueryEnforceTtls);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsDoesNotEnforceTtls);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestNotFlushed);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushInWriteDataToDisk);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushPeriodically);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
