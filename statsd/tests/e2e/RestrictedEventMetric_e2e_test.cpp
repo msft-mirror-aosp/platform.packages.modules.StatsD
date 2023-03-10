@@ -30,6 +30,7 @@ namespace statsd {
 #ifdef __ANDROID__
 
 namespace {
+const int64_t oneMonthLater = getWallClockNs() + 31 * 24 * 3600 * NS_PER_SEC;
 const int64_t configId = 12345;
 const string delegate_package_name = "com.test.restricted.metrics.package";
 const int32_t delegate_uid = 1005;
@@ -766,6 +767,27 @@ TEST_F(RestrictedEventMetricE2eTest, TestNotFlushed) {
     for (auto& event : events) {
         processor->OnLogEvent(event.get(), event->GetElapsedTimestampNs());
     }
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
+    EXPECT_EQ(rows.size(), 0);
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails) {
+    int64_t currentWallTimeNs = getWallClockNs();
+    int64_t originalEventElapsedTime = configAddedTimeNs + 100;
+    // 30 min used here because the TTL check period is 1 hour.
+    int64_t newEventElapsedTime = configAddedTimeNs + (3600 * NS_PER_SEC) / 2;  // 30 min later
+    std::unique_ptr<LogEvent> event1 = CreateRestrictedLogEvent(atomTag, originalEventElapsedTime);
+    event1->setLogdWallClockTimestampNs(currentWallTimeNs);
+    // Send log events to StatsLogProcessor.
+    processor->OnLogEvent(event1.get(), originalEventElapsedTime);
+
+    processor->enforceDataTtlsLocked(oneMonthLater, originalEventElapsedTime);
 
     std::stringstream query;
     query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
@@ -775,6 +797,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestNotFlushed) {
     std::vector<std::vector<std::string>> rows;
     EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
     EXPECT_EQ(rows.size(), 0);
+    EXPECT_THAT(err, StartsWith("unable to open database file"));
 }
 
 TEST_F(RestrictedEventMetricE2eTest, TestFlushInWriteDataToDisk) {
