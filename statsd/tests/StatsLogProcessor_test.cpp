@@ -217,6 +217,8 @@ public:
                  const DumpLatency dumpLatency, std::set<string>* str_set,
                  android::util::ProtoOutputStream* protoOutput),
                 (override));
+    MOCK_METHOD(size_t, byteSize, (), (override));
+    MOCK_METHOD(void, flushRestrictedData, (), (override));
 };
 
 TEST_P(StatsLogProcessorTest, TestUidMapHasSnapshot) {
@@ -2163,6 +2165,40 @@ TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricsManagerOnDumpReportNotC
                                            /*include_current_partial_bucket=*/true,
                                            /*erase_data=*/true, GET_DATA_CALLED, FAST,
                                            /*dataSavedToDisk=*/true, &buffer);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricFlushIfReachMemoryLimit) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            ConfigKey());
+    ConfigKey key(3, 4);
+    sp<MockRestrictedMetricsManager> metricsManager = new MockRestrictedMetricsManager();
+    EXPECT_CALL(*metricsManager, flushRestrictedData).Times(1);
+    EXPECT_CALL(*metricsManager, byteSize)
+            .Times(1)
+            .WillOnce(Return(StatsdStats::kBytesPerRestrictedConfigTriggerFlush + 1));
+
+    processor->mMetricsManagers[key] = metricsManager;
+    EXPECT_TRUE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
+
+    processor->flushIfNecessaryLocked(key, *metricsManager);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricNotFlushIfNotReachMemoryLimit) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            ConfigKey());
+    ConfigKey key(3, 4);
+    sp<MockRestrictedMetricsManager> metricsManager = new MockRestrictedMetricsManager();
+    EXPECT_CALL(*metricsManager, flushRestrictedData).Times(0);
+    EXPECT_CALL(*metricsManager, byteSize)
+            .Times(1)
+            .WillOnce(Return(StatsdStats::kBytesPerRestrictedConfigTriggerFlush - 1));
+
+    processor->mMetricsManagers[key] = metricsManager;
+    EXPECT_TRUE(processor->mMetricsManagers[key]->hasRestrictedMetricsDelegate());
+
+    processor->flushIfNecessaryLocked(key, *metricsManager);
 }
 
 TEST_F(StatsLogProcessorTestRestricted, NonRestrictedMetricsManagerOnDumpReportCalled) {
