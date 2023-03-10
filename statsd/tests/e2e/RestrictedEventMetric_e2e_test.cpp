@@ -124,6 +124,7 @@ private:
         rowCountResult = 0;
         error = "";
         dbutils::deleteDb(configKey);
+        dbutils::deleteDb(ConfigKey(config_app_uid + 1, configId));
         FlagProvider::getInstance().resetOverrides();
     }
 };
