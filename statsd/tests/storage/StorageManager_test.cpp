@@ -21,6 +21,8 @@
 
 #include "android-base/stringprintf.h"
 #include "stats_log_util.h"
+#include "tests/statsd_test_util.h"
+#include "utils/DbUtils.h"
 
 #ifdef __ANDROID__
 
@@ -276,6 +278,36 @@ TEST(StorageManagerTest, TrainInfoReadWrite32To64BitTest) {
     EXPECT_EQ(trainInfo.status, trainInfoResult.status);
     ASSERT_EQ(trainInfo.experimentIds.size(), trainInfoResult.experimentIds.size());
     EXPECT_EQ(trainInfo.experimentIds, trainInfoResult.experimentIds);
+}
+
+TEST(StorageManagerTest, DeleteUnmodifiedOldDbFiles) {
+    ConfigKey key(123, 12345);
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent(/*atomTag=*/10, /*timestampNs=*/1000);
+    dbutils::createTableIfNeeded(key, /*metricId=*/1, *event);
+    EXPECT_TRUE(StorageManager::hasFile(
+            base::StringPrintf("%s/%s", STATS_RESTRICTED_DATA_DIR, "123_12345.db").c_str()));
+
+    int64_t wallClockSec = getWallClockSec() + (StatsdStats::kMaxAgeSecond + 1);
+    StorageManager::enforceDbGuardrails(STATS_RESTRICTED_DATA_DIR, wallClockSec,
+                                        /*maxBytes=*/INT_MAX);
+
+    EXPECT_FALSE(StorageManager::hasFile(
+            base::StringPrintf("%s/%s", STATS_RESTRICTED_DATA_DIR, "123_12345.db").c_str()));
+}
+
+TEST(StorageManagerTest, DeleteLargeDbFiles) {
+    ConfigKey key(123, 12345);
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent(/*atomTag=*/10, /*timestampNs=*/1000);
+    dbutils::createTableIfNeeded(key, /*metricId=*/1, *event);
+    EXPECT_TRUE(StorageManager::hasFile(
+            base::StringPrintf("%s/%s", STATS_RESTRICTED_DATA_DIR, "123_12345.db").c_str()));
+
+    StorageManager::enforceDbGuardrails(STATS_RESTRICTED_DATA_DIR,
+                                        /*wallClockSec=*/getWallClockSec(),
+                                        /*maxBytes=*/0);
+
+    EXPECT_FALSE(StorageManager::hasFile(
+            base::StringPrintf("%s/%s", STATS_RESTRICTED_DATA_DIR, "123_12345.db").c_str()));
 }
 
 }  // namespace statsd
