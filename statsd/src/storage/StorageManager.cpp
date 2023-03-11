@@ -17,14 +17,17 @@
 #define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
-#include "android-base/stringprintf.h"
-#include "guardrail/StatsdStats.h"
 #include "storage/StorageManager.h"
-#include "stats_log_util.h"
 
 #include <android-base/file.h>
 #include <private/android_filesystem_config.h>
+#include <sys/stat.h>
+
 #include <fstream>
+
+#include "android-base/stringprintf.h"
+#include "guardrail/StatsdStats.h"
+#include "stats_log_util.h"
 
 namespace android {
 namespace os {
@@ -805,6 +808,37 @@ void StorageManager::printDirStats(int outFd, const char* path) {
     }
     dprintf(outFd, "\tTotal number of files: %d, Total size of files: %d bytes.\n", fileCount,
             totalFileSize);
+}
+
+void StorageManager::enforceDbGuardrails(const char* path, const int64_t currWallClockSec,
+                                         const int64_t maxBytes) {
+    unique_ptr<DIR, decltype(&closedir)> dir(opendir(path), closedir);
+    if (dir == NULL) {
+        VLOG("Path %s does not exist", path);
+        return;
+    }
+
+    dirent* de;
+    int64_t deleteThresholdSec = currWallClockSec - StatsdStats::kMaxAgeSecond;
+    while ((de = readdir(dir.get()))) {
+        char* name = de->d_name;
+        if (name[0] == '.' || de->d_type == DT_DIR) continue;
+        string fullPathName = StringPrintf("%s/%s", path, name);
+        struct stat fileInfo;
+        if (stat(fullPathName.c_str(), &fileInfo) != 0) {
+            // Remove file if stat fails.
+            remove(fullPathName.c_str());
+            continue;
+        }
+        if (fileInfo.st_mtime <= deleteThresholdSec || fileInfo.st_size >= maxBytes) {
+            remove(fullPathName.c_str());
+        }
+    }
+}
+
+bool StorageManager::hasFile(const char* file) {
+    struct stat fileInfo;
+    return stat(file, &fileInfo) == 0;
 }
 
 }  // namespace statsd
