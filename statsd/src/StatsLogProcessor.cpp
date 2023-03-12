@@ -94,6 +94,7 @@ StatsLogProcessor::StatsLogProcessor(
         const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
                 sendRestrictedMetricsBroadcast)
     : mLastTtlTime(0),
+      mLastFlushRestrictedTime(0),
       mUidMap(uidMap),
       mPullerManager(pullerManager),
       mAnomalyAlarmMonitor(anomalyAlarmMonitor),
