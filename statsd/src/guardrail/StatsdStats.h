@@ -52,6 +52,24 @@ struct InvalidConfigReason {
     }
 };
 
+// Keep this in sync with InvalidQueryReason enum in stats_log.proto
+enum InvalidQueryReason {
+    UNKNOWN_REASON = 0,
+    FLAG_DISABLED = 1,
+    UNSUPPORTED_SQLITE_VERSION = 2,
+    AMBIGUOUS_CONFIG_KEY = 3,
+    CONFIG_KEY_NOT_FOUND = 4,
+    CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5,
+    QUERY_FAILURE = 6,
+    INCONSISTENT_ROW_SIZE = 7
+};
+
+typedef struct {
+    long insertError = 0;
+    long tableCreationError = 0;
+    long tableDeletionError = 0;
+} RestrictedMetricStats;
+
 struct ConfigStats {
     int32_t uid;
     int64_t id;
@@ -105,6 +123,9 @@ struct ConfigStats {
 
     // Stores the config ID for each sub-config used.
     std::list<std::pair<const int64_t, const int32_t>> annotations;
+
+    // Maps metric ID of restricted metric to its stats.
+    std::map<int64_t, RestrictedMetricStats> restricted_metric_stats;
 };
 
 struct UidMapStats {
@@ -145,6 +166,8 @@ public:
     const static int kMaxLogSourceCount = 150;
 
     const static int kMaxPullAtomPackages = 100;
+
+    const static int kMaxRestrictedMetricQueryCount = 20;
 
     // Max memory allowed for storing metrics per configuration. If this limit is exceeded, statsd
     // drops the metrics data in memory.
@@ -506,17 +529,36 @@ public:
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
      * should have been sent, but instead was skipped due to hitting the guardrail.
      */
-     void noteActivationBroadcastGuardrailHit(const int uid);
+    void noteActivationBroadcastGuardrailHit(const int uid);
 
-     /**
-      * Reports that an atom is erroneous or cannot be parsed successfully by
-      * statsd. An atom tag of 0 indicates that the client did not supply the
-      * atom id within the encoding.
-      *
-      * For pushed atoms only, this call should be preceded by a call to
-      * noteAtomLogged.
-      */
-     void noteAtomError(int atomTag, bool pull=false);
+    /**
+     * Reports that an atom is erroneous or cannot be parsed successfully by
+     * statsd. An atom tag of 0 indicates that the client did not supply the
+     * atom id within the encoding.
+     *
+     * For pushed atoms only, this call should be preceded by a call to
+     * noteAtomLogged.
+     */
+    void noteAtomError(int atomTag, bool pull = false);
+
+    /** Report query of restricted metric succeed **/
+    void noteQueryRestrictedMetricSucceed(const int64_t configId, const string& configPackage,
+                                          const std::optional<int32_t> configUid,
+                                          const int32_t callingUid);
+
+    /** Report query of restricted metric failed **/
+    void noteQueryRestrictedMetricFailed(const int64_t configId, const string& configPackage,
+                                         const std::optional<int32_t> configUid,
+                                         const int32_t callingUid, const InvalidQueryReason reason);
+
+    // Reports that a restricted metric fails to be inserted to database.
+    void noteRestrictedMetricInsertError(const ConfigKey& configKey, int64_t metricId);
+
+    // Reports that a restricted metric fails to create table in database.
+    void noteRestrictedMetricTableCreationError(const ConfigKey& configKey, const int64_t metricId);
+
+    // Reports that a restricted metric fails to delete table in database.
+    void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, const int64_t metricId);
 
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
@@ -545,9 +587,10 @@ public:
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
         int64_t pullTimeoutElapsedMillis;
-        PullTimeoutMetadata(int64_t uptimeMillis, int64_t elapsedMillis) :
-            pullTimeoutUptimeMillis(uptimeMillis),
-            pullTimeoutElapsedMillis(elapsedMillis) {/* do nothing */}
+        PullTimeoutMetadata(int64_t uptimeMillis, int64_t elapsedMillis)
+            : pullTimeoutUptimeMillis(uptimeMillis),
+              pullTimeoutElapsedMillis(elapsedMillis) { /* do nothing */
+        }
     } PullTimeoutMetadata;
 
     typedef struct {
@@ -667,6 +710,29 @@ private:
 
     std::list<int32_t> mSystemServerRestartSec;
 
+    struct RestrictedMetricQueryStats {
+        RestrictedMetricQueryStats(
+                int32_t callingUid, int64_t configId, const string& configPackage,
+                std::optional<int32_t> configUid, int32_t queryTimeSec,
+                std::optional<InvalidQueryReason> invalidQueryReason = std::nullopt)
+            : mCallingUid(callingUid),
+              mConfigId(configId),
+              mConfigPackage(configPackage),
+              mConfigUid(configUid),
+              mQueryWallTimeSec(queryTimeSec),
+              mInvalidQueryReason(invalidQueryReason) {
+            mHasError = invalidQueryReason.has_value();
+        }
+        int32_t mCallingUid;
+        int64_t mConfigId;
+        string mConfigPackage;
+        std::optional<int32_t> mConfigUid;
+        int32_t mQueryWallTimeSec;
+        std::optional<InvalidQueryReason> mInvalidQueryReason;
+        bool mHasError;
+    };
+    std::list<RestrictedMetricQueryStats> mRestrictedMetricQueryStats;
+
     // Stores the number of times statsd modified the anomaly alarm registered with
     // StatsCompanionService.
     int mAnomalyAlarmRegisteredStats = 0;
@@ -715,6 +781,8 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
     FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
+    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
+    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
