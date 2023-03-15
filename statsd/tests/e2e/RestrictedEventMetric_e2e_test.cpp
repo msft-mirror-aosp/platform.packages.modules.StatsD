@@ -294,6 +294,34 @@ TEST_F(RestrictedEventMetricE2eTest, TestOneEventMultipleUids) {
                                              ));
 }
 
+TEST_F(RestrictedEventMetricE2eTest, TestOneEventStaticUid) {
+    ConfigKey key2(2000, configId);  // shell uid
+    processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, key2, config);
+
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/"AID_SHELL",
+                        /*callingUid=*/delegate_uid);
+
+    EXPECT_EQ(rowCountResult, 1);
+    EXPECT_THAT(queryDataResult, ElementsAre(to_string(atomTag), to_string(configAddedTimeNs + 100),
+                                             _,  // wallClockNs
+                                             _   // field_1
+                                             ));
+    dbutils::deleteDb(key2);
+}
+
 TEST_F(RestrictedEventMetricE2eTest, TestTooManyConfigsAmbiguousQuery) {
     ConfigKey key2(config_app_uid + 1, configId);
     processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, key2, config);
@@ -324,6 +352,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestTooManyConfigsAmbiguousQuery) {
                         /*callingUid=*/delegate_uid);
 
     EXPECT_EQ(error, "Ambiguous ConfigKey");
+    dbutils::deleteDb(key2);
 }
 
 TEST_F(RestrictedEventMetricE2eTest, TestUnknownConfigPackage) {
