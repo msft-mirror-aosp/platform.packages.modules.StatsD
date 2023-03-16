@@ -391,6 +391,7 @@ private:
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushInWriteDataToDisk);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushPeriodically);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestOnLogEventMalformedDbNameDeleted);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
