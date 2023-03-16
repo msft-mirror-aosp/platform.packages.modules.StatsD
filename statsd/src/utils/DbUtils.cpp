@@ -42,7 +42,15 @@ const string COLUMN_NAME_ATOM_TAG = "atomId";
 const string COLUMN_NAME_EVENT_ELAPSED_CLOCK_NS = "elapsedTimestampNs";
 const string COLUMN_NAME_EVENT_WALL_CLOCK_NS = "wallTimestampNs";
 
-static string getDbName(const ConfigKey& key) {
+static int integrityCheckCallback(void*, int colCount, char** queryResults, char**) {
+    if (colCount == 0 || strcmp(queryResults[0], "ok") != 0) {
+        // Returning 1 is an error code that causes exec to stop and error.
+        return 1;
+    }
+    return 0;
+}
+
+string getDbName(const ConfigKey& key) {
     return StringPrintf("%s/%d_%lld.db", STATS_RESTRICTED_DATA_DIR, key.GetUid(),
                         (long long)key.GetId());
 }
@@ -289,6 +297,27 @@ bool flushTtl(sqlite3* db, const int64_t metricId, const int64_t ttlWallClockNs)
         return false;
     }
     return true;
+}
+
+void verifyIntegrityAndDeleteIfNecessary(const ConfigKey& configKey) {
+    const string dbName = getDbName(configKey);
+    sqlite3* db;
+    if (sqlite3_open(dbName.c_str(), &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return;
+    }
+    string zSql = "PRAGMA integrity_check";
+
+    char* error = nullptr;
+    sqlite3_exec(db, zSql.c_str(), integrityCheckCallback, nullptr, &error);
+    if (error) {
+        // TODO(b/268150038): Add statsdstats reporting.
+        ALOGW("Integrity Check failed %s", error);
+        sqlite3_close(db);
+        deleteDb(configKey);
+        return;
+    }
+    sqlite3_close(db);
 }
 
 }  // namespace dbutils
