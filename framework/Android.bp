@@ -38,16 +38,13 @@ java_library_static {
 
 filegroup {
     name: "framework-statsd-sources",
+    defaults: ["framework-sources-module-defaults"],
     srcs: [
         "java/**/*.java",
         ":framework-statsd-aidl-sources",
         ":statslog-statsd-java-gen",
     ],
-    visibility: [
-        "//frameworks/base", // For the "global" stubs.
-        "//frameworks/base/apex/statsd:__subpackages__",
-        "//packages/modules/StatsD/framework:__subpackages__",
-    ],
+    visibility: ["//packages/modules/StatsD/framework:__subpackages__"],
 }
 
 java_sdk_library {
