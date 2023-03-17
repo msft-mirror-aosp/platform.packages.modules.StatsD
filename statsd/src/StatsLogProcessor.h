@@ -161,6 +161,9 @@ public:
                   const shared_ptr<aidl::android::os::IStatsQueryCallback>& callback,
                   const int64_t configId, const string& configPackage, const int32_t callingUid);
 
+    void fillRestrictedMetrics(const int64_t configId, const string& configPackage,
+                               const int32_t delegateUid, vector<int64_t>* output);
+
 private:
     // For testing only.
     inline sp<AlarmMonitor> getAnomalyAlarmMonitor() const {
