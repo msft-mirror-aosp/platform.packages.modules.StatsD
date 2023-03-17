@@ -34,6 +34,8 @@ inline int32_t getDbVersion() {
     return SQLITE_VERSION_NUMBER;
 };
 
+string getDbName(const ConfigKey& key);
+
 string reformatMetricId(const int64_t metricId);
 
 /* Creates a new data table for a specified metric if one does not yet exist. */
@@ -68,6 +70,9 @@ bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& row
            vector<int32_t>& columnTypes, vector<string>& columnNames, string& err);
 
 bool flushTtl(sqlite3* db, const int64_t metricId, const int64_t ttlWallClockNs);
+
+/* Checks for database corruption and deletes the db if it is corrupted. */
+void verifyIntegrityAndDeleteIfNecessary(const ConfigKey& key);
 
 }  // namespace dbutils
 }  // namespace statsd

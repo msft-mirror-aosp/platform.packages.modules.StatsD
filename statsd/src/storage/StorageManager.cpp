@@ -28,6 +28,7 @@
 #include "android-base/stringprintf.h"
 #include "guardrail/StatsdStats.h"
 #include "stats_log_util.h"
+#include "utils/DbUtils.h"
 
 namespace android {
 namespace os {
@@ -119,6 +120,16 @@ static void parseFileName(char* name, FileName* output) {
     output->mConfigId = result[2];
     // check if the file is a local history.
     output->mIsHistory = (substr != nullptr && strcmp("history", substr) == 0);
+}
+
+// Returns array of int64_t which contains a sqlite db's uid and configId
+static ConfigKey parseDbName(char* name) {
+    char* uid = strtok(name, "_");
+    char* configId = strtok(nullptr, ".");
+    if (uid == nullptr || configId == nullptr) {
+        return ConfigKey(-1, -1);
+    }
+    return ConfigKey(StrToInt64(uid), StrToInt64(configId));
 }
 
 void StorageManager::writeFile(const char* file, const void* buffer, int numBytes) {
@@ -825,12 +836,19 @@ void StorageManager::enforceDbGuardrails(const char* path, const int64_t currWal
         if (name[0] == '.' || de->d_type == DT_DIR) continue;
         string fullPathName = StringPrintf("%s/%s", path, name);
         struct stat fileInfo;
+        const ConfigKey key = parseDbName(name);
         if (stat(fullPathName.c_str(), &fileInfo) != 0) {
             // Remove file if stat fails.
             remove(fullPathName.c_str());
             continue;
         }
         if (fileInfo.st_mtime <= deleteThresholdSec || fileInfo.st_size >= maxBytes) {
+            remove(fullPathName.c_str());
+        }
+        if (hasFile(dbutils::getDbName(key).c_str())) {
+            dbutils::verifyIntegrityAndDeleteIfNecessary(key);
+        } else {
+            // Remove file if the file name fails to parse.
             remove(fullPathName.c_str());
         }
     }

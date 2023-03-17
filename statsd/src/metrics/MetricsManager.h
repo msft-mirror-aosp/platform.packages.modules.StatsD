@@ -170,6 +170,10 @@ public:
         return hasRestrictedMetricsDelegate() ? mRestrictedMetricsDelegatePackageName.value() : "";
     }
 
+    inline ConfigKey getConfigKey() const {
+        return mConfigKey;
+    }
+
     void enforceRestrictedDataTtls(const int64_t wallClockNs);
 
     bool validateRestrictedMetricsDelegate(const int32_t callingUid);
