@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-syntax = "proto2";
+package android.os;
 
-package android.os.statsd;
+import android.os.StatsSubscriptionCallbackReason;
 
-option java_package = "com.android.os.statsd";
-option java_outer_classname = "ShellDataProto";
-
-import "frameworks/proto_logging/stats/atoms.proto";
-
-// The output of shell subscription, including both pulled and pushed subscriptions.
-message ShellData {
-    repeated Atom atom = 1;
-    repeated int64 timestamp_nanos = 2 [packed = true];
+/**
+  * Binder interface for callback that provides data for a subscription.
+  * {@hide}
+  */
+oneway interface IStatsSubscriptionCallback {
+    /**
+     * Send back subscription data.
+     */
+     void onSubscriptionData(StatsSubscriptionCallbackReason reason, in byte[] subscriptionPayload);
 }

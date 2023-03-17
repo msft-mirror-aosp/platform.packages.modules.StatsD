@@ -24,6 +24,8 @@ package {
 cc_defaults {
     name: "libstatspull_defaults",
     srcs: [
+        "stats_subscription.cpp",
+        "stats_provider.cpp",
         "stats_pull_atom_callback.cpp",
     ],
     cflags: [
@@ -110,16 +112,34 @@ cc_library_static {
     ],
 }
 
-// Note: These unit tests only test PullAtomMetadata.
-// For full E2E tests of libstatspull, use LibStatsPullTests
+// Note: These unit tests only test PullAtomMetadata and subscriptions
+// For full E2E tests of pullers, use LibStatsPullTests
 cc_test {
     name: "libstatspull_test",
     srcs: [
+        ":libstats_subscription_protos",
         "tests/pull_atom_metadata_test.cpp",
+        "tests/stats_subscription_test.cpp",
     ],
+    proto: {
+        type: "full",
+        include_dirs: [
+            "external/protobuf/src",
+        ],
+    },
     shared_libs: [
         "libstatspull",
         "libstatssocket",
+        "libprotobuf-cpp-full",
+        "libbase",
+        "libbinder",
+        "libutils",
+        "liblog",
+    ],
+    static_libs: [
+        "libgmock",
+        "libstatslog_statsdtest",
+        "libplatformprotos-test",
     ],
     test_suites: [
         "general-tests",
