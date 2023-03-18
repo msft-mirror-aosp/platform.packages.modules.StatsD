@@ -16,6 +16,7 @@
 
 package android.os;
 
+import android.os.IStatsSubscriptionCallback;
 import android.os.IPendingIntentRef;
 import android.os.IPullAtomCallback;
 import android.os.ParcelFileDescriptor;
@@ -252,8 +253,9 @@ interface IStatsd {
 
     /**
      * Registers the operation that is called whenever there is a change in the restricted metrics
-     * for a specified config that are present for this client. This operation allows statsd to inform the
-     * client about the current restricted metrics available to be queried for the specified config.
+     * for a specified config that are present for this client. This operation allows statsd to
+     * inform the client about the current restricted metrics available to be queried for the
+     * specified config.
      *
      * Requires Manifest.permission.READ_RESTRICTED_STATS
      */
@@ -267,4 +269,37 @@ interface IStatsd {
      */
     void removeRestrictedMetricsChangedOperation(in long configKey, in String configPackage,
             in int callingUid);
+
+    /** Section for atoms subscription methods. */
+    /**
+     * Adds a subscription for atom events.
+     *
+     * IStatsSubscriptionCallback Binder interface will be used to deliver subscription data back to
+     * the subscriber. IStatsSubscriptionCallback also uniquely identifies this subscription - it
+     * should not be reused for another subscription.
+     *
+     * Enforces READ_LOGS permission.
+     */
+    oneway void addSubscription(in byte[] subscriptionConfig,
+            IStatsSubscriptionCallback callback);
+
+    /**
+     * Unsubscribe from a given subscription identified by the IBinder token.
+     *
+     * This will subsequently trigger IStatsSubscriptionCallback with pending data
+     * for this subscription.
+     *
+     * Enforces READ_LOGS permission.
+     */
+    oneway void removeSubscription(IStatsSubscriptionCallback callback);
+
+    /**
+     * Flush data for a subscription.
+     *
+     * This will subsequently trigger IStatsSubscriptionCallback with pending data
+     * for this subscription.
+     *
+     * Enforces READ_LOGS permission.
+     */
+    oneway void flushSubscription(IStatsSubscriptionCallback callback);
 }
