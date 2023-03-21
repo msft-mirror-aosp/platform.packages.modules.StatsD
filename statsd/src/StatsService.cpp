@@ -168,8 +168,22 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
             },
             [this](const ConfigKey& key, const string& delegatePackage,
                    const vector<int64_t>& restrictedMetrics) {
-                set<string> configPackages = mUidMap->getAppNamesFromUid(key.GetUid(), true);
-                set<int32_t> delegateUids = mUidMap->getAppUid(delegatePackage);
+                set<string> configPackages;
+                set<int32_t> delegateUids;
+                for (const auto& kv : UidMap::sAidToUidMapping) {
+                    if (kv.second == static_cast<uint32_t>(key.GetUid())) {
+                        configPackages.insert(kv.first);
+                    }
+                    if (kv.first == delegatePackage) {
+                        delegateUids.insert(kv.second);
+                    }
+                }
+                if (configPackages.empty()) {
+                    configPackages = mUidMap->getAppNamesFromUid(key.GetUid(), true);
+                }
+                if (delegateUids.empty()) {
+                    delegateUids = mUidMap->getAppUid(delegatePackage);
+                }
                 mConfigManager->SendRestrictedMetricsBroadcast(configPackages, key.GetId(),
                                                                delegateUids, restrictedMetrics);
             });
