@@ -194,6 +194,9 @@ private:
     // Tracks when we last flushed restricted metrics.
     int64_t mLastFlushRestrictedTime;
 
+    // Tracks when we last checked db guardrails.
+    int64_t mLastDbGuardrailEnforcementTime;
+
     // Tracks which config keys has metric reports on disk
     std::set<ConfigKey> mOnDiskDataConfigs;
 
@@ -251,6 +254,10 @@ private:
 
     // Enforces ttls on all restricted metrics.
     void enforceDataTtlsLocked(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
+
+    // Enforces that dbs are within guardrail parameters.
+    void enforceDbGuardrailsIfNecessaryLocked(const int64_t wallClockNs,
+                                              const int64_t elapsedRealtimeNs);
 
     /* Check if we should send a broadcast if approaching memory limits and if we're over, we
      * actually delete the data. */
@@ -392,6 +399,8 @@ private:
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushPeriodically);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestOnLogEventMalformedDbNameDeleted);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeGuardrail);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
