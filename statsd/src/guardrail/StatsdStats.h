@@ -177,6 +177,9 @@ public:
     /* Min period between two flush operations of restricted metrics. */
     static const int64_t kMinFlushRestrictedPeriodNs = 60 * 60 * NS_PER_SEC;
 
+    /* Min period between two db guardrail check operations of restricted metrics. */
+    static const int64_t kMinDbGuardrailEnforcementPeriodNs = 60 * 60 * NS_PER_SEC;
+
     /* Minimum period between two activation broadcasts in nanoseconds. */
     static const int64_t kMinActivationBroadcastPeriodNs = 10 * NS_PER_SEC;
 

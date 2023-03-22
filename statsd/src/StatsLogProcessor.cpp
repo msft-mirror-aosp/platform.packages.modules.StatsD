@@ -95,6 +95,7 @@ StatsLogProcessor::StatsLogProcessor(
                 sendRestrictedMetricsBroadcast)
     : mLastTtlTime(0),
       mLastFlushRestrictedTime(0),
+      mLastDbGuardrailEnforcementTime(0),
       mUidMap(uidMap),
       mPullerManager(pullerManager),
       mAnomalyAlarmMonitor(anomalyAlarmMonitor),
@@ -452,6 +453,7 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
 
     flushRestrictedDataIfNecessaryLocked(elapsedRealtimeNs);
     enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
+    enforceDbGuardrailsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
 
     std::unordered_set<int> uidsWithActiveConfigsChanged;
     std::unordered_map<int, std::vector<int64_t>> activeConfigsPerUid;
@@ -1004,8 +1006,17 @@ void StatsLogProcessor::enforceDataTtlsLocked(const int64_t wallClockNs,
         itr.second->enforceRestrictedDataTtls(wallClockNs);
     }
     mLastTtlTime = elapsedRealtimeNs;
+}
+
+void StatsLogProcessor::enforceDbGuardrailsIfNecessaryLocked(const int64_t wallClockNs,
+                                                             const int64_t elapsedRealtimeNs) {
+    if (elapsedRealtimeNs - mLastDbGuardrailEnforcementTime <
+        StatsdStats::kMinDbGuardrailEnforcementPeriodNs) {
+        return;
+    }
     StorageManager::enforceDbGuardrails(STATS_RESTRICTED_DATA_DIR, wallClockNs / NS_PER_SEC,
                                         StatsdStats::kMaxFileSize);
+    mLastDbGuardrailEnforcementTime = elapsedRealtimeNs;
 }
 
 void StatsLogProcessor::flushRestrictedDataLocked(const int64_t elapsedRealtimeNs) {
