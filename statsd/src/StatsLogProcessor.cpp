@@ -907,7 +907,13 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
         return;
     }
 
-    set<int32_t> configPackageUids = mUidMap->getAppUid(configPackage);
+    set<int32_t> configPackageUids;
+    const auto& uidMapItr = UidMap::sAidToUidMapping.find(configPackage);
+    if (uidMapItr != UidMap::sAidToUidMapping.end()) {
+        configPackageUids.insert(uidMapItr->second);
+    } else {
+        configPackageUids = mUidMap->getAppUid(configPackage);
+    }
 
     set<ConfigKey> keysToQuery =
             getRestrictedConfigKeysToQueryLocked(callingUid, configId, configPackageUids, err);
