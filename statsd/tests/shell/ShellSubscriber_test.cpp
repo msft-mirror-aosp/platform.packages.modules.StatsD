@@ -423,6 +423,27 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
     // Not closing fds_datas[i][0] because this causes writes within ShellSubscriberClient to hang
 }
 
+TEST(ShellSubscriberTest, testPushedSubscriptionRestrictedEvent) {
+    sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+
+    std::vector<shared_ptr<LogEvent>> pushedList;
+    pushedList.push_back(CreateRestrictedLogEvent(/*atomTag=*/10, /*timestamp=*/1000));
+
+    // create a simple config to get screen events
+    ShellSubscription config;
+    config.add_pushed()->set_atom_id(10);
+
+    // expect empty data
+    vector<ShellData> expectedData;
+
+    // Test with single client
+    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kSingleClient);
+
+    // Test with multiple client
+    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif
