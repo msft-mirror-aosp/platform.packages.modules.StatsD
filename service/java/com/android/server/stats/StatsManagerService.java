@@ -712,6 +712,7 @@ public class StatsManagerService extends IStatsManagerService.Stub {
             registerAllDataFetchOperations(statsd);
             registerAllActiveConfigsChangedOperations(statsd);
             registerAllBroadcastSubscribers(statsd);
+            registerAllRestrictedMetricsChangedOperations(statsd);
             // TODO (b/269419485): register all restricted metric operations.
         } catch (RemoteException e) {
             Log.e(TAG, "StatsManager failed to (re-)register data with statsd");
@@ -781,11 +782,35 @@ public class StatsManagerService extends IStatsManagerService.Stub {
         }
 
         for (Map.Entry<ConfigKey, ArrayMap<Long, PendingIntentRef>> entry :
-                mBroadcastSubscriberPirMap.entrySet()) {
+                broadcastSubscriberCopy.entrySet()) {
             ConfigKey configKey = entry.getKey();
             for (Map.Entry<Long, PendingIntentRef> subscriberEntry : entry.getValue().entrySet()) {
                 statsd.setBroadcastSubscriber(configKey.getConfigId(), subscriberEntry.getKey(),
                         subscriberEntry.getValue(), configKey.getUid());
+            }
+        }
+    }
+
+    // Pre-condition: the Binder calling identity has already been cleared
+    private void registerAllRestrictedMetricsChangedOperations(IStatsd statsd)
+            throws RemoteException {
+        // Since we do not want to make an IPC with the lock held, we first create a deep copy of
+        // the data with the lock held before iterating through the map.
+        ArrayMap<ConfigKeyWithPackage, ArrayMap<Integer, PendingIntentRef>> restrictedMetricsCopy =
+                new ArrayMap<>();
+        synchronized (mLock) {
+            for (Map.Entry<ConfigKeyWithPackage, ArrayMap<Integer, PendingIntentRef>> entry :
+                    mRestrictedMetricsPirMap.entrySet()) {
+                restrictedMetricsCopy.put(entry.getKey(), new ArrayMap(entry.getValue()));
+            }
+        }
+
+        for (Map.Entry<ConfigKeyWithPackage, ArrayMap<Integer, PendingIntentRef>> entry :
+                restrictedMetricsCopy.entrySet()) {
+            ConfigKeyWithPackage configKey = entry.getKey();
+            for (Map.Entry<Integer, PendingIntentRef> uidEntry : entry.getValue().entrySet()) {
+                statsd.setRestrictedMetricsChangedOperation(configKey.getConfigId(),
+                        configKey.getConfigPackage(), uidEntry.getValue(), uidEntry.getKey());
             }
         }
     }
