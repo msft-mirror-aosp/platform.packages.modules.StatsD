@@ -1019,6 +1019,27 @@ void StatsLogProcessor::enforceDbGuardrailsIfNecessaryLocked(const int64_t wallC
     mLastDbGuardrailEnforcementTime = elapsedRealtimeNs;
 }
 
+void StatsLogProcessor::fillRestrictedMetrics(const int64_t configId, const string& configPackage,
+                                              const int32_t delegateUid, vector<int64_t>* output) {
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+
+    set<int32_t> configPackageUids;
+    const auto& uidMapItr = UidMap::sAidToUidMapping.find(configPackage);
+    if (uidMapItr != UidMap::sAidToUidMapping.end()) {
+        configPackageUids.insert(uidMapItr->second);
+    } else {
+        configPackageUids = mUidMap->getAppUid(configPackage);
+    }
+    string err;
+    set<ConfigKey> keysToGetMetrics =
+            getRestrictedConfigKeysToQueryLocked(delegateUid, configId, configPackageUids, err);
+
+    for (const ConfigKey& key : keysToGetMetrics) {
+        vector<int64_t> metricIds = mMetricsManagers[key]->getAllMetricIds();
+        output->insert(output->end(), metricIds.begin(), metricIds.end());
+    }
+}
+
 void StatsLogProcessor::flushRestrictedDataLocked(const int64_t elapsedRealtimeNs) {
     for (const auto& it : mMetricsManagers) {
         // no-op if metricsManager is not restricted
