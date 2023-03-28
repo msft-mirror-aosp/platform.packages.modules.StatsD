@@ -811,8 +811,7 @@ status_t StatsService::cmd_log_app_breadcrumb(int out, const Vector<String8>& ar
     }
     if (good) {
         dprintf(out, "Logging AppBreadcrumbReported(%d, %d, %d) to statslog.\n", uid, label, state);
-        android::os::statsd::util::stats_write(
-                android::os::statsd::util::APP_BREADCRUMB_REPORTED, uid, label, state);
+        util::stats_write(util::APP_BREADCRUMB_REPORTED, uid, label, state);
     } else {
         print_cmd_help(out);
         return UNKNOWN_ERROR;
