@@ -75,7 +75,7 @@ public:
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies periodic alarmSet. */
     void onPeriodicAlarmFired(
             const int64_t& timestampNs,
-            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     /* Flushes data to disk. Data on memory will be gone after written to disk. */
     void WriteDataToDisk(const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
@@ -266,7 +266,7 @@ private:
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies anomaly alarmSet. */
     void processFiredAnomalyAlarmsLocked(
             const int64_t& timestampNs,
-            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
@@ -321,10 +321,11 @@ private:
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks2);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestRepeatedFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents);
-    FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents_FIRST_N);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
