@@ -120,6 +120,10 @@ void ShellSubscriber::pullAndSendHeartbeats() {
 
 void ShellSubscriber::onLogEvent(const LogEvent& event) {
     std::unique_lock<std::mutex> lock(mMutex);
+    // Skip RestrictedLogEvents
+    if (event.isRestricted()) {
+        return;
+    }
     for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end();) {
         (*clientIt)->onLogEvent(event);
         if ((*clientIt)->isAlive()) {
