@@ -77,8 +77,7 @@ optional<InvalidConfigReason> handleMetricWithAtomMatchingTrackers(
 optional<InvalidConfigReason> handleMetricWithConditions(
         const int64_t condition, const int64_t metricId, const int metricIndex,
         const std::unordered_map<int64_t, int>& conditionTrackerMap,
-        const ::google::protobuf::RepeatedPtrField<::android::os::statsd::MetricConditionLink>&
-                links,
+        const ::google::protobuf::RepeatedPtrField<MetricConditionLink>& links,
         const std::vector<sp<ConditionTracker>>& allConditionTrackers, int& conditionIndex,
         std::unordered_map<int, std::vector<int>>& conditionToMetricMap);
 
