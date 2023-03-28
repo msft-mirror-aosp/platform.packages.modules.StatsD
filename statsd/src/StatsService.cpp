@@ -1382,7 +1382,7 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId
     }
     mConfigManager->SetRestrictedMetricsChangedReceiver(configPackage, configId, callingUid, pir);
     if (output != nullptr) {
-        // TODO(b/269419485): implement getting the current restricted metrics.
+        mProcessor->fillRestrictedMetrics(configId, configPackage, callingUid, output);
     } else {
         ALOGW("StatsService::setRestrictedMetricsChangedOperation output was nullptr");
     }
