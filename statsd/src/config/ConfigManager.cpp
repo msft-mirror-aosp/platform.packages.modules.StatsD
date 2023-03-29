@@ -177,11 +177,27 @@ void ConfigManager::RemoveRestrictedMetricsChangedReceiver(const string& configP
     }
 }
 
+void ConfigManager::RemoveRestrictedMetricsChangedReceiver(
+        const ConfigKeyWithPackage& key, const int32_t delegateUid,
+        const shared_ptr<IPendingIntentRef>& pir) {
+    lock_guard<mutex> lock(mMutex);
+    const auto& it = mRestrictedMetricsChangedReceivers.find(key);
+    if (it != mRestrictedMetricsChangedReceivers.end()) {
+        const auto& pirIt = it->second.find(delegateUid);
+        if (pirIt != it->second.end() && pirIt->second == pir) {
+            it->second.erase(delegateUid);
+            if (it->second.empty()) {
+                mRestrictedMetricsChangedReceivers.erase(it);
+            }
+        }
+    }
+}
+
 void ConfigManager::SendRestrictedMetricsBroadcast(const set<string>& configPackages,
                                                    const int64_t configId,
                                                    const set<int32_t>& delegateUids,
                                                    const vector<int64_t>& metricIds) {
-    set<shared_ptr<IPendingIntentRef>> intentsToSend;
+    map<ConfigKeyWithPackage, map<int32_t, shared_ptr<IPendingIntentRef>>> intentsToSend;
     {
         lock_guard<mutex> lock(mMutex);
         // Invoke the pending intent for all matching configs, as long as the listening delegates
@@ -192,7 +208,7 @@ void ConfigManager::SendRestrictedMetricsBroadcast(const set<string>& configPack
             if (it != mRestrictedMetricsChangedReceivers.end()) {
                 for (const auto& [delegateUid, pir] : it->second) {
                     if (delegateUids.find(delegateUid) != delegateUids.end()) {
-                        intentsToSend.insert(pir);
+                        intentsToSend[key][delegateUid] = pir;
                     }
                 }
             }
@@ -200,12 +216,18 @@ void ConfigManager::SendRestrictedMetricsBroadcast(const set<string>& configPack
     }
 
     // Invoke the pending intents without holding the lock.
-    for (const shared_ptr<IPendingIntentRef>& pir : intentsToSend) {
-        Status status = pir->sendRestrictedMetricsChangedBroadcast(metricIds);
-        if (status.isOk()) {
-            VLOG("ConfigManager::SendRestrictedMetricsBroadcast succeeded");
+    for (const auto& [key, innerMap] : intentsToSend) {
+        for (const auto& [delegateUid, pir] : innerMap) {
+            Status status = pir->sendRestrictedMetricsChangedBroadcast(metricIds);
+            if (status.isOk()) {
+                VLOG("ConfigManager::SendRestrictedMetricsBroadcast succeeded");
+            }
+            if (status.getExceptionCode() == EX_TRANSACTION_FAILED &&
+                status.getStatus() == STATUS_DEAD_OBJECT) {
+                // Must also be called without the lock, since remove will acquire the lock.
+                RemoveRestrictedMetricsChangedReceiver(key, delegateUid, pir);
+            }
         }
-        // TODO (b/269419485): handle failures.
     }
 }
 
