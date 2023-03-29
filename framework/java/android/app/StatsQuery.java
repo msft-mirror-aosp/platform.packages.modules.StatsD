@@ -138,8 +138,7 @@ public final class StatsQuery {
          * @param minSqlClientVersion The minimum SQL client version required to execute the query.
          */
         @NonNull
-        @IntRange(from = 0)
-        public Builder setMinSqlClientVersion(final int minSqlClientVersion) {
+        public Builder setMinSqlClientVersion(@IntRange(from = 0) final int minSqlClientVersion) {
             if (minSqlClientVersion < 0) {
                 throw new IllegalArgumentException("minSqlClientVersion must be a "
                         + "positive integer");
