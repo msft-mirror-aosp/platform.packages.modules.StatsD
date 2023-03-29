@@ -77,7 +77,7 @@ public:
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies periodic alarmSet. */
     void onPeriodicAlarmFired(
             const int64_t& timestampNs,
-            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     /* Flushes data to disk. Data on memory will be gone after written to disk. */
     void WriteDataToDisk(const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
@@ -160,6 +160,9 @@ public:
                   const optional<vector<uint8_t>>& policyConfig,
                   const shared_ptr<aidl::android::os::IStatsQueryCallback>& callback,
                   const int64_t configId, const string& configPackage, const int32_t callingUid);
+
+    void fillRestrictedMetrics(const int64_t configId, const string& configPackage,
+                               const int32_t delegateUid, vector<int64_t>* output);
 
 private:
     // For testing only.
@@ -302,7 +305,7 @@ private:
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies anomaly alarmSet. */
     void processFiredAnomalyAlarmsLocked(
             const int64_t& timestampNs,
-            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     void flushRestrictedDataLocked(const int64_t elapsedRealtimeNs);
 
