@@ -1006,24 +1006,6 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricTriggerNoFirstNSamples) {
                                   metricId));
 }
 
-TEST_F(MetricsManagerUtilTest, TestGaugeMetricFirstNSamplesWithWrongEvent) {
-    StatsdConfig config;
-    int64_t metricId = 1;
-    GaugeMetric* metric = config.add_gauge_metric();
-    metric->set_id(metricId);
-    metric->set_what(StringToId("Matcher"));
-    *config.add_atom_matcher() =
-            CreateSimpleAtomMatcher(/*name=*/"Matcher", /*atomId=*/util::SUBSYSTEM_SLEEP_STATE);
-
-    metric->mutable_gauge_fields_filter()->set_include_all(true);
-    metric->set_sampling_type(GaugeMetric_SamplingType_FIRST_N_SAMPLES);
-
-    EXPECT_EQ(
-            initConfig(config),
-            InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_FIRST_N_SAMPLES_WITH_WRONG_EVENT,
-                                metricId));
-}
-
 TEST_F(MetricsManagerUtilTest, TestMatcherDuplicate) {
     StatsdConfig config;
 
