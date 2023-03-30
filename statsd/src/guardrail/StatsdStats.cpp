@@ -1071,11 +1071,11 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
     }
 
     for (const auto& pair : mPulledAtomStats) {
-        writePullerStatsToStream(pair, &proto);
+        android::os::statsd::writePullerStatsToStream(pair, &proto);
     }
 
     for (const auto& pair : mAtomMetricStats) {
-        writeAtomMetricStatsToStream(pair, &proto);
+        android::os::statsd::writeAtomMetricStatsToStream(pair, &proto);
     }
 
     if (mAnomalyAlarmRegisteredStats > 0) {

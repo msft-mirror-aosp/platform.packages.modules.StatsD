@@ -207,7 +207,6 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
         backgroundThread.start();
         Handler handler = new Handler(backgroundThread.getLooper());
         handler.post(() -> {
-            if (DEBUG) Log.d(TAG, "Start thread for sending uid map data.");
             UserManager um = (UserManager) context.getSystemService(Context.USER_SERVICE);
             PackageManager pm = context.getPackageManager();
             final List<UserHandle> users = um.getUserHandles(true);
@@ -228,7 +227,8 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
             } catch (IOException e) {
                 Log.e(TAG, "Failed to close the read side of the pipe.", e);
             }
-            FileOutputStream fout = new ParcelFileDescriptor.AutoCloseOutputStream(fds[1]);
+            final ParcelFileDescriptor writeFd = fds[1];
+            FileOutputStream fout = new ParcelFileDescriptor.AutoCloseOutputStream(writeFd);
             try {
                 ProtoOutputStream output = new ProtoOutputStream(fout);
                 int numRecords = 0;
@@ -283,8 +283,9 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
                     Log.d(TAG, "Sent data for " + numRecords + " apps");
                 }
             } finally {
-                if (DEBUG) Log.d(TAG, "End thread for sending uid map data.");
+                FileUtils.closeQuietly(fout);
                 backgroundThread.quit();
+                backgroundThread.interrupt();
             }
         });
     }

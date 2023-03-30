@@ -17,7 +17,6 @@
 package android.app;
 
 import android.annotation.IntDef;
-import android.annotation.IntRange;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.SystemApi;
@@ -77,7 +76,6 @@ public final class StatsQuery {
     /**
      * Returns the minimum SQL client library version required to execute the query.
      */
-    @IntRange(from = 0)
     public int getMinSqlClientVersion() {
         return minClientSqlVersion;
     }
@@ -138,12 +136,7 @@ public final class StatsQuery {
          * @param minSqlClientVersion The minimum SQL client version required to execute the query.
          */
         @NonNull
-        @IntRange(from = 0)
         public Builder setMinSqlClientVersion(final int minSqlClientVersion) {
-            if (minSqlClientVersion < 0) {
-                throw new IllegalArgumentException("minSqlClientVersion must be a "
-                        + "positive integer");
-            }
             this.minSqlClientVersion = minSqlClientVersion;
             return this;
         }

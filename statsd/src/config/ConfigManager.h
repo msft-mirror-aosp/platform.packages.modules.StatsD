@@ -198,14 +198,6 @@ private:
      * The ConfigListeners that will be told about changes.
      */
     std::vector<sp<ConfigListener>> mListeners;
-
-    /**
-     * Erase the restricted metrics changed pending intents associated with this config key & uid if
-     * it is equal to the provided pending intent.
-     */
-    void RemoveRestrictedMetricsChangedReceiver(const ConfigKeyWithPackage& key,
-                                                const int32_t delegateUid,
-                                                const shared_ptr<IPendingIntentRef>& pir);
 };
 
 }  // namespace statsd
