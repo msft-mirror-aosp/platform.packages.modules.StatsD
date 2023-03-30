@@ -478,7 +478,7 @@ TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     ASSERT_EQ(countChangeBefore.count_metrics().data_size(), 1);
     data = countChangeBefore.count_metrics().data(0);
     ASSERT_EQ(data.bucket_info_size(), 1);
-    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, updateTimeNs, 4, 50000000000);
+    ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, updateTimeNs, 4, 50 * NS_PER_SEC);
 
     // Report from after update.
     report = reports.reports(1);
@@ -491,7 +491,7 @@ TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     data = countChangeAfter.count_metrics().data(0);
     ASSERT_EQ(data.bucket_info_size(), 1);
     ValidateCountBucket(data.bucket_info(0), updateTimeNs, bucketStartTimeNs + bucketSizeNs, 1,
-                        530000000000);
+                        530 * NS_PER_SEC);
 
     // Count wl acquires while screen on. There were 2, one in each bucket.
     StatsLogReport countNewAfter = report.metrics(1);
@@ -501,9 +501,9 @@ TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     data = countNewAfter.count_metrics().data(0);
     ASSERT_EQ(data.bucket_info_size(), 2);
     ValidateCountBucket(data.bucket_info(0), updateTimeNs, bucketStartTimeNs + bucketSizeNs, 1,
-                        530000000000);
+                        530 * NS_PER_SEC);
     ValidateCountBucket(data.bucket_info(1), bucketStartTimeNs + bucketSizeNs, dumpTimeNs, 1,
-                        10000000000);
+                        10 * NS_PER_SEC);
 
     // Uid 1 had 1 sync, uid 2 had 2 syncs.
     StatsLogReport countPersistAfter = report.metrics(2);
