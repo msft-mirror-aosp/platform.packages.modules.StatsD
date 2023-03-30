@@ -124,19 +124,31 @@ TEST(CountMetricE2eTest, TestConditionTrueNanos) {
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
     *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
 
+    AtomMatcher crashMatcher = CreateProcessCrashAtomMatcher();
+    *config.add_atom_matcher() = crashMatcher;
+
     Predicate screenOnPredicate = CreateScreenIsOnPredicate();
     *config.add_predicate() = screenOnPredicate;
 
     CountMetric* countMetric = config.add_count_metric();
-    countMetric->set_id(StringToId("CountSyncStartWhileScreenOn"));
+    int64_t metricId = StringToId("CountSyncStartWhileScreenOn");
+    countMetric->set_id(metricId);
     countMetric->set_what(syncStartMatcher.id());
     countMetric->set_condition(screenOnPredicate.id());
     countMetric->set_bucket(FIVE_MINUTES);
+
+    MetricActivation* metricActivation = config.add_metric_activation();
+    metricActivation->set_metric_id(metricId);
+    EventActivation* eventActivation = metricActivation->add_event_activation();
+    eventActivation->set_atom_matcher_id(crashMatcher.id());
+    eventActivation->set_ttl_seconds(360);  // 6 minutes.
 
     const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     const uint64_t bucketSizeNs =
             TimeUnitToBucketSizeInMillis(config.count_metric(0).bucket()) * 1000000LL;
     const uint64_t bucket2StartTimeNs = bucketStartTimeNs + bucketSizeNs;
+    const uint64_t bucket3StartTimeNs = bucket2StartTimeNs + bucketSizeNs;
+
     int uid = 12345;
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
@@ -146,27 +158,82 @@ TEST(CountMetricE2eTest, TestConditionTrueNanos) {
     std::vector<int> attributionUids1 = {123};
     std::vector<string> attributionTags1 = {"App1"};
     int64_t conditionStart1Ns = bucketStartTimeNs + 50 * NS_PER_SEC;
-    int64_t conditionEndNs = bucket2StartTimeNs + 50 * NS_PER_SEC;
-    int64_t conditionStart2Ns = bucket2StartTimeNs + 150 * NS_PER_SEC;
+    int64_t activationStart1Ns = bucketStartTimeNs + 70 * NS_PER_SEC;
+    int64_t conditionEnd1Ns = bucket2StartTimeNs + 35 * NS_PER_SEC;
+    int64_t conditionStart2Ns = bucket2StartTimeNs + 90 * NS_PER_SEC;
+    int64_t activationEnd1Ns = bucket2StartTimeNs + 140 * NS_PER_SEC;
+    int64_t conditionEnd2Ns = bucket2StartTimeNs + 155 * NS_PER_SEC;
+    int64_t activationStart2Ns = bucket2StartTimeNs + 200 * NS_PER_SEC;
+    int64_t conditionStart3Ns = bucket2StartTimeNs + 240 * NS_PER_SEC;
+    int64_t conditionEnd3Ns = bucket3StartTimeNs + 40 * NS_PER_SEC;
+    int64_t activationEnd2Ns = bucket3StartTimeNs + 270 * NS_PER_SEC;
 
     std::vector<std::unique_ptr<LogEvent>> events;
+    // Active false, condition becomes true.
     events.push_back(CreateScreenStateChangedEvent(
             conditionStart1Ns,
             android::view::DisplayStateEnum::DISPLAY_STATE_ON));  // 1:00
+    // Event not counted.
+    events.push_back(CreateSyncStartEvent(bucketStartTimeNs + 60 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 1:10
+    // Active becomes true, condition true.
+    events.push_back(CreateAppCrashEvent(activationStart1Ns, 111));  // 1:20
     events.push_back(CreateSyncStartEvent(bucketStartTimeNs + 75 * NS_PER_SEC, attributionUids1,
                                           attributionTags1, "sync_name"));  // 1:25
 
     // Bucket 2 starts. 5:10
     events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 20 * NS_PER_SEC, attributionUids1,
                                           attributionTags1, "sync_name"));  // 5:30
+    // Active true, condition becomes false.
     events.push_back(CreateScreenStateChangedEvent(
-            conditionEndNs,
-            android::view::DisplayStateEnum::DISPLAY_STATE_OFF));  // 5:60
+            conditionEnd1Ns,
+            android::view::DisplayStateEnum::DISPLAY_STATE_OFF));  // 5:45
+    // Event not counted.
+    events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 50 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 6:00
+    // Active true, condition becomes true.
     events.push_back(CreateScreenStateChangedEvent(
             conditionStart2Ns,
-            android::view::DisplayStateEnum::DISPLAY_STATE_ON));  // 7:40
-    events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 175 * NS_PER_SEC, attributionUids1,
-                                          attributionTags1, "sync_name"));  // 8:05
+            android::view::DisplayStateEnum::DISPLAY_STATE_ON));  // 6:40
+    events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 110 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 7:00
+    // Active becomes false, condition true (activation expires).
+    // Event not counted.
+    events.push_back(CreateSyncStartEvent(activationEnd1Ns, attributionUids1, attributionTags1,
+                                          "sync_name"));  // 7:30
+    // Active false, condition becomes false.
+    events.push_back(CreateScreenStateChangedEvent(
+            conditionEnd2Ns,
+            android::view::DisplayStateEnum::DISPLAY_STATE_OFF));  // 7:45
+    // Event not counted.
+    events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 160 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 7:50
+    // Active becomes true, condition false.
+    events.push_back(CreateAppCrashEvent(activationStart2Ns, 111));  // 8:30
+    // Event not counted.
+    events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 220 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 8:50
+    // Active true, condition becomes true.
+    events.push_back(CreateScreenStateChangedEvent(
+            conditionStart3Ns,
+            android::view::DisplayStateEnum::DISPLAY_STATE_ON));  // 9:10
+    events.push_back(CreateSyncStartEvent(bucket2StartTimeNs + 250 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 9:20
+
+    // Bucket 3 starts. 10:10
+    events.push_back(CreateSyncStartEvent(bucket3StartTimeNs + 10 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 10:20
+    // Active true, condition becomes false.
+    events.push_back(CreateScreenStateChangedEvent(
+            conditionEnd3Ns,
+            android::view::DisplayStateEnum::DISPLAY_STATE_OFF));  // 10:50
+                                                                   // Event not counted.
+    events.push_back(CreateSyncStartEvent(bucket3StartTimeNs + 70 * NS_PER_SEC, attributionUids1,
+                                          attributionTags1, "sync_name"));  // 11:20
+    // Active becomes false, condition false (activation expires).
+    // Event not counted.
+    events.push_back(CreateSyncStartEvent(activationEnd2Ns, attributionUids1, attributionTags1,
+                                          "sync_name"));  // 14:40
 
     // Send log events to StatsLogProcessor.
     for (auto& event : events) {
@@ -176,7 +243,7 @@ TEST(CountMetricE2eTest, TestConditionTrueNanos) {
     // Check dump report.
     vector<uint8_t> buffer;
     ConfigMetricsReportList reports;
-    int64_t dumpReportTimeNs = bucket2StartTimeNs + 180 * NS_PER_SEC;  // 8:10
+    int64_t dumpReportTimeNs = bucket3StartTimeNs + 290 * NS_PER_SEC;  // 15:00
     processor->onDumpReport(cfgKey, dumpReportTimeNs, true, true, ADB_DUMP, FAST, &buffer);
     ASSERT_GT(buffer.size(), 0);
     EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
@@ -192,12 +259,16 @@ TEST(CountMetricE2eTest, TestConditionTrueNanos) {
     ASSERT_EQ(1, countMetrics.data_size());
 
     CountMetricData data = countMetrics.data(0);
-    ASSERT_EQ(2, data.bucket_info_size());
+    ASSERT_EQ(4, data.bucket_info_size());
     ValidateCountBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs, 1,
-                        bucket2StartTimeNs - conditionStart1Ns);
+                        bucket2StartTimeNs - activationStart1Ns);
     ValidateCountBucket(
-            data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, 2,
-            (conditionEndNs - bucket2StartTimeNs) + (dumpReportTimeNs - conditionStart2Ns));
+            data.bucket_info(1), bucket2StartTimeNs, activationEnd1Ns, 2,
+            (conditionEnd1Ns - bucket2StartTimeNs) + (activationEnd1Ns - conditionStart2Ns));
+    ValidateCountBucket(data.bucket_info(2), activationEnd1Ns, bucket3StartTimeNs, 1,
+                        bucket3StartTimeNs - conditionStart3Ns);
+    ValidateCountBucket(data.bucket_info(3), bucket3StartTimeNs, activationEnd2Ns, 1,
+                        conditionEnd3Ns - bucket3StartTimeNs);
 }
 
 /**
