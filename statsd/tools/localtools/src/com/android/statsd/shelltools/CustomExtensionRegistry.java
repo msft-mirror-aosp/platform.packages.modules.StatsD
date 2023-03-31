@@ -58,6 +58,7 @@ import com.android.os.wearservices.WearservicesExtensionAtoms;
 import com.android.os.wearsysui.WearsysuiAtoms;
 import com.android.os.wifi.WifiExtensionAtoms;
 import android.os.statsd.media.MediaCodecExtensionAtoms;
+import com.android.os.credentials.CredentialsExtensionAtoms;
 
 import com.google.protobuf.ExtensionRegistry;
 
@@ -130,5 +131,6 @@ public class CustomExtensionRegistry {
         WearsysuiAtoms.registerAllExtensions(extensionRegistry);
         WifiExtensionAtoms.registerAllExtensions(extensionRegistry);
         MediaCodecExtensionAtoms.registerAllExtensions(extensionRegistry);
+        CredentialsExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
