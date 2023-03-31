@@ -21,6 +21,7 @@ import com.android.os.StatsLog.EventMetricData;
 import com.android.os.StatsLog.StatsLogReport;
 
 import com.google.common.io.Files;
+import com.google.protobuf.ExtensionRegistry;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -39,6 +40,8 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import com.android.statsd.shelltools.CustomExtensionRegistry;
 
 /**
  * Utilities for local use of statsd.
@@ -112,7 +115,8 @@ public class Utils {
                     "--include_current_bucket",
                     "--proto");
             ConfigMetricsReportList reportList =
-                    ConfigMetricsReportList.parseFrom(new FileInputStream(outputFile));
+                    ConfigMetricsReportList.parseFrom(new FileInputStream(outputFile),
+                    CustomExtensionRegistry.REGISTRY);
             return reportList;
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
             logger.severe("Failed to fetch and parse the statsd output report. "
