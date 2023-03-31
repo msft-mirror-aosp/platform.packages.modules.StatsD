@@ -26,9 +26,12 @@ import android.annotation.RequiresPermission;
 import android.annotation.SuppressLint;
 import android.annotation.SystemApi;
 import android.content.Context;
+import android.os.Build;
 import android.os.IStatsd;
 import android.os.Process;
 import android.util.proto.ProtoOutputStream;
+
+import androidx.annotation.RequiresApi;
 
 import com.android.internal.statsd.StatsdStatsLog;
 
@@ -159,6 +162,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_RESTRICTION_CATEGORY = 9;
 
     /**
@@ -172,6 +176,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO = 10;
 
     /**
@@ -185,6 +190,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE = 11;
 
     /**
@@ -198,6 +204,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY = 12;
 
     /**
@@ -211,6 +218,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT = 13;
 
     /**
@@ -224,6 +232,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY = 14;
 
     /**
@@ -237,6 +246,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH = 15;
 
     /**
@@ -250,6 +260,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT = 16;
 
     /**
@@ -263,6 +274,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING = 17;
 
     /**
@@ -276,6 +288,7 @@ public final class StatsLog {
      */
     @SuppressLint("NoByteOrShort")
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final byte ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION = 18;
 
 
@@ -294,6 +307,7 @@ public final class StatsLog {
      * @hide
      */
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final int RESTRICTION_CATEGORY_DIAGNOSTIC = 1;
 
     /**
@@ -302,6 +316,7 @@ public final class StatsLog {
      * @hide
      */
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final int RESTRICTION_CATEGORY_SYSTEM_INTELLIGENCE = 2;
 
     /**
@@ -310,6 +325,7 @@ public final class StatsLog {
      * @hide
      */
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final int RESTRICTION_CATEGORY_AUTHENTICATION = 3;
 
     /**
@@ -318,6 +334,7 @@ public final class StatsLog {
      * @hide
      */
     @SystemApi
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public static final int RESTRICTION_CATEGORY_FRAUD_AND_ABUSE = 4;
 
     private StatsLog() {
