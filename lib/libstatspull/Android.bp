@@ -165,6 +165,7 @@ cc_test {
         "-Wno-unused-variable",
         "-Wno-unused-function",
         "-Wno-unused-parameter",
+        "-Wno-deprecated-declarations",
     ],
     require_root: true,
     min_sdk_version: "30",
