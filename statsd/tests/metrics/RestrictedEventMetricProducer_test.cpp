@@ -233,6 +233,23 @@ TEST_F(RestrictedEventMetricProducerTest, TestRestrictedEventMetricTtlDeletesFir
                                      to_string(currentTimeNs), _));
 }
 
+TEST_F(RestrictedEventMetricProducerTest, TestLoadMetricMetadataSetsCategory) {
+    metadata::MetricMetadata metricMetadata;
+    metricMetadata.set_metric_id(metricId1);
+    metricMetadata.set_restricted_category(1);  // CATEGORY_DIAGNOSTIC
+    EventMetric metric;
+    metric.set_id(metricId1);
+    RestrictedEventMetricProducer producer(configKey, metric,
+                                           /*conditionIndex=*/-1,
+                                           /*initialConditionCache=*/{}, new ConditionWizard(),
+                                           /*protoHash=*/0x1234567890,
+                                           /*startTimeNs=*/0);
+
+    producer.loadMetricMetadataFromProto(metricMetadata);
+
+    EXPECT_EQ(producer.getRestrictionCategory(), CATEGORY_DIAGNOSTIC);
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

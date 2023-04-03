@@ -94,6 +94,7 @@ cc_defaults {
         "src/uid_data.proto",
         "src/utils/MultiConditionTrigger.cpp",
         "src/utils/DbUtils.cpp",
+        "src/utils/RestrictedPolicyManager.cpp",
         "src/utils/ShardOffsetProvider.cpp",
     ],
 
