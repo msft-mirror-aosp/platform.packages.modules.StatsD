@@ -21,6 +21,10 @@ package {
 cc_defaults {
     name: "statsd_defaults",
 
+    cflags: [
+        "-Wno-deprecated-declarations",
+    ],
+
     srcs: [
         "src/active_config_list.proto",
         "src/anomaly/AlarmMonitor.cpp",
@@ -266,7 +270,6 @@ cc_test {
         "-Wno-unused-function",
         "-Wno-unused-parameter",
         "-Wno-unused-variable",
-        "-Wno-deprecated-declarations",
     ],
 
     require_root: true,
@@ -430,7 +433,6 @@ cc_benchmark {
         "-Wno-unused-parameter",
         "-Wno-unused-variable",
         "-Wno-unused-function",
-        "-Wno-deprecated-declarations",
 
         // Bug: http://b/29823425 Disable -Wvarargs for Clang update to r271374
         "-Wno-varargs",
