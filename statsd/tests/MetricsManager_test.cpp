@@ -278,9 +278,6 @@ protected:
         if (shouldSkipTest()) {
             GTEST_SKIP() << skipReason();
         }
-
-        originalFlagValue = FlagProvider::getInstance().getFlagString(
-                OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_EMPTY);
     }
 
     bool shouldSkipTest() const {
@@ -289,12 +286,6 @@ protected:
 
     string skipReason() const {
         return "Skipping MetricsManagerTest_SPlus because device is not S+";
-    }
-
-    void TearDown() override {
-        if (originalFlagValue) {
-            writeFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, originalFlagValue.value());
-        }
     }
 
     std::optional<string> originalFlagValue;
@@ -310,27 +301,6 @@ INSTANTIATE_TEST_SUITE_P(
         [](const testing::TestParamInfo<MetricsManagerTest_SPlus::ParamType>& info) {
             return info.param.label;
         });
-
-TEST_P(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag) {
-    FlagProvider::getInstance().overrideFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG,
-                                             GetParam().flagValue,
-                                             /*isBootFlag=*/true);
-
-    sp<UidMap> uidMap;
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    sp<AlarmMonitor> anomalyAlarmMonitor;
-    sp<AlarmMonitor> periodicAlarmMonitor;
-
-    StatsdConfig config = buildGoodConfig();
-    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
-                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
-
-    if (GetParam().flagValue == FLAG_TRUE) {
-        EXPECT_TRUE(metricsManager.mAtomMatcherOptimizationEnabled);
-    } else {
-        EXPECT_FALSE(metricsManager.mAtomMatcherOptimizationEnabled);
-    }
-}
 
 TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom) {
     sp<UidMap> uidMap;
