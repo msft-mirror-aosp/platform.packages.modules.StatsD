@@ -113,8 +113,6 @@ private:
     bool writeEventToProtoIfMatched(const LogEvent& event, const SimpleAtomMatcher& matcher,
                                     const sp<UidMap>& uidMap);
 
-    void writeEventTimestampsToProto();
-
     void clearCache();
 
     void triggerFdFlush();
@@ -143,13 +141,7 @@ private:
 
     int64_t mLastWriteMs;
 
-    // Timestamps for cached atom events.
-    std::vector<int64_t> mEventTimestampsNs;
-
-    // Stores Atom proto messages for events. When flushing the cache, the corresponding timestamps
-    // captured in mEventTimestampsNs are written here before being serialized out to a byte array.
-    // The timestamps cannot be cached here together with Atom proto messages as they are both
-    // encapsulated as separate repeated fields in ShellData proto definition.
+    // Stores Atom proto messages for events along with their respective timestamps.
     ProtoOutputStream mProtoOut;
 
     // Stores the total approximate encoded proto byte-size for cached Atom events in
