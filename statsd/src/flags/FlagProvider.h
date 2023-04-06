@@ -118,6 +118,7 @@ private:
     friend class RestrictedEventMetricProducerTest;
     friend class RestrictedConfigE2ETest;
     friend class RestrictedEventMetricE2eTest;
+    friend class LogEvent_FieldRestrictionTest;
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
@@ -138,6 +139,10 @@ private:
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestRestrictionCategoryAnnotationFlagDisabled);
 };
 
 }  // namespace statsd
