@@ -18,15 +18,12 @@
 
 #include "ShellSubscriberClient.h"
 
-#include <aidl/android/os/StatsSubscriptionCallbackReason.h>
-
+#include "FieldValue.h"
 #include "matchers/matcher_util.h"
 #include "stats_log_util.h"
 
 using android::base::unique_fd;
 using android::util::ProtoOutputStream;
-
-using aidl::android::os::StatsSubscriptionCallbackReason;
 
 namespace android {
 namespace os {
@@ -73,6 +70,21 @@ static optional<ReadConfigResult> readConfig(const vector<uint8_t>& configBytes)
 
     return result;
 }
+
+ShellSubscriberClient::ShellSubscriberClient(
+        int out, const std::shared_ptr<IStatsSubscriptionCallback>& callback,
+        const std::vector<SimpleAtomMatcher>& pushedMatchers,
+        const std::vector<PullInfo>& pulledInfo, int64_t timeoutSec, int64_t startTimeSec,
+        const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerMgr)
+    : mUidMap(uidMap),
+      mPullerMgr(pullerMgr),
+      mDupOut(fcntl(out, F_DUPFD_CLOEXEC, 0)),
+      mPushedMatchers(pushedMatchers),
+      mPulledInfo(pulledInfo),
+      mCallback(callback),
+      mTimeoutSec(timeoutSec),
+      mStartTimeSec(startTimeSec),
+      mLastWriteMs(getElapsedRealtimeMillis()){};
 
 unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
         int in, int out, int64_t timeoutSec, int64_t startTimeSec, const sp<UidMap>& uidMap,
@@ -134,123 +146,134 @@ unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
             /*timeoutSec=*/-1, startTimeSec, uidMap, pullerMgr);
 }
 
-static bool writeEventToProtoIfMatched(const LogEvent& event, const SimpleAtomMatcher& matcher,
-                                       const sp<UidMap>& uidMap, ProtoOutputStream& outProto) {
+bool ShellSubscriberClient::writeEventToProtoIfMatched(const LogEvent& event,
+                                                       const SimpleAtomMatcher& matcher,
+                                                       const sp<UidMap>& uidMap) {
     if (!matchesSimple(uidMap, matcher, event)) {
         return false;
     }
 
-    uint64_t atomToken = outProto.start(util::FIELD_TYPE_MESSAGE | util::FIELD_COUNT_REPEATED |
-                                        FIELD_ID_SHELL_DATA__ATOM);
-    event.ToProto(outProto);
-    outProto.end(atomToken);
-    outProto.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
-                           FIELD_ID_SHELL_DATA__TIMESTAMP_NANOS,
-                   static_cast<long long>(event.GetElapsedTimestampNs()));
+    // Cache atom event in mProtoOut.
+    uint64_t atomToken = mProtoOut.start(util::FIELD_TYPE_MESSAGE | util::FIELD_COUNT_REPEATED |
+                                         FIELD_ID_SHELL_DATA__ATOM);
+    event.ToProto(mProtoOut);
+    mProtoOut.end(atomToken);
+
+    // Cache event timestamp in mEventTimestampsNs.
+    mEventTimestampsNs.push_back(event.GetElapsedTimestampNs());
+
+    // Update byte size of cached data.
+    mCacheSize += getSize(event.getValues()) + sizeof(event.GetElapsedTimestampNs());
+
     return true;
 }
 
 // Called by ShellSubscriber when a pushed event occurs
 void ShellSubscriberClient::onLogEvent(const LogEvent& event) {
-    ProtoOutputStream protoOut;
     for (const auto& matcher : mPushedMatchers) {
-        if (writeEventToProtoIfMatched(event, matcher, mUidMap, protoOut)) {
-            flushProto(protoOut);
+        if (writeEventToProtoIfMatched(event, matcher, mUidMap)) {
+            flushProtoIfNeeded();
             break;
         }
     }
 }
 
-void ShellSubscriberClient::flushProto(ProtoOutputStream& protoOut) {
+void ShellSubscriberClient::flushProtoIfNeeded() {
     if (mCallback == nullptr) {  // Using file descriptor.
-        attemptWriteToPipeLocked(&protoOut);
-    } else {  // Using callback.
-        vector<uint8_t> payloadBytes;
-        protoOut.serializeToVector(&payloadBytes);
-        mCallback->onSubscriptionData(StatsSubscriptionCallbackReason::STATSD_INITIATED,
-                                      payloadBytes);
+        triggerFdFlush();
+    } else if (mCacheSize >= kMaxCacheSizeBytes) {  // Using callback.
+        // Flush data if cache is full.
+        triggerCallback(StatsSubscriptionCallbackReason::STATSD_INITIATED);
     }
+}
+
+int64_t ShellSubscriberClient::pullIfNeeded(int64_t nowSecs, int64_t nowMillis, int64_t nowNanos) {
+    int64_t sleepTimeMs = INT64_MAX;
+    for (PullInfo& pullInfo : mPulledInfo) {
+        if (pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mInterval < nowMillis) {
+            vector<int32_t> uids;
+            getUidsForPullAtom(&uids, pullInfo);
+
+            vector<shared_ptr<LogEvent>> data;
+            mPullerMgr->Pull(pullInfo.mPullerMatcher.atom_id(), uids, nowNanos, &data);
+            VLOG("ShellSubscriberClient: pulled %zu atoms with id %d", data.size(),
+                 pullInfo.mPullerMatcher.atom_id());
+
+            writePulledAtomsLocked(data, pullInfo.mPullerMatcher);
+            pullInfo.mPrevPullElapsedRealtimeMs = nowMillis;
+        }
+
+        // Determine how long to sleep before doing more work.
+        int64_t nextPullTime = pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mInterval;
+        int64_t timeBeforePull = nextPullTime - nowMillis;  // guaranteed to be non-negative
+        sleepTimeMs = min(sleepTimeMs, timeBeforePull);
+    }
+    return sleepTimeMs;
 }
 
 // The pullAndHeartbeat threads sleep for the minimum time
 // among all clients' input
 int64_t ShellSubscriberClient::pullAndSendHeartbeatsIfNeeded(int64_t nowSecs, int64_t nowMillis,
                                                              int64_t nowNanos) {
-    int64_t sleepTimeMs = kMsBetweenHeartbeats;
-
-    if (mCallback == nullptr && (nowSecs - mStartTimeSec >= mTimeoutSec) && (mTimeoutSec > 0)) {
-        mClientAlive = false;
-        return sleepTimeMs;
-    }
-
-    for (PullInfo& pullInfo : mPulledInfo) {
-        if (pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mInterval >= nowMillis) {
-            continue;
+    int64_t sleepTimeMs;
+    if (mCallback == nullptr) {  // File descriptor subscription
+        if ((nowSecs - mStartTimeSec >= mTimeoutSec) && (mTimeoutSec > 0)) {
+            mClientAlive = false;
+            return kMsBetweenHeartbeats;
         }
 
-        vector<int32_t> uids;
-        getUidsForPullAtom(&uids, pullInfo);
+        sleepTimeMs = min(kMsBetweenHeartbeats, pullIfNeeded(nowSecs, nowMillis, nowNanos));
 
-        vector<shared_ptr<LogEvent>> data;
-        mPullerMgr->Pull(pullInfo.mPullerMatcher.atom_id(), uids, nowNanos, &data);
-        VLOG("ShellSubscriberClient: pulled %zu atoms with id %d", data.size(),
-             pullInfo.mPullerMatcher.atom_id());
+        // Send a heartbeat consisting of data size of 0, if
+        // the user hasn't recently received data from statsd. When it receives the data size of 0,
+        // the user will not expect any atoms and recheck whether the subscription should end.
+        if (nowMillis - mLastWriteMs >= kMsBetweenHeartbeats) {
+            triggerFdFlush();
+            if (!mClientAlive) return kMsBetweenHeartbeats;
+        }
 
-        writePulledAtomsLocked(data, pullInfo.mPullerMatcher);
-        pullInfo.mPrevPullElapsedRealtimeMs = nowMillis;
-    }
-
-    // Send a heartbeat if this is a file descriptor subscription, consisting of data size of 0, if
-    // the user hasn't recently received data from statsd. When it receives the data size of 0, the
-    // user will not expect any atoms and recheck whether the subscription should end.
-    if (mCallback == nullptr && nowMillis - mLastWriteMs >= kMsBetweenHeartbeats) {
-        attemptWriteToPipeLocked(/*protoOut=*/nullptr);
-        if (!mClientAlive) return kMsBetweenHeartbeats;
-    }
-
-    // Determine how long to sleep before doing more work.
-    for (PullInfo& pullInfo : mPulledInfo) {
-        int64_t nextPullTime = pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mInterval;
-        int64_t timeBeforePull = nextPullTime - nowMillis;  // guaranteed to be non-negative
-        sleepTimeMs = min(sleepTimeMs, timeBeforePull);
-    }
-
-    // Callback subscriptions don't have heartbeats.
-    if (mCallback == nullptr) {
-        int64_t timeBeforeHeartbeat = (mLastWriteMs + kMsBetweenHeartbeats) - nowMillis;
+        int64_t timeBeforeHeartbeat = mLastWriteMs + kMsBetweenHeartbeats - nowMillis;
         sleepTimeMs = min(sleepTimeMs, timeBeforeHeartbeat);
-    }
+    } else {  // Callback subscription.
+        sleepTimeMs = min(kMsBetweenCallbacks, pullIfNeeded(nowSecs, nowMillis, nowNanos));
 
+        if (mCacheSize > 0 && nowMillis - mLastWriteMs >= kMsBetweenCallbacks) {
+            // Flush data if cache has kept data for longer than kMsBetweenCallbacks.
+            triggerCallback(StatsSubscriptionCallbackReason::STATSD_INITIATED);
+        }
+
+        // Schedule callback kMsBetweenCallbacks after mLastWrite.
+        sleepTimeMs = min(sleepTimeMs, mLastWriteMs + kMsBetweenCallbacks - nowMillis);
+    }
     return sleepTimeMs;
 }
 
 void ShellSubscriberClient::writePulledAtomsLocked(const vector<shared_ptr<LogEvent>>& data,
                                                    const SimpleAtomMatcher& matcher) {
-    ProtoOutputStream protoOut;
     bool hasData = false;
     for (const shared_ptr<LogEvent>& event : data) {
-        if (writeEventToProtoIfMatched(*event, matcher, mUidMap, protoOut)) {
+        if (writeEventToProtoIfMatched(*event, matcher, mUidMap)) {
             hasData = true;
         }
     }
 
     if (hasData) {
-        flushProto(protoOut);
+        flushProtoIfNeeded();
     }
 }
 
-// Tries to write the atom encoded in protoOut to the pipe. If the write fails
+// Tries to write the atom encoded in mProtoOut to the pipe. If the write fails
 // because the read end of the pipe has closed, change the client status so
 // the manager knows the subscription is no longer active
-void ShellSubscriberClient::attemptWriteToPipeLocked(ProtoOutputStream* protoOut) {
-    const size_t dataSize = protoOut == nullptr ? 0 : protoOut->size();
+void ShellSubscriberClient::attemptWriteToPipeLocked() {
+    const size_t dataSize = mProtoOut.size();
     // First, write the payload size.
     if (!android::base::WriteFully(mDupOut, &dataSize, sizeof(dataSize))) {
         mClientAlive = false;
         return;
     }
     // Then, write the payload if this is not just a heartbeat.
-    if (dataSize > 0 && !protoOut->flush(mDupOut.get())) {
+    if (dataSize > 0 && !mProtoOut.flush(mDupOut.get())) {
         mClientAlive = false;
         return;
     }
@@ -267,14 +290,44 @@ void ShellSubscriberClient::getUidsForPullAtom(vector<int32_t>* uids, const Pull
     uids->push_back(DEFAULT_PULL_UID);
 }
 
+void ShellSubscriberClient::writeEventTimestampsToProto() {
+    for (const int64_t timestampNs : mEventTimestampsNs) {
+        mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
+                                FIELD_ID_SHELL_DATA__TIMESTAMP_NANOS,
+                        static_cast<long long>(timestampNs));
+    }
+}
+
+void ShellSubscriberClient::clearCache() {
+    mProtoOut.clear();
+    mEventTimestampsNs.clear();
+    mCacheSize = 0;
+}
+
+void ShellSubscriberClient::triggerFdFlush() {
+    writeEventTimestampsToProto();
+    attemptWriteToPipeLocked();
+    clearCache();
+}
+
+void ShellSubscriberClient::triggerCallback(StatsSubscriptionCallbackReason reason) {
+    writeEventTimestampsToProto();
+
+    // Invoke Binder callback with cached event data.
+    vector<uint8_t> payloadBytes;
+    mProtoOut.serializeToVector(&payloadBytes);
+    mCallback->onSubscriptionData(reason, payloadBytes);
+
+    mLastWriteMs = getElapsedRealtimeMillis();
+    clearCache();
+}
+
 void ShellSubscriberClient::flush() {
-    // TODO(b/268822860): send pending data once atom events are cached
-    mCallback->onSubscriptionData(StatsSubscriptionCallbackReason::FLUSH_REQUESTED, {});
+    triggerCallback(StatsSubscriptionCallbackReason::FLUSH_REQUESTED);
 }
 
 void ShellSubscriberClient::onUnsubscribe() {
-    // TODO(b/268822860): send pending data once atom events are cached
-    mCallback->onSubscriptionData(StatsSubscriptionCallbackReason::SUBSCRIPTION_ENDED, {});
+    triggerCallback(StatsSubscriptionCallbackReason::SUBSCRIPTION_ENDED);
 }
 
 }  // namespace statsd
