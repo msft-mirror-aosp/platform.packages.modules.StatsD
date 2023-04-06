@@ -159,11 +159,13 @@ bool ShellSubscriberClient::writeEventToProtoIfMatched(const LogEvent& event,
     event.ToProto(mProtoOut);
     mProtoOut.end(atomToken);
 
-    // Cache event timestamp in mEventTimestampsNs.
-    mEventTimestampsNs.push_back(event.GetElapsedTimestampNs());
+    const int64_t timestampNs = event.GetElapsedTimestampNs();
+    mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
+                            FIELD_ID_SHELL_DATA__TIMESTAMP_NANOS,
+                    static_cast<long long>(timestampNs));
 
     // Update byte size of cached data.
-    mCacheSize += getSize(event.getValues()) + sizeof(event.GetElapsedTimestampNs());
+    mCacheSize += getSize(event.getValues()) + sizeof(timestampNs);
 
     return true;
 }
@@ -290,29 +292,17 @@ void ShellSubscriberClient::getUidsForPullAtom(vector<int32_t>* uids, const Pull
     uids->push_back(DEFAULT_PULL_UID);
 }
 
-void ShellSubscriberClient::writeEventTimestampsToProto() {
-    for (const int64_t timestampNs : mEventTimestampsNs) {
-        mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
-                                FIELD_ID_SHELL_DATA__TIMESTAMP_NANOS,
-                        static_cast<long long>(timestampNs));
-    }
-}
-
 void ShellSubscriberClient::clearCache() {
     mProtoOut.clear();
-    mEventTimestampsNs.clear();
     mCacheSize = 0;
 }
 
 void ShellSubscriberClient::triggerFdFlush() {
-    writeEventTimestampsToProto();
     attemptWriteToPipeLocked();
     clearCache();
 }
 
 void ShellSubscriberClient::triggerCallback(StatsSubscriptionCallbackReason reason) {
-    writeEventTimestampsToProto();
-
     // Invoke Binder callback with cached event data.
     vector<uint8_t> payloadBytes;
     mProtoOut.serializeToVector(&payloadBytes);
