@@ -76,9 +76,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mPullerManager(pullerManager),
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
-      mShouldPersistHistory(config.persist_locally()),
-      mAtomMatcherOptimizationEnabled(FlagProvider::getInstance().getBootFlagBool(
-              OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_FALSE)) {
+      mShouldPersistHistory(config.persist_locally()) {
     // Init the ttl end timestamp.
     refreshTtl(timeBaseNs);
 
@@ -578,16 +576,9 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     vector<MatchingState> matcherCache(mAllAtomMatchingTrackers.size(),
                                        MatchingState::kNotComputed);
 
-    if (mAtomMatcherOptimizationEnabled) {
-        for (const auto& matcherIndex : matchersIt->second) {
-            mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                               matcherCache);
-        }
-    } else {
-        //  Evaluate all atom matchers.
-        for (auto& matcher : mAllAtomMatchingTrackers) {
-            matcher->onLogEvent(event, mAllAtomMatchingTrackers, matcherCache);
-        }
+    for (const auto& matcherIndex : matchersIt->second) {
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
+                                                           matcherCache);
     }
 
     // Set of metrics that received an activation cancellation.
