@@ -266,6 +266,7 @@ private:
                                           std::optional<uint8_t> numElements);
     void parseStateNestedAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements);
     void parseRestrictionCategoryAnnotation(uint8_t annotationType);
+    void parseFieldRestrictionAnnotation(uint8_t annotationType);
     bool checkPreviousValueType(Type expected);
     bool getRestrictedMetricsFlag();
 
