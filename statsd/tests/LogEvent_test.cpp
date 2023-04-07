@@ -128,6 +128,20 @@ void createAtomLevelIntAnnotationLogEvent(LogEvent* logEvent, uint8_t typeId, ui
     AStatsEvent_release(statsEvent);
 }
 
+void createAtomLevelBoolAnnotationLogEvent(LogEvent* logEvent, uint8_t typeId, uint8_t annotationId,
+                                           bool annotationValue, bool parseBufferResult) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, /*atomId=*/100);
+    AStatsEvent_addBoolAnnotation(statsEvent, annotationId, annotationValue);
+    fillStatsEventWithSampleValue(statsEvent, typeId);
+    AStatsEvent_build(statsEvent);
+
+    size_t size;
+    uint8_t* buf = AStatsEvent_getBuffer(statsEvent, &size);
+    EXPECT_EQ(parseBufferResult, logEvent->parseBuffer(buf, size));
+    AStatsEvent_release(statsEvent);
+}
+
 }  // anonymous namespace
 
 // Setup for parameterized tests.
@@ -916,6 +930,7 @@ TEST(LogEventTest, TestRestrictionCategoryAnnotation) {
                                          restrictionCategory, /*parseBufferResult=*/true);
 
     ASSERT_EQ(event.getRestrictionCategory(), restrictionCategory);
+    FlagProvider::getInstance().resetOverrides();
 }
 
 TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation) {
@@ -926,6 +941,7 @@ TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation) {
     createAtomLevelIntAnnotationLogEvent(&event, INT32_TYPE,
                                          ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY,
                                          restrictionCategory, /*parseBufferResult=*/false);
+    FlagProvider::getInstance().resetOverrides();
 }
 
 TEST(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled) {
@@ -936,6 +952,7 @@ TEST(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled) {
     createAtomLevelIntAnnotationLogEvent(&event, INT32_TYPE,
                                          ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY,
                                          restrictionCategory, /*parseBufferResult=*/false);
+    FlagProvider::getInstance().resetOverrides();
 }
 
 TEST_P(LogEventTestBadAnnotationFieldTypes, TestResetStateAnnotation) {
@@ -1000,6 +1017,90 @@ TEST(LogEventTest, TestEmptyAttributionChainWithPrimaryFieldFirstUidAnnotation) 
     EXPECT_FALSE(logEvent.parseBuffer(buf, size));
 
     AStatsEvent_release(event);
+}
+
+// Setup for parameterized tests.
+class LogEvent_FieldRestrictionTest : public testing::TestWithParam<int> {
+public:
+    static std::string ToString(testing::TestParamInfo<int> info) {
+        switch (info.param) {
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO:
+                return "PeripheralDeviceInfo";
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE:
+                return "AppUsage";
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY:
+                return "AppActivity";
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT:
+                return "HealthConnect";
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY:
+                return "Accessibility";
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH:
+                return "SystemSearch";
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
+                return "UserEngagement";
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
+                return "AmbientSensing";
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
+                return "DemographicClassification";
+            default:
+                return "Unknown";
+        }
+    }
+    void TearDown() override {
+        FlagProvider::getInstance().resetOverrides();
+    }
+};
+
+// TODO(b/222539899): Add BOOL_TYPE value once parseAnnotations is updated to check specific
+// typeIds. BOOL_TYPE should be a bad field type for is_uid, nested, and reset state annotations.
+INSTANTIATE_TEST_SUITE_P(
+        LogEvent_FieldRestrictionTest, LogEvent_FieldRestrictionTest,
+        testing::Values(ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION),
+        LogEvent_FieldRestrictionTest::ToString);
+
+TEST_P(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation) {
+    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
+                                             /*isBootFlag=*/true);
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE, GetParam(), true,
+                                          /*parseBufferResult=*/true);
+    // Some basic checks to make sure the event is parsed correctly.
+    EXPECT_EQ(event.GetTagId(), 100);
+    ASSERT_EQ(event.getValues().size(), 1);
+    EXPECT_EQ(event.getValues()[0].mValue.getType(), Type::INT);
+}
+
+TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType) {
+    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
+                                             /*isBootFlag=*/true);
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    createFieldWithIntAnnotationLogEvent(&event, STRING_TYPE, GetParam(),
+                                         /*random int*/ 15, /*parseBufferResult=*/false);
+}
+
+TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel) {
+    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
+                                             /*isBootFlag=*/true);
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    createAtomLevelBoolAnnotationLogEvent(&event, STRING_TYPE, GetParam(), true,
+                                          /*parseBufferResult=*/false);
+}
+
+TEST_P(LogEvent_FieldRestrictionTest, TestRestrictionCategoryAnnotationFlagDisabled) {
+    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_FALSE,
+                                             /*isBootFlag=*/true);
+    int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE, GetParam(), true,
+                                          /*parseBufferResult=*/false);
 }
 
 }  // namespace statsd
