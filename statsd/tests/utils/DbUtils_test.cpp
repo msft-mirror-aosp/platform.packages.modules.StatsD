@@ -334,6 +334,46 @@ TEST_F(DbUtilsTest, TestInsertStringIntegrityCheckFails) {
     EXPECT_FALSE(StorageManager::hasFile(fileName.c_str()));
 }
 
+TEST_F(DbUtilsTest, TestEventCompatibilityEventMatchesTable) {
+    AStatsEvent* statsEvent = makeAStatsEvent(tagId, /*eventElapsedTime=*/10000000000);
+    AStatsEvent_writeString(statsEvent, "111");
+    AStatsEvent_writeFloat(statsEvent, 111.0);
+    AStatsEvent_writeInt32(statsEvent, 23);
+    LogEvent logEvent = makeLogEvent(statsEvent);
+
+    EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
+
+    EXPECT_TRUE(isEventCompatible(key, metricId, logEvent));
+}
+
+TEST_F(DbUtilsTest, TestEventCompatibilityEventDoesNotMatchesTable) {
+    AStatsEvent* statsEvent = makeAStatsEvent(tagId, /*eventElapsedTime=*/10000000000);
+    AStatsEvent_writeString(statsEvent, "111");
+    AStatsEvent_writeFloat(statsEvent, 111.0);
+    AStatsEvent_writeInt32(statsEvent, 23);
+    LogEvent logEvent = makeLogEvent(statsEvent);
+
+    AStatsEvent* statsEvent2 = makeAStatsEvent(tagId, /*eventElapsedTime=*/10000000000);
+    AStatsEvent_writeString(statsEvent2, "111");
+    AStatsEvent_writeFloat(statsEvent2, 111.0);
+    AStatsEvent_writeInt32(statsEvent2, 23);
+    AStatsEvent_writeInt32(statsEvent2, 25);
+    LogEvent logEvent2 = makeLogEvent(statsEvent2);
+
+    EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
+
+    EXPECT_FALSE(isEventCompatible(key, metricId, logEvent2));
+}
+
+TEST_F(DbUtilsTest, TestEventCompatibilityTableNotCreated) {
+    AStatsEvent* statsEvent = makeAStatsEvent(tagId, /*eventElapsedTime=*/10000000000);
+    AStatsEvent_writeString(statsEvent, "111");
+    AStatsEvent_writeFloat(statsEvent, 111.0);
+    AStatsEvent_writeInt32(statsEvent, 23);
+    LogEvent logEvent = makeLogEvent(statsEvent);
+
+    EXPECT_TRUE(isEventCompatible(key, metricId, logEvent));
+}
 }  // namespace dbutils
 }  // namespace statsd
 }  // namespace os
