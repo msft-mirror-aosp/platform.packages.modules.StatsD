@@ -41,6 +41,11 @@ string reformatMetricId(const int64_t metricId);
 /* Creates a new data table for a specified metric if one does not yet exist. */
 bool createTableIfNeeded(const ConfigKey& key, const int64_t metricId, const LogEvent& event);
 
+/* Checks whether the table schema for the given metric matches the event.
+ * Returns true if the table has not yet been created.
+ */
+bool isEventCompatible(const ConfigKey& key, const int64_t metricId, const LogEvent& event);
+
 /* Deletes a data table for the specified metric. */
 bool deleteTable(const ConfigKey& key, const int64_t metricId);
 

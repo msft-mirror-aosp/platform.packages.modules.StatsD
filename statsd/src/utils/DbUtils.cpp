@@ -42,6 +42,32 @@ const string COLUMN_NAME_ATOM_TAG = "atomId";
 const string COLUMN_NAME_EVENT_ELAPSED_CLOCK_NS = "elapsedTimestampNs";
 const string COLUMN_NAME_EVENT_WALL_CLOCK_NS = "wallTimestampNs";
 
+static std::vector<std::string> getExpectedTableSchema(const LogEvent& logEvent) {
+    vector<std::string> result;
+    for (const FieldValue& fieldValue : logEvent.getValues()) {
+        if (fieldValue.mField.getDepth() > 0) {
+            // Repeated fields are not supported.
+            continue;
+        }
+        switch (fieldValue.mValue.getType()) {
+            case INT:
+            case LONG:
+                result.push_back("INTEGER");
+                break;
+            case STRING:
+                result.push_back("TEXT");
+                break;
+            case FLOAT:
+                result.push_back("REAL");
+                break;
+            default:
+                // Byte array fields are not supported.
+                break;
+        }
+    }
+    return result;
+}
+
 static int integrityCheckCallback(void*, int colCount, char** queryResults, char**) {
     if (colCount == 0 || strcmp(queryResults[0], "ok") != 0) {
         // Returning 1 is an error code that causes exec to stop and error.
@@ -110,6 +136,40 @@ bool createTableIfNeeded(const ConfigKey& key, const int64_t metricId, const Log
         return false;
     }
     return true;
+}
+
+bool isEventCompatible(const ConfigKey& key, const int64_t metricId, const LogEvent& event) {
+    const string dbName = getDbName(key);
+    sqlite3* db;
+    if (sqlite3_open(dbName.c_str(), &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return false;
+    }
+    string zSql = StringPrintf("PRAGMA table_info(metric_%s);", reformatMetricId(metricId).c_str());
+    string err;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    if (!query(key, zSql, rows, columnTypes, columnNames, err)) {
+        ALOGE("Failed to check table schema for metric %lld: %s", (long long)metricId, err.c_str());
+        sqlite3_close(db);
+        return false;
+    }
+    // Sample query result
+    // cid  name               type     notnull  dflt_value  pk
+    // ---  -----------------  -------  -------  ----------  --
+    // 0    atomId             INTEGER  0        (null)      0
+    // 1    elapsedTimestampNs INTEGER  0        (null)      0
+    // 2    wallTimestampNs    INTEGER  0        (null)      0
+    // 3    field_1            INTEGER  0        (null)      0
+    // 4    field_2            TEXT     0        (null)      0
+    std::vector<string> tableSchema;
+    for (size_t i = 3; i < rows.size(); ++i) {  // Atom fields start at the third row
+        tableSchema.push_back(rows[i][2]);  // The third column stores the data type for the column
+    }
+    sqlite3_close(db);
+    // An empty rows vector implies the table has not yet been created.
+    return rows.size() == 0 || getExpectedTableSchema(event) == tableSchema;
 }
 
 bool deleteTable(const ConfigKey& key, const int64_t metricId) {
@@ -251,7 +311,6 @@ bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& row
         sqlite3_close(db);
         return false;
     }
-
     int result = sqlite3_step(stmt);
     bool firstIter = true;
     while (result == SQLITE_ROW) {
@@ -268,7 +327,8 @@ bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& row
                 columnNames.push_back(reinterpret_cast<const char*>(sqlite3_column_name(stmt, i)));
             }
             const unsigned char* textResult = sqlite3_column_text(stmt, i);
-            string colData = string(reinterpret_cast<const char*>(textResult));
+            string colData =
+                    textResult != nullptr ? string(reinterpret_cast<const char*>(textResult)) : "";
             rowData[i] = std::move(colData);
         }
         rows.push_back(std::move(rowData));
