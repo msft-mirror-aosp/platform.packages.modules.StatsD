@@ -37,6 +37,7 @@
 #include "metrics/KllMetricProducer.h"
 #include "metrics/MetricProducer.h"
 #include "metrics/NumericValueMetricProducer.h"
+#include "metrics/RestrictedEventMetricProducer.h"
 #include "state/StateManager.h"
 #include "stats_util.h"
 
@@ -173,8 +174,7 @@ optional<InvalidConfigReason> handleMetricWithAtomMatchingTrackers(
 optional<InvalidConfigReason> handleMetricWithConditions(
         const int64_t condition, const int64_t metricId, const int metricIndex,
         const unordered_map<int64_t, int>& conditionTrackerMap,
-        const ::google::protobuf::RepeatedPtrField<::android::os::statsd::MetricConditionLink>&
-                links,
+        const ::google::protobuf::RepeatedPtrField<MetricConditionLink>& links,
         const vector<sp<ConditionTracker>>& allConditionTrackers, int& conditionIndex,
         unordered_map<int, vector<int>>& conditionToMetricMap) {
     auto condition_it = conditionTrackerMap.find(condition);
@@ -251,7 +251,7 @@ optional<InvalidConfigReason> handleMetricWithStateLink(const int64_t metricId,
 
 optional<InvalidConfigReason> handleMetricWithSampling(
         const int64_t metricId, const DimensionalSamplingInfo& dimSamplingInfo,
-        SamplingInfo& samplingInfo) {
+        const vector<Matcher>& dimensionsInWhat, SamplingInfo& samplingInfo) {
     if (!dimSamplingInfo.has_sampled_what_field()) {
         ALOGE("metric DimensionalSamplingInfo missing sampledWhatField");
         return InvalidConfigReason(
@@ -279,6 +279,10 @@ optional<InvalidConfigReason> handleMetricWithSampling(
         ALOGE("metric has incorrect number of sampled dimension fields");
         return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
                                    metricId);
+    }
+    if (!subsetDimensions(samplingInfo.sampledWhatFields, dimensionsInWhat)) {
+        return InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT, metricId);
     }
     return nullopt;
 }
@@ -530,7 +534,7 @@ optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
@@ -715,7 +719,7 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
@@ -785,6 +789,11 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
+    if (config.has_restricted_metrics_delegate_package_name()) {
+        return {new RestrictedEventMetricProducer(
+                key, metric, conditionIndex, initialConditionCache, wizard, metricHash, timeBaseNs,
+                eventActivationMap, eventDeactivationMap)};
+    }
     return {new EventMetricProducer(key, metric, conditionIndex, initialConditionCache, wizard,
                                     metricHash, timeBaseNs, eventActivationMap,
                                     eventDeactivationMap)};
@@ -939,7 +948,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
@@ -1090,7 +1099,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
@@ -1180,14 +1189,6 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         triggerAtomId = *(triggerAtomMatcher->getAtomIds().begin());
     }
 
-    if (!metric.has_trigger_event() && pullTagId != -1 &&
-        metric.sampling_type() == GaugeMetric::FIRST_N_SAMPLES) {
-        ALOGW("FIRST_N_SAMPLES is only for pushed event or pull_on_trigger");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_GAUGE_METRIC_FIRST_N_SAMPLES_WITH_WRONG_EVENT, metric.id());
-        return nullopt;
-    }
-
     int conditionIndex = -1;
     if (metric.has_condition()) {
         invalidConfigReason = handleMetricWithConditions(
@@ -1232,9 +1233,11 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
             dimensionHardLimit);
 
     SamplingInfo samplingInfo;
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     if (metric.has_dimensional_sampling_info()) {
         invalidConfigReason = handleMetricWithSampling(
-                metric.id(), metric.dimensional_sampling_info(), samplingInfo);
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }

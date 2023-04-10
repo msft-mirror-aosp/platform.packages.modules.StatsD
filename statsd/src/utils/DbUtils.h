@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#pragma once
 
 #include <sqlite3.h>
 
@@ -27,8 +28,15 @@ namespace os {
 namespace statsd {
 namespace dbutils {
 
-// TODO(b/264407489): Update this to a new directory once ready.
-#define STATS_METADATA_DIR "/data/misc/stats-metadata"
+#define STATS_RESTRICTED_DATA_DIR "/data/misc/stats-data/restricted-data"
+
+inline int32_t getDbVersion() {
+    return SQLITE_VERSION_NUMBER;
+};
+
+string getDbName(const ConfigKey& key);
+
+string reformatMetricId(const int64_t metricId);
 
 /* Creates a new data table for a specified metric if one does not yet exist. */
 bool createTableIfNeeded(const ConfigKey& key, const int64_t metricId, const LogEvent& event);
@@ -39,12 +47,32 @@ bool deleteTable(const ConfigKey& key, const int64_t metricId);
 /* Deletes the SQLite db data file. */
 void deleteDb(const ConfigKey& key);
 
-/* Inserts new data into the specified metric data table. */
+/* Gets a handle to the sqlite db. You must call closeDb to free the allocated memory.
+ * Returns a nullptr if an error occurs.
+ */
+sqlite3* getDb(const ConfigKey& key);
+
+/* Closes the handle to the sqlite db. */
+void closeDb(sqlite3* db);
+
+/* Inserts new data into the specified metric data table.
+ * A temp sqlite handle is created using the ConfigKey.
+ */
 bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>& events);
 
-/* Executes a sql query on the specified SQLite db. */
+/* Inserts new data into the specified sqlite db handle. */
+bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events);
+
+/* Executes a sql query on the specified SQLite db.
+ * A temp sqlite handle is created using the ConfigKey.
+ */
 bool query(const ConfigKey& key, const string& zSql, vector<vector<string>>& rows,
-           vector<int32_t>& columnTypes);
+           vector<int32_t>& columnTypes, vector<string>& columnNames, string& err);
+
+bool flushTtl(sqlite3* db, const int64_t metricId, const int64_t ttlWallClockNs);
+
+/* Checks for database corruption and deletes the db if it is corrupted. */
+void verifyIntegrityAndDeleteIfNecessary(const ConfigKey& key);
 
 }  // namespace dbutils
 }  // namespace statsd

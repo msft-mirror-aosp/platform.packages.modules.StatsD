@@ -76,8 +76,14 @@ public:
     virtual ~GaugeMetricProducer();
 
     // Handles when the pulled data arrives.
-    void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data,
-                      bool pullSuccess, int64_t originalPullTimeNs) override;
+    void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data, PullResult pullResult,
+                      int64_t originalPullTimeNs) override;
+
+    // Determine if metric needs to pull
+    bool isPullNeeded() const override {
+        std::lock_guard<std::mutex> lock(mMutex);
+        return mIsActive && (mCondition == ConditionState::kTrue);
+    };
 
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
     void notifyAppUpgradeInternalLocked(const int64_t eventTimeNs) override {
@@ -159,6 +165,11 @@ private:
             std::unordered_map<int, std::vector<int>>& deactivationAtomTrackerToMetricMap,
             std::vector<int>& metricsWithActivation) override;
 
+    inline bool isRandomNSamples() const {
+        return (mTriggerAtomId == -1 && mSamplingType == GaugeMetric::FIRST_N_SAMPLES) ||
+               mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE;
+    }
+
     int mWhatMatcherIndex;
 
     sp<EventMatcherWizard> mEventMatcherWizard;
@@ -220,6 +231,7 @@ private:
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection);
     FRIEND_TEST(GaugeMetricProducerTest, TestFirstBucket);
     FRIEND_TEST(GaugeMetricProducerTest, TestPullOnTrigger);
+    FRIEND_TEST(GaugeMetricProducerTest, TestPullNWithoutTrigger);
     FRIEND_TEST(GaugeMetricProducerTest, TestRemoveDimensionInOutput);
     FRIEND_TEST(GaugeMetricProducerTest, TestPullDimensionalSampling);
 

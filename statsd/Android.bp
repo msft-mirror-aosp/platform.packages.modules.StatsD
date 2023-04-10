@@ -21,6 +21,10 @@ package {
 cc_defaults {
     name: "statsd_defaults",
 
+    cflags: [
+        "-Wno-deprecated-declarations",
+    ],
+
     srcs: [
         "src/active_config_list.proto",
         "src/anomaly/AlarmMonitor.cpp",
@@ -60,6 +64,7 @@ cc_defaults {
         "src/metrics/duration_helper/OringDurationTracker.cpp",
         "src/metrics/DurationMetricProducer.cpp",
         "src/metrics/EventMetricProducer.cpp",
+        "src/metrics/RestrictedEventMetricProducer.cpp",
         "src/metrics/GaugeMetricProducer.cpp",
         "src/metrics/KllMetricProducer.cpp",
         "src/metrics/MetricProducer.cpp",
@@ -76,6 +81,7 @@ cc_defaults {
         "src/state/StateManager.cpp",
         "src/state/StateTracker.cpp",
         "src/stats_log_util.cpp",
+        "src/stats_policy_config.proto",
         "src/statscompanion_util.cpp",
         "src/statsd_config.proto",
         "src/statsd_metadata.proto",
@@ -106,13 +112,12 @@ cc_defaults {
         "libutils",
         "server_configurable_flags",
         "statsd-aidl-ndk",
-        "libsqlite",
+        "libsqlite_static_noicu",
     ],
     shared_libs: [
         "libbinder_ndk",
         "libincident",
         "liblog",
-        "libandroidicu",
     ],
     header_libs: [
         "libgtest_prod_headers",
@@ -300,6 +305,7 @@ cc_test {
         "tests/metrics/MaxDurationTracker_test.cpp",
         "tests/metrics/NumericValueMetricProducer_test.cpp",
         "tests/metrics/OringDurationTracker_test.cpp",
+        "tests/metrics/RestrictedEventMetricProducer_test.cpp",
         "tests/MetricsManager_test.cpp",
         "tests/metrics/parsing_utils/config_update_utils_test.cpp",
         "tests/metrics/parsing_utils/metrics_manager_util_test.cpp",
@@ -337,8 +343,10 @@ cc_test {
         "tests/e2e/MetricActivation_e2e_test.cpp",
         "tests/e2e/MetricConditionLink_e2e_test.cpp",
         "tests/e2e/PartialBucket_e2e_test.cpp",
+        "tests/e2e/RestrictedConfig_e2e_test.cpp",
         "tests/e2e/ValueMetric_pull_e2e_test.cpp",
         "tests/e2e/WakelockDuration_e2e_test.cpp",
+        "tests/e2e/RestrictedEventMetric_e2e_test.cpp",
         "tests/external/puller_util_test.cpp",
         "tests/external/StatsCallbackPuller_test.cpp",
         "tests/external/StatsPuller_test.cpp",
@@ -361,6 +369,7 @@ cc_test {
         "tests/metrics/metrics_test_helper.cpp",
         "tests/metrics/OringDurationTracker_test.cpp",
         "tests/metrics/NumericValueMetricProducer_test.cpp",
+        "tests/metrics/RestrictedEventMetricProducer_test.cpp",
         "tests/metrics/parsing_utils/config_update_utils_test.cpp",
         "tests/metrics/parsing_utils/metrics_manager_util_test.cpp",
         "tests/subscriber/SubscriberReporter_test.cpp",
@@ -408,6 +417,7 @@ cc_benchmark {
         ":libprotobuf-internal-protos",
         ":libstats_internal_protos",
 
+        "benchmark/db_benchmark.cpp",
         "benchmark/duration_metric_benchmark.cpp",
         "benchmark/filter_value_benchmark.cpp",
         "benchmark/get_dimensions_for_condition_benchmark.cpp",
@@ -513,7 +523,7 @@ java_library {
 
 // Filegroup for statsd config proto definition.
 filegroup {
-    name: "statsd-config-proto-def",
+    name: "libstats_config_protos",
     srcs: ["src/statsd_config.proto"],
 }
 
@@ -532,3 +542,15 @@ filegroup {
         "src/guardrail/invalid_config_reason_enum.proto",
     ],
 }
+
+// Filegroup for subscription protos.
+filegroup {
+    name: "libstats_subscription_protos",
+    srcs: [
+        ":libstats_internal_protos",
+        ":libstats_config_protos",
+        "src/shell/shell_config.proto",
+        "src/shell/shell_data.proto",
+    ],
+}
+

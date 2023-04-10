@@ -48,6 +48,8 @@ int kUid2 = 2000;
 int kCpuTime1 = 100;
 int kCpuTime2 = 200;
 
+int64_t kCpuActiveTimeEventTimestampNs = 1111L;
+
 // Number of clients running simultaneously
 
 // Just a single client
@@ -61,10 +63,12 @@ ShellData getExpectedPulledData() {
     auto* atom1 = shellData.add_atom()->mutable_cpu_active_time();
     atom1->set_uid(kUid1);
     atom1->set_time_millis(kCpuTime1);
+    shellData.add_timestamp_nanos(kCpuActiveTimeEventTimestampNs);
 
     auto* atom2 = shellData.add_atom()->mutable_cpu_active_time();
     atom2->set_uid(kUid2);
     atom2->set_time_millis(kCpuTime2);
+    shellData.add_timestamp_nanos(kCpuActiveTimeEventTimestampNs);
 
     return shellData;
 }
@@ -82,7 +86,7 @@ ShellSubscription getPulledConfig() {
 shared_ptr<LogEvent> makeCpuActiveTimeAtom(int32_t uid, int64_t timeMillis) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, 10016);
-    AStatsEvent_overwriteTimestamp(statsEvent, 1111L);
+    AStatsEvent_overwriteTimestamp(statsEvent, kCpuActiveTimeEventTimestampNs);
     AStatsEvent_writeInt32(statsEvent, uid);
     AStatsEvent_writeInt64(statsEvent, timeMillis);
 
@@ -110,8 +114,8 @@ vector<std::shared_ptr<LogEvent>> getPushedEvents() {
     return pushedList;
 }
 
-// Utility to read & return a string representing ShellData, skipping heartbeats.
-string readData(int fd) {
+// Utility to read & return ShellData proto, skipping heartbeats.
+static ShellData readData(int fd) {
     ssize_t dataSize = 0;
     while (dataSize == 0) {
         read(fd, &dataSize, sizeof(dataSize));
@@ -123,7 +127,7 @@ string readData(int fd) {
     // Make sure the received bytes can be parsed to an atom.
     ShellData receivedAtom;
     EXPECT_TRUE(receivedAtom.ParseFromArray(dataBuffer.data(), dataSize) != 0);
-    return string(dataBuffer.begin(), dataBuffer.end());
+    return receivedAtom;
 }
 
 void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
@@ -159,25 +163,13 @@ void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
         shellManager->onLogEvent(*event);
     }
 
-    // Because we might receive heartbeats from statsd, consisting of data sizes
-    // of 0, encapsulate reads within a while loop.
-    vector<string> expectedDataSerialized;
-    for (size_t i = 0; i < expectedData.size(); i++) {
-        expectedDataSerialized.push_back(expectedData[i].SerializeAsString());
-    }
-
     for (int i = 0; i < numClients; i++) {
-        vector<string> expectedDataCopy(expectedDataSerialized);
-
-        while (expectedDataCopy.size() > 1) {
-            // Use readData utility to read data in string format.
-            string dataString = readData(fds_datas[i][0]);
-
-            // Search for string within the expected data vector
-            auto it = find(expectedDataCopy.begin(), expectedDataCopy.end(), dataString);
-            EXPECT_NE(it, expectedDataCopy.end());
-            expectedDataCopy.erase(it);
+        vector<ShellData> actualData;
+        for (int j = 1; j <= expectedData.size(); j++) {
+            actualData.push_back(readData(fds_datas[i][0]));
         }
+
+        EXPECT_THAT(expectedData, UnorderedPointwise(ProtoEq(), actualData));
     }
 
     // Not closing fds_datas[i][0] because this causes writes within ShellSubscriberClient to hang
@@ -200,17 +192,20 @@ TEST(ShellSubscriberTest, testPushedSubscription) {
     ShellData shellData1;
     shellData1.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
+    shellData1.add_timestamp_nanos(pushedList[0]->GetElapsedTimestampNs());
     ShellData shellData2;
     shellData2.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
+    shellData2.add_timestamp_nanos(pushedList[1]->GetElapsedTimestampNs());
     expectedData.push_back(shellData1);
     expectedData.push_back(shellData2);
 
     // Test with single client
-    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kSingleClient);
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData,
+               kSingleClient);
 
     // Test with multiple client
-    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
 }
 
 TEST(ShellSubscriberTest, testPulledSubscription) {
@@ -228,12 +223,12 @@ TEST(ShellSubscriberTest, testPulledSubscription) {
             }));
 
     // Test with single client
-    runShellTest(getPulledConfig(), uidMap, pullerManager, {}, {getExpectedPulledData()},
-                 kSingleClient);
+    TRACE_CALL(runShellTest, getPulledConfig(), uidMap, pullerManager, /*pushedEvents=*/{},
+               {getExpectedPulledData()}, kSingleClient);
 
     // Test with multiple clients.
-    runShellTest(getPulledConfig(), uidMap, pullerManager, {}, {getExpectedPulledData()},
-                 kNumClients);
+    TRACE_CALL(runShellTest, getPulledConfig(), uidMap, pullerManager, {},
+               {getExpectedPulledData()}, kNumClients);
 }
 
 TEST(ShellSubscriberTest, testBothSubscriptions) {
@@ -259,18 +254,21 @@ TEST(ShellSubscriberTest, testBothSubscriptions) {
     ShellData shellData1;
     shellData1.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
+    shellData1.add_timestamp_nanos(pushedList[0]->GetElapsedTimestampNs());
     ShellData shellData2;
     shellData2.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
+    shellData2.add_timestamp_nanos(pushedList[1]->GetElapsedTimestampNs());
     expectedData.push_back(getExpectedPulledData());
     expectedData.push_back(shellData1);
     expectedData.push_back(shellData2);
 
     // Test with single client
-    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kSingleClient);
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData,
+               kSingleClient);
 
     // Test with multiple client
-    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
 }
 
 TEST(ShellSubscriberTest, testMaxSizeGuard) {
@@ -387,37 +385,63 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
     }
 
     // send a log event that matches the config.
-    for (const auto& event : getPushedEvents()) {
+    vector<std::shared_ptr<LogEvent>> pushedList = getPushedEvents();
+    for (const auto& event : pushedList) {
         shellManager->onLogEvent(*event);
     }
 
     // Validate Config 1
-    string receivedData = readData(fds_datas[0][0]);
+    ShellData actual1 = readData(fds_datas[0][0]);
     ShellData expected1;
     expected1.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
-    EXPECT_EQ(receivedData, expected1.SerializeAsString());
+    expected1.add_timestamp_nanos(pushedList[0]->GetElapsedTimestampNs());
+    EXPECT_THAT(expected1, ProtoEq(actual1));
 
-    receivedData = readData(fds_datas[0][0]);
+    ShellData actual2 = readData(fds_datas[0][0]);
     ShellData expected2;
     expected2.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
-    EXPECT_EQ(receivedData, expected2.SerializeAsString());
+    expected2.add_timestamp_nanos(pushedList[1]->GetElapsedTimestampNs());
+    EXPECT_THAT(expected2, ProtoEq(actual2));
 
     // Validate Config 2, repeating the process
-    receivedData = readData(fds_datas[1][0]);
+    ShellData actual3 = readData(fds_datas[1][0]);
     ShellData expected3;
     expected3.add_atom()->mutable_plugged_state_changed()->set_state(
             BatteryPluggedStateEnum::BATTERY_PLUGGED_USB);
-    EXPECT_EQ(receivedData, expected3.SerializeAsString());
+    expected3.add_timestamp_nanos(pushedList[2]->GetElapsedTimestampNs());
+    EXPECT_THAT(expected3, ProtoEq(actual3));
 
-    receivedData = readData(fds_datas[1][0]);
+    ShellData actual4 = readData(fds_datas[1][0]);
     ShellData expected4;
     expected4.add_atom()->mutable_plugged_state_changed()->set_state(
             BatteryPluggedStateEnum::BATTERY_PLUGGED_NONE);
-    EXPECT_EQ(receivedData, expected4.SerializeAsString());
+    expected4.add_timestamp_nanos(pushedList[3]->GetElapsedTimestampNs());
+    EXPECT_THAT(expected4, ProtoEq(actual4));
 
     // Not closing fds_datas[i][0] because this causes writes within ShellSubscriberClient to hang
+}
+
+TEST(ShellSubscriberTest, testPushedSubscriptionRestrictedEvent) {
+    sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+
+    std::vector<shared_ptr<LogEvent>> pushedList;
+    pushedList.push_back(CreateRestrictedLogEvent(/*atomTag=*/10, /*timestamp=*/1000));
+
+    // create a simple config to get screen events
+    ShellSubscription config;
+    config.add_pushed()->set_atom_id(10);
+
+    // expect empty data
+    vector<ShellData> expectedData;
+
+    // Test with single client
+    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kSingleClient);
+
+    // Test with multiple client
+    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
 }
 
 #else

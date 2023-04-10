@@ -591,6 +591,8 @@ message StatsdConfig {
 
   optional uint32 package_certificate_hash_size_bytes = 26;
 
+  optional string restricted_metrics_delegate_package_name = 27;
+
   // Do not use.
   reserved 1000, 1001;
 }

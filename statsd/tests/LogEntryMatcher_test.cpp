@@ -15,9 +15,9 @@
 #include <gtest/gtest.h>
 #include <stdio.h>
 
-#include "annotations.h"
-#include "src/statsd_config.pb.h"
 #include "matchers/matcher_util.h"
+#include "src/statsd_config.pb.h"
+#include "stats_annotations.h"
 #include "stats_event.h"
 #include "stats_log_util.h"
 #include "stats_util.h"
@@ -120,7 +120,7 @@ void makeRepeatedUidLogEvent(LogEvent* logEvent, const int32_t atomId,
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_writeInt32Array(statsEvent, intArray.data(), intArray.size());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     parseStatsEventToLogEvent(statsEvent, logEvent);
 }
 
@@ -412,7 +412,8 @@ TEST(AtomMatcherTest, TestUidFieldMatcher) {
 
     // Make event with is_uid annotation.
     LogEvent event2(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event2, TAG_ID_2, 1111, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event2, TAG_ID_2, 1111, ASTATSLOG_ANNOTATION_ID_IS_UID,
+                                      true);
 
     // Event has is_uid annotation, so mapping from uid to package name occurs.
     simpleMatcher->set_atom_id(TAG_ID_2);
@@ -1231,12 +1232,12 @@ TEST(AtomMatcherTest, TestUidFieldMatcherWithWildcardString) {
 
     // Event where mapping from uid to package name occurs.
     LogEvent event2(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event2, TAG_ID, 1111, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event2, TAG_ID, 1111, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event2));
 
     // Event where uid maps to package names that don't fit wildcard pattern.
     LogEvent event3(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event3, TAG_ID, 3333, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event3, TAG_ID, 3333, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event3));
 
     // Update matcher to match one AID
@@ -1245,12 +1246,12 @@ TEST(AtomMatcherTest, TestUidFieldMatcherWithWildcardString) {
 
     // Event where mapping from uid to aid doesn't fit wildcard pattern.
     LogEvent event4(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event4, TAG_ID, 1005, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event4, TAG_ID, 1005, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event4));
 
     // Event where mapping from uid to aid does fit wildcard pattern.
     LogEvent event5(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event5, TAG_ID, 1000, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event5, TAG_ID, 1000, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event5));
 
     // Update matcher to match multiple AIDs
@@ -1258,16 +1259,16 @@ TEST(AtomMatcherTest, TestUidFieldMatcherWithWildcardString) {
 
     // Event where mapping from uid to aid doesn't fit wildcard pattern.
     LogEvent event6(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event6, TAG_ID, 1036, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event6, TAG_ID, 1036, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event6));
 
     // Event where mapping from uid to aid does fit wildcard pattern.
     LogEvent event7(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event7, TAG_ID, 1034, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event7, TAG_ID, 1034, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event7));
 
     LogEvent event8(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event8, TAG_ID, 1035, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event8, TAG_ID, 1035, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event8));
 }
 

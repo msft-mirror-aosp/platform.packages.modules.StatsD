@@ -1006,24 +1006,6 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricTriggerNoFirstNSamples) {
                                   metricId));
 }
 
-TEST_F(MetricsManagerUtilTest, TestGaugeMetricFirstNSamplesWithWrongEvent) {
-    StatsdConfig config;
-    int64_t metricId = 1;
-    GaugeMetric* metric = config.add_gauge_metric();
-    metric->set_id(metricId);
-    metric->set_what(StringToId("Matcher"));
-    *config.add_atom_matcher() =
-            CreateSimpleAtomMatcher(/*name=*/"Matcher", /*atomId=*/util::SUBSYSTEM_SLEEP_STATE);
-
-    metric->mutable_gauge_fields_filter()->set_include_all(true);
-    metric->set_sampling_type(GaugeMetric_SamplingType_FIRST_N_SAMPLES);
-
-    EXPECT_EQ(
-            initConfig(config),
-            InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_FIRST_N_SAMPLES_WITH_WRONG_EVENT,
-                                metricId));
-}
-
 TEST_F(MetricsManagerUtilTest, TestMatcherDuplicate) {
     StatsdConfig config;
 
@@ -1759,6 +1741,27 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
                                   metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricSampledFieldNotSubsetDimension) {
+    AtomMatcher appCrashMatcher =
+            CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = appCrashMatcher;
+
+    CountMetric metric =
+            createCountMetric("CountSampledAppCrashesPerUid", appCrashMatcher.id(), nullopt, {});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
+                                metric.id()));
 }
 
 }  // namespace statsd

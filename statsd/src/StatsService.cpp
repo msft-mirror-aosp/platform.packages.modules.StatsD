@@ -18,26 +18,29 @@
 #include "Log.h"
 
 #include "StatsService.h"
-#include "stats_log_util.h"
-#include "android-base/stringprintf.h"
-#include "config/ConfigKey.h"
-#include "config/ConfigManager.h"
-#include "guardrail/StatsdStats.h"
-#include "storage/StorageManager.h"
-#include "subscriber/SubscriberReporter.h"
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
 #include <cutils/multiuser.h>
+#include <private/android_filesystem_config.h>
 #include <src/statsd_config.pb.h>
 #include <src/uid_data.pb.h>
-#include <private/android_filesystem_config.h>
 #include <statslog_statsd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <utils/String16.h>
+
+#include "android-base/stringprintf.h"
+#include "config/ConfigKey.h"
+#include "config/ConfigManager.h"
+#include "flags/FlagProvider.h"
+#include "guardrail/StatsdStats.h"
+#include "stats_log_util.h"
+#include "storage/StorageManager.h"
+#include "subscriber/SubscriberReporter.h"
+#include "utils/DbUtils.h"
 
 using namespace android;
 
@@ -52,6 +55,8 @@ namespace os {
 namespace statsd {
 
 constexpr const char* kPermissionDump = "android.permission.DUMP";
+
+constexpr const char* kPermissionReadLogs = "android.permission.READ_LOGS";
 
 constexpr const char* kPermissionRegisterPullAtom = "android.permission.REGISTER_STATS_PULL_ATOM";
 
@@ -160,6 +165,27 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                 }
                 VLOG("StatsService::active configs broadcast failed for uid %d", uid);
                 return false;
+            },
+            [this](const ConfigKey& key, const string& delegatePackage,
+                   const vector<int64_t>& restrictedMetrics) {
+                set<string> configPackages;
+                set<int32_t> delegateUids;
+                for (const auto& kv : UidMap::sAidToUidMapping) {
+                    if (kv.second == static_cast<uint32_t>(key.GetUid())) {
+                        configPackages.insert(kv.first);
+                    }
+                    if (kv.first == delegatePackage) {
+                        delegateUids.insert(kv.second);
+                    }
+                }
+                if (configPackages.empty()) {
+                    configPackages = mUidMap->getAppNamesFromUid(key.GetUid(), true);
+                }
+                if (delegateUids.empty()) {
+                    delegateUids = mUidMap->getAppUid(delegatePackage);
+                }
+                mConfigManager->SendRestrictedMetricsBroadcast(configPackages, key.GetId(),
+                                                               delegateUids, restrictedMetrics);
             });
 
     mUidMap->setListener(mProcessor);
@@ -355,12 +381,7 @@ status_t StatsService::handleShellCommand(int in, int out, int err, const char**
         }
 
         if (!utf8Args[0].compare(String8("data-subscribe"))) {
-            {
-                std::lock_guard<std::mutex> lock(mShellSubscriberMutex);
-                if (mShellSubscriber == nullptr) {
-                    mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager);
-                }
-            }
+            initShellSubscriber();
             int timeoutSec = -1;
             if (argc >= 2) {
                 timeoutSec = atoi(utf8Args[1].c_str());
@@ -790,8 +811,7 @@ status_t StatsService::cmd_log_app_breadcrumb(int out, const Vector<String8>& ar
     }
     if (good) {
         dprintf(out, "Logging AppBreadcrumbReported(%d, %d, %d) to statslog.\n", uid, label, state);
-        android::os::statsd::util::stats_write(
-                android::os::statsd::util::APP_BREADCRUMB_REPORTED, uid, label, state);
+        util::stats_write(util::APP_BREADCRUMB_REPORTED, uid, label, state);
     } else {
         print_cmd_help(out);
         return UNKNOWN_ERROR;
@@ -1079,8 +1099,11 @@ Status StatsService::bootCompleted() {
 
 void StatsService::Startup() {
     mConfigManager->Startup();
+    int64_t wallClockNs = getWallClockNs();
+    int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
     mProcessor->LoadActiveConfigsFromDisk();
-    mProcessor->LoadMetadataFromDisk(getWallClockNs(), getElapsedRealtimeNs());
+    mProcessor->LoadMetadataFromDisk(wallClockNs, elapsedRealtimeNs);
+    mProcessor->EnforceDataTtls(wallClockNs, elapsedRealtimeNs);
 }
 
 void StatsService::Terminate() {
@@ -1345,6 +1368,96 @@ void StatsService::statsCompanionServiceDiedImpl() {
     mAnomalyAlarmMonitor->setStatsCompanionService(nullptr);
     mPeriodicAlarmMonitor->setStatsCompanionService(nullptr);
     mPullerManager->SetStatsCompanionService(nullptr);
+}
+
+Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId,
+                                                          const string& configPackage,
+                                                          const shared_ptr<IPendingIntentRef>& pir,
+                                                          const int32_t callingUid,
+                                                          vector<int64_t>* output) {
+    ENFORCE_UID(AID_SYSTEM);
+    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        return Status::ok();
+    }
+    mConfigManager->SetRestrictedMetricsChangedReceiver(configPackage, configId, callingUid, pir);
+    if (output != nullptr) {
+        mProcessor->fillRestrictedMetrics(configId, configPackage, callingUid, output);
+    } else {
+        ALOGW("StatsService::setRestrictedMetricsChangedOperation output was nullptr");
+    }
+    return Status::ok();
+}
+
+Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t configId,
+                                                             const string& configPackage,
+                                                             const int32_t callingUid) {
+    ENFORCE_UID(AID_SYSTEM);
+    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        return Status::ok();
+    }
+    mConfigManager->RemoveRestrictedMetricsChangedReceiver(configPackage, configId, callingUid);
+    return Status::ok();
+}
+
+Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                              const optional<vector<uint8_t>>& policyConfig,
+                              const shared_ptr<IStatsQueryCallback>& callback,
+                              const int64_t configKey, const string& configPackage,
+                              const int32_t callingUid) {
+    ENFORCE_UID(AID_SYSTEM);
+    mProcessor->querySql(sqlQuery, minSqlClientVersion, policyConfig, callback, configKey,
+                         configPackage, callingUid);
+    return Status::ok();
+}
+
+Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,
+                                     const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ENFORCE_UID(AID_NOBODY);
+    if (!checkPermission(kPermissionReadLogs)) {
+        return exception(
+                EX_SECURITY,
+                StringPrintf(
+                        "Uid %d does not have the %s permission when subscribing to atom events",
+                        AIBinder_getCallingUid(), kPermissionReadLogs));
+    }
+    initShellSubscriber();
+
+    mShellSubscriber->startNewSubscription(subscriptionConfig, callback);
+
+    return Status::ok();
+}
+
+Status StatsService::removeSubscription(const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ENFORCE_UID(AID_NOBODY);
+    if (!checkPermission(kPermissionReadLogs)) {
+        return exception(EX_SECURITY, StringPrintf("Uid %d does not have the %s permission when "
+                                                   "unsubscribing from atom events",
+                                                   AIBinder_getCallingUid(), kPermissionReadLogs));
+    }
+    if (mShellSubscriber != nullptr) {
+        mShellSubscriber->unsubscribe(callback);
+    }
+    return Status::ok();
+}
+
+Status StatsService::flushSubscription(const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ENFORCE_UID(AID_NOBODY);
+    if (!checkPermission(kPermissionReadLogs)) {
+        return exception(EX_SECURITY, StringPrintf("Uid %d does not have the %s permission when "
+                                                   "flushing an atoms subscription",
+                                                   AIBinder_getCallingUid(), kPermissionReadLogs));
+    }
+    if (mShellSubscriber != nullptr) {
+        mShellSubscriber->flushSubscription(callback);
+    }
+    return Status::ok();
+}
+
+void StatsService::initShellSubscriber() {
+    std::lock_guard<std::mutex> lock(mShellSubscriberMutex);
+    if (mShellSubscriber == nullptr) {
+        mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager);
+    }
 }
 
 }  // namespace statsd

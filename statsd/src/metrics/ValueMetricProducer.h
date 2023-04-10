@@ -24,7 +24,6 @@
 #include "HashableDimensionKey.h"
 #include "MetricProducer.h"
 #include "anomaly/AnomalyTracker.h"
-#include "condition/ConditionTimer.h"
 #include "condition/ConditionTracker.h"
 #include "external/PullDataReceiver.h"
 #include "external/StatsPullerManager.h"
@@ -118,10 +117,14 @@ public:
     virtual ~ValueMetricProducer();
 
     // Process data pulled on bucket boundary.
-    virtual void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data, bool pullSuccess,
-                              int64_t originalPullTimeNs) override {
+    virtual void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data,
+                              PullResult pullResult, int64_t originalPullTimeNs) override {
     }
 
+    // Determine if metric needs to pull
+    virtual bool isPullNeeded() const override {
+        return false;
+    }
 
     // ValueMetric needs special logic if it's a pulled atom.
     void onStatsdInitCompleted(const int64_t& eventTimeNs) override;
@@ -351,8 +354,6 @@ protected:
     // This is to track whether or not the bucket is skipped for any of the reasons listed in
     // BucketDropReason, many of which make the bucket potentially invalid.
     bool mCurrentBucketIsSkipped;
-
-    ConditionTimer mConditionTimer;
 
     /** Stores condition correction threshold from the ValueMetric configuration */
     optional<int64_t> mConditionCorrectionThresholdNs;
