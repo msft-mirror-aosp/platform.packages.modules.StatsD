@@ -3,6 +3,7 @@
 
 #include "RestrictedEventMetricProducer.h"
 
+#include "stats_annotations.h"
 #include "utils/DbUtils.h"
 
 using std::lock_guard;
@@ -21,12 +22,11 @@ RestrictedEventMetricProducer::RestrictedEventMetricProducer(
         const unordered_map<int, shared_ptr<Activation>>& eventActivationMap,
         const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap,
         const vector<int>& slicedStateAtoms,
-        const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap,
-        int restrictedDataTtlInDays)
+        const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : EventMetricProducer(key, metric, conditionIndex, initialConditionCache, wizard, protoHash,
                           startTimeNs, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
                           stateGroupMap),
-      mRestrictedDataTtlInDays(restrictedDataTtlInDays) {
+      mRestrictedDataCategory(CATEGORY_UNKNOWN) {
 }
 
 void RestrictedEventMetricProducer::onMatchedLogEventInternalLocked(
@@ -36,6 +36,14 @@ void RestrictedEventMetricProducer::onMatchedLogEventInternalLocked(
     if (!condition) {
         return;
     }
+    if (mRestrictedDataCategory != CATEGORY_UNKNOWN &&
+        mRestrictedDataCategory != event.getRestrictionCategory()) {
+        // TODO(b/276926152): Log category change to statsdstats
+        deleteMetricTable();
+        mLogEvents.clear();
+        mTotalSize = 0;
+    }
+    mRestrictedDataCategory = event.getRestrictionCategory();
     mLogEvents.push_back(event);
     mTotalSize += getSize(event.getValues()) + sizeof(event);
 }
@@ -53,15 +61,14 @@ void RestrictedEventMetricProducer::onMetricRemove() {
     if (!mIsMetricTableCreated) {
         return;
     }
-    if (!dbutils::deleteTable(mConfigKey, mMetricId)) {
-        // TODO(b/268150038): report error to statsdstats
-        VLOG("Failed to delete table for metric %lld", (long long)mMetricId);
-    }
+    deleteMetricTable();
 }
 
 void RestrictedEventMetricProducer::enforceRestrictedDataTtl(sqlite3* db,
                                                              const int64_t wallClockNs) {
-    int64_t ttlTime = wallClockNs - mRestrictedDataTtlInDays * NS_PER_DAY;
+    int32_t ttlInDays = RestrictedPolicyManager::getInstance().getRestrictedCategoryTtl(
+            mRestrictedDataCategory);
+    int64_t ttlTime = wallClockNs - ttlInDays * NS_PER_DAY;
     dbutils::flushTtl(db, mMetricId, ttlTime);
 }
 
@@ -95,6 +102,27 @@ void RestrictedEventMetricProducer::flushRestrictedData() {
     }
     mLogEvents.clear();
     mTotalSize = 0;
+}
+
+bool RestrictedEventMetricProducer::writeMetricMetadataToProto(
+        metadata::MetricMetadata* metricMetadata) {
+    metricMetadata->set_metric_id(mMetricId);
+    metricMetadata->set_restricted_category(mRestrictedDataCategory);
+    return true;
+}
+
+void RestrictedEventMetricProducer::loadMetricMetadataFromProto(
+        const metadata::MetricMetadata& metricMetadata) {
+    mRestrictedDataCategory =
+            static_cast<StatsdRestrictionCategory>(metricMetadata.restricted_category());
+}
+
+void RestrictedEventMetricProducer::deleteMetricTable() {
+    if (!dbutils::deleteTable(mConfigKey, mMetricId)) {
+        // TODO(b/268150038): report error to statsdstats
+        VLOG("Failed to delete table for metric %lld", (long long)mMetricId);
+    }
+    mIsMetricTableCreated = false;
 }
 
 }  // namespace statsd
