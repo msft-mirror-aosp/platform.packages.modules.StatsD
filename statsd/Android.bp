@@ -21,6 +21,10 @@ package {
 cc_defaults {
     name: "statsd_defaults",
 
+    cflags: [
+        "-Wno-deprecated-declarations",
+    ],
+
     srcs: [
         "src/active_config_list.proto",
         "src/anomaly/AlarmMonitor.cpp",

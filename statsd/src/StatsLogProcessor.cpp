@@ -130,15 +130,14 @@ static void flushProtoToBuffer(ProtoOutputStream& proto, vector<uint8_t>* outDat
 
 void StatsLogProcessor::processFiredAnomalyAlarmsLocked(
         const int64_t& timestampNs,
-        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet) {
+        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mMetricsManagers) {
         itr.second->onAnomalyAlarmFired(timestampNs, alarmSet);
     }
 }
 void StatsLogProcessor::onPeriodicAlarmFired(
         const int64_t& timestampNs,
-        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet) {
-
+        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     for (const auto& itr : mMetricsManagers) {
         itr.second->onPeriodicAlarmFired(timestampNs, alarmSet);
@@ -274,17 +273,17 @@ void StatsLogProcessor::getAndUpdateTrainInfoOnDisk(bool is_rollback,
         int64_t firstId = trainInfo->experimentIds.at(0);
         auto& ids = trainInfo->experimentIds;
         switch (trainInfo->status) {
-            case android::os::statsd::util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALL_SUCCESS:
+            case util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALL_SUCCESS:
                 if (find(ids.begin(), ids.end(), firstId + 1) == ids.end()) {
                     ids.push_back(firstId + 1);
                 }
                 break;
-            case android::os::statsd::util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALLER_ROLLBACK_INITIATED:
+            case util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALLER_ROLLBACK_INITIATED:
                 if (find(ids.begin(), ids.end(), firstId + 2) == ids.end()) {
                     ids.push_back(firstId + 2);
                 }
                 break;
-            case android::os::statsd::util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALLER_ROLLBACK_SUCCESS:
+            case util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALLER_ROLLBACK_SUCCESS:
                 if (find(ids.begin(), ids.end(), firstId + 3) == ids.end()) {
                     ids.push_back(firstId + 3);
                 }
@@ -353,13 +352,13 @@ vector<int64_t> StatsLogProcessor::processWatchdogRollbackOccurred(const int32_t
     int64_t firstId = trainInfoOnDisk.experimentIds[0];
     auto& ids = trainInfoOnDisk.experimentIds;
     switch (rollbackTypeIn) {
-      case android::os::statsd::util::WATCHDOG_ROLLBACK_OCCURRED__ROLLBACK_TYPE__ROLLBACK_INITIATE:
+        case util::WATCHDOG_ROLLBACK_OCCURRED__ROLLBACK_TYPE__ROLLBACK_INITIATE:
             if (find(ids.begin(), ids.end(), firstId + 4) == ids.end()) {
                 ids.push_back(firstId + 4);
             }
             StorageManager::writeTrainInfo(trainInfoOnDisk);
             break;
-      case android::os::statsd::util::WATCHDOG_ROLLBACK_OCCURRED__ROLLBACK_TYPE__ROLLBACK_SUCCESS:
+        case util::WATCHDOG_ROLLBACK_OCCURRED__ROLLBACK_TYPE__ROLLBACK_SUCCESS:
             if (find(ids.begin(), ids.end(), firstId + 5) == ids.end()) {
                 ids.push_back(firstId + 5);
             }
@@ -401,13 +400,13 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
 
     // Hard-coded logic to update train info on disk and fill in any information
     // this log event may be missing.
-    if (atomId == android::os::statsd::util::BINARY_PUSH_STATE_CHANGED) {
+    if (atomId == util::BINARY_PUSH_STATE_CHANGED) {
         onBinaryPushStateChangedEventLocked(event);
     }
 
     // Hard-coded logic to update experiment ids on disk for certain rollback
     // types and fill the rollback atom with experiment ids
-    if (atomId == android::os::statsd::util::WATCHDOG_ROLLBACK_OCCURRED) {
+    if (atomId == util::WATCHDOG_ROLLBACK_OCCURRED) {
         onWatchdogRollbackOccurredLocked(event);
     }
 
@@ -418,7 +417,7 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
 
     // Hard-coded logic to update the isolated uid's in the uid-map.
     // The field numbers need to be currently updated by hand with atoms.proto
-    if (atomId == android::os::statsd::util::ISOLATED_UID_CHANGED) {
+    if (atomId == util::ISOLATED_UID_CHANGED) {
         onIsolatedUidChangedEventLocked(*event);
     } else {
         // Map the isolated uid to host uid if necessary.
@@ -1019,6 +1018,27 @@ void StatsLogProcessor::enforceDbGuardrailsIfNecessaryLocked(const int64_t wallC
     mLastDbGuardrailEnforcementTime = elapsedRealtimeNs;
 }
 
+void StatsLogProcessor::fillRestrictedMetrics(const int64_t configId, const string& configPackage,
+                                              const int32_t delegateUid, vector<int64_t>* output) {
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+
+    set<int32_t> configPackageUids;
+    const auto& uidMapItr = UidMap::sAidToUidMapping.find(configPackage);
+    if (uidMapItr != UidMap::sAidToUidMapping.end()) {
+        configPackageUids.insert(uidMapItr->second);
+    } else {
+        configPackageUids = mUidMap->getAppUid(configPackage);
+    }
+    string err;
+    set<ConfigKey> keysToGetMetrics =
+            getRestrictedConfigKeysToQueryLocked(delegateUid, configId, configPackageUids, err);
+
+    for (const ConfigKey& key : keysToGetMetrics) {
+        vector<int64_t> metricIds = mMetricsManagers[key]->getAllMetricIds();
+        output->insert(output->end(), metricIds.begin(), metricIds.end());
+    }
+}
+
 void StatsLogProcessor::flushRestrictedDataLocked(const int64_t elapsedRealtimeNs) {
     for (const auto& it : mMetricsManagers) {
         // no-op if metricsManager is not restricted
@@ -1401,7 +1421,7 @@ void StatsLogProcessor::cancelAnomalyAlarm() {
 
 void StatsLogProcessor::informAnomalyAlarmFiredLocked(const int64_t elapsedTimeMillis) {
     VLOG("StatsService::informAlarmForSubscriberTriggeringFired was called");
-    std::unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet =
+    unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet =
             mAnomalyAlarmMonitor->popSoonerThan(static_cast<uint32_t>(elapsedTimeMillis / 1000));
     if (alarmSet.size() > 0) {
         VLOG("Found periodic alarm fired.");

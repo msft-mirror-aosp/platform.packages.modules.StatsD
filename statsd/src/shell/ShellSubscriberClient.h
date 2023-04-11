@@ -17,6 +17,7 @@
 #pragma once
 
 #include <aidl/android/os/IStatsSubscriptionCallback.h>
+#include <aidl/android/os/StatsSubscriptionCallbackReason.h>
 #include <android-base/file.h>
 #include <android/util/ProtoOutputStream.h>
 #include <private/android_filesystem_config.h>
@@ -30,6 +31,7 @@
 #include "src/statsd_config.pb.h"
 
 using aidl::android::os::IStatsSubscriptionCallback;
+using aidl::android::os::StatsSubscriptionCallbackReason;
 
 namespace android {
 namespace os {
@@ -71,15 +73,7 @@ public:
                                    const std::vector<SimpleAtomMatcher>& pushedMatchers,
                                    const std::vector<PullInfo>& pulledInfo, int64_t timeoutSec,
                                    int64_t startTimeSec, const sp<UidMap>& uidMap,
-                                   const sp<StatsPullerManager>& pullerMgr)
-        : mUidMap(uidMap),
-          mPullerMgr(pullerMgr),
-          mDupOut(fcntl(out, F_DUPFD_CLOEXEC, 0)),
-          mPushedMatchers(pushedMatchers),
-          mPulledInfo(pulledInfo),
-          mCallback(callback),
-          mTimeoutSec(timeoutSec),
-          mStartTimeSec(startTimeSec){};
+                                   const sp<StatsPullerManager>& pullerMgr);
 
     void onLogEvent(const LogEvent& event);
 
@@ -105,14 +99,25 @@ public:
     }
 
 private:
+    int64_t pullIfNeeded(int64_t nowSecs, int64_t nowMillis, int64_t nowNanos);
+
     void writePulledAtomsLocked(const vector<std::shared_ptr<LogEvent>>& data,
                                 const SimpleAtomMatcher& matcher);
 
-    void attemptWriteToPipeLocked(ProtoOutputStream* protoOut);
+    void attemptWriteToPipeLocked();
 
     void getUidsForPullAtom(vector<int32_t>* uids, const PullInfo& pullInfo);
 
-    void flushProto(ProtoOutputStream& protoOut);
+    void flushProtoIfNeeded();
+
+    bool writeEventToProtoIfMatched(const LogEvent& event, const SimpleAtomMatcher& matcher,
+                                    const sp<UidMap>& uidMap);
+
+    void clearCache();
+
+    void triggerFdFlush();
+
+    void triggerCallback(StatsSubscriptionCallbackReason reason);
 
     const int32_t DEFAULT_PULL_UID = AID_SYSTEM;
 
@@ -134,12 +139,23 @@ private:
 
     bool mClientAlive = true;
 
-    int64_t mLastWriteMs = 0;
+    int64_t mLastWriteMs;
+
+    // Stores Atom proto messages for events along with their respective timestamps.
+    ProtoOutputStream mProtoOut;
+
+    // Stores the total approximate encoded proto byte-size for cached Atom events in
+    // mEventTimestampNs and mProtoOut.
+    size_t mCacheSize;
 
     static constexpr int64_t kMsBetweenHeartbeats = 1000;
 
     // Cap the buffer size of configs to guard against bad allocations
     static constexpr size_t kMaxSizeKb = 50;
+
+    static constexpr size_t kMaxCacheSizeBytes = 2 * 1024;  // 2 KB
+
+    static constexpr int64_t kMsBetweenCallbacks = 4000;
 };
 
 }  // namespace statsd
