@@ -178,8 +178,17 @@ StatsdConfig MakeConfig(bool includeMetric) {
 }
 
 StatsdConfig makeRestrictedConfig(bool includeMetric = false) {
-    StatsdConfig config = MakeConfig(includeMetric);
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
     config.set_restricted_metrics_delegate_package_name("delegate");
+
+    if (includeMetric) {
+        auto appCrashMatcher = CreateProcessCrashAtomMatcher();
+        *config.add_atom_matcher() = appCrashMatcher;
+        auto eventMetric = config.add_event_metric();
+        eventMetric->set_id(StringToId("EventAppCrashes"));
+        eventMetric->set_what(appCrashMatcher.id());
+    }
     return config;
 }
 
@@ -2090,7 +2099,7 @@ TEST_F(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigU
             [](const int&, const vector<int64_t>&) { return true; },
             [](const ConfigKey&, const string&, const vector<int64_t>&) {});
     ConfigKey key(3, 4);
-    StatsdConfig config = MakeConfig(true);
+    StatsdConfig config = makeRestrictedConfig(true);
     config.set_restricted_metrics_delegate_package_name("rm_package");
     p.OnConfigUpdated(0, key, config);
 
@@ -2098,7 +2107,7 @@ TEST_F(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigU
     EXPECT_NE(p.mMetricsManagers.find(key), p.mMetricsManagers.end());
     sp<MetricsManager> oldMetricsManager = p.mMetricsManagers.find(key)->second;
 
-    StatsdConfig newConfig = MakeConfig(true);
+    StatsdConfig newConfig = makeRestrictedConfig(true);
     newConfig.clear_restricted_metrics_delegate_package_name();
     p.OnConfigUpdated(/*timestampNs=*/0, key, newConfig);
 
