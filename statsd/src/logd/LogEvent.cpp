@@ -383,13 +383,14 @@ void LogEvent::parseRestrictionCategoryAnnotation(uint8_t annotationType) {
     int value = readNextValue<int32_t>();
     // should be one of predefined category in StatsLog.java
     switch (value) {
+        // Only diagnostic is currently supported for use.
         case ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC:
             break;
         default:
             mValid = false;
             return;
     }
-    mRestrictionCategory = value;
+    mRestrictionCategory = static_cast<StatsdRestrictionCategory>(value);
     return;
 }
 

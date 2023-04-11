@@ -20,7 +20,6 @@
 #include <android-base/stringprintf.h>
 
 #include "matchers/SimpleAtomMatchingTracker.h"
-#include "stats_annotations.h"
 #include "stats_event.h"
 #include "stats_util.h"
 
