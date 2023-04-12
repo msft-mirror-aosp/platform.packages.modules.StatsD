@@ -42,16 +42,11 @@ namespace statsd {
 class ShellSubscriberClient {
 public:
     struct PullInfo {
-        PullInfo(const SimpleAtomMatcher& matcher, int64_t interval,
-                 const std::vector<std::string>& packages, const std::vector<int32_t>& uids)
-            : mPullerMatcher(matcher),
-              mInterval(interval),
-              mPrevPullElapsedRealtimeMs(0),
-              mPullPackages(packages),
-              mPullUids(uids) {
-        }
+        PullInfo(const SimpleAtomMatcher& matcher, int64_t startTimeMs, int64_t interval,
+                 const std::vector<std::string>& packages, const std::vector<int32_t>& uids);
+
         const SimpleAtomMatcher mPullerMatcher;
-        const int64_t mInterval;
+        const int64_t mIntervalMs;
         int64_t mPrevPullElapsedRealtimeMs;
         const std::vector<std::string> mPullPackages;
         const std::vector<int32_t> mPullUids;
