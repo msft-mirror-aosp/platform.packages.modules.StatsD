@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "FieldValue.h"
+#include "utils/RestrictedPolicyManager.h"
 
 namespace android {
 namespace os {
@@ -234,12 +235,12 @@ public:
      */
     LogEvent(const LogEvent&) = default;
 
-    inline int getRestrictionCategory() const {
+    inline StatsdRestrictionCategory getRestrictionCategory() const {
         return mRestrictionCategory;
     }
 
     inline bool isRestricted() const {
-        return mRestrictionCategory != 0;
+        return mRestrictionCategory != CATEGORY_NO_RESTRICTION;
     }
 
 private:
@@ -346,7 +347,7 @@ private:
     // Annotations
     bool mTruncateTimestamp = false;
     int mResetState = -1;
-    int mRestrictionCategory = 0;
+    StatsdRestrictionCategory mRestrictionCategory = CATEGORY_NO_RESTRICTION;
 
     size_t mNumUidFields = 0;
 

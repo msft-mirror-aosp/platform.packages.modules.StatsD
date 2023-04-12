@@ -785,6 +785,17 @@ bool MetricsManager::writeMetadataToProto(int64_t currentWallClockTimeNs,
         }
         metadataWritten |= alertWritten;
     }
+
+    if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        for (const auto& metricProducer : mAllMetricProducers) {
+            metadata::MetricMetadata* metricMetadata = statsMetadata->add_metric_metadata();
+            bool metricWritten = metricProducer->writeMetricMetadataToProto(metricMetadata);
+            if (!metricWritten) {
+                statsMetadata->mutable_metric_metadata()->RemoveLast();
+            }
+            metadataWritten |= metricWritten;
+        }
+    }
     return metadataWritten;
 }
 
@@ -793,7 +804,7 @@ void MetricsManager::loadMetadata(const metadata::StatsMetadata& metadata,
                                   int64_t systemElapsedTimeNs) {
     for (const metadata::AlertMetadata& alertMetadata : metadata.alert_metadata()) {
         int64_t alertId = alertMetadata.alert_id();
-        auto it = mAlertTrackerMap.find(alertId);
+        const auto& it = mAlertTrackerMap.find(alertId);
         if (it == mAlertTrackerMap.end()) {
             ALOGE("No anomalyTracker found for alertId %lld", (long long) alertId);
             continue;
@@ -801,6 +812,16 @@ void MetricsManager::loadMetadata(const metadata::StatsMetadata& metadata,
         mAllAnomalyTrackers[it->second]->loadAlertMetadata(alertMetadata,
                                                            currentWallClockTimeNs,
                                                            systemElapsedTimeNs);
+    }
+    if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        for (const metadata::MetricMetadata& metricMetadata : metadata.metric_metadata()) {
+            int64_t metricId = metricMetadata.metric_id();
+            const auto& it = mMetricProducerMap.find(metricId);
+            if (it == mMetricProducerMap.end()) {
+                ALOGE("No metricProducer found for metricId %lld", (long long)metricId);
+            }
+            mAllMetricProducers[it->second]->loadMetricMetadataFromProto(metricMetadata);
+        }
     }
 }
 

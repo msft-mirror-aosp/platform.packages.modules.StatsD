@@ -4,6 +4,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "EventMetricProducer.h"
+#include "utils/RestrictedPolicyManager.h"
 
 namespace android {
 namespace os {
@@ -19,14 +20,22 @@ public:
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
             const vector<int>& slicedStateAtoms = {},
-            const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap = {},
-            const int restrictedDataTtlInDays = 7);
+            const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap = {});
 
     void onMetricRemove() override;
 
     void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs);
 
     void flushRestrictedData() override;
+
+    bool writeMetricMetadataToProto(metadata::MetricMetadata* metricMetadata) override;
+
+    void loadMetricMetadataFromProto(const metadata::MetricMetadata& metricMetadata) override;
+
+    inline StatsdRestrictionCategory getRestrictionCategory() {
+        std::lock_guard<std::mutex> lock(mMutex);
+        return mRestrictedDataCategory;
+    }
 
 private:
     void onMatchedLogEventInternalLocked(
@@ -43,9 +52,11 @@ private:
 
     void dropDataLocked(const int64_t dropTimeNs) override;
 
+    void deleteMetricTable();
+
     bool mIsMetricTableCreated = false;
 
-    const int32_t mRestrictedDataTtlInDays;
+    StatsdRestrictionCategory mRestrictedDataCategory;
 
     vector<LogEvent> mLogEvents;
 };
