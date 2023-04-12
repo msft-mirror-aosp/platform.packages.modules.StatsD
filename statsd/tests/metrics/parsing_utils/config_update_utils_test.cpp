@@ -4104,6 +4104,44 @@ TEST_F(ConfigUpdateTest, TestConditionDuplicate) {
                                                      StringToId("ScreenIsOn")));
 }
 
+TEST_F(ConfigUpdateTest, TestUpdateConfigNonEventMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    CountMetric* metric = config.add_count_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
+    unordered_map<int64_t, int> newAtomMatchingTrackerMap;
+    unordered_map<int64_t, int> newConditionTrackerMap;
+    unordered_map<int64_t, int> newMetricProducerMap;
+    unordered_map<int64_t, int> stateAtomIdMap;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    set<int64_t> noReportMetricIds;
+    vector<int> metricsWithActivation;
+    vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
+    vector<sp<ConditionTracker>> newConditionTrackers;
+    vector<sp<MetricProducer>> newMetricProducers;
+    vector<ConditionState> conditionCache;
+    set<int64_t> replacedMetrics;
+    set<int64_t> replacedMatchers;
+    set<int64_t> replacedConditions;
+    set<int64_t> replacedStates;
+
+    EXPECT_EQ(updateMetrics(key, config, /*timeBaseNs=*/123, /*currentTimeNs=*/12345,
+                            new StatsPullerManager(), oldAtomMatchingTrackerMap,
+                            newAtomMatchingTrackerMap, replacedMatchers, newAtomMatchingTrackers,
+                            newConditionTrackerMap, replacedConditions, newConditionTrackers,
+                            conditionCache, stateAtomIdMap, allStateGroupMaps, replacedStates,
+                            oldMetricProducerMap, oldMetricProducers, newMetricProducerMap,
+                            newMetricProducers, conditionToMetricMap, trackerToMetricMap,
+                            noReportMetricIds, activationAtomTrackerToMetricMap,
+                            deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                            replacedMetrics),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
