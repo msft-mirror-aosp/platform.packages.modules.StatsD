@@ -33,6 +33,7 @@
 #include "src/stats_log.pb.h"
 #include "src/stats_log_util.h"
 #include "src/statsd_config.pb.h"
+#include "stats_annotations.h"
 #include "stats_event.h"
 #include "statslog_statsdtest.h"
 
