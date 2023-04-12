@@ -1446,6 +1446,12 @@ optional<InvalidConfigReason> initMetrics(
     allMetricProducers.reserve(allMetricsCount);
     optional<InvalidConfigReason> invalidConfigReason;
 
+    if (config.has_restricted_metrics_delegate_package_name() &&
+        allMetricsCount != config.event_metric_size()) {
+        ALOGE("Restricted metrics only support event metric");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED);
+    }
+
     // Construct map from metric id to metric activation index. The map will be used to determine
     // the metric activation corresponding to a metric.
     unordered_map<int64_t, int> metricToActivationMap;
