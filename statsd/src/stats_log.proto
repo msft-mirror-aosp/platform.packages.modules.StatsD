@@ -504,6 +504,7 @@ message StatsdStatsReport {
         repeated Annotation annotation = 18;
         repeated int32 activation_time_sec = 22;
         repeated int32 deactivation_time_sec = 23;
+        repeated RestrictedMetricStats restricted_metric_stats = 25;
     }
 
     repeated ConfigStats config_stats = 3;
@@ -621,6 +622,36 @@ message StatsdStatsReport {
     }
 
     repeated ActivationBroadcastGuardrail activation_guardrail_stats = 19;
+
+    message RestrictedMetricStats {
+      optional int64 restricted_metric_id = 1;
+      optional int64 insert_error = 2;
+      optional int64 table_creation_error = 3;
+      optional int64 table_deletion_error = 4;
+    }
+
+    message RestrictedMetricQueryStats {
+      optional int32 calling_uid = 1;
+      optional int64 config_id = 2;
+      optional int32 config_uid = 3;
+      optional string config_package = 4;
+
+      enum InvalidQueryReason {
+        UNKNOWN_REASON = 0;
+        FLAG_DISABLED = 1;
+        UNSUPPORTED_SQLITE_VERSION = 2;
+        AMBIGUOUS_CONFIG_KEY = 3;
+        CONFIG_KEY_NOT_FOUND = 4;
+        CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5;
+        QUERY_FAILURE = 6;
+        INCONSISTENT_ROW_SIZE = 7;
+      }
+
+      optional InvalidQueryReason invalid_query_reason = 5;
+      optional int32 query_wall_time_sec = 6;
+      optional bool has_error = 7;
+    }
+    repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;
 }
 
 message AlertTriggerDetails {
