@@ -30,7 +30,7 @@ namespace os {
 namespace statsd {
 
 const static int FIELD_ID_SHELL_DATA__ATOM = 1;
-const static int FIELD_ID_SHELL_DATA__TIMESTAMP_NANOS = 2;
+const static int FIELD_ID_SHELL_DATA__ELAPSED_TIMESTAMP_NANOS = 2;
 
 struct ReadConfigResult {
     vector<SimpleAtomMatcher> pushedMatchers;
@@ -38,7 +38,8 @@ struct ReadConfigResult {
 };
 
 // Read and parse single config. There should only one config in the input.
-static optional<ReadConfigResult> readConfig(const vector<uint8_t>& configBytes) {
+static optional<ReadConfigResult> readConfig(const vector<uint8_t>& configBytes,
+                                             int64_t startTimeMs) {
     // Parse the config.
     ShellSubscription config;
     if (!config.ParseFromArray(configBytes.data(), configBytes.size())) {
@@ -63,12 +64,24 @@ static optional<ReadConfigResult> readConfig(const vector<uint8_t>& configBytes)
             }
         }
 
-        result.pullInfo.emplace_back(pulled.matcher(), pulled.freq_millis(), packages, uids);
+        result.pullInfo.emplace_back(pulled.matcher(), startTimeMs, pulled.freq_millis(), packages,
+                                     uids);
         ALOGD("ShellSubscriberClient: adding matcher for pulled atom %d",
               pulled.matcher().atom_id());
     }
 
     return result;
+}
+
+ShellSubscriberClient::PullInfo::PullInfo(const SimpleAtomMatcher& matcher, int64_t startTimeMs,
+                                          int64_t intervalMs,
+                                          const std::vector<std::string>& packages,
+                                          const std::vector<int32_t>& uids)
+    : mPullerMatcher(matcher),
+      mIntervalMs(intervalMs),
+      mPrevPullElapsedRealtimeMs(startTimeMs),
+      mPullPackages(packages),
+      mPullUids(uids) {
 }
 
 ShellSubscriberClient::ShellSubscriberClient(
@@ -84,7 +97,8 @@ ShellSubscriberClient::ShellSubscriberClient(
       mCallback(callback),
       mTimeoutSec(timeoutSec),
       mStartTimeSec(startTimeSec),
-      mLastWriteMs(getElapsedRealtimeMillis()){};
+      mLastWriteMs(startTimeSec * 1000),
+      mCacheSize(0){};
 
 unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
         int in, int out, int64_t timeoutSec, int64_t startTimeSec, const sp<UidMap>& uidMap,
@@ -110,7 +124,7 @@ unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
         return nullptr;
     }
 
-    const optional<ReadConfigResult> readConfigResult = readConfig(buffer);
+    const optional<ReadConfigResult> readConfigResult = readConfig(buffer, startTimeSec * 1000);
     if (!readConfigResult.has_value()) {
         return nullptr;
     }
@@ -136,7 +150,8 @@ unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
         return nullptr;
     }
 
-    const optional<ReadConfigResult> readConfigResult = readConfig(subscriptionConfig);
+    const optional<ReadConfigResult> readConfigResult =
+            readConfig(subscriptionConfig, startTimeSec * 1000);
     if (!readConfigResult.has_value()) {
         return nullptr;
     }
@@ -161,7 +176,7 @@ bool ShellSubscriberClient::writeEventToProtoIfMatched(const LogEvent& event,
 
     const int64_t timestampNs = event.GetElapsedTimestampNs();
     mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
-                            FIELD_ID_SHELL_DATA__TIMESTAMP_NANOS,
+                            FIELD_ID_SHELL_DATA__ELAPSED_TIMESTAMP_NANOS,
                     static_cast<long long>(timestampNs));
 
     // Update byte size of cached data.
@@ -192,7 +207,7 @@ void ShellSubscriberClient::flushProtoIfNeeded() {
 int64_t ShellSubscriberClient::pullIfNeeded(int64_t nowSecs, int64_t nowMillis, int64_t nowNanos) {
     int64_t sleepTimeMs = INT64_MAX;
     for (PullInfo& pullInfo : mPulledInfo) {
-        if (pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mInterval < nowMillis) {
+        if (pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mIntervalMs < nowMillis) {
             vector<int32_t> uids;
             getUidsForPullAtom(&uids, pullInfo);
 
@@ -206,7 +221,7 @@ int64_t ShellSubscriberClient::pullIfNeeded(int64_t nowSecs, int64_t nowMillis, 
         }
 
         // Determine how long to sleep before doing more work.
-        int64_t nextPullTime = pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mInterval;
+        int64_t nextPullTime = pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mIntervalMs;
         int64_t timeBeforePull = nextPullTime - nowMillis;  // guaranteed to be non-negative
         sleepTimeMs = min(sleepTimeMs, timeBeforePull);
     }
