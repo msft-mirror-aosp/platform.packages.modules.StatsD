@@ -20,6 +20,8 @@
 
 #include "utils/DbUtils.h"
 
+#include <android/api-level.h>
+
 #include "FieldValue.h"
 #include "android-base/stringprintf.h"
 #include "stats_log_util.h"
@@ -41,6 +43,8 @@ const string TABLE_NAME_PREFIX = "metric_";
 const string COLUMN_NAME_ATOM_TAG = "atomId";
 const string COLUMN_NAME_EVENT_ELAPSED_CLOCK_NS = "elapsedTimestampNs";
 const string COLUMN_NAME_EVENT_WALL_CLOCK_NS = "wallTimestampNs";
+
+const string COLUMN_NAME_SDK_VERSION = "sdkVersion";
 
 static std::vector<std::string> getExpectedTableSchema(const LogEvent& logEvent) {
     vector<std::string> result;
@@ -380,6 +384,62 @@ void verifyIntegrityAndDeleteIfNecessary(const ConfigKey& configKey) {
     sqlite3_close(db);
 }
 
+static bool getDeviceInfoInsertStmt(sqlite3* db, sqlite3_stmt** stmt, string error) {
+    string insertSql = StringPrintf("INSERT INTO device_info VALUES(?)");
+    if (sqlite3_prepare_v2(db, insertSql.c_str(), -1, stmt, nullptr) != SQLITE_OK) {
+        error = sqlite3_errmsg(db);
+        return false;
+    }
+
+    // ? parameters start with an index of 1 from start of query string to the end.
+    int32_t index = 1;
+
+    int32_t sdkVersion = android_get_device_api_level();
+    sqlite3_bind_int(*stmt, index, sdkVersion);
+    ++index;
+    return true;
+}
+
+bool updateDeviceInfoTable(const ConfigKey& key, string& error) {
+    const string dbName = getDbName(key);
+    sqlite3* db;
+    if (sqlite3_open(dbName.c_str(), &db) != SQLITE_OK) {
+        error = sqlite3_errmsg(db);
+        sqlite3_close(db);
+        return false;
+    }
+
+    string dropTableSql = "DROP TABLE device_info";
+    // Ignore possible error result code if table has not yet been created.
+    sqlite3_exec(db, dropTableSql.c_str(), nullptr, nullptr, nullptr);
+
+    string createTableSql =
+            StringPrintf("CREATE TABLE device_info(%s INTEGER)", COLUMN_NAME_SDK_VERSION.c_str());
+    if (sqlite3_exec(db, createTableSql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK) {
+        error = sqlite3_errmsg(db);
+        ALOGW("Failed to create device info table %s", error.c_str());
+        sqlite3_close(db);
+        return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    if (!getDeviceInfoInsertStmt(db, &stmt, error)) {
+        ALOGW("Failed to generate device info prepared sql insert query %s", error.c_str());
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        error = sqlite3_errmsg(db);
+        ALOGW("Failed to insert data to device info table: %s", error.c_str());
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        return false;
+    }
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return true;
+}
 }  // namespace dbutils
 }  // namespace statsd
 }  // namespace os

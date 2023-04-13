@@ -374,6 +374,36 @@ TEST_F(DbUtilsTest, TestEventCompatibilityTableNotCreated) {
 
     EXPECT_TRUE(isEventCompatible(key, metricId, logEvent));
 }
+
+TEST_F(DbUtilsTest, TestUpdateDeviceInfoTable) {
+    string err;
+    updateDeviceInfoTable(key, err);
+
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    string zSql = "SELECT * FROM device_info";
+    EXPECT_TRUE(query(key, zSql, rows, columnTypes, columnNames, err));
+
+    ASSERT_EQ(rows.size(), 1);
+    EXPECT_THAT(rows[0], ElementsAre(_));
+}
+
+TEST_F(DbUtilsTest, TestUpdateDeviceInfoTableInvokeTwice) {
+    string err;
+    updateDeviceInfoTable(key, err);
+    updateDeviceInfoTable(key, err);
+
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    std::vector<std::vector<std::string>> rows;
+    string zSql = "SELECT * FROM device_info";
+    EXPECT_TRUE(query(key, zSql, rows, columnTypes, columnNames, err));
+
+    ASSERT_EQ(rows.size(), 1);
+    EXPECT_THAT(rows[0], ElementsAre(_));
+}
+
 }  // namespace dbutils
 }  // namespace statsd
 }  // namespace os
