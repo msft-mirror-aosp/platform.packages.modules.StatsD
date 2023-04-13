@@ -36,13 +36,14 @@ static void BM_insertAtomsIntoDbTablesNewConnection(benchmark::State& state) {
     for (int j = 0; j < state.range(1); ++j) {
         logEvents.push_back(*event.get());
     }
+    string err;
     for (auto s : state) {
         for (int metricId = 0; metricId < state.range(0); ++metricId) {
             state.PauseTiming();
             deleteDb(key);
             createTableIfNeeded(key, metricId, *event.get());
             state.ResumeTiming();
-            insert(key, metricId, logEvents);
+            insert(key, metricId, logEvents, err);
         }
     }
     deleteDb(key);
@@ -68,13 +69,14 @@ static void BM_insertAtomsIntoDbTablesReuseConnection(benchmark::State& state) {
         logEvents.push_back(*event.get());
     }
     sqlite3* dbHandle = getDb(key);
+    string err;
     for (auto s : state) {
         for (int metricId = 0; metricId < state.range(0); ++metricId) {
             state.PauseTiming();
             deleteTable(key, metricId);
             createTableIfNeeded(key, metricId, *event.get());
             state.ResumeTiming();
-            insert(key, metricId, logEvents);
+            insert(key, metricId, logEvents, err);
         }
     }
     closeDb(dbHandle);
@@ -97,12 +99,13 @@ static void BM_createDbTables(benchmark::State& state) {
     unique_ptr<LogEvent> event =
             CreateScreenStateChangedEvent(bucketStartTimeNs, android::view::DISPLAY_STATE_OFF);
     vector<LogEvent> logEvents{*event.get()};
+    string err;
     for (auto s : state) {
         state.PauseTiming();
         deleteTable(key, metricId);
         state.ResumeTiming();
         createTableIfNeeded(key, metricId, *event.get());
-        insert(key, metricId, logEvents);
+        insert(key, metricId, logEvents, err);
     }
     deleteDb(key);
 }
