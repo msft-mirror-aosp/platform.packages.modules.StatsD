@@ -265,20 +265,21 @@ static bool getInsertSqlStmt(sqlite3* db, sqlite3_stmt** stmt, const int64_t met
     return true;
 }
 
-bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>& events) {
+bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>& events,
+            string& error) {
     const string dbName = getDbName(key);
     sqlite3* db;
     if (sqlite3_open(dbName.c_str(), &db) != SQLITE_OK) {
+        error = sqlite3_errmsg(db);
         sqlite3_close(db);
         return false;
     }
-    bool success = insert(db, metricId, events);
+    bool success = insert(db, metricId, events, error);
     sqlite3_close(db);
     return success;
 }
 
-bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events) {
-    string error;
+bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events, string& error) {
     sqlite3_stmt* stmt = nullptr;
     if (!getInsertSqlStmt(db, &stmt, metricId, events, error)) {
         ALOGW("Failed to generate prepared sql insert query %s", error.c_str());
