@@ -88,17 +88,25 @@ void RestrictedEventMetricProducer::flushRestrictedData() {
         return;
     }
     if (!mIsMetricTableCreated) {
+        if (!dbutils::isEventCompatible(mConfigKey, mMetricId, mLogEvents[0])) {
+            // Delete old data if schema changes
+            // TODO(b/268150038): report error to statsdstats
+            ALOGD("Detected schema change for metric %lld", (long long)mMetricId);
+            deleteMetricTable();
+        }
         // TODO(b/271481944): add retry.
         if (!dbutils::createTableIfNeeded(mConfigKey, mMetricId, mLogEvents[0])) {
-            VLOG("Failed to create table for metric %lld", (long long)mMetricId);
+            ALOGE("Failed to create table for metric %lld", (long long)mMetricId);
             // TODO(b/268150038): report error to statsdstats
             return;
         }
         mIsMetricTableCreated = true;
     }
-    if (!dbutils::insert(mConfigKey, mMetricId, mLogEvents)) {
+    string err;
+    if (!dbutils::insert(mConfigKey, mMetricId, mLogEvents, err)) {
         // TODO(b/268150038): report error to statsdstats
-        VLOG("Failed to insert logEvent to table for metric %lld", (long long)mMetricId);
+        ALOGE("Failed to insert logEvent to table for metric %lld. err=%s", (long long)mMetricId,
+              err.c_str());
     }
     mLogEvents.clear();
     mTotalSize = 0;
