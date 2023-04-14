@@ -885,7 +885,6 @@ void StatsLogProcessor::flushRestrictedDataIfNecessaryLocked(const int64_t elaps
     flushRestrictedDataLocked(elapsedRealtimeNs);
 }
 
-// TODO(b/268150038): Add StatsdStats reporting to this method.
 void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
                                  const optional<vector<uint8_t>>& policyConfig,
                                  const shared_ptr<IStatsQueryCallback>& callback,
@@ -893,9 +892,13 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
                                  const int32_t callingUid) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     string err = "";
+    const int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
     if (!mIsRestrictedMetricsEnabled) {
         err = "Restricted metrics are not enabled";
         callback->sendFailure(err);
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(FLAG_DISABLED));
         return;
     }
 
@@ -905,6 +908,9 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
         callback->sendFailure(StringPrintf(
                 "Unsupported sqlite version. Installed Version: %d, Requested Version: %d.",
                 dbutils::getDbVersion(), minSqlClientVersion));
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(UNSUPPORTED_SQLITE_VERSION));
         return;
     }
 
@@ -916,21 +922,27 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
         configPackageUids = mUidMap->getAppUid(configPackage);
     }
 
-    set<ConfigKey> keysToQuery =
-            getRestrictedConfigKeysToQueryLocked(callingUid, configId, configPackageUids, err);
+    InvalidQueryReason invalidQueryReason;
+    set<ConfigKey> keysToQuery = getRestrictedConfigKeysToQueryLocked(
+            callingUid, configId, configPackageUids, err, invalidQueryReason);
 
     if (keysToQuery.empty()) {
         callback->sendFailure(err);
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(invalidQueryReason));
         return;
     }
 
     if (keysToQuery.size() > 1) {
         err = "Ambiguous ConfigKey";
         callback->sendFailure(err);
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(AMBIGUOUS_CONFIG_KEY));
         return;
     }
 
-    const int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
     flushRestrictedDataLocked(elapsedRealtimeNs);
     enforceDataTtlsLocked(getWallClockNs(), elapsedRealtimeNs);
 
@@ -939,6 +951,9 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
     std::vector<string> columnNames;
     if (!dbutils::query(*(keysToQuery.begin()), sqlQuery, rows, columnTypes, columnNames, err)) {
         callback->sendFailure(StringPrintf("failed to query db %s:", err.c_str()));
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
+                InvalidQueryReason(QUERY_FAILURE));
         return;
     }
 
@@ -947,21 +962,29 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
     // TODO(b/268415904): avoid this vector transformation.
     if (columnNames.size() != columnTypes.size()) {
         callback->sendFailure("Inconsistent row sizes");
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
+                InvalidQueryReason(INCONSISTENT_ROW_SIZE));
     }
     for (size_t i = 0; i < rows.size(); ++i) {
         if (rows[i].size() != columnNames.size()) {
             callback->sendFailure("Inconsistent row sizes");
+            StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                    configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
+                    InvalidQueryReason(INCONSISTENT_ROW_SIZE));
             return;
         }
         queryData.insert(std::end(queryData), std::make_move_iterator(std::begin(rows[i])),
                          std::make_move_iterator(std::end(rows[i])));
     }
     callback->sendResults(queryData, columnNames, columnTypes, rows.size());
+    StatsdStats::getInstance().noteQueryRestrictedMetricSucceed(
+            configId, configPackage, keysToQuery.begin()->GetUid(), callingUid);
 }
 
 set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
         const int32_t callingUid, const int64_t configId, const set<int32_t>& configPackageUids,
-        string& err) {
+        string& err, InvalidQueryReason& invalidQueryReason) {
     set<ConfigKey> matchedConfigKeys;
     for (auto uid : configPackageUids) {
         ConfigKey configKey(uid, configId);
@@ -983,8 +1006,10 @@ set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
                         excludedKeys.end(), std::inserter(result, result.end()));
     if (matchedConfigKeys.empty()) {
         err = "No configs found matching the config key";
+        invalidQueryReason = InvalidQueryReason(CONFIG_KEY_NOT_FOUND);
     } else if (result.empty()) {
         err = "No matching configs for restricted metrics delegate";
+        invalidQueryReason = InvalidQueryReason(CONFIG_KEY_WITH_UNMATCHED_DELEGATE);
     }
 
     return result;
@@ -1030,8 +1055,9 @@ void StatsLogProcessor::fillRestrictedMetrics(const int64_t configId, const stri
         configPackageUids = mUidMap->getAppUid(configPackage);
     }
     string err;
-    set<ConfigKey> keysToGetMetrics =
-            getRestrictedConfigKeysToQueryLocked(delegateUid, configId, configPackageUids, err);
+    InvalidQueryReason invalidQueryReason;
+    set<ConfigKey> keysToGetMetrics = getRestrictedConfigKeysToQueryLocked(
+            delegateUid, configId, configPackageUids, err, invalidQueryReason);
 
     for (const ConfigKey& key : keysToGetMetrics) {
         vector<int64_t> metricIds = mMetricsManagers[key]->getAllMetricIds();

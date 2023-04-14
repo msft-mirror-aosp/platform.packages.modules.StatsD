@@ -68,9 +68,9 @@ TEST_F(DbUtilsTest, TestInsertString) {
     vector<LogEvent> events{logEvent};
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
-    EXPECT_TRUE(insert(key, metricId, events));
-
     string err;
+    EXPECT_TRUE(insert(key, metricId, events, err));
+
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -94,9 +94,9 @@ TEST_F(DbUtilsTest, TestMaliciousString) {
     vector<LogEvent> events{logEvent};
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
-    EXPECT_TRUE(insert(key, metricId, events));
-
     string err;
+    EXPECT_TRUE(insert(key, metricId, events, err));
+
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -122,9 +122,9 @@ TEST_F(DbUtilsTest, TestInsertStringNegativeMetricId) {
     vector<LogEvent> events{logEvent};
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId2, logEvent));
-    EXPECT_TRUE(insert(key, metricId2, events));
-
     string err;
+    EXPECT_TRUE(insert(key, metricId2, events, err));
+
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -149,9 +149,9 @@ TEST_F(DbUtilsTest, TestInsertInteger) {
     vector<LogEvent> events{logEvent};
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
-    EXPECT_TRUE(insert(key, metricId, events));
-
     string err;
+    EXPECT_TRUE(insert(key, metricId, events, err));
+
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -175,9 +175,9 @@ TEST_F(DbUtilsTest, TestInsertFloat) {
     vector<LogEvent> events{logEvent};
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
-    EXPECT_TRUE(insert(key, metricId, events));
-
     string err;
+    EXPECT_TRUE(insert(key, metricId, events, err));
+
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -207,9 +207,9 @@ TEST_F(DbUtilsTest, TestInsertTwoEvents) {
     vector<LogEvent> events{logEvent1, logEvent2};
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent1));
-    EXPECT_TRUE(insert(key, metricId, events));
-
     string err;
+    EXPECT_TRUE(insert(key, metricId, events, err));
+
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -243,11 +243,11 @@ TEST_F(DbUtilsTest, TestInsertTwoEventsEnforceTtl) {
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent1));
     sqlite3* db = getDb(key);
-    EXPECT_TRUE(insert(db, metricId, events));
+    string err;
+    EXPECT_TRUE(insert(db, metricId, events, err));
     EXPECT_TRUE(flushTtl(db, metricId, eventWallClockNs));
     closeDb(db);
 
-    string err;
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -271,9 +271,9 @@ TEST_F(DbUtilsTest, TestMaliciousQuery) {
     vector<LogEvent> events{logEvent};
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
-    EXPECT_TRUE(insert(key, metricId, events));
-
     string err;
+    EXPECT_TRUE(insert(key, metricId, events, err));
+
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -291,10 +291,10 @@ TEST_F(DbUtilsTest, TestInsertStringIntegrityCheckPasses) {
     vector<LogEvent> events{logEvent};
 
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
-    EXPECT_TRUE(insert(key, metricId, events));
+    string err;
+    EXPECT_TRUE(insert(key, metricId, events, err));
     verifyIntegrityAndDeleteIfNecessary(key);
 
-    string err;
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
@@ -316,7 +316,8 @@ TEST_F(DbUtilsTest, TestInsertStringIntegrityCheckFails) {
     LogEvent logEvent = makeLogEvent(statsEvent);
     vector<LogEvent> events{logEvent};
     EXPECT_TRUE(createTableIfNeeded(key, metricId, logEvent));
-    EXPECT_TRUE(insert(key, metricId, events));
+    string err;
+    EXPECT_TRUE(insert(key, metricId, events, err));
 
     vector<string> randomData{"1232hasha14125ashfas21512sh31321"};
     string fileName = StringPrintf("%s/%d_%lld.db", STATS_RESTRICTED_DATA_DIR, key.GetUid(),
@@ -324,7 +325,6 @@ TEST_F(DbUtilsTest, TestInsertStringIntegrityCheckFails) {
     StorageManager::writeFile(fileName.c_str(), randomData.data(), randomData.size());
     EXPECT_TRUE(StorageManager::hasFile(fileName.c_str()));
     verifyIntegrityAndDeleteIfNecessary(key);
-    string err;
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
