@@ -1764,6 +1764,51 @@ TEST_F(MetricsManagerUtilTest, TestMetricSampledFieldNotSubsetDimension) {
                                 metric.id()));
 }
 
+TEST_F(MetricsManagerUtilTest, TestCountMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    CountMetric* metric = config.add_count_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_F(MetricsManagerUtilTest, TestDurationMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    DurationMetric* metric = config.add_duration_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    ValueMetric* metric = config.add_value_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_F(MetricsManagerUtilTest, TestKllMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    KllMetric* metric = config.add_kll_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

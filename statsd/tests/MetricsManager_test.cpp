@@ -94,6 +94,22 @@ StatsdConfig buildGoodConfig() {
     return config;
 }
 
+StatsdConfig buildGoodRestrictedConfig() {
+    StatsdConfig config;
+    config.set_id(12345);
+    config.set_restricted_metrics_delegate_package_name("delegate");
+
+    AtomMatcher* eventMatcher = config.add_atom_matcher();
+    eventMatcher->set_id(StringToId("SCREEN_IS_ON"));
+    SimpleAtomMatcher* simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
+    simpleAtomMatcher->set_atom_id(2 /*SCREEN_STATE_CHANGE*/);
+
+    EventMetric* metric = config.add_event_metric();
+    metric->set_id(3);
+    metric->set_what(StringToId("SCREEN_IS_ON"));
+    return config;
+}
+
 set<int32_t> unionSet(const vector<set<int32_t>> sets) {
     set<int32_t> toRet;
     for (const set<int32_t>& s : sets) {
@@ -362,7 +378,7 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> periodicAlarmMonitor;
 
-    StatsdConfig config = buildGoodConfig();
+    StatsdConfig config = buildGoodRestrictedConfig();
     config.add_allowed_log_source("AID_SYSTEM");
     config.set_restricted_metrics_delegate_package_name("rm");
 
