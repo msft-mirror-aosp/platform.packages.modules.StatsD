@@ -53,6 +53,15 @@ const int FIELD_ID_SYSTEM_SERVER_RESTART = 15;
 const int FIELD_ID_LOGGER_ERROR_STATS = 16;
 const int FIELD_ID_OVERFLOW = 18;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS = 20;
+
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_UID = 3;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_PACKAGE = 4;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_INVALID_QUERY_REASON = 5;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_QUERY_WALL_TIME_SEC = 6;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_HAS_ERROR = 7;
 
 const int FIELD_ID_ATOM_STATS_TAG = 1;
 const int FIELD_ID_ATOM_STATS_COUNT = 2;
@@ -98,6 +107,7 @@ const int FIELD_ID_CONFIG_STATS_ACTIVATION = 22;
 const int FIELD_ID_CONFIG_STATS_DEACTIVATION = 23;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT64 = 1;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT32 = 2;
+const int FIELD_ID_CONFIG_STATS_RESTRICTED_METRIC_STATS = 25;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -124,6 +134,12 @@ const int FIELD_ID_UID_MAP_DELETED_APPS = 4;
 
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL_UID = 1;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL_TIME = 2;
+
+// for RestrictedMetricStats proto
+const int FIELD_ID_RESTRICTED_STATS_METRIC_ID = 1;
+const int FIELD_ID_RESTRICTED_STATS_INSERT_ERROR = 2;
+const int FIELD_ID_RESTRICTED_STATS_TABLE_CREATION_ERROR = 3;
+const int FIELD_ID_RESTRICTED_STATS_TABLE_DELETION_ERROR = 4;
 
 const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySizeLimitMap = {
         {util::BINDER_CALLS, {6000, 10000}},
@@ -594,6 +610,59 @@ void StatsdStats::noteAtomError(int atomTag, bool pull) {
     }
 }
 
+void StatsdStats::noteQueryRestrictedMetricSucceed(const int64_t configId,
+                                                   const string& configPackage,
+                                                   const std::optional<int32_t> configUid,
+                                                   const int32_t callingUid) {
+    lock_guard<std::mutex> lock(mLock);
+
+    if (mRestrictedMetricQueryStats.size() == kMaxRestrictedMetricQueryCount) {
+        mRestrictedMetricQueryStats.pop_front();
+    }
+    mRestrictedMetricQueryStats.emplace_back(RestrictedMetricQueryStats(
+            callingUid, configId, configPackage, configUid, getWallClockSec()));
+}
+
+void StatsdStats::noteQueryRestrictedMetricFailed(const int64_t configId,
+                                                  const string& configPackage,
+                                                  const std::optional<int32_t> configUid,
+                                                  const int32_t callingUid,
+                                                  const InvalidQueryReason reason) {
+    lock_guard<std::mutex> lock(mLock);
+    if (mRestrictedMetricQueryStats.size() == kMaxRestrictedMetricQueryCount) {
+        mRestrictedMetricQueryStats.pop_front();
+    }
+    mRestrictedMetricQueryStats.emplace_back(RestrictedMetricQueryStats(
+            callingUid, configId, configPackage, configUid, getWallClockSec(), reason));
+}
+
+void StatsdStats::noteRestrictedMetricInsertError(const ConfigKey& configKey,
+                                                  const int64_t metricId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it != mConfigStats.end()) {
+        it->second->restricted_metric_stats[metricId].insertError++;
+    }
+}
+
+void StatsdStats::noteRestrictedMetricTableCreationError(const ConfigKey& configKey,
+                                                         const int64_t metricId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it != mConfigStats.end()) {
+        it->second->restricted_metric_stats[metricId].tableCreationError++;
+    }
+}
+
+void StatsdStats::noteRestrictedMetricTableDeletionError(const ConfigKey& configKey,
+                                                         const int64_t metricId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it != mConfigStats.end()) {
+        it->second->restricted_metric_stats[metricId].tableDeletionError++;
+    }
+}
+
 StatsdStats::AtomMetricStats& StatsdStats::getAtomMetricStats(int64_t metricId) {
     auto atomMetricStatsIter = mAtomMetricStats.find(metricId);
     if (atomMetricStatsIter != mAtomMetricStats.end()) {
@@ -634,6 +703,7 @@ void StatsdStats::resetInternalLocked() {
         config.second->metric_stats.clear();
         config.second->metric_dimension_in_condition_stats.clear();
         config.second->alert_stats.clear();
+        config.second->restricted_metric_stats.clear();
     }
     for (auto& pullStats : mPulledAtomStats) {
         pullStats.second.totalPull = 0;
@@ -660,6 +730,7 @@ void StatsdStats::resetInternalLocked() {
     mAtomMetricStats.clear();
     mActivationBroadcastGuardrailStats.clear();
     mPushedAtomErrorStats.clear();
+    mRestrictedMetricQueryStats.clear();
 }
 
 string buildTimeString(int64_t timeSec) {
@@ -787,6 +858,13 @@ void StatsdStats::dumpStats(int out) const {
         for (const auto& stats : pair.second->alert_stats) {
             dprintf(out, "alert %lld declared %d times\n", (long long)stats.first, stats.second);
         }
+
+        for (const auto& stats : configStats->restricted_metric_stats) {
+            dprintf(out, "Restricted MetricId %lld: ", (long long)stats.first);
+            dprintf(out, "Insert error %ld, ", stats.second.insertError);
+            dprintf(out, "Table creation error %ld, ", stats.second.tableCreationError);
+            dprintf(out, "Table deletion error %ld\n ", stats.second.tableDeletionError);
+        }
     }
     dprintf(out, "********Disk Usage stats***********\n");
     StorageManager::printStats(out);
@@ -878,6 +956,25 @@ void StatsdStats::dumpStats(int out) const {
             }
         }
         dprintf(out, "\n");
+    }
+
+    if (mRestrictedMetricQueryStats.size() > 0) {
+        dprintf(out, "********Restricted Metric Query stats***********\n");
+        for (const auto& stat : mRestrictedMetricQueryStats) {
+            if (stat.mHasError) {
+                dprintf(out,
+                        "Query with error type: %d - %d (query time sec), "
+                        "%d (calling uid), %lld (config id), %s (config package)\n",
+                        stat.mInvalidQueryReason.value(), stat.mQueryWallTimeSec, stat.mCallingUid,
+                        (long long)stat.mConfigId, stat.mConfigPackage.c_str());
+            } else {
+                dprintf(out,
+                        "Query succeed - %d (query time sec), %d (calling uid), "
+                        "%lld (config id), %s (config package), %d (config uid)\n",
+                        stat.mQueryWallTimeSec, stat.mCallingUid, (long long)stat.mConfigId,
+                        stat.mConfigPackage.c_str(), stat.mConfigUid.value());
+            }
+        }
     }
 }
 
@@ -1025,6 +1122,20 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
         proto->end(tmpToken);
     }
 
+    for (const auto& pair : configStats.restricted_metric_stats) {
+        uint64_t token =
+                proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_STATS_RESTRICTED_METRIC_STATS |
+                             FIELD_COUNT_REPEATED);
+
+        proto->write(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_METRIC_ID, (long long)pair.first);
+        writeNonZeroStatToStream(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_INSERT_ERROR,
+                                 (long long)pair.second.insertError, proto);
+        writeNonZeroStatToStream(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_TABLE_CREATION_ERROR,
+                                 (long long)pair.second.tableCreationError, proto);
+        writeNonZeroStatToStream(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_TABLE_DELETION_ERROR,
+                                 (long long)pair.second.tableDeletionError, proto);
+        proto->end(token);
+    }
     proto->end(token);
 }
 
@@ -1137,6 +1248,31 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
                             FIELD_COUNT_REPEATED,
                         guardrailHitTime);
         }
+        proto.end(token);
+    }
+
+    for (const auto& stat : mRestrictedMetricQueryStats) {
+        uint64_t token = proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS |
+                                     FIELD_COUNT_REPEATED);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID,
+                    stat.mCallingUid);
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID,
+                    stat.mConfigId);
+        proto.write(FIELD_TYPE_STRING | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_PACKAGE,
+                    stat.mConfigPackage);
+        if (stat.mConfigUid.has_value()) {
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_UID,
+                        stat.mConfigUid.value());
+        }
+        if (stat.mInvalidQueryReason.has_value()) {
+            proto.write(
+                    FIELD_TYPE_ENUM | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_INVALID_QUERY_REASON,
+                    stat.mInvalidQueryReason.value());
+        }
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_QUERY_WALL_TIME_SEC,
+                    stat.mQueryWallTimeSec);
+        proto.write(FIELD_TYPE_BOOL | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_HAS_ERROR,
+                    stat.mHasError);
         proto.end(token);
     }
 
