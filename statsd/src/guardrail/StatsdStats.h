@@ -61,7 +61,8 @@ enum InvalidQueryReason {
     CONFIG_KEY_NOT_FOUND = 4,
     CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5,
     QUERY_FAILURE = 6,
-    INCONSISTENT_ROW_SIZE = 7
+    INCONSISTENT_ROW_SIZE = 7,
+    NULL_CALLBACK = 8
 };
 
 typedef struct {
