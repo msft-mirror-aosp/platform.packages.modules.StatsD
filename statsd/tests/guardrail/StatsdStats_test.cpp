@@ -529,6 +529,8 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
     EXPECT_EQ(configIdWithError, report.restricted_metric_query_stats(1).config_id());
     EXPECT_EQ(AMBIGUOUS_CONFIG_KEY, report.restricted_metric_query_stats(1).invalid_query_reason());
     EXPECT_EQ(false, report.restricted_metric_query_stats(1).has_config_uid());
+    EXPECT_NE(report.restricted_metric_query_stats(1).query_wall_time_ns(),
+              report.restricted_metric_query_stats(0).query_wall_time_ns());
 }
 
 TEST(StatsdStatsTest, TestAnomalyMonitor) {
