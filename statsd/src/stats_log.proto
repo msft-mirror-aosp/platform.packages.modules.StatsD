@@ -648,7 +648,7 @@ message StatsdStatsReport {
       }
 
       optional InvalidQueryReason invalid_query_reason = 5;
-      optional int32 query_wall_time_sec = 6;
+      optional int64 query_wall_time_ns = 6;
       optional bool has_error = 7;
     }
     repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;

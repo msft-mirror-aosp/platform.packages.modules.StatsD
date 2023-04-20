@@ -60,7 +60,7 @@ const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_UID = 3;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_PACKAGE = 4;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_INVALID_QUERY_REASON = 5;
-const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_QUERY_WALL_TIME_SEC = 6;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_QUERY_WALL_TIME_NS = 6;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_HAS_ERROR = 7;
 
 const int FIELD_ID_ATOM_STATS_TAG = 1;
@@ -620,7 +620,7 @@ void StatsdStats::noteQueryRestrictedMetricSucceed(const int64_t configId,
         mRestrictedMetricQueryStats.pop_front();
     }
     mRestrictedMetricQueryStats.emplace_back(RestrictedMetricQueryStats(
-            callingUid, configId, configPackage, configUid, getWallClockSec()));
+            callingUid, configId, configPackage, configUid, getWallClockNs()));
 }
 
 void StatsdStats::noteQueryRestrictedMetricFailed(const int64_t configId,
@@ -633,7 +633,7 @@ void StatsdStats::noteQueryRestrictedMetricFailed(const int64_t configId,
         mRestrictedMetricQueryStats.pop_front();
     }
     mRestrictedMetricQueryStats.emplace_back(RestrictedMetricQueryStats(
-            callingUid, configId, configPackage, configUid, getWallClockSec(), reason));
+            callingUid, configId, configPackage, configUid, getWallClockNs(), reason));
 }
 
 void StatsdStats::noteRestrictedMetricInsertError(const ConfigKey& configKey,
@@ -963,16 +963,17 @@ void StatsdStats::dumpStats(int out) const {
         for (const auto& stat : mRestrictedMetricQueryStats) {
             if (stat.mHasError) {
                 dprintf(out,
-                        "Query with error type: %d - %d (query time sec), "
+                        "Query with error type: %d - %lld (query time ns), "
                         "%d (calling uid), %lld (config id), %s (config package)\n",
-                        stat.mInvalidQueryReason.value(), stat.mQueryWallTimeSec, stat.mCallingUid,
-                        (long long)stat.mConfigId, stat.mConfigPackage.c_str());
+                        stat.mInvalidQueryReason.value(), (long long)stat.mQueryWallTimeNs,
+                        stat.mCallingUid, (long long)stat.mConfigId, stat.mConfigPackage.c_str());
             } else {
                 dprintf(out,
-                        "Query succeed - %d (query time sec), %d (calling uid), "
+                        "Query succeed - %lld (query time ns), %d (calling uid), "
                         "%lld (config id), %s (config package), %d (config uid)\n",
-                        stat.mQueryWallTimeSec, stat.mCallingUid, (long long)stat.mConfigId,
-                        stat.mConfigPackage.c_str(), stat.mConfigUid.value());
+                        (long long)stat.mQueryWallTimeNs, stat.mCallingUid,
+                        (long long)stat.mConfigId, stat.mConfigPackage.c_str(),
+                        stat.mConfigUid.value());
             }
         }
     }
@@ -1269,8 +1270,8 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
                     FIELD_TYPE_ENUM | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_INVALID_QUERY_REASON,
                     stat.mInvalidQueryReason.value());
         }
-        proto.write(FIELD_TYPE_INT32 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_QUERY_WALL_TIME_SEC,
-                    stat.mQueryWallTimeSec);
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_QUERY_WALL_TIME_NS,
+                    stat.mQueryWallTimeNs);
         proto.write(FIELD_TYPE_BOOL | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_HAS_ERROR,
                     stat.mHasError);
         proto.end(token);
