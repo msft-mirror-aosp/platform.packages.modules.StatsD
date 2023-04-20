@@ -114,7 +114,7 @@ static string getCreateSqlString(const int64_t metricId, const LogEvent& event) 
         }
     }
     result.pop_back();
-    result += ");";
+    result += ") STRICT;";
     return result;
 }
 
@@ -414,8 +414,8 @@ bool updateDeviceInfoTable(const ConfigKey& key, string& error) {
     // Ignore possible error result code if table has not yet been created.
     sqlite3_exec(db, dropTableSql.c_str(), nullptr, nullptr, nullptr);
 
-    string createTableSql =
-            StringPrintf("CREATE TABLE device_info(%s INTEGER)", COLUMN_NAME_SDK_VERSION.c_str());
+    string createTableSql = StringPrintf("CREATE TABLE device_info(%s INTEGER) STRICT",
+                                         COLUMN_NAME_SDK_VERSION.c_str());
     if (sqlite3_exec(db, createTableSql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK) {
         error = sqlite3_errmsg(db);
         ALOGW("Failed to create device info table %s", error.c_str());
