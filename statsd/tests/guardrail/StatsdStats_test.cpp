@@ -485,6 +485,7 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     stats.noteRestrictedMetricInsertError(key, metricId);
     stats.noteRestrictedMetricTableCreationError(key, metricId);
     stats.noteRestrictedMetricTableDeletionError(key, metricId);
+    stats.noteDeviceInfoTableCreationFailed(key);
     ConfigKey configKeyWithoutError(0, 666);
     stats.noteConfigReceived(configKeyWithoutError, 2, 3, 4, 5, {}, nullopt);
 
@@ -500,6 +501,7 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).insert_error());
     EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).table_creation_error());
     EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).table_deletion_error());
+    EXPECT_TRUE(report.config_stats(1).device_info_table_creation_failed());
     EXPECT_EQ(metricId, report.config_stats(1).restricted_metric_stats(0).restricted_metric_id());
 }
 
