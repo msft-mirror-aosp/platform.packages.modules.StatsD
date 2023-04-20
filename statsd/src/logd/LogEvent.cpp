@@ -20,6 +20,7 @@
 #include "logd/LogEvent.h"
 
 #include <android-base/stringprintf.h>
+#include <android-modules-utils/sdk_level.h>
 #include <android/binder_ibinder.h>
 #include <private/android_filesystem_config.h>
 
@@ -37,6 +38,7 @@ const int FIELD_ID_EXPERIMENT_ID = 1;
 
 using namespace android::util;
 using android::base::StringPrintf;
+using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 using std::string;
 using std::vector;
@@ -450,14 +452,12 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
                 parseStateNestedAnnotation(annotationType, numElements);
                 break;
             case ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY:
-                if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG,
-                                                                FLAG_FALSE)) {
+                if (IsAtLeastU()) {
                     parseRestrictionCategoryAnnotation(annotationType);
-                    break;
                 } else {
                     mValid = false;
-                    return;
                 }
+                break;
             // Currently field restrictions are ignored, so we parse but do not store them.
             case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO:
             case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE:
@@ -468,14 +468,12 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
             case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
             case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
             case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
-                if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG,
-                                                                FLAG_FALSE)) {
+                if (IsAtLeastU()) {
                     parseFieldRestrictionAnnotation(annotationType);
-                    break;
                 } else {
                     mValid = false;
-                    return;
                 }
+                break;
             default:
                 VLOG("Atom ID %d error while parseAnnotations() - wrong annotationId(%d)", mTagId,
                      annotationId);
