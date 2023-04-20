@@ -80,6 +80,9 @@ bool flushTtl(sqlite3* db, const int64_t metricId, const int64_t ttlWallClockNs)
 /* Checks for database corruption and deletes the db if it is corrupted. */
 void verifyIntegrityAndDeleteIfNecessary(const ConfigKey& key);
 
+/* Creates and updates the device info table for the given configKey. */
+bool updateDeviceInfoTable(const ConfigKey& key, string& error);
+
 }  // namespace dbutils
 }  // namespace statsd
 }  // namespace os
