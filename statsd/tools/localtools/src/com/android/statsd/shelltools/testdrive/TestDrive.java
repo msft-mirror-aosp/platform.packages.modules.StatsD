@@ -94,6 +94,7 @@ public class TestDrive {
             "com.google.android.permissioncontroller",
             "AID_NFC",
             "AID_SECURE_ELEMENT",
+            "com.google.android.wearable.media.routing",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",
@@ -143,8 +144,8 @@ public class TestDrive {
         LOGGER.severe("\tPath is absolute or relative to current dir or to ANDROID_BUILD_TOP");
         LOGGER.severe("-terse");
         LOGGER.severe("\tTerse output format.");
-        LOGGER.severe("-p additional_allowed_package");
-        LOGGER.severe("\tAllows collection atoms from an additional package");
+        LOGGER.severe("-p additional_allowed_packages_csv");
+        LOGGER.severe("\tAllows collection atoms from an additional packages");
         LOGGER.severe("-s DEVICE_SERIAL_NUMBER");
         LOGGER.severe("\tDevice serial number to use for adb communication");
         LOGGER.severe("-e");
@@ -177,7 +178,8 @@ public class TestDrive {
                 LOGGER.info("Terse output format.");
                 mDumper = new TerseDumper();
             } else if (remaining_args >= 3 && arg.equals("-p")) {
-                configuration.mAdditionalAllowedPackage = args[++first_arg];
+                Collections.addAll(configuration.mAdditionalAllowedPackages,
+                    args[++first_arg].split(","));
             } else if (remaining_args >= 3 && arg.equals("-i")) {
                 mProtoIncludes.add(args[++first_arg]);
             } else if (remaining_args >= 3 && arg.equals("-s")) {
@@ -277,7 +279,7 @@ public class TestDrive {
         @VisibleForTesting
         Set<Integer> mPulledAtoms = new TreeSet<>();
         @VisibleForTesting
-        String mAdditionalAllowedPackage = null;
+        ArrayList<String> mAdditionalAllowedPackages = new ArrayList<>();
         private final Set<Long> mTrackedMetrics = new HashSet<>();
         private final String mAndroidBuildTop = System.getenv("ANDROID_BUILD_TOP");
 
@@ -563,9 +565,7 @@ public class TestDrive {
         private StatsdConfig.Builder baseBuilder() {
             ArrayList<String> allowedSources = new ArrayList<>();
             Collections.addAll(allowedSources, ALLOWED_LOG_SOURCES);
-            if (mAdditionalAllowedPackage != null) {
-                allowedSources.add(mAdditionalAllowedPackage);
-            }
+            allowedSources.addAll(mAdditionalAllowedPackages);
             return StatsdConfig.newBuilder()
                     .addAllAllowedLogSource(allowedSources)
                     .addAllDefaultPullPackages(Arrays.asList(DEFAULT_PULL_SOURCES))

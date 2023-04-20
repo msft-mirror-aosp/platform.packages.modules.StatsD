@@ -245,6 +245,14 @@ public class AtomTestCase extends BaseTestCase {
                 + " cat " + path + " ; else echo -1 ; fi");
     }
 
+    protected void enableSystemTracing() throws Exception {
+        getDevice().executeShellCommand("setprop persist.traced.enable 1");
+    }
+
+    protected void disableSystemTracing() throws Exception {
+        getDevice().executeShellCommand("setprop persist.traced.enable 0");
+    }
+
     /**
      * Determines whether perfetto enabled the kernel ftrace tracer.
      */

@@ -424,18 +424,30 @@ bool LogEvent::parseBuffer(uint8_t* buf, size_t len) {
 
     // Beginning of buffer is OBJECT_TYPE | NUM_FIELDS | TIMESTAMP | ATOM_ID
     uint8_t typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != OBJECT_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != OBJECT_TYPE) {
+        mValid = false;
+        return false;
+    }
 
     uint8_t numElements = readNextValue<uint8_t>();
-    if (numElements < 2 || numElements > INT8_MAX) mValid = false;
+    if (numElements < 2 || numElements > INT8_MAX) {
+        mValid = false;
+        return false;
+    }
 
     typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != INT64_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != INT64_TYPE) {
+        mValid = false;
+        return false;
+    }
     mElapsedTimestampNs = readNextValue<int64_t>();
     numElements--;
 
     typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != INT32_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != INT32_TYPE) {
+        mValid = false;
+        return false;
+    }
     mTagId = readNextValue<int32_t>();
     numElements--;
     parseAnnotations(getNumAnnotations(typeInfo));  // atom-level annotations
