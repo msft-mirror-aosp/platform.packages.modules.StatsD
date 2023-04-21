@@ -174,8 +174,7 @@ optional<InvalidConfigReason> handleMetricWithAtomMatchingTrackers(
 optional<InvalidConfigReason> handleMetricWithConditions(
         const int64_t condition, const int64_t metricId, const int metricIndex,
         const unordered_map<int64_t, int>& conditionTrackerMap,
-        const ::google::protobuf::RepeatedPtrField<::android::os::statsd::MetricConditionLink>&
-                links,
+        const ::google::protobuf::RepeatedPtrField<MetricConditionLink>& links,
         const vector<sp<ConditionTracker>>& allConditionTrackers, int& conditionIndex,
         unordered_map<int, vector<int>>& conditionToMetricMap) {
     auto condition_it = conditionTrackerMap.find(condition);
@@ -1446,6 +1445,12 @@ optional<InvalidConfigReason> initMetrics(
                                 config.value_metric_size() + config.kll_metric_size();
     allMetricProducers.reserve(allMetricsCount);
     optional<InvalidConfigReason> invalidConfigReason;
+
+    if (config.has_restricted_metrics_delegate_package_name() &&
+        allMetricsCount != config.event_metric_size()) {
+        ALOGE("Restricted metrics only support event metric");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED);
+    }
 
     // Construct map from metric id to metric activation index. The map will be used to determine
     // the metric activation corresponding to a metric.

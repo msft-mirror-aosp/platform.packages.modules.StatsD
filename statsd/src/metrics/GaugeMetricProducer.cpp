@@ -451,7 +451,7 @@ void GaugeMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
     flushIfNeededLocked(eventTimeNs);
     // If the condition is sliced, mCondition is true if any of the dimensions is true. And we will
     // pull for every dimension.
-    if (overallCondition && mIsPulled) {
+    if (overallCondition && mIsPulled && mTriggerAtomId == -1) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }

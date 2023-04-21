@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "FieldValue.h"
+#include "utils/RestrictedPolicyManager.h"
 
 namespace android {
 namespace os {
@@ -88,10 +89,12 @@ public:
      * \param buf a buffer that begins at the start of the serialized atom (it
      * should not include the android_log_header_t or the StatsEventTag)
      * \param len size of the buffer
+     * \param fetchHeaderOnly force to parse only event header with atomId,timestamp
+     * and atom level annotations
      *
      * \return success of the initialization
      */
-    bool parseBuffer(uint8_t* buf, size_t len);
+    bool parseBuffer(const uint8_t* buf, size_t len, bool fetchHeaderOnly = false);
 
     // Constructs a BinaryPushStateChanged LogEvent from API call.
     explicit LogEvent(const std::string& trainName, int64_t trainVersionCode, bool requiresStaging,
@@ -234,15 +237,21 @@ public:
      */
     LogEvent(const LogEvent&) = default;
 
-    inline int getRestrictionCategory() const {
+    inline StatsdRestrictionCategory getRestrictionCategory() const {
         return mRestrictionCategory;
     }
 
     inline bool isRestricted() const {
-        return mRestrictionCategory != 0;
+        return mRestrictionCategory != CATEGORY_NO_RESTRICTION;
     }
 
 private:
+    /**
+     * @brief Parses atom header which consists of atom id, timestamp
+     * and atom level annotations
+     * @return amount of fields on the atom level
+     */
+    uint8_t parseHeader();
     void parseInt32(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
     void parseInt64(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
     void parseString(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
@@ -266,6 +275,7 @@ private:
                                           std::optional<uint8_t> numElements);
     void parseStateNestedAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements);
     void parseRestrictionCategoryAnnotation(uint8_t annotationType);
+    void parseFieldRestrictionAnnotation(uint8_t annotationType);
     bool checkPreviousValueType(Type expected);
     bool getRestrictedMetricsFlag();
 
@@ -274,7 +284,7 @@ private:
      * parseBuffer. There are no guarantees about the state of these variables
      * before/after.
      */
-    uint8_t* mBuf;
+    const uint8_t* mBuf;
     uint32_t mRemainingLen; // number of valid bytes left in the buffer being parsed
 
     bool mValid = true; // stores whether the event we received from the socket is valid
@@ -345,7 +355,7 @@ private:
     // Annotations
     bool mTruncateTimestamp = false;
     int mResetState = -1;
-    int mRestrictionCategory = 0;
+    StatsdRestrictionCategory mRestrictionCategory = CATEGORY_NO_RESTRICTION;
 
     size_t mNumUidFields = 0;
 

@@ -383,13 +383,26 @@ void LogEvent::parseRestrictionCategoryAnnotation(uint8_t annotationType) {
     int value = readNextValue<int32_t>();
     // should be one of predefined category in StatsLog.java
     switch (value) {
+        // Only diagnostic is currently supported for use.
         case ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC:
             break;
         default:
             mValid = false;
             return;
     }
-    mRestrictionCategory = value;
+    mRestrictionCategory = static_cast<StatsdRestrictionCategory>(value);
+    return;
+}
+
+void LogEvent::parseFieldRestrictionAnnotation(uint8_t annotationType) {
+    // Allowed types: BOOL
+    if (mValues.empty() || annotationType != BOOL_TYPE) {
+        mValid = false;
+        return;
+    }
+    // Read the value so that the rest of the event is correctly parsed
+    // TODO: store the field annotations once the metrics need to parse them.
+    readNextValue<uint8_t>();
     return;
 }
 
@@ -433,6 +446,24 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
                     mValid = false;
                     return;
                 }
+            // Currently field restrictions are ignored, so we parse but do not store them.
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
+                if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG,
+                                                                FLAG_FALSE)) {
+                    parseFieldRestrictionAnnotation(annotationType);
+                    break;
+                } else {
+                    mValid = false;
+                    return;
+                }
             default:
                 VLOG("Atom ID %d error while parseAnnotations() - wrong annotationId(%d)", mTagId,
                      annotationId);
@@ -442,37 +473,61 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
     }
 }
 
-// This parsing logic is tied to the encoding scheme used in StatsEvent.java and
-// stats_event.c
-bool LogEvent::parseBuffer(uint8_t* buf, size_t len) {
-    mBuf = buf;
-    mRemainingLen = (uint32_t)len;
-
-    int32_t pos[] = {1, 1, 1};
-    bool last[] = {false, false, false};
-
+uint8_t LogEvent::parseHeader() {
     // Beginning of buffer is OBJECT_TYPE | NUM_FIELDS | TIMESTAMP | ATOM_ID
     uint8_t typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != OBJECT_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != OBJECT_TYPE) {
+        mValid = false;
+        return 0;
+    }
 
     uint8_t numElements = readNextValue<uint8_t>();
-    if (numElements < 2 || numElements > INT8_MAX) mValid = false;
+    if (numElements < 2 || numElements > INT8_MAX) {
+        mValid = false;
+        return 0;
+    }
 
     typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != INT64_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != INT64_TYPE) {
+        mValid = false;
+        return 0;
+    }
     mElapsedTimestampNs = readNextValue<int64_t>();
     numElements--;
 
     typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != INT32_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != INT32_TYPE) {
+        mValid = false;
+        return 0;
+    }
     mTagId = readNextValue<int32_t>();
     numElements--;
+
     parseAnnotations(getNumAnnotations(typeInfo));  // atom-level annotations
+
+    return numElements;
+}
+
+// This parsing logic is tied to the encoding scheme used in StatsEvent.java and
+// stats_event.c
+bool LogEvent::parseBuffer(const uint8_t* buf, size_t len, bool fetchHeaderOnly) {
+    mBuf = buf;
+    mRemainingLen = (uint32_t)len;
+
+    const uint8_t numElements = parseHeader();
+
+    if (!mValid || fetchHeaderOnly) {
+        mBuf = nullptr;
+        return mValid;
+    }
+
+    int32_t pos[] = {1, 1, 1};
+    bool last[] = {false, false, false};
 
     for (pos[0] = 1; pos[0] <= numElements && mValid; pos[0]++) {
         last[0] = (pos[0] == numElements);
 
-        typeInfo = readNextValue<uint8_t>();
+        uint8_t typeInfo = readNextValue<uint8_t>();
         uint8_t typeId = getTypeId(typeInfo);
 
         switch (typeId) {

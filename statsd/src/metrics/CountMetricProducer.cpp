@@ -119,7 +119,7 @@ CountMetricProducer::CountMetricProducer(
     flushIfNeededLocked(startTimeNs);
     // Adjust start for partial bucket
     mCurrentBucketStartTimeNs = startTimeNs;
-
+    mConditionTimer.newBucketStart(mCurrentBucketStartTimeNs, mCurrentBucketStartTimeNs);
     mConditionTimer.onConditionChanged(mIsActive && mCondition == ConditionState::kTrue,
                                        mCurrentBucketStartTimeNs);
 
@@ -285,9 +285,9 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
             protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_COUNT, (long long)bucket.mCount);
 
             // We only write the condition timer value if the metric has a
-            // condition and isn't sliced by state.
-            // TODO: Slice the condition timer by state
-            if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty()) {
+            // condition and isn't sliced by state or condition.
+            // TODO(b/268531179): Slice the condition timer by state and condition
+            if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty() && !mConditionSliced) {
                 protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_CONDITION_TRUE_NS,
                                    (long long)bucket.mConditionTrueNs);
             }
@@ -316,6 +316,10 @@ void CountMetricProducer::onConditionChangedLocked(const bool conditionMet,
                                                    const int64_t eventTime) {
     VLOG("Metric %lld onConditionChanged", (long long)mMetricId);
     mCondition = conditionMet ? ConditionState::kTrue : ConditionState::kFalse;
+
+    if (!mIsActive) {
+        return;
+    }
 
     mConditionTimer.onConditionChanged(mCondition, eventTime);
 }
