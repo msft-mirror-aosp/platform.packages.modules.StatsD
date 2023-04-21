@@ -1405,6 +1405,13 @@ Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClient
                               const int64_t configKey, const string& configPackage,
                               const int32_t callingUid) {
     ENFORCE_UID(AID_SYSTEM);
+    if (callback == nullptr) {
+        ALOGW("querySql called with null callback.");
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configKey, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(NULL_CALLBACK));
+        return Status::ok();
+    }
     mProcessor->querySql(sqlQuery, minSqlClientVersion, policyConfig, callback, configKey,
                          configPackage, callingUid);
     return Status::ok();
