@@ -89,10 +89,12 @@ public:
      * \param buf a buffer that begins at the start of the serialized atom (it
      * should not include the android_log_header_t or the StatsEventTag)
      * \param len size of the buffer
+     * \param fetchHeaderOnly force to parse only event header with atomId,timestamp
+     * and atom level annotations
      *
      * \return success of the initialization
      */
-    bool parseBuffer(uint8_t* buf, size_t len);
+    bool parseBuffer(const uint8_t* buf, size_t len, bool fetchHeaderOnly = false);
 
     // Constructs a BinaryPushStateChanged LogEvent from API call.
     explicit LogEvent(const std::string& trainName, int64_t trainVersionCode, bool requiresStaging,
@@ -244,6 +246,12 @@ public:
     }
 
 private:
+    /**
+     * @brief Parses atom header which consists of atom id, timestamp
+     * and atom level annotations
+     * @return amount of fields on the atom level
+     */
+    uint8_t parseHeader();
     void parseInt32(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
     void parseInt64(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
     void parseString(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
@@ -276,7 +284,7 @@ private:
      * parseBuffer. There are no guarantees about the state of these variables
      * before/after.
      */
-    uint8_t* mBuf;
+    const uint8_t* mBuf;
     uint32_t mRemainingLen; // number of valid bytes left in the buffer being parsed
 
     bool mValid = true; // stores whether the event we received from the socket is valid

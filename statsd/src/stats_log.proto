@@ -645,10 +645,11 @@ message StatsdStatsReport {
         CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5;
         QUERY_FAILURE = 6;
         INCONSISTENT_ROW_SIZE = 7;
+        NULL_CALLBACK = 8;
       }
 
       optional InvalidQueryReason invalid_query_reason = 5;
-      optional int32 query_wall_time_sec = 6;
+      optional int64 query_wall_time_ns = 6;
       optional bool has_error = 7;
     }
     repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;
