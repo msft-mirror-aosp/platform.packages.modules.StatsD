@@ -37,7 +37,7 @@ namespace os {
 namespace statsd {
 
 StatsSocketListener::StatsSocketListener(std::shared_ptr<LogEventQueue> queue)
-    : SocketListener(getLogSocket(), false /*start listen*/), mQueue(queue) {
+    : SocketListener(getLogSocket(), false /*start listen*/), mQueue(std::move(queue)) {
 }
 
 StatsSocketListener::~StatsSocketListener() {
