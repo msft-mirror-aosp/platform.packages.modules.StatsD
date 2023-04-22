@@ -61,7 +61,8 @@ enum InvalidQueryReason {
     CONFIG_KEY_NOT_FOUND = 4,
     CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5,
     QUERY_FAILURE = 6,
-    INCONSISTENT_ROW_SIZE = 7
+    INCONSISTENT_ROW_SIZE = 7,
+    NULL_CALLBACK = 8
 };
 
 typedef struct {
@@ -713,13 +714,13 @@ private:
     struct RestrictedMetricQueryStats {
         RestrictedMetricQueryStats(
                 int32_t callingUid, int64_t configId, const string& configPackage,
-                std::optional<int32_t> configUid, int32_t queryTimeSec,
+                std::optional<int32_t> configUid, int32_t queryTimeNs,
                 std::optional<InvalidQueryReason> invalidQueryReason = std::nullopt)
             : mCallingUid(callingUid),
               mConfigId(configId),
               mConfigPackage(configPackage),
               mConfigUid(configUid),
-              mQueryWallTimeSec(queryTimeSec),
+              mQueryWallTimeNs(queryTimeNs),
               mInvalidQueryReason(invalidQueryReason) {
             mHasError = invalidQueryReason.has_value();
         }
@@ -727,7 +728,7 @@ private:
         int64_t mConfigId;
         string mConfigPackage;
         std::optional<int32_t> mConfigUid;
-        int32_t mQueryWallTimeSec;
+        int64_t mQueryWallTimeNs;
         std::optional<InvalidQueryReason> mInvalidQueryReason;
         bool mHasError;
     };
