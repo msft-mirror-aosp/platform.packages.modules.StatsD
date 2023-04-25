@@ -622,7 +622,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestNonModularConfigUpdateRestrictedDelegat
     std::vector<std::vector<std::string>> rows;
     EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
     EXPECT_EQ(rows.size(), 0);
-    EXPECT_THAT(err, StartsWith("unable to open database file"));
+    EXPECT_THAT(err, StartsWith("no such table"));
     dbutils::deleteDb(configKey);
 }
 
@@ -1137,6 +1137,18 @@ TEST_F(RestrictedEventMetricE2eTest, TestNewRestrictionCategoryEventDeletesTable
                 ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
     EXPECT_THAT(columnTypesResult,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestDeviceInfoTableCreated) {
+    std::string query = "SELECT * FROM device_info";
+    processor->querySql(query.c_str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/delegate_uid);
+    EXPECT_EQ(rowCountResult, 1);
+    EXPECT_THAT(queryDataResult, ElementsAre(_));
+    EXPECT_THAT(columnNamesResult, ElementsAre("sdkVersion"));
+    EXPECT_THAT(columnTypesResult, ElementsAre(SQLITE_INTEGER));
 }
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
