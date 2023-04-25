@@ -505,6 +505,7 @@ message StatsdStatsReport {
         repeated int32 activation_time_sec = 22;
         repeated int32 deactivation_time_sec = 23;
         repeated RestrictedMetricStats restricted_metric_stats = 25;
+        optional bool device_info_table_creation_failed = 26;
     }
 
     repeated ConfigStats config_stats = 3;
