@@ -108,6 +108,7 @@ const int FIELD_ID_CONFIG_STATS_DEACTIVATION = 23;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT64 = 1;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT32 = 2;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_METRIC_STATS = 25;
+const int FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED = 26;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -333,6 +334,16 @@ void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t num_b
         it->second->dump_report_stats.pop_front();
     }
     it->second->dump_report_stats.push_back(std::make_pair(timeSec, num_bytes));
+}
+
+void StatsdStats::noteDeviceInfoTableCreationFailed(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->device_info_table_creation_failed = true;
 }
 
 void StatsdStats::noteUidMapDropped(int deltas) {
@@ -761,11 +772,12 @@ void StatsdStats::dumpStats(int out) const {
     for (const auto& configStats : mIceBox) {
         dprintf(out,
                 "Config {%d_%lld}: creation=%d, deletion=%d, reset=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d, device_info_table_creation_failed=%d\n",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->reset_time_sec,
                 configStats->metric_count, configStats->condition_count, configStats->matcher_count,
-                configStats->alert_count, configStats->is_valid);
+                configStats->alert_count, configStats->is_valid,
+                configStats->device_info_table_creation_failed);
 
         if (!configStats->is_valid) {
             dprintf(out, "\tinvalid config reason: %s\n",
@@ -1137,6 +1149,8 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
                                  (long long)pair.second.tableDeletionError, proto);
         proto->end(token);
     }
+    proto->write(FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED,
+                 configStats.device_info_table_creation_failed);
     proto->end(token);
 }
 

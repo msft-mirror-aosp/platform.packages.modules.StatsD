@@ -575,6 +575,12 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
                     mSendRestrictedMetricsBroadcast(
                             key, newMetricsManager->getRestrictedMetricsDelegate(),
                             newMetricsManager->getAllMetricIds());
+                    string err;
+                    if (!dbutils::updateDeviceInfoTable(key, err)) {
+                        ALOGE("Failed to create device_info table for configKey %s, err: %s",
+                              key.ToString().c_str(), err.c_str());
+                        StatsdStats::getInstance().noteDeviceInfoTableCreationFailed(key);
+                    }
                 } else if (it != mMetricsManagers.end() &&
                            it->second->hasRestrictedMetricsDelegate()) {
                     mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
