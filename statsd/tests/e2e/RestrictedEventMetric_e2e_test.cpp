@@ -267,6 +267,49 @@ TEST_F(RestrictedEventMetricE2eTest, TestInvalidSchemaDecreasingFieldCount) {
                                                SQLITE_TEXT, SQLITE_INTEGER));
 }
 
+TEST_F(RestrictedEventMetricE2eTest, TestInvalidSchemaDifferentFieldType) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomTag);
+    AStatsEvent_addInt32Annotation(statsEvent, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY,
+                                   ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC);
+    AStatsEvent_overwriteTimestamp(statsEvent, configAddedTimeNs + 200);
+    // This event has a string instead of an int field
+    AStatsEvent_writeString(statsEvent, "test_string");
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+
+    events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
+    events.push_back(std::move(logEvent));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+        processor->WriteDataToDisk(DEVICE_SHUTDOWN, FAST,
+                                   event->GetElapsedTimestampNs() + 20 * NS_PER_SEC,
+                                   getWallClockNs());
+    }
+
+    std::stringstream query;
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/delegate_uid);
+
+    EXPECT_EQ(rowCountResult, 1);
+    // Event 2 rejected.
+    EXPECT_THAT(queryDataResult, ElementsAre(to_string(atomTag), to_string(configAddedTimeNs + 100),
+                                             _,  // wallClockNs
+                                             _   // field_1
+                                             ));
+    EXPECT_THAT(columnNamesResult,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
+    EXPECT_THAT(columnTypesResult,
+                ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+}
+
 TEST_F(RestrictedEventMetricE2eTest, TestNewMetricSchemaAcrossReboot) {
     int64_t currentWallTimeNs = getWallClockNs();
     int64_t originalEventElapsedTime = configAddedTimeNs + 100;
@@ -622,7 +665,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestNonModularConfigUpdateRestrictedDelegat
     std::vector<std::vector<std::string>> rows;
     EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
     EXPECT_EQ(rows.size(), 0);
-    EXPECT_THAT(err, StartsWith("unable to open database file"));
+    EXPECT_THAT(err, StartsWith("no such table"));
     dbutils::deleteDb(configKey);
 }
 
@@ -1137,6 +1180,18 @@ TEST_F(RestrictedEventMetricE2eTest, TestNewRestrictionCategoryEventDeletesTable
                 ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
     EXPECT_THAT(columnTypesResult,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestDeviceInfoTableCreated) {
+    std::string query = "SELECT * FROM device_info";
+    processor->querySql(query.c_str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/delegate_uid);
+    EXPECT_EQ(rowCountResult, 1);
+    EXPECT_THAT(queryDataResult, ElementsAre(_));
+    EXPECT_THAT(columnNamesResult, ElementsAre("sdkVersion"));
+    EXPECT_THAT(columnTypesResult, ElementsAre(SQLITE_INTEGER));
 }
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
