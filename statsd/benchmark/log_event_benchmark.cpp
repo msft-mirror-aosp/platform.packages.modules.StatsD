@@ -45,6 +45,21 @@ static void BM_LogEventCreation(benchmark::State& state) {
 }
 BENCHMARK(BM_LogEventCreation);
 
+static void BM_LogEventCreationWithPrefetch(benchmark::State& state) {
+    uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
+    size_t size = createAndParseStatsEvent(msg);
+    while (state.KeepRunning()) {
+        LogEvent event(/*uid=*/1000, /*pid=*/1001);
+
+        // explicitly parse header first
+        benchmark::DoNotOptimize(event.parseBuffer(msg, size, /*fetchHeaderOnly*/ true));
+
+        // re-parse header & body
+        benchmark::DoNotOptimize(event.parseBuffer(msg, size, /*fetchHeaderOnly*/ false));
+    }
+}
+BENCHMARK(BM_LogEventCreationWithPrefetch);
+
 }  //  namespace statsd
 }  //  namespace os
 }  //  namespace android
