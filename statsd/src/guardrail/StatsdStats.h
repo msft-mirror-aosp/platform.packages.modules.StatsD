@@ -82,6 +82,7 @@ struct ConfigStats {
     int32_t matcher_count;
     int32_t alert_count;
     bool is_valid;
+    bool device_info_table_creation_failed;
 
     // Stores reasons for why config is valid or not
     std::optional<InvalidConfigReason> reason;
@@ -296,6 +297,11 @@ public:
      * The report may be requested via StatsManager API, or through adb cmd.
      */
     void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes);
+
+    /**
+     * Report failure in creating the device info metadata table for restricted configs.
+     */
+    void noteDeviceInfoTableCreationFailed(const ConfigKey& key);
 
     /**
      * Report the size of output tuple of a condition.
