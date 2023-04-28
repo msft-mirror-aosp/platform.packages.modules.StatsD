@@ -86,11 +86,6 @@ cc_library {
     min_sdk_version: "30",
 
     stl: "libc++_static",
-
-    // TODO(b/151102177): Enable it when the build error is fixed.
-    header_abi_checker: {
-        enabled: false,
-    },
 }
 
 cc_library_headers {

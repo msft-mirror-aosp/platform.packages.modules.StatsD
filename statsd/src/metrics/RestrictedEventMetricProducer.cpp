@@ -52,7 +52,6 @@ void RestrictedEventMetricProducer::onDumpReportLocked(
         const int64_t dumpTimeNs, const bool include_current_partial_bucket, const bool erase_data,
         const DumpLatency dumpLatency, std::set<string>* str_set,
         android::util::ProtoOutputStream* protoOutput) {
-    // TODO(b/268150038): report error to statsdstats
     VLOG("Unexpected call to onDumpReportLocked() in RestrictedEventMetricProducer");
 }
 
@@ -88,17 +87,26 @@ void RestrictedEventMetricProducer::flushRestrictedData() {
         return;
     }
     if (!mIsMetricTableCreated) {
+        if (!dbutils::isEventCompatible(mConfigKey, mMetricId, mLogEvents[0])) {
+            // Delete old data if schema changes
+            // TODO(b/268150038): report error to statsdstats
+            ALOGD("Detected schema change for metric %lld", (long long)mMetricId);
+            deleteMetricTable();
+        }
         // TODO(b/271481944): add retry.
         if (!dbutils::createTableIfNeeded(mConfigKey, mMetricId, mLogEvents[0])) {
-            VLOG("Failed to create table for metric %lld", (long long)mMetricId);
-            // TODO(b/268150038): report error to statsdstats
+            ALOGE("Failed to create table for metric %lld", (long long)mMetricId);
+            StatsdStats::getInstance().noteRestrictedMetricTableCreationError(mConfigKey,
+                                                                              mMetricId);
             return;
         }
         mIsMetricTableCreated = true;
     }
-    if (!dbutils::insert(mConfigKey, mMetricId, mLogEvents)) {
-        // TODO(b/268150038): report error to statsdstats
-        VLOG("Failed to insert logEvent to table for metric %lld", (long long)mMetricId);
+    string err;
+    if (!dbutils::insert(mConfigKey, mMetricId, mLogEvents, err)) {
+        ALOGE("Failed to insert logEvent to table for metric %lld. err=%s", (long long)mMetricId,
+              err.c_str());
+        StatsdStats::getInstance().noteRestrictedMetricInsertError(mConfigKey, mMetricId);
     }
     mLogEvents.clear();
     mTotalSize = 0;
@@ -119,7 +127,7 @@ void RestrictedEventMetricProducer::loadMetricMetadataFromProto(
 
 void RestrictedEventMetricProducer::deleteMetricTable() {
     if (!dbutils::deleteTable(mConfigKey, mMetricId)) {
-        // TODO(b/268150038): report error to statsdstats
+        StatsdStats::getInstance().noteRestrictedMetricTableDeletionError(mConfigKey, mMetricId);
         VLOG("Failed to delete table for metric %lld", (long long)mMetricId);
     }
     mIsMetricTableCreated = false;
