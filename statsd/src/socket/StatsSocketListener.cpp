@@ -130,7 +130,7 @@ bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
     logEvent->parseBuffer(msg, len);
 
     if (!mQueue->push(std::move(logEvent), &oldestTimestamp)) {
-        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp);
+        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, logEvent->GetTagId());
     }
 
     return true;
