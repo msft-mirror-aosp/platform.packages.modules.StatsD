@@ -75,7 +75,7 @@ typedef void (*AStatsManager_SubscriptionCallback)(int32_t subscription_id,
 /**
  * Adds a new subscription.
  *
- * Requires the READ_LOGS permission and is only available to AID_NOBODY.
+ * Requires caller is in the traced_probes selinux domain.
  *
  * \param subscription_config encoded ShellSubscription proto containing parameters for a new
  *        subscription. Cannot be null.
@@ -101,7 +101,7 @@ int32_t AStatsManager_addSubscription(const uint8_t* _Nonnull subscription_confi
  * AStatsManager_SubscriptionCallback with the reason as
  * ASTATSMANAGER_SUBSCRIPTION_CALLBACK_REASON_SUBSCRIPTION_ENDED.
  *
- * Requires the READ_LOGS permission and is only available to AID_NOBODY.
+ * Requires caller is in the traced_probes selinux domain.
  *
  * \param subscription_id subscription id of the subscription to terminate.
  *
@@ -115,7 +115,7 @@ void AStatsManager_removeSubscription(int32_t subscription_id)
  * This will trigger AStatsManager_SubscriptionCallback with the reason as
  * ASTATSMANAGER_SUBSCRIPTION_CALLBACK_REASON_FLUSH_REQUESTED.
  *
- * Requires the READ_LOGS permission and is only available to AID_NOBODY.
+ * Requires caller is in the traced_probes selinux domain.
  *
  * \param subscription_id ID of the subscription to be flushed.
  *
