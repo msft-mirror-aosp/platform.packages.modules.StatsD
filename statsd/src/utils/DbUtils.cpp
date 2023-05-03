@@ -376,7 +376,7 @@ void verifyIntegrityAndDeleteIfNecessary(const ConfigKey& configKey) {
     char* error = nullptr;
     sqlite3_exec(db, zSql.c_str(), integrityCheckCallback, nullptr, &error);
     if (error) {
-        // TODO(b/268150038): Add statsdstats reporting.
+        StatsdStats::getInstance().noteDbCorrupted(configKey);
         ALOGW("Integrity Check failed %s", error);
         sqlite3_close(db);
         deleteDb(configKey);
