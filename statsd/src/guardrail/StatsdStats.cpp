@@ -913,13 +913,13 @@ void StatsdStats::dumpStats(int out) const {
     const size_t atomCounts = mPushedAtomStats.size();
     for (size_t i = 2; i < atomCounts; i++) {
         if (mPushedAtomStats[i] > 0) {
-            dprintf(out, "Atom %zu->(total count)%d, (error count)%d\n", i, mPushedAtomStats[i],
-                    getPushedAtomErrors((int)i));
+            dprintf(out, "Atom %zu->(total count)%d, (error count)%d, (drop count)%d\n", i,
+                    mPushedAtomStats[i], getPushedAtomErrors((int)i), getPushedAtomDrops((int)i));
         }
     }
     for (const auto& pair : mNonPlatformPushedAtomStats) {
-        dprintf(out, "Atom %d->(total count)%d, (error count)%d\n", pair.first, pair.second,
-                getPushedAtomErrors(pair.first));
+        dprintf(out, "Atom %d->(total count)%d, (error count)%d, (drop count)%d\n", pair.first,
+                pair.second, getPushedAtomErrors(pair.first), getPushedAtomDrops((int)pair.first));
     }
 
     dprintf(out, "********Pulled Atom stats***********\n");
