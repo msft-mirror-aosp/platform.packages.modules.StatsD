@@ -78,7 +78,7 @@ int main(int /*argc*/, char** /*argv*/) {
             std::make_shared<LogEventQueue>(4000 /*buffer limit. Buffer is NOT pre-allocated*/);
 
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags({LIMIT_PULL_FLAG});
+    FlagProvider::getInstance().initBootFlags({});
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
