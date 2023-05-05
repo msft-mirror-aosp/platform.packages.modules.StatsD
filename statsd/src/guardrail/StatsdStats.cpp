@@ -57,6 +57,7 @@ const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
 const int FIELD_ID_ATOM_STATS_TAG = 1;
 const int FIELD_ID_ATOM_STATS_COUNT = 2;
 const int FIELD_ID_ATOM_STATS_ERROR_COUNT = 3;
+const int FIELD_ID_ATOM_STATS_DROPS_COUNT = 4;
 
 const int FIELD_ID_ANOMALY_ALARMS_REGISTERED = 1;
 const int FIELD_ID_PERIODIC_ALARMS_REGISTERED = 1;
@@ -270,7 +271,7 @@ void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes)
     noteDataDropped(key, totalBytes, getWallClockSec());
 }
 
-void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs) {
+void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId) {
     lock_guard<std::mutex> lock(mLock);
 
     mOverflowCount++;
@@ -283,6 +284,20 @@ void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs) {
 
     if (history < mMinQueueHistoryNs) {
         mMinQueueHistoryNs = history;
+    }
+
+    if (atomId < 0) {
+        android_errorWriteLog(0x534e4554, "187957589");
+    }
+
+    noteAtomLoggedLocked(atomId);
+    noteAtomDroppedLocked(atomId);
+}
+
+void StatsdStats::noteAtomDroppedLocked(int32_t atomId) {
+    constexpr int kMaxPushedAtomDroppedStatsSize = kMaxPushedAtomId + kMaxNonPlatformPushedAtoms;
+    if (mPushedAtomDropsStats.size() < kMaxPushedAtomDroppedStatsSize) {
+        mPushedAtomDropsStats[atomId]++;
     }
 }
 
@@ -468,9 +483,13 @@ void StatsdStats::notePullExceedMaxDelay(int pullAtomId) {
     mPulledAtomStats[pullAtomId].pullExceedMaxDelay++;
 }
 
-void StatsdStats::noteAtomLogged(int atomId, int32_t timeSec) {
+void StatsdStats::noteAtomLogged(int atomId, int32_t /*timeSec*/) {
     lock_guard<std::mutex> lock(mLock);
 
+    noteAtomLoggedLocked(atomId);
+}
+
+void StatsdStats::noteAtomLoggedLocked(int atomId) {
     if (atomId >= 0 && atomId <= kMaxPushedAtomId) {
         mPushedAtomStats[atomId]++;
     } else {
@@ -660,6 +679,7 @@ void StatsdStats::resetInternalLocked() {
     mAtomMetricStats.clear();
     mActivationBroadcastGuardrailStats.clear();
     mPushedAtomErrorStats.clear();
+    mPushedAtomDropsStats.clear();
 }
 
 string buildTimeString(int64_t timeSec) {
@@ -673,6 +693,15 @@ string buildTimeString(int64_t timeSec) {
 int StatsdStats::getPushedAtomErrors(int atomId) const {
     const auto& it = mPushedAtomErrorStats.find(atomId);
     if (it != mPushedAtomErrorStats.end()) {
+        return it->second;
+    } else {
+        return 0;
+    }
+}
+
+int StatsdStats::getPushedAtomDrops(int atomId) const {
+    const auto& it = mPushedAtomDropsStats.find(atomId);
+    if (it != mPushedAtomDropsStats.end()) {
         return it->second;
     } else {
         return 0;
@@ -1050,9 +1079,13 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
                     proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM_STATS | FIELD_COUNT_REPEATED);
             proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_TAG, (int32_t)i);
             proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, mPushedAtomStats[i]);
-            int errors = getPushedAtomErrors(i);
+            const int errors = getPushedAtomErrors(i);
             if (errors > 0) {
                 proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors);
+            }
+            const int drops = getPushedAtomDrops(i);
+            if (drops > 0) {
+                proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops);
             }
             proto.end(token);
         }
@@ -1063,9 +1096,13 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
                 proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM_STATS | FIELD_COUNT_REPEATED);
         proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_TAG, pair.first);
         proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, pair.second);
-        int errors = getPushedAtomErrors(pair.first);
+        const int errors = getPushedAtomErrors(pair.first);
         if (errors > 0) {
             proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors);
+        }
+        const int drops = getPushedAtomDrops(pair.first);
+        if (drops > 0) {
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops);
         }
         proto.end(token);
     }

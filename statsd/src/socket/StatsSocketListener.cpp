@@ -128,9 +128,9 @@ bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
     int64_t oldestTimestamp;
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
     logEvent->parseBuffer(msg, len);
-
+    const int32_t atomId = logEvent->GetTagId();
     if (!mQueue->push(std::move(logEvent), &oldestTimestamp)) {
-        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp);
+        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId);
     }
 
     return true;
