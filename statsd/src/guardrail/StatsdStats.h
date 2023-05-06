@@ -773,9 +773,9 @@ private:
 
     void addToIceBoxLocked(std::shared_ptr<ConfigStats>& stats);
 
-    int getPushedAtomErrors(int atomId) const;
+    int getPushedAtomErrorsLocked(int atomId) const;
 
-    int getPushedAtomDrops(int atomId) const;
+    int getPushedAtomDropsLocked(int atomId) const;
 
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
