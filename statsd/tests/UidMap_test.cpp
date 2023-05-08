@@ -22,6 +22,7 @@
 #include "StatsLogProcessor.h"
 #include "StatsService.h"
 #include "config/ConfigKey.h"
+#include "gtest_matchers.h"
 #include "guardrail/StatsdStats.h"
 #include "hash.h"
 #include "logd/LogEvent.h"
@@ -158,7 +159,7 @@ TEST(UidMapTest, TestUpdateMap) {
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
 
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 TEST(UidMapTest, TestUpdateMapMultiple) {
@@ -203,7 +204,7 @@ TEST(UidMapTest, TestUpdateMapMultiple) {
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
 
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 TEST(UidMapTest, TestRemoveApp) {
@@ -228,7 +229,7 @@ TEST(UidMapTest, TestRemoveApp) {
                               /* hashStrings */ false);
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 
     service->informOnePackageRemoved(kApp2, 1000);
     EXPECT_FALSE(uidMap->hasApp(1000, kApp1));
@@ -245,7 +246,7 @@ TEST(UidMapTest, TestRemoveApp) {
                               /* hashStrings */ false);
     packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 
     service->informOnePackageRemoved(kApp3, 1500);
     EXPECT_FALSE(uidMap->hasApp(1000, kApp1));
@@ -262,7 +263,7 @@ TEST(UidMapTest, TestRemoveApp) {
                               /* hashStrings */ false);
     packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 TEST(UidMapTest, TestUpdateApp) {
@@ -316,7 +317,7 @@ TEST(UidMapTest, TestUpdateApp) {
 
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 // Test that uid map returns at least one snapshot even if we already obtained
@@ -601,7 +602,7 @@ TEST_P(UidMapTestWithAppCertificateFlag, TestUpdateMap) {
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
 
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 TEST_P(UidMapTestWithAppCertificateFlag, TestUpdateApp) {
@@ -622,7 +623,7 @@ TEST_P(UidMapTestWithAppCertificateFlag, TestUpdateApp) {
 
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 
     // Update installer and certificate for the same package.
     service->informOnePackage("NeW_aPP1_NAmE", 1000, /* version */ 40,
@@ -640,7 +641,7 @@ TEST_P(UidMapTestWithAppCertificateFlag, TestUpdateApp) {
 
     packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 class UidMapTestAppendUidMap : public Test {
@@ -707,7 +708,7 @@ TEST_F(UidMapTestAppendUidMap, TestInstallersInReportIncludeInstallerAndHashStri
     EXPECT_THAT(strSet, IsSupersetOf(kApps));
 
     EXPECT_THAT(results.snapshots(0).package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 TEST_F(UidMapTestAppendUidMap, TestInstallersInReportIncludeInstallerAndDontHashStrings) {
@@ -735,7 +736,7 @@ TEST_F(UidMapTestAppendUidMap, TestInstallersInReportIncludeInstallerAndDontHash
                               /* hashStrings */ false);
 
     EXPECT_THAT(results.snapshots(0).package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 // Set up parameterized test with set<string>* parameter to control whether strings are hashed
@@ -813,7 +814,7 @@ TEST_P(UidMapTestTruncateCertificateHash, TestCertificateHashesTruncated) {
                               /* hashStrings */ false);
 
     EXPECT_THAT(results.snapshots(0).package_info(),
-                UnorderedPointwise(ProtoEq(), expectedPackageInfos));
+                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
 #else
