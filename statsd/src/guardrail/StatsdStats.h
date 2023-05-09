@@ -231,7 +231,7 @@ public:
 
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
-    static const int kMaxPushedAtomId = 750;
+    static const int kMaxPushedAtomId = 900;
 
     // Atom id that is the start of the pulled atoms.
     static const int kPullAtomStartTag = 10000;
