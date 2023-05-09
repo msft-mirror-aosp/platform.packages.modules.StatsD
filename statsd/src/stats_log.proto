@@ -506,6 +506,8 @@ message StatsdStatsReport {
         repeated int32 deactivation_time_sec = 23;
         repeated RestrictedMetricStats restricted_metric_stats = 25;
         optional bool device_info_table_creation_failed = 26;
+        optional int32 restricted_db_corrupted_count = 27;
+        repeated int64 restricted_flush_latency = 28;
     }
 
     repeated ConfigStats config_stats = 3;
@@ -630,6 +632,8 @@ message StatsdStatsReport {
       optional int64 insert_error = 2;
       optional int64 table_creation_error = 3;
       optional int64 table_deletion_error = 4;
+      repeated int64 flush_latency_ns = 5;
+      optional int64 category_changed_count = 6;
     }
 
     message RestrictedMetricQueryStats {
@@ -653,6 +657,8 @@ message StatsdStatsReport {
       optional InvalidQueryReason invalid_query_reason = 5;
       optional int64 query_wall_time_ns = 6;
       optional bool has_error = 7;
+      optional string query_error = 8;
+      optional int64 query_latency_ns = 9;
     }
     repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;
 }
