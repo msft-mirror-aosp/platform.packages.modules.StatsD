@@ -959,7 +959,7 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
         callback->sendFailure(StringPrintf("failed to query db %s:", err.c_str()));
         StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
                 configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
-                InvalidQueryReason(QUERY_FAILURE));
+                InvalidQueryReason(QUERY_FAILURE), err.c_str());
         return;
     }
 
@@ -985,7 +985,8 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
     }
     callback->sendResults(queryData, columnNames, columnTypes, rows.size());
     StatsdStats::getInstance().noteQueryRestrictedMetricSucceed(
-            configId, configPackage, keysToQuery.begin()->GetUid(), callingUid);
+            configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
+            /*queryLatencyNs=*/getElapsedRealtimeNs() - elapsedRealtimeNs);
 }
 
 set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(

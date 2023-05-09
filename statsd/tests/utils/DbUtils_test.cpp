@@ -386,7 +386,13 @@ TEST_F(DbUtilsTest, TestUpdateDeviceInfoTable) {
     EXPECT_TRUE(query(key, zSql, rows, columnTypes, columnNames, err));
 
     ASSERT_EQ(rows.size(), 1);
-    EXPECT_THAT(rows[0], ElementsAre(_));
+    EXPECT_THAT(rows[0], ElementsAre(_, _, _, _, _, _, _, _, _, _));
+    EXPECT_THAT(columnTypes,
+                ElementsAre(SQLITE_INTEGER, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT,
+                            SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT));
+    EXPECT_THAT(columnNames,
+                ElementsAre("sdkVersion", "model", "product", "hardware", "device", "osBuild",
+                            "fingerprint", "brand", "manufacturer", "board"));
 }
 
 TEST_F(DbUtilsTest, TestUpdateDeviceInfoTableInvokeTwice) {
@@ -401,7 +407,13 @@ TEST_F(DbUtilsTest, TestUpdateDeviceInfoTableInvokeTwice) {
     EXPECT_TRUE(query(key, zSql, rows, columnTypes, columnNames, err));
 
     ASSERT_EQ(rows.size(), 1);
-    EXPECT_THAT(rows[0], ElementsAre(_));
+    EXPECT_THAT(rows[0], ElementsAre(_, _, _, _, _, _, _, _, _, _));
+    EXPECT_THAT(columnTypes,
+                ElementsAre(SQLITE_INTEGER, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT,
+                            SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT));
+    EXPECT_THAT(columnNames,
+                ElementsAre("sdkVersion", "model", "product", "hardware", "device", "osBuild",
+                            "fingerprint", "brand", "manufacturer", "board"));
 }
 
 }  // namespace dbutils
