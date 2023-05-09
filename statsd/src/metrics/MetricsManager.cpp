@@ -855,9 +855,12 @@ void MetricsManager::flushRestrictedData() {
     if (!hasRestrictedMetricsDelegate()) {
         return;
     }
+    int64_t flushStartNs = getElapsedRealtimeNs();
     for (const auto& producer : mAllMetricProducers) {
         producer->flushRestrictedData();
     }
+    StatsdStats::getInstance().noteRestrictedConfigFlushLatency(
+            mConfigKey, getElapsedRealtimeNs() - flushStartNs);
 }
 
 vector<int64_t> MetricsManager::getAllMetricIds() const {
