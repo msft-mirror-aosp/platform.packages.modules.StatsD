@@ -1,9 +1,25 @@
+/*
+ * Copyright 2023, The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #define STATSD_DEBUG true
 #include "Log.h"
 
 #include "RestrictedEventMetricProducer.h"
 
 #include "stats_annotations.h"
+#include "stats_log_util.h"
 #include "utils/DbUtils.h"
 
 using std::lock_guard;
@@ -38,7 +54,7 @@ void RestrictedEventMetricProducer::onMatchedLogEventInternalLocked(
     }
     if (mRestrictedDataCategory != CATEGORY_UNKNOWN &&
         mRestrictedDataCategory != event.getRestrictionCategory()) {
-        // TODO(b/276926152): Log category change to statsdstats
+        StatsdStats::getInstance().noteRestrictedMetricCategoryChanged(mConfigKey, mMetricId);
         deleteMetricTable();
         mLogEvents.clear();
         mTotalSize = 0;
@@ -86,6 +102,7 @@ void RestrictedEventMetricProducer::flushRestrictedData() {
     if (mLogEvents.empty()) {
         return;
     }
+    int64_t flushStartNs = getElapsedRealtimeNs();
     if (!mIsMetricTableCreated) {
         if (!dbutils::isEventCompatible(mConfigKey, mMetricId, mLogEvents[0])) {
             // Delete old data if schema changes
@@ -107,6 +124,9 @@ void RestrictedEventMetricProducer::flushRestrictedData() {
         ALOGE("Failed to insert logEvent to table for metric %lld. err=%s", (long long)mMetricId,
               err.c_str());
         StatsdStats::getInstance().noteRestrictedMetricInsertError(mConfigKey, mMetricId);
+    } else {
+        StatsdStats::getInstance().noteRestrictedMetricFlushLatency(
+                mConfigKey, mMetricId, getElapsedRealtimeNs() - flushStartNs);
     }
     mLogEvents.clear();
     mTotalSize = 0;
