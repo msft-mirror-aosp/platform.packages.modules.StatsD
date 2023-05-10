@@ -89,12 +89,31 @@ public:
      * \param buf a buffer that begins at the start of the serialized atom (it
      * should not include the android_log_header_t or the StatsEventTag)
      * \param len size of the buffer
-     * \param fetchHeaderOnly force to parse only event header with atomId,timestamp
-     * and atom level annotations
      *
-     * \return success of the initialization
+     * \return success of the parsing
      */
-    bool parseBuffer(const uint8_t* buf, size_t len, bool fetchHeaderOnly = false);
+    bool parseBuffer(const uint8_t* buf, size_t len);
+
+    struct BodyBufferInfo {
+        const uint8_t* buffer = nullptr;
+        size_t bufferSize = 0;
+        uint8_t numElements = 0;
+    };
+
+    /**
+     * @brief Parses atom header which consists of atom id, timestamp
+     * and atom level annotations
+     * Updates the value of isValid()
+     * @return BodyBufferInfo to be used for parseBody()
+     */
+    BodyBufferInfo parseHeader(const uint8_t* buf, size_t len);
+
+    /**
+     * @brief Parses atom body which consists of header.numElements elements
+     * Should be called only with BodyBufferInfo if when logEvent.isValid() == true
+     * \return success of the parsing
+     */
+    bool parseBody(const BodyBufferInfo& bodyInfo);
 
     // Constructs a BinaryPushStateChanged LogEvent from API call.
     explicit LogEvent(const std::string& trainName, int64_t trainVersionCode, bool requiresStaging,
@@ -233,6 +252,13 @@ public:
     }
 
     /**
+     * @brief Returns true if only header was parsed
+     */
+    bool isParsedHeaderOnly() const {
+        return mParsedHeaderOnly;
+    }
+
+    /**
      * Only use this if copy is absolutely needed.
      */
     LogEvent(const LogEvent&) = default;
@@ -246,12 +272,6 @@ public:
     }
 
 private:
-    /**
-     * @brief Parses atom header which consists of atom id, timestamp
-     * and atom level annotations
-     * @return amount of fields on the atom level
-     */
-    uint8_t parseHeader();
     void parseInt32(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
     void parseInt64(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
     void parseString(int32_t* pos, int32_t depth, bool* last, uint8_t numAnnotations);
@@ -288,6 +308,8 @@ private:
     uint32_t mRemainingLen; // number of valid bytes left in the buffer being parsed
 
     bool mValid = true; // stores whether the event we received from the socket is valid
+
+    bool mParsedHeaderOnly = false;  // stores whether the only header was parsed skipping the body
 
     /**
      * Side-effects:
@@ -328,9 +350,6 @@ private:
         Value v = Value(value);
         mValues.push_back(FieldValue(f, v));
     }
-
-    uint8_t getTypeId(uint8_t typeInfo);
-    uint8_t getNumAnnotations(uint8_t typeInfo);
 
     // The items are naturally sorted in DFS order as we read them. this allows us to do fast
     // matching.
