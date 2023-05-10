@@ -36,6 +36,7 @@ using android::os::statsd::TestAtomReported;
 using android::os::statsd::TrainExperimentIds;
 using android::os::statsd::util::BytesField;
 using android::os::statsd::util::CPU_ACTIVE_TIME;
+using android::os::statsd::util::PHONE_SIGNAL_STRENGTH_CHANGED;
 using android::os::statsd::util::PLUGGED_STATE_CHANGED;
 using android::os::statsd::util::SCREEN_STATE_CHANGED;
 using android::os::statsd::util::TEST_ATOM_REPORTED;
@@ -243,6 +244,7 @@ protected:
         ShellSubscription config;
         config.add_pushed()->set_atom_id(TEST_ATOM_REPORTED);
         config.add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
+        config.add_pushed()->set_atom_id(PHONE_SIGNAL_STRENGTH_CHANGED);
         configBytes = protoToBytes(config);
     }
 
@@ -434,6 +436,30 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
     ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
 
     ShellData expectedShellData;
+
+    EXPECT_THAT(actualShellData, ProtoEq(expectedShellData));
+}
+
+TEST_F(ShellSubscriberCallbackTest, testTruncateTimestampAtom) {
+    // Expect callback to be invoked once.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+
+    shellSubscriber.startNewSubscription(configBytes, callback);
+
+    shellSubscriber.onLogEvent(*CreatePhoneSignalStrengthChangedEvent(
+            NS_PER_SEC * 5 * 60 + 1000 /*timestamp*/,
+            ::android::telephony::SignalStrengthEnum::SIGNAL_STRENGTH_GOOD));
+
+    shellSubscriber.flushSubscription(callback);
+
+    // Get ShellData proto from the bytes payload of the callback.
+    ShellData actualShellData;
+    ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
+
+    ShellData expectedShellData;
+    expectedShellData.add_atom()->mutable_phone_signal_strength_changed()->set_signal_strength(
+            ::android::telephony::SignalStrengthEnum::SIGNAL_STRENGTH_GOOD);
+    expectedShellData.add_elapsed_timestamp_nanos(NS_PER_SEC * 5 * 60);
 
     EXPECT_THAT(actualShellData, ProtoEq(expectedShellData));
 }
