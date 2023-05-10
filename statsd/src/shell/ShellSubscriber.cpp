@@ -42,7 +42,7 @@ ShellSubscriber::~ShellSubscriber() {
 
 bool ShellSubscriber::startNewSubscription(int in, int out, int64_t timeoutSec) {
     std::unique_lock<std::mutex> lock(mMutex);
-    ALOGD("ShellSubscriber: new subscription has come in");
+    VLOG("ShellSubscriber: new subscription has come in");
     if (mClientSet.size() >= kMaxSubscriptions) {
         ALOGE("ShellSubscriber: cannot have another active subscription. Current Subscriptions: "
               "%zu. Limit: %zu",
@@ -57,7 +57,7 @@ bool ShellSubscriber::startNewSubscription(int in, int out, int64_t timeoutSec) 
 bool ShellSubscriber::startNewSubscription(const vector<uint8_t>& subscriptionConfig,
                                            const shared_ptr<IStatsSubscriptionCallback>& callback) {
     std::unique_lock<std::mutex> lock(mMutex);
-    ALOGD("ShellSubscriber: new subscription has come in");
+    VLOG("ShellSubscriber: new subscription has come in");
     if (mClientSet.size() >= kMaxSubscriptions) {
         ALOGE("ShellSubscriber: cannot have another active subscription. Current Subscriptions: "
               "%zu. Limit: %zu",
@@ -90,7 +90,7 @@ bool ShellSubscriber::startNewSubscriptionLocked(unique_ptr<ShellSubscriberClien
 
 // Sends heartbeat signals and sleeps between doing work
 void ShellSubscriber::pullAndSendHeartbeats() {
-    ALOGD("ShellSubscriber: helper thread starting");
+    VLOG("ShellSubscriber: helper thread starting");
     std::unique_lock<std::mutex> lock(mMutex);
     while (true) {
         int64_t sleepTimeMs = INT_MAX;
@@ -104,13 +104,13 @@ void ShellSubscriber::pullAndSendHeartbeats() {
             if ((*clientIt)->isAlive()) {
                 ++clientIt;
             } else {
-                ALOGD("ShellSubscriber: removing client!");
+                VLOG("ShellSubscriber: removing client!");
                 clientIt = mClientSet.erase(clientIt);
             }
         }
         if (mClientSet.empty()) {
             mThreadAlive = false;
-            ALOGD("ShellSubscriber: helper thread done!");
+            VLOG("ShellSubscriber: helper thread done!");
             return;
         }
         VLOG("ShellSubscriber: helper thread sleeping for %" PRId64 "ms", sleepTimeMs);
@@ -129,7 +129,7 @@ void ShellSubscriber::onLogEvent(const LogEvent& event) {
         if ((*clientIt)->isAlive()) {
             ++clientIt;
         } else {
-            ALOGD("ShellSubscriber: removing client!");
+            VLOG("ShellSubscriber: removing client!");
             clientIt = mClientSet.erase(clientIt);
         }
     }
@@ -142,7 +142,16 @@ void ShellSubscriber::flushSubscription(const shared_ptr<IStatsSubscriptionCallb
     // IStatsSubscriptionCallback to avoid this linear search.
     for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end(); ++clientIt) {
         if ((*clientIt)->hasCallback(callback)) {
-            (*clientIt)->flush();
+            if ((*clientIt)->isAlive()) {
+                (*clientIt)->flush();
+            } else {
+                VLOG("ShellSubscriber: removing client!");
+
+                // Erasing a value moves the iterator to the next value. The update expression also
+                // moves the iterator, skipping a value. This is fine because we do an early return
+                // before next iteration of the loop.
+                clientIt = mClientSet.erase(clientIt);
+            }
             return;
         }
     }
@@ -153,15 +162,18 @@ void ShellSubscriber::unsubscribe(const shared_ptr<IStatsSubscriptionCallback>& 
 
     // TODO(b/268822860): Consider storing callback clients in a map keyed by
     // IStatsSubscriptionCallback to avoid this linear search.
-    for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end();) {
+    for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end(); ++clientIt) {
         if ((*clientIt)->hasCallback(callback)) {
-            (*clientIt)->onUnsubscribe();
+            if ((*clientIt)->isAlive()) {
+                (*clientIt)->onUnsubscribe();
+            }
+            VLOG("ShellSubscriber: removing client!");
 
-            ALOGD("ShellSubscriber: removing client!");
+            // Erasing a value moves the iterator to the next value. The update expression also
+            // moves the iterator, skipping a value. This is fine because we do an early return
+            // before next iteration of the loop.
             clientIt = mClientSet.erase(clientIt);
             return;
-        } else {
-            ++clientIt;
         }
     }
 }
