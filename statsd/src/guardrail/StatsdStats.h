@@ -133,6 +133,12 @@ struct ConfigStats {
     std::map<int64_t, RestrictedMetricStats> restricted_metric_stats;
 
     std::list<int64_t> total_flush_latency_ns;
+
+    // Stores the last 20 timestamps for computing sqlite db size.
+    std::list<int64_t> total_db_size_timestamps;
+
+    // Stores the last 20 sizes of the sqlite db.
+    std::list<int64_t> total_db_sizes;
 };
 
 struct UidMapStats {
@@ -179,6 +185,8 @@ public:
     const static int kMaxRestrictedMetricFlushLatencyCount = 20;
 
     const static int kMaxRestrictedConfigFlushLatencyCount = 20;
+
+    const static int kMaxRestrictedConfigDbSizeCount = 20;
 
     // Max memory allowed for storing metrics per configuration. If this limit is exceeded, statsd
     // drops the metrics data in memory.
@@ -597,6 +605,10 @@ public:
     // Reports the time is takes to flush a restricted config to the database.
     void noteRestrictedConfigFlushLatency(const ConfigKey& configKey,
                                           const int64_t totalFlushLatencyNs);
+
+    // Reports the size of the internal sqlite db.
+    void noteRestrictedConfigDbSize(const ConfigKey& configKey, const int64_t elapsedTimeNs,
+                                    const int64_t dbSize);
 
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about

@@ -114,6 +114,8 @@ const int FIELD_ID_CONFIG_STATS_RESTRICTED_METRIC_STATS = 25;
 const int FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED = 26;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT = 27;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY = 28;
+const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_TIME_SEC = 29;
+const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_BYTES = 30;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -756,6 +758,24 @@ void StatsdStats::noteRestrictedConfigFlushLatency(const ConfigKey& configKey,
     totalFlushLatencies.push_back(totalFlushLatencyNs);
 }
 
+void StatsdStats::noteRestrictedConfigDbSize(const ConfigKey& configKey,
+                                             const int64_t elapsedTimeNs, const int64_t dbSize) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", configKey.ToString().c_str());
+        return;
+    }
+    std::list<int64_t>& totalDbSizeTimestamps = it->second->total_db_size_timestamps;
+    std::list<int64_t>& totaDbSizes = it->second->total_db_sizes;
+    if (totalDbSizeTimestamps.size() == kMaxRestrictedConfigDbSizeCount) {
+        totalDbSizeTimestamps.pop_front();
+        totaDbSizes.pop_front();
+    }
+    totalDbSizeTimestamps.push_back(elapsedTimeNs);
+    totaDbSizes.push_back(dbSize);
+}
+
 void StatsdStats::noteRestrictedMetricCategoryChanged(const ConfigKey& configKey,
                                                       const int64_t metricId) {
     lock_guard<std::mutex> lock(mLock);
@@ -810,6 +830,8 @@ void StatsdStats::resetInternalLocked() {
         config.second->restricted_metric_stats.clear();
         config.second->db_corrupted_count = 0;
         config.second->total_flush_latency_ns.clear();
+        config.second->total_db_size_timestamps.clear();
+        config.second->total_db_sizes.clear();
     }
     for (auto& pullStats : mPulledAtomStats) {
         pullStats.second.totalPull = 0;
@@ -912,6 +934,10 @@ void StatsdStats::dumpStats(int out) const {
 
         for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
             dprintf(out, "\tflush latency time ns: %lld\n", (long long)flushLatency);
+        }
+
+        for (const int64_t dbSize : configStats->total_db_sizes) {
+            dprintf(out, "\tdb size: %lld\n", (long long)dbSize);
         }
     }
     dprintf(out, "%lu Active Configs\n", (unsigned long)mConfigStats.size());
@@ -1294,6 +1320,16 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
         proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY |
                              FIELD_COUNT_REPEATED,
                      latency);
+    }
+    for (int64_t dbSizeTimestamp : configStats.total_db_size_timestamps) {
+        proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_TIME_SEC |
+                             FIELD_COUNT_REPEATED,
+                     dbSizeTimestamp);
+    }
+    for (int64_t dbSize : configStats.total_db_sizes) {
+        proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_BYTES |
+                             FIELD_COUNT_REPEATED,
+                     dbSize);
     }
     proto->end(token);
 }
