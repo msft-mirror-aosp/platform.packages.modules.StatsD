@@ -16,20 +16,21 @@
 
 #pragma once
 
+#include <unordered_map>
+
 #include "anomaly/AlarmMonitor.h"
 #include "anomaly/AlarmTracker.h"
 #include "anomaly/AnomalyTracker.h"
 #include "condition/ConditionTracker.h"
 #include "config/ConfigKey.h"
 #include "external/StatsPullerManager.h"
-#include "src/statsd_config.pb.h"
-#include "src/statsd_metadata.pb.h"
+#include "guardrail/StatsdStats.h"
 #include "logd/LogEvent.h"
 #include "matchers/AtomMatchingTracker.h"
 #include "metrics/MetricProducer.h"
 #include "packages/UidMap.h"
-
-#include <unordered_map>
+#include "src/statsd_config.pb.h"
+#include "src/statsd_metadata.pb.h"
 
 namespace android {
 namespace os {
@@ -168,8 +169,6 @@ private:
 
     sp<UidMap> mUidMap;
 
-    bool mConfigValid = false;
-
     bool mHashStringsInReport = false;
     bool mVersionStringsInReport = false;
     bool mInstallerInReport = false;
@@ -180,6 +179,8 @@ private:
 
     int64_t mLastReportTimeNs;
     int64_t mLastReportWallClockNs;
+
+    optional<InvalidConfigReason> mInvalidConfigReason;
 
     sp<StatsPullerManager> mPullerManager;
 
@@ -215,8 +216,6 @@ private:
     std::list<std::pair<const int64_t, const int32_t>> mAnnotations;
 
     bool mShouldPersistHistory;
-
-    const bool mAtomMatcherOptimizationEnabled;
 
     // All event tags that are interesting to config metrics matchers.
     std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;
@@ -294,11 +293,12 @@ private:
     void initPullAtomSources();
 
     // Only called on config creation/update to initialize log sources from the config.
-    // Calls initAllowedLogSources and initPullAtomSources. Sets mConfigValid to false on error.
+    // Calls initAllowedLogSources and initPullAtomSources. Sets up mInvalidConfigReason on
+    // error.
     void createAllLogSourcesFromConfig(const StatsdConfig& config);
 
     // Verifies the config meets guardrails and updates statsdStats.
-    // Sets mConfigValid to false on error. Should be called on config creation/update
+    // Sets up mInvalidConfigReason on error. Should be called on config creation/update
     void verifyGuardrailsAndUpdateStatsdStats();
 
     // Initializes mIsAlwaysActive and mIsActive.
@@ -321,6 +321,8 @@ private:
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm);
@@ -328,15 +330,16 @@ private:
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents);
 
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestSlicedCountMetric_single_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestCountMetric_save_refractory_to_disk_no_data_written);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestCountMetric_save_refractory_to_disk);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestCountMetric_load_refractory_from_disk);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest,
+                TestCountMetric_save_refractory_to_disk_no_data_written);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest, TestCountMetric_save_refractory_to_disk);
+    FRIEND_TEST(AnomalyCountDetectionE2eTest, TestCountMetric_load_refractory_from_disk);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
 
     FRIEND_TEST(AlarmE2eTest, TestMultipleAlarms);
     FRIEND_TEST(ConfigTtlE2eTest, TestCountMetric);
@@ -349,7 +352,7 @@ private:
 
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
-    FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
+    FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
     FRIEND_TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationOnBoot);
@@ -384,6 +387,7 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
+    FRIEND_TEST(GaugeMetricE2ePushedTest, TestDimensionalSampling);
 };
 
 }  // namespace statsd

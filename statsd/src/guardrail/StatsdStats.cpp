@@ -29,6 +29,7 @@ namespace statsd {
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
+using android::util::FIELD_TYPE_ENUM;
 using android::util::FIELD_TYPE_FLOAT;
 using android::util::FIELD_TYPE_INT32;
 using android::util::FIELD_TYPE_INT64;
@@ -56,6 +57,7 @@ const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
 const int FIELD_ID_ATOM_STATS_TAG = 1;
 const int FIELD_ID_ATOM_STATS_COUNT = 2;
 const int FIELD_ID_ATOM_STATS_ERROR_COUNT = 3;
+const int FIELD_ID_ATOM_STATS_DROPS_COUNT = 4;
 
 const int FIELD_ID_ANOMALY_ALARMS_REGISTERED = 1;
 const int FIELD_ID_PERIODIC_ALARMS_REGISTERED = 1;
@@ -81,6 +83,7 @@ const int FIELD_ID_CONFIG_STATS_CONDITION_COUNT = 6;
 const int FIELD_ID_CONFIG_STATS_MATCHER_COUNT = 7;
 const int FIELD_ID_CONFIG_STATS_ALERT_COUNT = 8;
 const int FIELD_ID_CONFIG_STATS_VALID = 9;
+const int FIELD_ID_CONFIG_STATS_INVALID_CONFIG_REASON = 24;
 const int FIELD_ID_CONFIG_STATS_BROADCAST = 10;
 const int FIELD_ID_CONFIG_STATS_DATA_DROP_TIME = 11;
 const int FIELD_ID_CONFIG_STATS_DATA_DROP_BYTES = 21;
@@ -96,6 +99,15 @@ const int FIELD_ID_CONFIG_STATS_ACTIVATION = 22;
 const int FIELD_ID_CONFIG_STATS_DEACTIVATION = 23;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT64 = 1;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT32 = 2;
+
+const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
+const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
+const int FIELD_ID_INVALID_CONFIG_REASON_STATE_ID = 3;
+const int FIELD_ID_INVALID_CONFIG_REASON_ALERT_ID = 4;
+const int FIELD_ID_INVALID_CONFIG_REASON_ALARM_ID = 5;
+const int FIELD_ID_INVALID_CONFIG_REASON_SUBSCRIPTION_ID = 6;
+const int FIELD_ID_INVALID_CONFIG_REASON_MATCHER_ID = 7;
+const int FIELD_ID_INVALID_CONFIG_REASON_CONDITION_ID = 8;
 
 const int FIELD_ID_MATCHER_STATS_ID = 1;
 const int FIELD_ID_MATCHER_STATS_COUNT = 2;
@@ -141,7 +153,7 @@ void StatsdStats::addToIceBoxLocked(shared_ptr<ConfigStats>& stats) {
 void StatsdStats::noteConfigReceived(
         const ConfigKey& key, int metricsCount, int conditionsCount, int matchersCount,
         int alertsCount, const std::list<std::pair<const int64_t, const int32_t>>& annotations,
-        bool isValid) {
+        const optional<InvalidConfigReason>& reason) {
     lock_guard<std::mutex> lock(mLock);
     int32_t nowTimeSec = getWallClockSec();
 
@@ -156,12 +168,13 @@ void StatsdStats::noteConfigReceived(
     configStats->condition_count = conditionsCount;
     configStats->matcher_count = matchersCount;
     configStats->alert_count = alertsCount;
-    configStats->is_valid = isValid;
+    configStats->is_valid = !reason.has_value();
+    configStats->reason = reason;
     for (auto& v : annotations) {
         configStats->annotations.emplace_back(v);
     }
 
-    if (isValid) {
+    if (!reason.has_value()) {
         mConfigStats[key] = configStats;
     } else {
         configStats->deletion_time_sec = nowTimeSec;
@@ -258,7 +271,7 @@ void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes)
     noteDataDropped(key, totalBytes, getWallClockSec());
 }
 
-void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs) {
+void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId) {
     lock_guard<std::mutex> lock(mLock);
 
     mOverflowCount++;
@@ -271,6 +284,17 @@ void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs) {
 
     if (history < mMinQueueHistoryNs) {
         mMinQueueHistoryNs = history;
+    }
+
+    noteAtomLoggedLocked(atomId);
+    noteAtomDroppedLocked(atomId);
+}
+
+void StatsdStats::noteAtomDroppedLocked(int32_t atomId) {
+    constexpr int kMaxPushedAtomDroppedStatsSize = kMaxPushedAtomId + kMaxNonPlatformPushedAtoms;
+    if (mPushedAtomDropsStats.size() < kMaxPushedAtomDroppedStatsSize ||
+        mPushedAtomDropsStats.find(atomId) != mPushedAtomDropsStats.end()) {
+        mPushedAtomDropsStats[atomId]++;
     }
 }
 
@@ -456,16 +480,21 @@ void StatsdStats::notePullExceedMaxDelay(int pullAtomId) {
     mPulledAtomStats[pullAtomId].pullExceedMaxDelay++;
 }
 
-void StatsdStats::noteAtomLogged(int atomId, int32_t timeSec) {
+void StatsdStats::noteAtomLogged(int atomId, int32_t /*timeSec*/) {
     lock_guard<std::mutex> lock(mLock);
 
+    noteAtomLoggedLocked(atomId);
+}
+
+void StatsdStats::noteAtomLoggedLocked(int atomId) {
     if (atomId >= 0 && atomId <= kMaxPushedAtomId) {
         mPushedAtomStats[atomId]++;
     } else {
         if (atomId < 0) {
             android_errorWriteLog(0x534e4554, "187957589");
         }
-        if (mNonPlatformPushedAtomStats.size() < kMaxNonPlatformPushedAtoms) {
+        if (mNonPlatformPushedAtomStats.size() < kMaxNonPlatformPushedAtoms ||
+            mNonPlatformPushedAtomStats.find(atomId) != mNonPlatformPushedAtomStats.end()) {
             mNonPlatformPushedAtomStats[atomId]++;
         }
     }
@@ -648,6 +677,7 @@ void StatsdStats::resetInternalLocked() {
     mAtomMetricStats.clear();
     mActivationBroadcastGuardrailStats.clear();
     mPushedAtomErrorStats.clear();
+    mPushedAtomDropsStats.clear();
 }
 
 string buildTimeString(int64_t timeSec) {
@@ -658,9 +688,18 @@ string buildTimeString(int64_t timeSec) {
     return string(timeBuffer);
 }
 
-int StatsdStats::getPushedAtomErrors(int atomId) const {
+int StatsdStats::getPushedAtomErrorsLocked(int atomId) const {
     const auto& it = mPushedAtomErrorStats.find(atomId);
     if (it != mPushedAtomErrorStats.end()) {
+        return it->second;
+    } else {
+        return 0;
+    }
+}
+
+int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
+    const auto& it = mPushedAtomDropsStats.find(atomId);
+    if (it != mPushedAtomDropsStats.end()) {
         return it->second;
     } else {
         return 0;
@@ -678,11 +717,16 @@ void StatsdStats::dumpStats(int out) const {
     for (const auto& configStats : mIceBox) {
         dprintf(out,
                 "Config {%d_%lld}: creation=%d, deletion=%d, reset=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d,  valid=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d\n",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->reset_time_sec,
                 configStats->metric_count, configStats->condition_count, configStats->matcher_count,
                 configStats->alert_count, configStats->is_valid);
+
+        if (!configStats->is_valid) {
+            dprintf(out, "\tinvalid config reason: %s\n",
+                    InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
+        }
 
         for (const auto& broadcastTime : configStats->broadcast_sent_time_sec) {
             dprintf(out, "\tbroadcast time: %d\n", broadcastTime);
@@ -709,11 +753,17 @@ void StatsdStats::dumpStats(int out) const {
         auto& configStats = pair.second;
         dprintf(out,
                 "Config {%d-%lld}: creation=%d, deletion=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d,  valid=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d\n",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->metric_count,
                 configStats->condition_count, configStats->matcher_count, configStats->alert_count,
                 configStats->is_valid);
+
+        if (!configStats->is_valid) {
+            dprintf(out, "\tinvalid config reason: %s\n",
+                    InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
+        }
+
         for (const auto& annotation : configStats->annotations) {
             dprintf(out, "\tannotation: %lld, %d\n", (long long)annotation.first,
                     annotation.second);
@@ -771,13 +821,15 @@ void StatsdStats::dumpStats(int out) const {
     const size_t atomCounts = mPushedAtomStats.size();
     for (size_t i = 2; i < atomCounts; i++) {
         if (mPushedAtomStats[i] > 0) {
-            dprintf(out, "Atom %zu->(total count)%d, (error count)%d\n", i, mPushedAtomStats[i],
-                    getPushedAtomErrors((int)i));
+            dprintf(out, "Atom %zu->(total count)%d, (error count)%d, (drop count)%d\n", i,
+                    mPushedAtomStats[i], getPushedAtomErrorsLocked((int)i),
+                    getPushedAtomDropsLocked((int)i));
         }
     }
     for (const auto& pair : mNonPlatformPushedAtomStats) {
-        dprintf(out, "Atom %d->(total count)%d, (error count)%d\n", pair.first, pair.second,
-                getPushedAtomErrors(pair.first));
+        dprintf(out, "Atom %d->(total count)%d, (error count)%d, (drop count)%d\n", pair.first,
+                pair.second, getPushedAtomErrorsLocked(pair.first),
+                getPushedAtomDropsLocked((int)pair.first));
     }
 
     dprintf(out, "********Pulled Atom stats***********\n");
@@ -877,6 +929,44 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_MATCHER_COUNT, configStats.matcher_count);
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_ALERT_COUNT, configStats.alert_count);
     proto->write(FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_VALID, configStats.is_valid);
+
+    if (!configStats.is_valid) {
+        uint64_t tmpToken =
+                proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_STATS_INVALID_CONFIG_REASON);
+        proto->write(FIELD_TYPE_ENUM | FIELD_ID_INVALID_CONFIG_REASON_ENUM,
+                     configStats.reason->reason);
+        if (configStats.reason->metricId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID,
+                         configStats.reason->metricId.value());
+        }
+        if (configStats.reason->stateId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_STATE_ID,
+                         configStats.reason->stateId.value());
+        }
+        if (configStats.reason->alertId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_ALERT_ID,
+                         configStats.reason->alertId.value());
+        }
+        if (configStats.reason->alarmId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_ALARM_ID,
+                         configStats.reason->alarmId.value());
+        }
+        if (configStats.reason->subscriptionId.has_value()) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_SUBSCRIPTION_ID,
+                         configStats.reason->subscriptionId.value());
+        }
+        for (const auto& matcherId : configStats.reason->matcherIds) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED |
+                                 FIELD_ID_INVALID_CONFIG_REASON_MATCHER_ID,
+                         matcherId);
+        }
+        for (const auto& conditionId : configStats.reason->conditionIds) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED |
+                                 FIELD_ID_INVALID_CONFIG_REASON_CONDITION_ID,
+                         conditionId);
+        }
+        proto->end(tmpToken);
+    }
 
     for (const auto& broadcast : configStats.broadcast_sent_time_sec) {
         proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_BROADCAST | FIELD_COUNT_REPEATED,
@@ -989,10 +1079,12 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
                     proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM_STATS | FIELD_COUNT_REPEATED);
             proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_TAG, (int32_t)i);
             proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, mPushedAtomStats[i]);
-            int errors = getPushedAtomErrors(i);
-            if (errors > 0) {
-                proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors);
-            }
+            const int errors = getPushedAtomErrorsLocked(i);
+            writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors,
+                                     &proto);
+            const int drops = getPushedAtomDropsLocked(i);
+            writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops,
+                                     &proto);
             proto.end(token);
         }
     }
@@ -1002,19 +1094,20 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
                 proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM_STATS | FIELD_COUNT_REPEATED);
         proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_TAG, pair.first);
         proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, pair.second);
-        int errors = getPushedAtomErrors(pair.first);
-        if (errors > 0) {
-            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors);
-        }
+        const int errors = getPushedAtomErrorsLocked(pair.first);
+        writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors,
+                                 &proto);
+        const int drops = getPushedAtomDropsLocked(pair.first);
+        writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops, &proto);
         proto.end(token);
     }
 
     for (const auto& pair : mPulledAtomStats) {
-        android::os::statsd::writePullerStatsToStream(pair, &proto);
+        writePullerStatsToStream(pair, &proto);
     }
 
     for (const auto& pair : mAtomMetricStats) {
-        android::os::statsd::writeAtomMetricStatsToStream(pair, &proto);
+        writeAtomMetricStatsToStream(pair, &proto);
     }
 
     if (mAnomalyAlarmRegisteredStats > 0) {
@@ -1104,6 +1197,89 @@ std::pair<size_t, size_t> StatsdStats::getAtomDimensionKeySizeLimits(const int a
                    ? kAtomDimensionKeySizeLimitMap.at(atomId)
                    : std::make_pair<size_t, size_t>(kDimensionKeySizeSoftLimit,
                                                     kDimensionKeySizeHardLimit);
+}
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t matcherId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.matcherIds.push_back(matcherId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t metricId,
+                                                         const int64_t matcherId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.matcherIds.push_back(matcherId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t conditionId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.conditionIds.push_back(conditionId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t metricId,
+                                                           const int64_t conditionId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.conditionIds.push_back(conditionId);
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithState(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t stateId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.stateId = stateId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason, metricId);
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithAlarm(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alarmId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.alarmId = alarmId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscription(const InvalidConfigReasonEnum reason,
+                                                              const int64_t subscriptionId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlarm(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alarmId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    invalidConfigReason.alarmId = alarmId;
+    return invalidConfigReason;
+}
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlert(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alertId) {
+    InvalidConfigReason invalidConfigReason(reason);
+    invalidConfigReason.subscriptionId = subscriptionId;
+    invalidConfigReason.alertId = alertId;
+    return invalidConfigReason;
 }
 
 }  // namespace statsd

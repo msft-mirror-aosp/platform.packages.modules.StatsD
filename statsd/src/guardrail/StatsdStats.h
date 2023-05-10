@@ -15,19 +15,42 @@
  */
 #pragma once
 
-#include "config/ConfigKey.h"
-
 #include <gtest/gtest_prod.h>
 #include <log/log_time.h>
+#include <src/guardrail/invalid_config_reason_enum.pb.h>
+
 #include <list>
 #include <mutex>
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
+
+#include "config/ConfigKey.h"
 
 namespace android {
 namespace os {
 namespace statsd {
+
+struct InvalidConfigReason {
+    InvalidConfigReasonEnum reason;
+    std::optional<int64_t> metricId;
+    std::optional<int64_t> stateId;
+    std::optional<int64_t> alertId;
+    std::optional<int64_t> alarmId;
+    std::optional<int64_t> subscriptionId;
+    std::vector<int64_t> matcherIds;
+    std::vector<int64_t> conditionIds;
+    InvalidConfigReason(){};
+    InvalidConfigReason(InvalidConfigReasonEnum reason) : reason(reason){};
+    InvalidConfigReason(InvalidConfigReasonEnum reason, int64_t metricId)
+        : reason(reason), metricId(metricId){};
+    bool operator==(const InvalidConfigReason& other) const {
+        return (this->reason == other.reason) && (this->metricId == other.metricId) &&
+               (this->stateId == other.stateId) && (this->alertId == other.alertId) &&
+               (this->alarmId == other.alarmId) && (this->subscriptionId == other.subscriptionId) &&
+               (this->matcherIds == other.matcherIds) && (this->conditionIds == other.conditionIds);
+    }
+};
 
 struct ConfigStats {
     int32_t uid;
@@ -40,6 +63,9 @@ struct ConfigStats {
     int32_t matcher_count;
     int32_t alert_count;
     bool is_valid;
+
+    // Stores reasons for why config is valid or not
+    std::optional<InvalidConfigReason> reason;
 
     std::list<int32_t> broadcast_sent_time_sec;
 
@@ -200,7 +226,7 @@ public:
     void noteConfigReceived(const ConfigKey& key, int metricsCount, int conditionsCount,
                             int matchersCount, int alertCount,
                             const std::list<std::pair<const int64_t, const int32_t>>& annotations,
-                            bool isValid);
+                            const std::optional<InvalidConfigReason>& reason);
     /**
      * Report a config has been removed.
      */
@@ -459,9 +485,9 @@ public:
      */
     void noteBucketUnknownCondition(int64_t metricId);
 
-    /* Reports one event has been dropped due to queue overflow, and the oldest event timestamp in
-     * the queue */
-    void noteEventQueueOverflow(int64_t oldestEventTimestampNs);
+    /* Reports one event id has been dropped due to queue overflow, and the oldest event timestamp
+     * in the queue */
+    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId);
 
     /**
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
@@ -577,6 +603,10 @@ private:
     // The max size of the map is kMaxNonPlatformPushedAtoms.
     std::unordered_map<int, int> mNonPlatformPushedAtomStats;
 
+    // Stores the number of times a pushed atom is dropped due to queue overflow event.
+    // The max size of the map is kMaxPushedAtomId + kMaxNonPlatformPushedAtoms.
+    std::unordered_map<int, int> mPushedAtomDropsStats;
+
     // Maps PullAtomId to its stats. The size is capped by the puller atom counts.
     std::map<int, PulledAtomStats> mPulledAtomStats;
 
@@ -641,6 +671,10 @@ private:
 
     void resetInternalLocked();
 
+    void noteAtomLoggedLocked(int atomId);
+
+    void noteAtomDroppedLocked(int atomId);
+
     void noteDataDropped(const ConfigKey& key, const size_t totalBytes, int32_t timeSec);
 
     void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes, int32_t timeSec);
@@ -653,7 +687,9 @@ private:
 
     void addToIceBoxLocked(std::shared_ptr<ConfigStats>& stats);
 
-    int getPushedAtomErrors(int atomId) const;
+    int getPushedAtomErrorsLocked(int atomId) const;
+
+    int getPushedAtomDropsLocked(int atomId) const;
 
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
@@ -663,6 +699,8 @@ private:
 
     FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigAdd);
+    FRIEND_TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId);
+    FRIEND_TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId);
     FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
     FRIEND_TEST(StatsdStatsTest, TestSubStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomLog);
@@ -674,9 +712,48 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
     FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t matcherId);
+
+InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
+                                                         const int64_t metricId,
+                                                         const int64_t matcherId);
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t conditionId);
+
+InvalidConfigReason createInvalidConfigReasonWithPredicate(const InvalidConfigReasonEnum reason,
+                                                           const int64_t metricId,
+                                                           const int64_t conditionId);
+
+InvalidConfigReason createInvalidConfigReasonWithState(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t stateId);
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alertId);
+
+InvalidConfigReason createInvalidConfigReasonWithAlert(const InvalidConfigReasonEnum reason,
+                                                       const int64_t metricId,
+                                                       const int64_t alertId);
+
+InvalidConfigReason createInvalidConfigReasonWithAlarm(const InvalidConfigReasonEnum reason,
+                                                       const int64_t alarmId);
+
+InvalidConfigReason createInvalidConfigReasonWithSubscription(const InvalidConfigReasonEnum reason,
+                                                              const int64_t subscriptionId);
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlarm(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alarmId);
+
+InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlert(
+        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alertId);
 
 }  // namespace statsd
 }  // namespace os

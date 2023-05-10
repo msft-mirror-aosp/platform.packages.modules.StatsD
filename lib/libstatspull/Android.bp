@@ -48,6 +48,7 @@ cc_defaults {
         },
     },
 }
+
 cc_library {
     name: "libstatspull",
     defaults: [
@@ -83,11 +84,6 @@ cc_library {
     min_sdk_version: "30",
 
     stl: "libc++_static",
-
-    // TODO(b/151102177): Enable it when the build error is fixed.
-    header_abi_checker: {
-        enabled: false,
-    },
 }
 
 cc_library_headers {
@@ -120,7 +116,10 @@ cc_test {
         "libstatspull",
         "libstatssocket",
     ],
-    test_suites: ["general-tests", "mts-statsd"],
+    test_suites: [
+        "general-tests",
+        "mts-statsd",
+    ],
     test_config: "libstatspull_test.xml",
 
     //TODO(b/153588990): Remove when the build system properly separates
@@ -141,6 +140,8 @@ cc_test {
         "-Wno-unused-variable",
         "-Wno-unused-function",
         "-Wno-unused-parameter",
+        "-Wno-deprecated-declarations",
     ],
     require_root: true,
+    min_sdk_version: "30",
 }

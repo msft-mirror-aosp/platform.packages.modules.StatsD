@@ -47,7 +47,6 @@ using aidl::android::os::IPullAtomCallback;
 using aidl::android::util::PropertyParcel;
 using ::ndk::ScopedAIBinder_DeathRecipient;
 using ::ndk::ScopedFileDescriptor;
-using std::shared_ptr;
 
 namespace android {
 namespace os {
@@ -176,7 +175,7 @@ public:
      */
     virtual Status registerPullAtomCallback(
             int32_t uid, int32_t atomTag, int64_t coolDownMillis, int64_t timeoutMillis,
-            const std::vector<int32_t>& additiveFields,
+            const vector<int32_t>& additiveFields,
             const shared_ptr<IPullAtomCallback>& pullerCallback) override;
 
     /**
@@ -184,7 +183,7 @@ public:
      */
     virtual Status registerNativePullAtomCallback(
             int32_t atomTag, int64_t coolDownMillis, int64_t timeoutMillis,
-            const std::vector<int32_t>& additiveFields,
+            const vector<int32_t>& additiveFields,
             const shared_ptr<IPullAtomCallback>& pullerCallback) override;
 
     /**
@@ -200,12 +199,12 @@ public:
     /**
      * Binder call to get registered experiment IDs.
      */
-    virtual Status getRegisteredExperimentIds(std::vector<int64_t>* expIdsOut);
+    virtual Status getRegisteredExperimentIds(vector<int64_t>* expIdsOut);
 
     /**
      * Binder call to update properties in statsd_java namespace.
      */
-    virtual Status updateProperties(const std::vector<PropertyParcel>& properties);
+    virtual Status updateProperties(const vector<PropertyParcel>& properties);
 
 private:
     /**
@@ -389,7 +388,7 @@ private:
      * Mutex for setting the shell subscriber
      */
     mutable mutex mShellSubscriberMutex;
-    std::shared_ptr<LogEventQueue> mEventQueue;
+    shared_ptr<LogEventQueue> mEventQueue;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";
@@ -397,6 +396,8 @@ private:
     static const inline string kAllPullersRegisteredTag = "PULLERS_REGISTERED";
 
     ScopedAIBinder_DeathRecipient mStatsCompanionServiceDeathRecipient;
+
+    friend class StatsServiceConfigTest;
 
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
     FRIEND_TEST(StatsServiceTest, TestAddConfig_simple);
@@ -419,10 +420,10 @@ private:
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestAnomalyDurationMetric);
 
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
-    FRIEND_TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
+    FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
 };
 
 }  // namespace statsd

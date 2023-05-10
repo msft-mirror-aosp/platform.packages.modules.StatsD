@@ -76,13 +76,11 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mPullerManager(pullerManager),
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
-      mShouldPersistHistory(config.persist_locally()),
-      mAtomMatcherOptimizationEnabled(FlagProvider::getInstance().getBootFlagBool(
-              OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_FALSE)) {
+      mShouldPersistHistory(config.persist_locally()) {
     // Init the ttl end timestamp.
     refreshTtl(timeBaseNs);
 
-    mConfigValid = initStatsdConfig(
+    mInvalidConfigReason = initStatsdConfig(
             key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
             timeBaseNs, currentTimeNs, mTagIdsToMatchersMap, mAllAtomMatchingTrackers,
             mAtomMatchingTrackerMap, mAllConditionTrackers, mConditionTrackerMap,
@@ -139,7 +137,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mDeactivationAtomTrackerToMetricMap.clear();
     mMetricIndexesWithActivation.clear();
     mNoReportMetricIds.clear();
-    mConfigValid = updateStatsdConfig(
+    mInvalidConfigReason = updateStatsdConfig(
             mConfigKey, config, mUidMap, mPullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
             timeBaseNs, currentTimeNs, mAllAtomMatchingTrackers, mAtomMatchingTrackerMap,
             mAllConditionTrackers, mConditionTrackerMap, mAllMetricProducers, mMetricProducerMap,
@@ -188,15 +186,16 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
-    return mConfigValid;
+    return !mInvalidConfigReason.has_value();
 }
 
 void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
     // Init allowed pushed atom uids.
     if (config.allowed_log_source_size() == 0) {
-        mConfigValid = false;
         ALOGE("Log source allowlist is empty! This config won't get any data. Suggest adding at "
               "least AID_SYSTEM and AID_STATSD to the allowed_log_source field.");
+        mInvalidConfigReason =
+                InvalidConfigReason(INVALID_CONFIG_REASON_LOG_SOURCE_ALLOWLIST_EMPTY);
     } else {
         for (const auto& source : config.allowed_log_source()) {
             auto it = UidMap::sAidToUidMapping.find(source);
@@ -209,7 +208,7 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
 
         if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
             ALOGE("Too many log sources. This is likely to be an error in the config.");
-            mConfigValid = false;
+            mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
         } else {
             initAllowedLogSources();
         }
@@ -224,7 +223,8 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
             mDefaultPullUids.insert(it->second);
         } else {
             ALOGE("Default pull atom packages must be in sAidToUidMapping");
-            mConfigValid = false;
+            mInvalidConfigReason =
+                    InvalidConfigReason(INVALID_CONFIG_REASON_DEFAULT_PULL_PACKAGES_NOT_IN_MAP);
         }
     }
     // Init per-atom pull atom packages.
@@ -243,7 +243,8 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
     if (numPullPackages > StatsdStats::kMaxPullAtomPackages) {
         ALOGE("Too many sources in default_pull_packages and pull_atom_packages. This is likely to "
               "be an error in the config");
-        mConfigValid = false;
+        mInvalidConfigReason =
+                InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_SOURCES_IN_PULL_PACKAGES);
     } else {
         initPullAtomSources();
     }
@@ -251,21 +252,27 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
 
 void MetricsManager::verifyGuardrailsAndUpdateStatsdStats() {
     // Guardrail. Reject the config if it's too big.
-    if (mAllMetricProducers.size() > StatsdStats::kMaxMetricCountPerConfig ||
-        mAllConditionTrackers.size() > StatsdStats::kMaxConditionCountPerConfig ||
-        mAllAtomMatchingTrackers.size() > StatsdStats::kMaxMatcherCountPerConfig) {
-        ALOGE("This config is too big! Reject!");
-        mConfigValid = false;
+    if (mAllMetricProducers.size() > StatsdStats::kMaxMetricCountPerConfig) {
+        ALOGE("This config has too many metrics! Reject!");
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_METRICS);
+    }
+    if (mAllConditionTrackers.size() > StatsdStats::kMaxConditionCountPerConfig) {
+        ALOGE("This config has too many predicates! Reject!");
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_CONDITIONS);
+    }
+    if (mAllAtomMatchingTrackers.size() > StatsdStats::kMaxMatcherCountPerConfig) {
+        ALOGE("This config has too many matchers! Reject!");
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_MATCHERS);
     }
     if (mAllAnomalyTrackers.size() > StatsdStats::kMaxAlertCountPerConfig) {
         ALOGE("This config has too many alerts! Reject!");
-        mConfigValid = false;
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_ALERTS);
     }
     // no matter whether this config is valid, log it in the stats.
     StatsdStats::getInstance().noteConfigReceived(
             mConfigKey, mAllMetricProducers.size(), mAllConditionTrackers.size(),
             mAllAtomMatchingTrackers.size(), mAllAnomalyTrackers.size(), mAnnotations,
-            mConfigValid);
+            mInvalidConfigReason);
 }
 
 void MetricsManager::initializeConfigActiveStatus() {
@@ -309,7 +316,7 @@ void MetricsManager::initPullAtomSources() {
 }
 
 bool MetricsManager::isConfigValid() const {
-    return mConfigValid;
+    return !mInvalidConfigReason.has_value();
 }
 
 void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
@@ -526,7 +533,7 @@ bool MetricsManager::eventSanityCheck(const LogEvent& event) {
 
 // Consume the stats log if it's interesting to this metric.
 void MetricsManager::onLogEvent(const LogEvent& event) {
-    if (!mConfigValid) {
+    if (!isConfigValid()) {
         return;
     }
 
@@ -569,16 +576,9 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     vector<MatchingState> matcherCache(mAllAtomMatchingTrackers.size(),
                                        MatchingState::kNotComputed);
 
-    if (mAtomMatcherOptimizationEnabled) {
-        for (const auto& matcherIndex : matchersIt->second) {
-            mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                               matcherCache);
-        }
-    } else {
-        //  Evaluate all atom matchers.
-        for (auto& matcher : mAllAtomMatchingTrackers) {
-            matcher->onLogEvent(event, mAllAtomMatchingTrackers, matcherCache);
-        }
+    for (const auto& matcherIndex : matchersIt->second) {
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
+                                                           matcherCache);
     }
 
     // Set of metrics that received an activation cancellation.
