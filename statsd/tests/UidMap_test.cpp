@@ -54,13 +54,6 @@ const vector<string> kInstallers{"", "", "com.android.vending"};
 const vector<vector<uint8_t>> kCertificateHashes{{'a', 'z'}, {'b', 'c'}, {'d', 'e'}};
 const vector<bool> kDeleted(3, false);
 
-void sendIncludeCertificateHashFlagToStatsd(shared_ptr<StatsService> service, bool flag) {
-    PropertyParcel certHashParcel;
-    certHashParcel.property = kIncludeCertificateHash;
-    certHashParcel.value = flag ? "true" : "false";
-    service->updateProperties({certHashParcel});
-}
-
 void sendPackagesToStatsd(shared_ptr<StatsService> service, const vector<int32_t>& uids,
                           const vector<int64_t>& versions, const vector<string>& versionStrings,
                           const vector<string>& apps, const vector<string>& installers,
@@ -150,10 +143,9 @@ TEST(UidMapTest, TestUpdateMap) {
     name_set = uidMap->getAppNamesFromUid(12345, true /* returnNormalized */);
     EXPECT_THAT(name_set, IsEmpty());
 
-    // Certificate hashes are not sent to statsd by default (when flag is not present).
     vector<PackageInfo> expectedPackageInfos =
             buildPackageInfos(kApps, kUids, kVersions, kVersionStrings, kInstallers,
-                              /* certHashes */ {}, kDeleted, /* installerIndices */ {},
+                              kCertificateHashes, kDeleted, /* installerIndices */ {},
                               /* hashStrings */ false);
 
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
@@ -195,10 +187,9 @@ TEST(UidMapTest, TestUpdateMapMultiple) {
     name_set = uidMap->getAppNamesFromUid(1500, true /* returnNormalized */);
     EXPECT_THAT(name_set, IsEmpty());
 
-    // Certificate hashes are not sent to statsd by default (when flag is not present).
     vector<PackageInfo> expectedPackageInfos =
             buildPackageInfos(apps, uids, kVersions, kVersionStrings, installers,
-                              /* certHashes */ {}, kDeleted, /* installerIndices */ {},
+                              kCertificateHashes, kDeleted, /* installerIndices */ {},
                               /* hashStrings */ false);
 
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
@@ -225,7 +216,7 @@ TEST(UidMapTest, TestRemoveApp) {
     deleted[0] = true;
     vector<PackageInfo> expectedPackageInfos =
             buildPackageInfos(kApps, kUids, kVersions, kVersionStrings, kInstallers,
-                              /* certHashes */ {}, deleted, /* installerIndices */ {},
+                              kCertificateHashes, deleted, /* installerIndices */ {},
                               /* hashStrings */ false);
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
@@ -240,10 +231,9 @@ TEST(UidMapTest, TestRemoveApp) {
     EXPECT_THAT(name_set, IsEmpty());
 
     deleted[1] = true;
-    expectedPackageInfos =
-            buildPackageInfos(kApps, kUids, kVersions, kVersionStrings, kInstallers,
-                              /* certHashes */ {}, deleted, /* installerIndices */ {},
-                              /* hashStrings */ false);
+    expectedPackageInfos = buildPackageInfos(kApps, kUids, kVersions, kVersionStrings, kInstallers,
+                                             kCertificateHashes, deleted, /* installerIndices */ {},
+                                             /* hashStrings */ false);
     packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
                 UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
@@ -257,10 +247,9 @@ TEST(UidMapTest, TestRemoveApp) {
     EXPECT_THAT(name_set, IsEmpty());
 
     deleted[2] = true;
-    expectedPackageInfos =
-            buildPackageInfos(kApps, kUids, kVersions, kVersionStrings, kInstallers,
-                              /* certHashes */ {}, deleted, /* installerIndices */ {},
-                              /* hashStrings */ false);
+    expectedPackageInfos = buildPackageInfos(kApps, kUids, kVersions, kVersionStrings, kInstallers,
+                                             kCertificateHashes, deleted, /* installerIndices */ {},
+                                             /* hashStrings */ false);
     packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
     EXPECT_THAT(packageInfoSnapshot.package_info(),
                 UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
@@ -309,10 +298,10 @@ TEST(UidMapTest, TestUpdateApp) {
     vector<string> apps = concatenate(kApps, {"NeW_aPP1_NAmE", "NeW_aPP1_NAmE"});
     vector<string> installers = concatenate(kInstallers, {"com.android.vending", "new_installer"});
     vector<bool> deleted = concatenate(kDeleted, {false, false});
-    // Certificate hashes are not sent to statsd by default (when flag is not present).
+    vector<vector<uint8_t>> certHashes = concatenate(kCertificateHashes, {{'a'}, {'b'}});
     vector<PackageInfo> expectedPackageInfos =
-            buildPackageInfos(apps, uids, versions, versionStrings, installers, /* certHashes */ {},
-                              deleted, /* installerIndices */ {},
+            buildPackageInfos(apps, uids, versions, versionStrings, installers, certHashes, deleted,
+                              /* installerIndices */ {},
                               /* hashStrings */ false);
 
     PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
@@ -569,81 +558,6 @@ TEST(UidMapTest, TestMemoryGuardrail) {
     ASSERT_EQ(1U, m.mChanges.size());
 }
 
-// Set up parameterized test for testing with different boolean flag values that gate the inclusion
-// of package certificate hashes in UidMap.
-class UidMapTestWithAppCertificateFlag : public TestWithParam<bool> {
-protected:
-    const sp<UidMap> uidMap;
-    const shared_ptr<StatsService> service;
-    vector<PackageInfo> expectedPackageInfos;
-
-    UidMapTestWithAppCertificateFlag()
-        : uidMap(new UidMap()),
-          service(SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr)) {
-    }
-
-    void SetUp() override {
-        sendIncludeCertificateHashFlagToStatsd(service, GetParam());
-        sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
-                             kCertificateHashes);
-
-        vector<vector<uint8_t>> emptyCertHashes;
-        vector<vector<uint8_t>> certHashes = GetParam() ? kCertificateHashes : emptyCertHashes;
-        expectedPackageInfos = buildPackageInfos(
-                kApps, kUids, kVersions, kVersionStrings, kInstallers, certHashes, kDeleted,
-                /* installerIndices */ {}, /* hashStrings */ false);
-    }
-};
-
-INSTANTIATE_TEST_SUITE_P(Boolean, UidMapTestWithAppCertificateFlag, Bool(),
-                         PrintToStringParamName());
-
-TEST_P(UidMapTestWithAppCertificateFlag, TestUpdateMap) {
-    PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
-
-    EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
-}
-
-TEST_P(UidMapTestWithAppCertificateFlag, TestUpdateApp) {
-    // Add a new name for uid 1000.
-    service->informOnePackage("NeW_aPP1_NAmE", 1000, /* version */ 40,
-                              /* versionString */ "v40", /* installer */ "com.android.vending",
-                              /* certificateHash */ {'a'});
-
-    vector<uint8_t> certHash;
-    if (GetParam()) {
-        certHash = {'a'};
-    }
-    PackageInfo expectedPackageInfo =
-            buildPackageInfo("NeW_aPP1_NAmE", 1000, /* version */ 40, /* versionString */ "v40",
-                             /* installer */ "com.android.vending", certHash, /* deleted */ false,
-                             /* hashStrings */ false, /* installerIndex */ nullopt);
-    expectedPackageInfos.push_back(expectedPackageInfo);
-
-    PackageInfoSnapshot packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
-    EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
-
-    // Update installer and certificate for the same package.
-    service->informOnePackage("NeW_aPP1_NAmE", 1000, /* version */ 40,
-                              /* versionString */ "v40", /* installer */ "new_installer",
-                              /* certificateHash */ {'n', 'e', 'w'});
-
-    if (GetParam()) {
-        certHash = {'n', 'e', 'w'};
-    }
-    expectedPackageInfo =
-            buildPackageInfo("NeW_aPP1_NAmE", 1000, /* version */ 40, /* versionString */ "v40",
-                             /* installer */ "new_installer", certHash, /* deleted */ false,
-                             /* hashStrings */ false, /* installerIndex */ nullopt);
-    expectedPackageInfos.back() = expectedPackageInfo;
-
-    packageInfoSnapshot = getPackageInfoSnapshot(uidMap);
-    EXPECT_THAT(packageInfoSnapshot.package_info(),
-                UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
-}
-
 class UidMapTestAppendUidMap : public Test {
 protected:
     const ConfigKey config1;
@@ -661,7 +575,6 @@ protected:
     }
 
     void SetUp() override {
-        sendIncludeCertificateHashFlagToStatsd(service, true);
         sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                              kCertificateHashes);
 
