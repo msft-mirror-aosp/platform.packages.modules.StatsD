@@ -94,6 +94,22 @@ StatsdConfig buildGoodConfig() {
     return config;
 }
 
+StatsdConfig buildGoodRestrictedConfig() {
+    StatsdConfig config;
+    config.set_id(12345);
+    config.set_restricted_metrics_delegate_package_name("delegate");
+
+    AtomMatcher* eventMatcher = config.add_atom_matcher();
+    eventMatcher->set_id(StringToId("SCREEN_IS_ON"));
+    SimpleAtomMatcher* simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
+    simpleAtomMatcher->set_atom_id(2 /*SCREEN_STATE_CHANGE*/);
+
+    EventMetric* metric = config.add_event_metric();
+    metric->set_id(3);
+    metric->set_what(StringToId("SCREEN_IS_ON"));
+    return config;
+}
+
 set<int32_t> unionSet(const vector<set<int32_t>> sets) {
     set<int32_t> toRet;
     for (const set<int32_t>& s : sets) {
@@ -278,9 +294,6 @@ protected:
         if (shouldSkipTest()) {
             GTEST_SKIP() << skipReason();
         }
-
-        originalFlagValue = FlagProvider::getInstance().getFlagString(
-                OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_EMPTY);
     }
 
     bool shouldSkipTest() const {
@@ -289,12 +302,6 @@ protected:
 
     string skipReason() const {
         return "Skipping MetricsManagerTest_SPlus because device is not S+";
-    }
-
-    void TearDown() override {
-        if (originalFlagValue) {
-            writeFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, originalFlagValue.value());
-        }
     }
 
     std::optional<string> originalFlagValue;
@@ -310,27 +317,6 @@ INSTANTIATE_TEST_SUITE_P(
         [](const testing::TestParamInfo<MetricsManagerTest_SPlus::ParamType>& info) {
             return info.param.label;
         });
-
-TEST_P(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag) {
-    FlagProvider::getInstance().overrideFlag(OPTIMIZATION_ATOM_MATCHER_MAP_FLAG,
-                                             GetParam().flagValue,
-                                             /*isBootFlag=*/true);
-
-    sp<UidMap> uidMap;
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    sp<AlarmMonitor> anomalyAlarmMonitor;
-    sp<AlarmMonitor> periodicAlarmMonitor;
-
-    StatsdConfig config = buildGoodConfig();
-    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
-                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
-
-    if (GetParam().flagValue == FLAG_TRUE) {
-        EXPECT_TRUE(metricsManager.mAtomMatcherOptimizationEnabled);
-    } else {
-        EXPECT_FALSE(metricsManager.mAtomMatcherOptimizationEnabled);
-    }
-}
 
 TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom) {
     sp<UidMap> uidMap;
@@ -392,7 +378,7 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> periodicAlarmMonitor;
 
-    StatsdConfig config = buildGoodConfig();
+    StatsdConfig config = buildGoodRestrictedConfig();
     config.add_allowed_log_source("AID_SYSTEM");
     config.set_restricted_metrics_delegate_package_name("rm");
 

@@ -77,7 +77,7 @@ public:
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies periodic alarmSet. */
     void onPeriodicAlarmFired(
             const int64_t& timestampNs,
-            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     /* Flushes data to disk. Data on memory will be gone after written to disk. */
     void WriteDataToDisk(const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
@@ -161,6 +161,9 @@ public:
                   const shared_ptr<aidl::android::os::IStatsQueryCallback>& callback,
                   const int64_t configId, const string& configPackage, const int32_t callingUid);
 
+    void fillRestrictedMetrics(const int64_t configId, const string& configPackage,
+                               const int32_t delegateUid, vector<int64_t>* output);
+
 private:
     // For testing only.
     inline sp<AlarmMonitor> getAnomalyAlarmMonitor() const {
@@ -190,6 +193,12 @@ private:
 
     // Tracks when we last checked the ttl for restricted metrics.
     int64_t mLastTtlTime;
+
+    // Tracks when we last flushed restricted metrics.
+    int64_t mLastFlushRestrictedTime;
+
+    // Tracks when we last checked db guardrails.
+    int64_t mLastDbGuardrailEnforcementTime;
 
     // Tracks which config keys has metric reports on disk
     std::set<ConfigKey> mOnDiskDataConfigs;
@@ -249,6 +258,10 @@ private:
     // Enforces ttls on all restricted metrics.
     void enforceDataTtlsLocked(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
 
+    // Enforces that dbs are within guardrail parameters.
+    void enforceDbGuardrailsIfNecessaryLocked(const int64_t wallClockNs,
+                                              const int64_t elapsedRealtimeNs);
+
     /* Check if we should send a broadcast if approaching memory limits and if we're over, we
      * actually delete the data. */
     void flushIfNecessaryLocked(const ConfigKey& key, MetricsManager& metricsManager);
@@ -256,7 +269,8 @@ private:
     set<ConfigKey> getRestrictedConfigKeysToQueryLocked(const int32_t callingUid,
                                                         const int64_t configId,
                                                         const set<int32_t>& configPackageUids,
-                                                        string& err);
+                                                        string& err,
+                                                        InvalidQueryReason& invalidQueryReason);
 
     // Maps the isolated uid in the log event to host uid if the log event contains uid fields.
     void mapIsolatedUidToHostUidIfNecessaryLocked(LogEvent* event) const;
@@ -292,7 +306,11 @@ private:
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies anomaly alarmSet. */
     void processFiredAnomalyAlarmsLocked(
             const int64_t& timestampNs,
-            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
+
+    void flushRestrictedDataLocked(const int64_t elapsedRealtimeNs);
+
+    void flushRestrictedDataIfNecessaryLocked(const int64_t elapsedRealtimeNs);
 
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
@@ -354,6 +372,8 @@ private:
     FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricOnDumpReportNotEmpty);
     FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotWriteToDisk);
     FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricWriteToDisk);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricFlushIfReachMemoryLimit);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotFlushIfNotReachMemoryLimit);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration1);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration2);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration3);
@@ -378,6 +398,14 @@ private:
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestQueryEnforceTtls);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsDoesNotEnforceTtls);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestNotFlushed);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushInWriteDataToDisk);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushPeriodically);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestOnLogEventMalformedDbNameDeleted);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeGuardrail);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestRestrictedMetricLoadsTtlFromDisk);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);

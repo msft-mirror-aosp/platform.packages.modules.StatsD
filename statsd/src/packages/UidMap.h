@@ -230,6 +230,9 @@ private:
     bool mIncludeCertificateHash;
 
     // Allows unit-test to access private methods.
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestRestrictedConfigUpdateDoesNotUpdateUidMap);
+    FRIEND_TEST(RestrictedEventMetricE2eTest,
+                TestRestrictedConfigUpdateAddsDelegateRemovesUidMapEntry);
     FRIEND_TEST(UidMapTest, TestClearingOutput);
     FRIEND_TEST(UidMapTest, TestRemovedAppRetained);
     FRIEND_TEST(UidMapTest, TestRemovedAppOverGuardrail);

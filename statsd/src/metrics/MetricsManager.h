@@ -82,9 +82,7 @@ public:
     vector<int32_t> getPullAtomUids(int32_t atomId) override;
 
     bool shouldWriteToDisk() const {
-        return mNoReportMetricIds.size() != mAllMetricProducers.size()
-               // Restricted metrics should only be written to dedicated db.
-               && !hasRestrictedMetricsDelegate();
+        return mNoReportMetricIds.size() != mAllMetricProducers.size();
     }
 
     bool shouldPersistLocalHistory() const {
@@ -172,9 +170,15 @@ public:
         return hasRestrictedMetricsDelegate() ? mRestrictedMetricsDelegatePackageName.value() : "";
     }
 
+    inline ConfigKey getConfigKey() const {
+        return mConfigKey;
+    }
+
     void enforceRestrictedDataTtls(const int64_t wallClockNs);
 
     bool validateRestrictedMetricsDelegate(const int32_t callingUid);
+
+    virtual void flushRestrictedData();
 
     // Slow, should not be called in a hotpath.
     vector<int64_t> getAllMetricIds() const;
@@ -234,8 +238,6 @@ private:
     std::list<std::pair<const int64_t, const int32_t>> mAnnotations;
 
     bool mShouldPersistHistory;
-
-    const bool mAtomMatcherOptimizationEnabled;
 
     // All event tags that are interesting to config metrics matchers.
     std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;
@@ -377,7 +379,6 @@ private:
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
     FRIEND_TEST(MetricsManagerTest, TestOnMetricRemoveCalled);
-    FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 

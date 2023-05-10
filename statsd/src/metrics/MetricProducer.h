@@ -31,6 +31,7 @@
 #include "matchers/EventMatcherWizard.h"
 #include "matchers/matcher_util.h"
 #include "packages/PackageInfoListener.h"
+#include "src/statsd_metadata.pb.h"  // MetricMetadata
 #include "state/StateListener.h"
 #include "state/StateManager.h"
 #include "utils/DbUtils.h"
@@ -338,8 +339,17 @@ public:
 
     virtual void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs){};
 
+    virtual bool writeMetricMetadataToProto(metadata::MetricMetadata* metricMetadata) {
+        return false;
+    }
+
+    virtual void loadMetricMetadataFromProto(const metadata::MetricMetadata& metricMetadata){};
+
     /* Called when the metric is to about to be removed from config. */
     virtual void onMetricRemove() {
+    }
+
+    virtual void flushRestrictedData() {
     }
 
     // Start: getters/setters

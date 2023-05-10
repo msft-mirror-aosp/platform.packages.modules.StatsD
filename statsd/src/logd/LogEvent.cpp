@@ -41,6 +41,18 @@ using android::util::ProtoOutputStream;
 using std::string;
 using std::vector;
 
+namespace {
+
+uint8_t getTypeId(uint8_t typeInfo) {
+    return typeInfo & 0x0F;  // type id in lower 4 bytes
+}
+
+uint8_t getNumAnnotations(uint8_t typeInfo) {
+    return (typeInfo >> 4) & 0x0F;  // num annotations in upper 4 bytes
+}
+
+}  // namespace
+
 LogEvent::LogEvent(int32_t uid, int32_t pid)
     : mLogdTimestampNs(getWallClockNs()), mLogUid(uid), mLogPid(pid) {
 }
@@ -383,13 +395,26 @@ void LogEvent::parseRestrictionCategoryAnnotation(uint8_t annotationType) {
     int value = readNextValue<int32_t>();
     // should be one of predefined category in StatsLog.java
     switch (value) {
+        // Only diagnostic is currently supported for use.
         case ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC:
             break;
         default:
             mValid = false;
             return;
     }
-    mRestrictionCategory = value;
+    mRestrictionCategory = static_cast<StatsdRestrictionCategory>(value);
+    return;
+}
+
+void LogEvent::parseFieldRestrictionAnnotation(uint8_t annotationType) {
+    // Allowed types: BOOL
+    if (mValues.empty() || annotationType != BOOL_TYPE) {
+        mValid = false;
+        return;
+    }
+    // Read the value so that the rest of the event is correctly parsed
+    // TODO: store the field annotations once the metrics need to parse them.
+    readNextValue<uint8_t>();
     return;
 }
 
@@ -433,6 +458,24 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
                     mValid = false;
                     return;
                 }
+            // Currently field restrictions are ignored, so we parse but do not store them.
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
+                if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG,
+                                                                FLAG_FALSE)) {
+                    parseFieldRestrictionAnnotation(annotationType);
+                    break;
+                } else {
+                    mValid = false;
+                    return;
+                }
             default:
                 VLOG("Atom ID %d error while parseAnnotations() - wrong annotationId(%d)", mTagId,
                      annotationId);
@@ -442,37 +485,70 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
     }
 }
 
-// This parsing logic is tied to the encoding scheme used in StatsEvent.java and
-// stats_event.c
-bool LogEvent::parseBuffer(uint8_t* buf, size_t len) {
+LogEvent::BodyBufferInfo LogEvent::parseHeader(const uint8_t* buf, size_t len) {
+    BodyBufferInfo bodyInfo;
+
+    mParsedHeaderOnly = true;
+
     mBuf = buf;
     mRemainingLen = (uint32_t)len;
 
-    int32_t pos[] = {1, 1, 1};
-    bool last[] = {false, false, false};
-
     // Beginning of buffer is OBJECT_TYPE | NUM_FIELDS | TIMESTAMP | ATOM_ID
     uint8_t typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != OBJECT_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != OBJECT_TYPE) {
+        mValid = false;
+        mBuf = nullptr;
+        return bodyInfo;
+    }
 
     uint8_t numElements = readNextValue<uint8_t>();
-    if (numElements < 2 || numElements > INT8_MAX) mValid = false;
+    if (numElements < 2 || numElements > INT8_MAX) {
+        mValid = false;
+        mBuf = nullptr;
+        return bodyInfo;
+    }
 
     typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != INT64_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != INT64_TYPE) {
+        mValid = false;
+        mBuf = nullptr;
+        return bodyInfo;
+    }
     mElapsedTimestampNs = readNextValue<int64_t>();
     numElements--;
 
     typeInfo = readNextValue<uint8_t>();
-    if (getTypeId(typeInfo) != INT32_TYPE) mValid = false;
+    if (getTypeId(typeInfo) != INT32_TYPE) {
+        mValid = false;
+        mBuf = nullptr;
+        return bodyInfo;
+    }
     mTagId = readNextValue<int32_t>();
     numElements--;
+
     parseAnnotations(getNumAnnotations(typeInfo));  // atom-level annotations
 
-    for (pos[0] = 1; pos[0] <= numElements && mValid; pos[0]++) {
-        last[0] = (pos[0] == numElements);
+    bodyInfo.numElements = numElements;
+    bodyInfo.buffer = mBuf;
+    bodyInfo.bufferSize = mRemainingLen;
 
-        typeInfo = readNextValue<uint8_t>();
+    mBuf = nullptr;
+    return bodyInfo;
+}
+
+bool LogEvent::parseBody(const BodyBufferInfo& bodyInfo) {
+    mParsedHeaderOnly = false;
+
+    mBuf = bodyInfo.buffer;
+    mRemainingLen = (uint32_t)bodyInfo.bufferSize;
+
+    int32_t pos[] = {1, 1, 1};
+    bool last[] = {false, false, false};
+
+    for (pos[0] = 1; pos[0] <= bodyInfo.numElements && mValid; pos[0]++) {
+        last[0] = (pos[0] == bodyInfo.numElements);
+
+        uint8_t typeInfo = readNextValue<uint8_t>();
         uint8_t typeId = getTypeId(typeInfo);
 
         switch (typeId) {
@@ -518,12 +594,18 @@ bool LogEvent::parseBuffer(uint8_t* buf, size_t len) {
     return mValid;
 }
 
-uint8_t LogEvent::getTypeId(uint8_t typeInfo) {
-    return typeInfo & 0x0F;  // type id in lower 4 bytes
-}
+// This parsing logic is tied to the encoding scheme used in StatsEvent.java and
+// stats_event.c
+bool LogEvent::parseBuffer(const uint8_t* buf, size_t len) {
+    BodyBufferInfo bodyInfo = parseHeader(buf, len);
 
-uint8_t LogEvent::getNumAnnotations(uint8_t typeInfo) {
-    return (typeInfo >> 4) & 0x0F;  // num annotations in upper 4 bytes
+    // early termination if header is invalid
+    if (!mValid) {
+        mBuf = nullptr;
+        return false;
+    }
+
+    return parseBody(bodyInfo);
 }
 
 int64_t LogEvent::GetLong(size_t key, status_t* err) const {
@@ -664,6 +746,11 @@ string LogEvent::ToString() const {
     }
     if (annotations.size()) {
         result += " [" + annotations + "] ";
+    }
+
+    if (isParsedHeaderOnly()) {
+        result += " ParsedHeaderOnly }";
+        return result;
     }
 
     for (const auto& value : mValues) {

@@ -17,8 +17,10 @@
 #include <aidl/android/os/BnPendingIntentRef.h>
 #include <aidl/android/os/BnPullAtomCallback.h>
 #include <aidl/android/os/BnStatsQueryCallback.h>
+#include <aidl/android/os/BnStatsSubscriptionCallback.h>
 #include <aidl/android/os/IPullAtomCallback.h>
 #include <aidl/android/os/IPullAtomResultReceiver.h>
+#include <aidl/android/os/StatsSubscriptionCallbackReason.h>
 #include <gmock/gmock.h>
 #include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
@@ -33,6 +35,7 @@
 #include "src/stats_log.pb.h"
 #include "src/stats_log_util.h"
 #include "src/statsd_config.pb.h"
+#include "stats_annotations.h"
 #include "stats_event.h"
 #include "statslog_statsdtest.h"
 
@@ -43,8 +46,10 @@ namespace statsd {
 using namespace testing;
 using ::aidl::android::os::BnPullAtomCallback;
 using ::aidl::android::os::BnStatsQueryCallback;
+using ::aidl::android::os::BnStatsSubscriptionCallback;
 using ::aidl::android::os::IPullAtomCallback;
 using ::aidl::android::os::IPullAtomResultReceiver;
+using ::aidl::android::os::StatsSubscriptionCallbackReason;
 using android::util::ProtoReader;
 using google::protobuf::RepeatedPtrField;
 using google::protobuf::util::MessageDifferencer;
@@ -100,6 +105,14 @@ public:
                  Status(const vector<string>& queryData, const vector<string>& columnNames,
                         const vector<int32_t>& columnTypes, int32_t rowCount));
     MOCK_METHOD1(sendFailure, Status(const string& in_error));
+};
+
+class MockStatsSubscriptionCallback : public BnStatsSubscriptionCallback {
+public:
+    MOCK_METHOD(Status, onSubscriptionData,
+                (StatsSubscriptionCallbackReason in_reason,
+                 const std::vector<uint8_t>& in_subscriptionPayload),
+                (override));
 };
 
 class StatsServiceConfigTest : public ::testing::Test {
@@ -514,6 +527,7 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         const size_t repeatedBoolFieldLength, const vector<int>& repeatedEnumField);
 
 std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
+std::unique_ptr<LogEvent> CreateNonRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
 
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         uint64_t timestampNs, const vector<int>& attributionUids,
@@ -763,11 +777,22 @@ std::vector<PackageInfo> buildPackageInfos(
         const std::vector<uint32_t>& installerIndices, const bool hashStrings);
 
 // Checks equality on explicitly set values.
+MATCHER_P(ProtoEq, otherArg, "") {
+    return MessageDifferencer::Equals(arg, otherArg);
+}
+
+// Checks equality on explicitly and implicitly set values.
+// Implicitly set values comes from fields with a default value specifier.
+MATCHER_P(ProtoEquiv, otherArg, "") {
+    return MessageDifferencer::Equivalent(arg, otherArg);
+}
+
+// Checks equality on explicitly set values where args are in a 2-tuple.
 MATCHER(ProtoEq, "") {
     return MessageDifferencer::Equals(std::get<0>(arg), std::get<1>(arg));
 }
 
-// Checks equality on explicitly and implicitly set values.
+// Checks equality on explicitly and implicitly set values where args are in a 2-tuple.
 // Implicitly set values comes from fields with a default value specifier.
 MATCHER(ProtoEquiv, "") {
     return MessageDifferencer::Equivalent(std::get<0>(arg), std::get<1>(arg));
@@ -781,6 +806,14 @@ std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
 }
 
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int atom_id);
+
+template <typename P>
+std::vector<uint8_t> protoToBytes(const P& proto) {
+    const size_t byteSize = proto.ByteSizeLong();
+    vector<uint8_t> bytes(byteSize);
+    proto.SerializeToArray(bytes.data(), byteSize);
+    return bytes;
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

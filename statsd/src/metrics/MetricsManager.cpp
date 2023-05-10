@@ -77,9 +77,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mPullerManager(pullerManager),
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
-      mShouldPersistHistory(config.persist_locally()),
-      mAtomMatcherOptimizationEnabled(FlagProvider::getInstance().getBootFlagBool(
-              OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, FLAG_FALSE)) {
+      mShouldPersistHistory(config.persist_locally()) {
     if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE) &&
         config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
@@ -603,16 +601,9 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     vector<MatchingState> matcherCache(mAllAtomMatchingTrackers.size(),
                                        MatchingState::kNotComputed);
 
-    if (mAtomMatcherOptimizationEnabled) {
-        for (const auto& matcherIndex : matchersIt->second) {
-            mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                               matcherCache);
-        }
-    } else {
-        //  Evaluate all atom matchers.
-        for (auto& matcher : mAllAtomMatchingTrackers) {
-            matcher->onLogEvent(event, mAllAtomMatchingTrackers, matcherCache);
-        }
+    for (const auto& matcherIndex : matchersIt->second) {
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
+                                                           matcherCache);
     }
 
     // Set of metrics that received an activation cancellation.
@@ -794,6 +785,17 @@ bool MetricsManager::writeMetadataToProto(int64_t currentWallClockTimeNs,
         }
         metadataWritten |= alertWritten;
     }
+
+    if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        for (const auto& metricProducer : mAllMetricProducers) {
+            metadata::MetricMetadata* metricMetadata = statsMetadata->add_metric_metadata();
+            bool metricWritten = metricProducer->writeMetricMetadataToProto(metricMetadata);
+            if (!metricWritten) {
+                statsMetadata->mutable_metric_metadata()->RemoveLast();
+            }
+            metadataWritten |= metricWritten;
+        }
+    }
     return metadataWritten;
 }
 
@@ -802,7 +804,7 @@ void MetricsManager::loadMetadata(const metadata::StatsMetadata& metadata,
                                   int64_t systemElapsedTimeNs) {
     for (const metadata::AlertMetadata& alertMetadata : metadata.alert_metadata()) {
         int64_t alertId = alertMetadata.alert_id();
-        auto it = mAlertTrackerMap.find(alertId);
+        const auto& it = mAlertTrackerMap.find(alertId);
         if (it == mAlertTrackerMap.end()) {
             ALOGE("No anomalyTracker found for alertId %lld", (long long) alertId);
             continue;
@@ -810,6 +812,16 @@ void MetricsManager::loadMetadata(const metadata::StatsMetadata& metadata,
         mAllAnomalyTrackers[it->second]->loadAlertMetadata(alertMetadata,
                                                            currentWallClockTimeNs,
                                                            systemElapsedTimeNs);
+    }
+    if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+        for (const metadata::MetricMetadata& metricMetadata : metadata.metric_metadata()) {
+            int64_t metricId = metricMetadata.metric_id();
+            const auto& it = mMetricProducerMap.find(metricId);
+            if (it == mMetricProducerMap.end()) {
+                ALOGE("No metricProducer found for metricId %lld", (long long)metricId);
+            }
+            mAllMetricProducers[it->second]->loadMetricMetadataFromProto(metricMetadata);
+        }
     }
 }
 
@@ -837,6 +849,18 @@ bool MetricsManager::validateRestrictedMetricsDelegate(const int32_t callingUid)
     set<int32_t> possibleUids = mUidMap->getAppUid(mRestrictedMetricsDelegatePackageName.value());
 
     return possibleUids.find(callingUid) != possibleUids.end();
+}
+
+void MetricsManager::flushRestrictedData() {
+    if (!hasRestrictedMetricsDelegate()) {
+        return;
+    }
+    int64_t flushStartNs = getElapsedRealtimeNs();
+    for (const auto& producer : mAllMetricProducers) {
+        producer->flushRestrictedData();
+    }
+    StatsdStats::getInstance().noteRestrictedConfigFlushLatency(
+            mConfigKey, getElapsedRealtimeNs() - flushStartNs);
 }
 
 vector<int64_t> MetricsManager::getAllMetricIds() const {

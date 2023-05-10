@@ -21,6 +21,10 @@ package {
 cc_defaults {
     name: "statsd_defaults",
 
+    cflags: [
+        "-Wno-deprecated-declarations",
+    ],
+
     srcs: [
         "src/active_config_list.proto",
         "src/anomaly/AlarmMonitor.cpp",
@@ -90,6 +94,7 @@ cc_defaults {
         "src/uid_data.proto",
         "src/utils/MultiConditionTrigger.cpp",
         "src/utils/DbUtils.cpp",
+        "src/utils/RestrictedPolicyManager.cpp",
         "src/utils/ShardOffsetProvider.cpp",
     ],
 
@@ -519,7 +524,7 @@ java_library {
 
 // Filegroup for statsd config proto definition.
 filegroup {
-    name: "statsd-config-proto-def",
+    name: "libstats_config_protos",
     srcs: ["src/statsd_config.proto"],
 }
 
@@ -538,3 +543,15 @@ filegroup {
         "src/guardrail/invalid_config_reason_enum.proto",
     ],
 }
+
+// Filegroup for subscription protos.
+filegroup {
+    name: "libstats_subscription_protos",
+    srcs: [
+        ":libstats_internal_protos",
+        ":libstats_config_protos",
+        "src/shell/shell_config.proto",
+        "src/shell/shell_data.proto",
+    ],
+}
+

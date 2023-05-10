@@ -20,7 +20,6 @@
 #include <android-base/stringprintf.h>
 
 #include "matchers/SimpleAtomMatchingTracker.h"
-#include "stats_annotations.h"
 #include "stats_event.h"
 #include "stats_util.h"
 
@@ -1367,6 +1366,16 @@ std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int64_t timestam
     AStatsEvent_setAtomId(statsEvent, atomTag);
     AStatsEvent_addInt32Annotation(statsEvent, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY,
                                    ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC);
+    AStatsEvent_writeInt32(statsEvent, 10);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+std::unique_ptr<LogEvent> CreateNonRestrictedLogEvent(int atomTag, int64_t timestampNs) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomTag);
     AStatsEvent_writeInt32(statsEvent, 10);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);

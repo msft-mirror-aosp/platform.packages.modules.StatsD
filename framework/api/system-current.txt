@@ -74,7 +74,7 @@ package android.app {
   }
 
   public final class StatsQuery {
-    method public int getMinSqlClientVersion();
+    method @IntRange(from=0) public int getMinSqlClientVersion();
     method @Nullable public byte[] getPolicyConfig();
     method @NonNull public String getRawSql();
     method public int getSqlDialect();
@@ -85,7 +85,7 @@ package android.app {
   public static final class StatsQuery.Builder {
     ctor public StatsQuery.Builder(@NonNull String);
     method @NonNull public android.app.StatsQuery build();
-    method @NonNull public android.app.StatsQuery.Builder setMinSqlClientVersion(int);
+    method @NonNull public android.app.StatsQuery.Builder setMinSqlClientVersion(@IntRange(from=0) int);
     method @NonNull public android.app.StatsQuery.Builder setPolicyConfig(@NonNull byte[]);
     method @NonNull public android.app.StatsQuery.Builder setSqlDialect(int);
   }

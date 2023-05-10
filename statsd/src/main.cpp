@@ -17,6 +17,8 @@
 #define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
+#include <android/binder_ibinder.h>
+#include <android/binder_ibinder_platform.h>
 #include <android/binder_interface_utils.h>
 #include <android/binder_manager.h>
 #include <android/binder_process.h>
@@ -76,16 +78,22 @@ int main(int /*argc*/, char** /*argv*/) {
             std::make_shared<LogEventQueue>(4000 /*buffer limit. Buffer is NOT pre-allocated*/);
 
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags(
-            {LIMIT_PULL_FLAG, OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, RESTRICTED_METRICS_FLAG});
+    FlagProvider::getInstance().initBootFlags({LIMIT_PULL_FLAG, RESTRICTED_METRICS_FLAG});
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
     // Create the service
     gStatsService = SharedRefBase::make<StatsService>(uidMap, eventQueue);
+    auto binder = gStatsService->asBinder();
+
+    // We want to be able to ask for the selinux context of callers:
+    if (__builtin_available(android __ANDROID_API_U__, *)) {
+        AIBinder_setRequestingSid(binder.get(), true);
+    }
+
     // TODO(b/149582373): Set DUMP_FLAG_PROTO once libbinder_ndk supports
     // setting dumpsys priorities.
-    binder_status_t status = AServiceManager_addService(gStatsService->asBinder().get(), "stats");
+    binder_status_t status = AServiceManager_addService(binder.get(), "stats");
     if (status != STATUS_OK) {
         ALOGE("Failed to add service as AIDL service");
         return -1;
