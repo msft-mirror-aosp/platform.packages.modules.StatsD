@@ -529,6 +529,9 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
 std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
 std::unique_ptr<LogEvent> CreateNonRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
 
+std::unique_ptr<LogEvent> CreatePhoneSignalStrengthChangedEvent(
+        int64_t timestampNs, ::telephony::SignalStrengthEnum state);
+
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         uint64_t timestampNs, const vector<int>& attributionUids,
         const vector<string>& attributionTags, const int intField, const long longField,
