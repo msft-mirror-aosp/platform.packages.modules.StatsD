@@ -508,6 +508,8 @@ message StatsdStatsReport {
         optional bool device_info_table_creation_failed = 26;
         optional int32 restricted_db_corrupted_count = 27;
         repeated int64 restricted_flush_latency = 28;
+        repeated int64 restricted_db_size_time_sec = 29;
+        repeated int64 restricted_db_size_bytes = 30;
     }
 
     repeated ConfigStats config_stats = 3;
