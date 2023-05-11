@@ -496,6 +496,7 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     stats.noteConfigReceived(configKeyWithoutError, 2, 3, 4, 5, {}, nullopt);
     stats.noteDbCorrupted(key);
     stats.noteDbCorrupted(key);
+    stats.noteRestrictedConfigDbSize(key, 999, 111);
 
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
@@ -513,6 +514,10 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     ASSERT_EQ(2, report.config_stats(1).restricted_metric_stats(0).flush_latency_ns().size());
     EXPECT_EQ(3000, report.config_stats(1).restricted_metric_stats(0).flush_latency_ns(0));
     EXPECT_EQ(3001, report.config_stats(1).restricted_metric_stats(0).flush_latency_ns(1));
+    ASSERT_EQ(1, report.config_stats(1).restricted_db_size_time_sec().size());
+    EXPECT_EQ(999, report.config_stats(1).restricted_db_size_time_sec(0));
+    ASSERT_EQ(1, report.config_stats(1).restricted_db_size_bytes().size());
+    EXPECT_EQ(111, report.config_stats(1).restricted_db_size_bytes(0));
     ASSERT_EQ(1, report.config_stats(1).restricted_flush_latency().size());
     EXPECT_EQ(4000, report.config_stats(1).restricted_flush_latency(0));
     EXPECT_TRUE(report.config_stats(1).device_info_table_creation_failed());

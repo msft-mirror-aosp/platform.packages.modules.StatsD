@@ -847,6 +847,8 @@ void StorageManager::enforceDbGuardrails(const char* path, const int64_t currWal
             remove(fullPathName.c_str());
             continue;
         }
+        StatsdStats::getInstance().noteRestrictedConfigDbSize(key, currWallClockSec,
+                                                              fileInfo.st_size);
         if (fileInfo.st_mtime <= deleteThresholdSec || fileInfo.st_size >= maxBytes) {
             remove(fullPathName.c_str());
         }
