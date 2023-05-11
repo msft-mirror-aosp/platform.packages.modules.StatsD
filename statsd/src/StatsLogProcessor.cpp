@@ -20,6 +20,7 @@
 #include "StatsLogProcessor.h"
 
 #include <android-base/file.h>
+#include <android-modules-utils/sdk_level.h>
 #include <cutils/multiuser.h>
 #include <src/active_config_list.pb.h>
 #include <src/experiment_ids.pb.h>
@@ -39,6 +40,7 @@
 
 using namespace android;
 using android::base::StringPrintf;
+using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
 using android::util::FIELD_TYPE_FLOAT;
@@ -108,8 +110,6 @@ StatsLogProcessor::StatsLogProcessor(
       mLastTimestampSeen(0) {
     mPullerManager->ForceClearPullerCache();
     StateManager::getInstance().updateLogSources(uidMap);
-    mIsRestrictedMetricsEnabled =
-            FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE);
 }
 
 StatsLogProcessor::~StatsLogProcessor() {
@@ -545,11 +545,9 @@ void StatsLogProcessor::OnConfigUpdated(const int64_t timestampNs, const ConfigK
 void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const ConfigKey& key,
                                               const StatsdConfig& config, bool modularUpdate) {
     VLOG("Updated configuration for key %s", key.ToString().c_str());
-    // Create new config if this is not a modular update or if this is a new config.
     const auto& it = mMetricsManagers.find(key);
     bool configValid = false;
-    if (FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE) &&
-        it != mMetricsManagers.end()) {
+    if (IsAtLeastU() && it != mMetricsManagers.end()) {
         if (it->second->hasRestrictedMetricsDelegate() !=
             config.has_restricted_metrics_delegate_package_name()) {
             // Not a modular update if has_restricted_metrics_delegate changes
@@ -561,7 +559,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
             dbutils::deleteDb(key);
         }
     }
-
+    // Create new config if this is not a modular update or if this is a new config.
     if (!modularUpdate || it == mMetricsManagers.end()) {
         sp<MetricsManager> newMetricsManager =
                 new MetricsManager(key, config, mTimeBaseNs, timestampNs, mUidMap, mPullerManager,
@@ -570,22 +568,21 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         if (configValid) {
             newMetricsManager->init();
             newMetricsManager->refreshTtl(timestampNs);
-            if (mIsRestrictedMetricsEnabled) {
-                if (newMetricsManager->hasRestrictedMetricsDelegate()) {
-                    mSendRestrictedMetricsBroadcast(
-                            key, newMetricsManager->getRestrictedMetricsDelegate(),
-                            newMetricsManager->getAllMetricIds());
-                    string err;
-                    if (!dbutils::updateDeviceInfoTable(key, err)) {
-                        ALOGE("Failed to create device_info table for configKey %s, err: %s",
-                              key.ToString().c_str(), err.c_str());
-                        StatsdStats::getInstance().noteDeviceInfoTableCreationFailed(key);
-                    }
-                } else if (it != mMetricsManagers.end() &&
-                           it->second->hasRestrictedMetricsDelegate()) {
-                    mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
-                                                    {});
+            // Sdk check for U+ is unnecessary because config with restricted metrics delegate
+            // will be invalid on non U+ devices.
+            if (newMetricsManager->hasRestrictedMetricsDelegate()) {
+                mSendRestrictedMetricsBroadcast(key,
+                                                newMetricsManager->getRestrictedMetricsDelegate(),
+                                                newMetricsManager->getAllMetricIds());
+                string err;
+                if (!dbutils::updateDeviceInfoTable(key, err)) {
+                    ALOGE("Failed to create device_info table for configKey %s, err: %s",
+                          key.ToString().c_str(), err.c_str());
+                    StatsdStats::getInstance().noteDeviceInfoTableCreationFailed(key);
                 }
+            } else if (it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
+                mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
+                                                {});
             }
             mMetricsManagers[key] = newMetricsManager;
             VLOG("StatsdConfig valid");
@@ -594,20 +591,17 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         // Preserve the existing MetricsManager, update necessary components and metadata in place.
         configValid = it->second->updateConfig(config, mTimeBaseNs, timestampNs,
                                                mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
-        if (configValid) {
-            if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
-                mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
-                                                it->second->getAllMetricIds());
-            }
+        if (configValid && it->second->hasRestrictedMetricsDelegate()) {
+            mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
+                                            it->second->getAllMetricIds());
         }
     }
-    if (!mIsRestrictedMetricsEnabled && configValid) {
+
+    if (configValid && !config.has_restricted_metrics_delegate_package_name()) {
+        // We do not need to track uid map changes for restricted metrics since the uidmap is not
+        // stored in the sqlite db.
         mUidMap->OnConfigUpdated(key);
-    } else if (mIsRestrictedMetricsEnabled && configValid &&
-               !config.has_restricted_metrics_delegate_package_name()) {
-        mUidMap->OnConfigUpdated(key);
-    } else if (mIsRestrictedMetricsEnabled && configValid &&
-               config.has_restricted_metrics_delegate_package_name()) {
+    } else if (configValid && config.has_restricted_metrics_delegate_package_name()) {
         mUidMap->OnConfigRemoved(key);
     }
     if (!configValid) {
@@ -615,7 +609,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         // Remove any existing config with the same key.
         ALOGE("StatsdConfig NOT valid");
         // Send an empty restricted metrics broadcast if the previous config was restricted.
-        if (mIsRestrictedMetricsEnabled && it != mMetricsManagers.end() &&
+        if (IsAtLeastU() && it != mMetricsManagers.end() &&
             it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
             dbutils::deleteDb(key);
@@ -839,10 +833,8 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     if (it != mMetricsManagers.end()) {
         WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
                               NO_TIME_CONSTRAINTS);
-        if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
+        if (IsAtLeastU() && it->second->hasRestrictedMetricsDelegate()) {
             dbutils::deleteDb(key);
-        }
-        if (mIsRestrictedMetricsEnabled && it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
         }
         mMetricsManagers.erase(it);
@@ -872,7 +864,7 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
 // TODO(b/267501143): Add unit tests when metric producer is ready
 void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClockNs,
                                                          const int64_t elapsedRealtimeNs) {
-    if (!mIsRestrictedMetricsEnabled) {
+    if (!IsAtLeastU()) {
         return;
     }
     if (elapsedRealtimeNs - mLastTtlTime < StatsdStats::kMinTtlCheckPeriodNs) {
@@ -882,7 +874,7 @@ void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClock
 }
 
 void StatsLogProcessor::flushRestrictedDataIfNecessaryLocked(const int64_t elapsedRealtimeNs) {
-    if (!mIsRestrictedMetricsEnabled) {
+    if (!IsAtLeastU()) {
         return;
     }
     if (elapsedRealtimeNs - mLastFlushRestrictedTime < StatsdStats::kMinFlushRestrictedPeriodNs) {
@@ -898,15 +890,16 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
                                  const int32_t callingUid) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     string err = "";
-    const int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
-    if (!mIsRestrictedMetricsEnabled) {
-        err = "Restricted metrics are not enabled";
-        callback->sendFailure(err);
+
+    if (!IsAtLeastU()) {
+        ALOGW("Restricted metrics query invoked on U- device");
         StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
                 configId, configPackage, std::nullopt, callingUid,
                 InvalidQueryReason(FLAG_DISABLED));
         return;
     }
+
+    const int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
 
     // TODO(b/268416460): validate policyConfig here
 
@@ -1024,7 +1017,7 @@ set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
 
 void StatsLogProcessor::EnforceDataTtls(const int64_t wallClockNs,
                                         const int64_t elapsedRealtimeNs) {
-    if (!mIsRestrictedMetricsEnabled) {
+    if (!IsAtLeastU()) {
         return;
     }
     std::lock_guard<std::mutex> lock(mMetricsMutex);
