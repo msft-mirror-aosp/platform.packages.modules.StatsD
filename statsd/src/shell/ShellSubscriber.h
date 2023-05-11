@@ -24,7 +24,7 @@
 
 #include "external/StatsPullerManager.h"
 #include "packages/UidMap.h"
-#include "src/shell/ShellSubscriberClient.h"
+#include "shell/ShellSubscriberClient.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/statsd_config.pb.h"
 
@@ -56,8 +56,9 @@ namespace statsd {
  */
 class ShellSubscriber : public virtual RefBase {
 public:
-    ShellSubscriber(sp<UidMap> uidMap, sp<StatsPullerManager> pullerMgr)
-        : mUidMap(uidMap), mPullerMgr(pullerMgr){};
+    ShellSubscriber(sp<UidMap> uidMap, sp<StatsPullerManager> pullerMgr,
+                    const std::shared_ptr<LogEventFilter>& logEventFilter)
+        : mUidMap(uidMap), mPullerMgr(pullerMgr), mLogEventFilter(logEventFilter){};
 
     ~ShellSubscriber();
 
@@ -89,9 +90,14 @@ private:
 
     void pullAndSendHeartbeats();
 
+    /* Tells LogEventFilter about atom ids to parse */
+    void updateLogEventFilterLocked() const;
+
     sp<UidMap> mUidMap;
 
     sp<StatsPullerManager> mPullerMgr;
+
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     // Protects mClientSet, mThreadAlive, and ShellSubscriberClient
     mutable std::mutex mMutex;

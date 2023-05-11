@@ -38,8 +38,8 @@ using ::ndk::SharedRefBase;
 
 TEST(StatsServiceTest, TestAddConfig_simple) {
     const sp<UidMap> uidMap = new UidMap();
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
     const int kConfigKey = 12345;
     const int kCallingUid = 123;
     StatsdConfig config;
@@ -57,8 +57,8 @@ TEST(StatsServiceTest, TestAddConfig_simple) {
 
 TEST(StatsServiceTest, TestAddConfig_empty) {
     const sp<UidMap> uidMap = new UidMap();
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
     string serialized = "";
     const int kConfigKey = 12345;
     const int kCallingUid = 123;
@@ -73,8 +73,8 @@ TEST(StatsServiceTest, TestAddConfig_empty) {
 
 TEST(StatsServiceTest, TestAddConfig_invalid) {
     const sp<UidMap> uidMap = new UidMap();
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
     string serialized = "Invalid config!";
 
     EXPECT_FALSE(
@@ -92,8 +92,8 @@ TEST(StatsServiceTest, TestGetUidFromArgs) {
     int32_t uid;
 
     const sp<UidMap> uidMap = new UidMap();
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
     service->mEngBuild = true;
 
     // "-1"
