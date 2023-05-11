@@ -24,6 +24,7 @@
 
 using android::base::unique_fd;
 using android::util::ProtoOutputStream;
+using Status = ::ndk::ScopedAStatus;
 
 namespace android {
 namespace os {
@@ -174,7 +175,7 @@ bool ShellSubscriberClient::writeEventToProtoIfMatched(const LogEvent& event,
     event.ToProto(mProtoOut);
     mProtoOut.end(atomToken);
 
-    const int64_t timestampNs = event.GetElapsedTimestampNs();
+    const int64_t timestampNs = truncateTimestampIfNecessary(event);
     mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
                             FIELD_ID_SHELL_DATA__ELAPSED_TIMESTAMP_NANOS,
                     static_cast<long long>(timestampNs));
@@ -321,7 +322,12 @@ void ShellSubscriberClient::triggerCallback(StatsSubscriptionCallbackReason reas
     // Invoke Binder callback with cached event data.
     vector<uint8_t> payloadBytes;
     mProtoOut.serializeToVector(&payloadBytes);
-    mCallback->onSubscriptionData(reason, payloadBytes);
+    const Status status = mCallback->onSubscriptionData(reason, payloadBytes);
+    if (status.getStatus() == STATUS_DEAD_OBJECT &&
+        status.getExceptionCode() == EX_TRANSACTION_FAILED) {
+        mClientAlive = false;
+        return;
+    }
 
     mLastWriteMs = getElapsedRealtimeMillis();
     clearCache();

@@ -66,9 +66,11 @@ enum InvalidQueryReason {
 };
 
 typedef struct {
-    long insertError = 0;
-    long tableCreationError = 0;
-    long tableDeletionError = 0;
+    int64_t insertError = 0;
+    int64_t tableCreationError = 0;
+    int64_t tableDeletionError = 0;
+    std::list<int64_t> flushLatencyNs;
+    int64_t categoryChangedCount = 0;
 } RestrictedMetricStats;
 
 struct ConfigStats {
@@ -82,7 +84,8 @@ struct ConfigStats {
     int32_t matcher_count;
     int32_t alert_count;
     bool is_valid;
-    bool device_info_table_creation_failed;
+    bool device_info_table_creation_failed = false;
+    int32_t db_corrupted_count = 0;
 
     // Stores reasons for why config is valid or not
     std::optional<InvalidConfigReason> reason;
@@ -128,6 +131,8 @@ struct ConfigStats {
 
     // Maps metric ID of restricted metric to its stats.
     std::map<int64_t, RestrictedMetricStats> restricted_metric_stats;
+
+    std::list<int64_t> total_flush_latency_ns;
 };
 
 struct UidMapStats {
@@ -170,6 +175,10 @@ public:
     const static int kMaxPullAtomPackages = 100;
 
     const static int kMaxRestrictedMetricQueryCount = 20;
+
+    const static int kMaxRestrictedMetricFlushLatencyCount = 20;
+
+    const static int kMaxRestrictedConfigFlushLatencyCount = 20;
 
     // Max memory allowed for storing metrics per configuration. If this limit is exceeded, statsd
     // drops the metrics data in memory.
@@ -231,7 +240,7 @@ public:
 
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
-    static const int kMaxPushedAtomId = 750;
+    static const int kMaxPushedAtomId = 900;
 
     // Atom id that is the start of the pulled atoms.
     static const int kPullAtomStartTag = 10000;
@@ -302,6 +311,11 @@ public:
      * Report failure in creating the device info metadata table for restricted configs.
      */
     void noteDeviceInfoTableCreationFailed(const ConfigKey& key);
+
+    /**
+     * Report db corruption for restricted configs.
+     */
+    void noteDbCorrupted(const ConfigKey& key);
 
     /**
      * Report the size of output tuple of a condition.
@@ -551,12 +565,18 @@ public:
     /** Report query of restricted metric succeed **/
     void noteQueryRestrictedMetricSucceed(const int64_t configId, const string& configPackage,
                                           const std::optional<int32_t> configUid,
-                                          const int32_t callingUid);
+                                          const int32_t callingUid, const int64_t queryLatencyNs);
 
     /** Report query of restricted metric failed **/
     void noteQueryRestrictedMetricFailed(const int64_t configId, const string& configPackage,
                                          const std::optional<int32_t> configUid,
                                          const int32_t callingUid, const InvalidQueryReason reason);
+
+    /** Report query of restricted metric failed along with an error string **/
+    void noteQueryRestrictedMetricFailed(const int64_t configId, const string& configPackage,
+                                         const std::optional<int32_t> configUid,
+                                         const int32_t callingUid, const InvalidQueryReason reason,
+                                         const string& error);
 
     // Reports that a restricted metric fails to be inserted to database.
     void noteRestrictedMetricInsertError(const ConfigKey& configKey, int64_t metricId);
@@ -566,6 +586,17 @@ public:
 
     // Reports that a restricted metric fails to delete table in database.
     void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, const int64_t metricId);
+
+    // Reports the time it takes for a restricted metric to flush the data to the database.
+    void noteRestrictedMetricFlushLatency(const ConfigKey& configKey, const int64_t metricId,
+                                          const int64_t flushLatencyNs);
+
+    // Reports that a restricted metric had a category change.
+    void noteRestrictedMetricCategoryChanged(const ConfigKey& configKey, const int64_t metricId);
+
+    // Reports the time is takes to flush a restricted config to the database.
+    void noteRestrictedConfigFlushLatency(const ConfigKey& configKey,
+                                          const int64_t totalFlushLatencyNs);
 
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
@@ -722,16 +753,19 @@ private:
     std::list<int32_t> mSystemServerRestartSec;
 
     struct RestrictedMetricQueryStats {
-        RestrictedMetricQueryStats(
-                int32_t callingUid, int64_t configId, const string& configPackage,
-                std::optional<int32_t> configUid, int32_t queryTimeNs,
-                std::optional<InvalidQueryReason> invalidQueryReason = std::nullopt)
+        RestrictedMetricQueryStats(int32_t callingUid, int64_t configId,
+                                   const string& configPackage, std::optional<int32_t> configUid,
+                                   int32_t queryTimeNs,
+                                   std::optional<InvalidQueryReason> invalidQueryReason,
+                                   const string& error, std::optional<int64_t> queryLatencyNs)
             : mCallingUid(callingUid),
               mConfigId(configId),
               mConfigPackage(configPackage),
               mConfigUid(configUid),
               mQueryWallTimeNs(queryTimeNs),
-              mInvalidQueryReason(invalidQueryReason) {
+              mInvalidQueryReason(invalidQueryReason),
+              mError(error),
+              mQueryLatencyNs(queryLatencyNs) {
             mHasError = invalidQueryReason.has_value();
         }
         int32_t mCallingUid;
@@ -741,8 +775,16 @@ private:
         int64_t mQueryWallTimeNs;
         std::optional<InvalidQueryReason> mInvalidQueryReason;
         bool mHasError;
+        string mError;
+        std::optional<int64_t> mQueryLatencyNs;
     };
     std::list<RestrictedMetricQueryStats> mRestrictedMetricQueryStats;
+
+    void noteQueryRestrictedMetricFailedLocked(const int64_t configId, const string& configPackage,
+                                               const std::optional<int32_t> configUid,
+                                               const int32_t callingUid,
+                                               const InvalidQueryReason reason,
+                                               const string& error);
 
     // Stores the number of times statsd modified the anomaly alarm registered with
     // StatsCompanionService.

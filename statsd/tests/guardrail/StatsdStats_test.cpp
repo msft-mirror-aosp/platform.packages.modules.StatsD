@@ -488,8 +488,14 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     stats.noteRestrictedMetricTableCreationError(key, metricId);
     stats.noteRestrictedMetricTableDeletionError(key, metricId);
     stats.noteDeviceInfoTableCreationFailed(key);
+    stats.noteRestrictedMetricFlushLatency(key, metricId, 3000);
+    stats.noteRestrictedMetricFlushLatency(key, metricId, 3001);
+    stats.noteRestrictedMetricCategoryChanged(key, metricId);
+    stats.noteRestrictedConfigFlushLatency(key, 4000);
     ConfigKey configKeyWithoutError(0, 666);
     stats.noteConfigReceived(configKeyWithoutError, 2, 3, 4, 5, {}, nullopt);
+    stats.noteDbCorrupted(key);
+    stats.noteDbCorrupted(key);
 
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
@@ -503,8 +509,15 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).insert_error());
     EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).table_creation_error());
     EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).table_deletion_error());
+    EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).category_changed_count());
+    ASSERT_EQ(2, report.config_stats(1).restricted_metric_stats(0).flush_latency_ns().size());
+    EXPECT_EQ(3000, report.config_stats(1).restricted_metric_stats(0).flush_latency_ns(0));
+    EXPECT_EQ(3001, report.config_stats(1).restricted_metric_stats(0).flush_latency_ns(1));
+    ASSERT_EQ(1, report.config_stats(1).restricted_flush_latency().size());
+    EXPECT_EQ(4000, report.config_stats(1).restricted_flush_latency(0));
     EXPECT_TRUE(report.config_stats(1).device_info_table_creation_failed());
     EXPECT_EQ(metricId, report.config_stats(1).restricted_metric_stats(0).restricted_metric_id());
+    EXPECT_EQ(2, report.config_stats(1).restricted_db_corrupted_count());
 }
 
 TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
@@ -513,11 +526,14 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
     ConfigKey configKey(0, 12345);
     const string configPackage = "com.google.android.gm";
     stats.noteQueryRestrictedMetricSucceed(configKey.GetId(), configPackage, configKey.GetUid(),
-                                           callingUid);
+                                           callingUid, /*queryLatencyNs=*/5 * NS_PER_SEC);
 
     const int64_t configIdWithError = 111;
     stats.noteQueryRestrictedMetricFailed(configIdWithError, configPackage, std::nullopt,
                                           callingUid, InvalidQueryReason(AMBIGUOUS_CONFIG_KEY));
+    stats.noteQueryRestrictedMetricFailed(configIdWithError, configPackage, std::nullopt,
+                                          callingUid, InvalidQueryReason(AMBIGUOUS_CONFIG_KEY),
+                                          "error_message");
 
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
@@ -525,14 +541,20 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
     bool good = report.ParseFromArray(&output[0], output.size());
     EXPECT_TRUE(good);
 
-    ASSERT_EQ(2, report.restricted_metric_query_stats().size());
+    ASSERT_EQ(3, report.restricted_metric_query_stats().size());
     EXPECT_EQ(configKey.GetId(), report.restricted_metric_query_stats(0).config_id());
     EXPECT_EQ(configKey.GetUid(), report.restricted_metric_query_stats(0).config_uid());
     EXPECT_EQ(callingUid, report.restricted_metric_query_stats(0).calling_uid());
     EXPECT_EQ(configPackage, report.restricted_metric_query_stats(0).config_package());
+    EXPECT_FALSE(report.restricted_metric_query_stats(0).has_query_error());
+    EXPECT_EQ(5 * NS_PER_SEC, report.restricted_metric_query_stats(0).query_latency_ns());
     EXPECT_EQ(configIdWithError, report.restricted_metric_query_stats(1).config_id());
     EXPECT_EQ(AMBIGUOUS_CONFIG_KEY, report.restricted_metric_query_stats(1).invalid_query_reason());
     EXPECT_EQ(false, report.restricted_metric_query_stats(1).has_config_uid());
+    EXPECT_FALSE(report.restricted_metric_query_stats(1).has_query_error());
+    EXPECT_FALSE(report.restricted_metric_query_stats(1).has_query_latency_ns());
+    EXPECT_EQ("error_message", report.restricted_metric_query_stats(2).query_error());
+    EXPECT_FALSE(report.restricted_metric_query_stats(2).has_query_latency_ns());
     EXPECT_NE(report.restricted_metric_query_stats(1).query_wall_time_ns(),
               report.restricted_metric_query_stats(0).query_wall_time_ns());
 }
