@@ -269,7 +269,8 @@ private:
     set<ConfigKey> getRestrictedConfigKeysToQueryLocked(const int32_t callingUid,
                                                         const int64_t configId,
                                                         const set<int32_t>& configPackageUids,
-                                                        string& err);
+                                                        string& err,
+                                                        InvalidQueryReason& invalidQueryReason);
 
     // Maps the isolated uid in the log event to host uid if the log event contains uid fields.
     void mapIsolatedUidToHostUidIfNecessaryLocked(LogEvent* event) const;
@@ -404,6 +405,7 @@ private:
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestOnLogEventMalformedDbNameDeleted);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeGuardrail);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestRestrictedMetricLoadsTtlFromDisk);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);

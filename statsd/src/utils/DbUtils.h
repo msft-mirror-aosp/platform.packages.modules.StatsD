@@ -41,6 +41,11 @@ string reformatMetricId(const int64_t metricId);
 /* Creates a new data table for a specified metric if one does not yet exist. */
 bool createTableIfNeeded(const ConfigKey& key, const int64_t metricId, const LogEvent& event);
 
+/* Checks whether the table schema for the given metric matches the event.
+ * Returns true if the table has not yet been created.
+ */
+bool isEventCompatible(const ConfigKey& key, const int64_t metricId, const LogEvent& event);
+
 /* Deletes a data table for the specified metric. */
 bool deleteTable(const ConfigKey& key, const int64_t metricId);
 
@@ -58,10 +63,11 @@ void closeDb(sqlite3* db);
 /* Inserts new data into the specified metric data table.
  * A temp sqlite handle is created using the ConfigKey.
  */
-bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>& events);
+bool insert(const ConfigKey& key, const int64_t metricId, const vector<LogEvent>& events,
+            string& error);
 
 /* Inserts new data into the specified sqlite db handle. */
-bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events);
+bool insert(sqlite3* db, const int64_t metricId, const vector<LogEvent>& events, string& error);
 
 /* Executes a sql query on the specified SQLite db.
  * A temp sqlite handle is created using the ConfigKey.
@@ -73,6 +79,9 @@ bool flushTtl(sqlite3* db, const int64_t metricId, const int64_t ttlWallClockNs)
 
 /* Checks for database corruption and deletes the db if it is corrupted. */
 void verifyIntegrityAndDeleteIfNecessary(const ConfigKey& key);
+
+/* Creates and updates the device info table for the given configKey. */
+bool updateDeviceInfoTable(const ConfigKey& key, string& error);
 
 }  // namespace dbutils
 }  // namespace statsd

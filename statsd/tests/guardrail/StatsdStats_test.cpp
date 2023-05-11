@@ -350,6 +350,7 @@ TEST(StatsdStatsTest, TestAtomLog) {
         if (atomStats.tag() == util::APP_CRASH_OCCURRED && atomStats.count() == 1) {
             dropboxAtomGood = true;
         }
+        EXPECT_FALSE(atomStats.has_dropped_count());
     }
 
     EXPECT_TRUE(dropboxAtomGood);
@@ -383,6 +384,7 @@ TEST(StatsdStatsTest, TestNonPlatformAtomLog) {
         if (atomStats.tag() == newAtom2 && atomStats.count() == 1) {
             newAtom2Good = true;
         }
+        EXPECT_FALSE(atomStats.has_dropped_count());
     }
 
     EXPECT_TRUE(newAtom1Good);
@@ -475,6 +477,64 @@ TEST(StatsdStatsTest, TestAtomMetricsStats) {
     EXPECT_EQ(0L, atomStats2.bucket_dropped());
     EXPECT_EQ(0L, atomStats2.min_bucket_boundary_delay_ns());
     EXPECT_EQ(1L, atomStats2.max_bucket_boundary_delay_ns());
+}
+
+TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
+    StatsdStats stats;
+    const int64_t metricId = -1234556L;
+    ConfigKey key(0, 12345);
+    stats.noteConfigReceived(key, 2, 3, 4, 5, {}, nullopt);
+    stats.noteRestrictedMetricInsertError(key, metricId);
+    stats.noteRestrictedMetricTableCreationError(key, metricId);
+    stats.noteRestrictedMetricTableDeletionError(key, metricId);
+    stats.noteDeviceInfoTableCreationFailed(key);
+    ConfigKey configKeyWithoutError(0, 666);
+    stats.noteConfigReceived(configKeyWithoutError, 2, 3, 4, 5, {}, nullopt);
+
+    vector<uint8_t> output;
+    stats.dumpStats(&output, false);
+    StatsdStatsReport report;
+    bool good = report.ParseFromArray(&output[0], output.size());
+    EXPECT_TRUE(good);
+
+    ASSERT_EQ(2, report.config_stats().size());
+    ASSERT_EQ(0, report.config_stats(0).restricted_metric_stats().size());
+    ASSERT_EQ(1, report.config_stats(1).restricted_metric_stats().size());
+    EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).insert_error());
+    EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).table_creation_error());
+    EXPECT_EQ(1, report.config_stats(1).restricted_metric_stats(0).table_deletion_error());
+    EXPECT_TRUE(report.config_stats(1).device_info_table_creation_failed());
+    EXPECT_EQ(metricId, report.config_stats(1).restricted_metric_stats(0).restricted_metric_id());
+}
+
+TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
+    StatsdStats stats;
+    const int32_t callingUid = 100;
+    ConfigKey configKey(0, 12345);
+    const string configPackage = "com.google.android.gm";
+    stats.noteQueryRestrictedMetricSucceed(configKey.GetId(), configPackage, configKey.GetUid(),
+                                           callingUid);
+
+    const int64_t configIdWithError = 111;
+    stats.noteQueryRestrictedMetricFailed(configIdWithError, configPackage, std::nullopt,
+                                          callingUid, InvalidQueryReason(AMBIGUOUS_CONFIG_KEY));
+
+    vector<uint8_t> output;
+    stats.dumpStats(&output, false);
+    StatsdStatsReport report;
+    bool good = report.ParseFromArray(&output[0], output.size());
+    EXPECT_TRUE(good);
+
+    ASSERT_EQ(2, report.restricted_metric_query_stats().size());
+    EXPECT_EQ(configKey.GetId(), report.restricted_metric_query_stats(0).config_id());
+    EXPECT_EQ(configKey.GetUid(), report.restricted_metric_query_stats(0).config_uid());
+    EXPECT_EQ(callingUid, report.restricted_metric_query_stats(0).calling_uid());
+    EXPECT_EQ(configPackage, report.restricted_metric_query_stats(0).config_package());
+    EXPECT_EQ(configIdWithError, report.restricted_metric_query_stats(1).config_id());
+    EXPECT_EQ(AMBIGUOUS_CONFIG_KEY, report.restricted_metric_query_stats(1).invalid_query_reason());
+    EXPECT_EQ(false, report.restricted_metric_query_stats(1).has_config_uid());
+    EXPECT_NE(report.restricted_metric_query_stats(1).query_wall_time_ns(),
+              report.restricted_metric_query_stats(0).query_wall_time_ns());
 }
 
 TEST(StatsdStatsTest, TestAnomalyMonitor) {
@@ -633,12 +693,88 @@ TEST(StatsdStatsTest, TestAtomErrorStats) {
     const auto& pushedAtomStats = report.atom_stats(0);
     EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
     EXPECT_EQ(numErrors, pushedAtomStats.error_count());
+    EXPECT_FALSE(pushedAtomStats.has_dropped_count());
 
     // Check error count = numErrors for pull atom
     ASSERT_EQ(1, report.pulled_atom_stats_size());
     const auto& pulledAtomStats = report.pulled_atom_stats(0);
     EXPECT_EQ(pullAtomTag, pulledAtomStats.atom_id());
     EXPECT_EQ(numErrors, pulledAtomStats.atom_error_count());
+}
+
+TEST(StatsdStatsTest, TestAtomDroppedStats) {
+    StatsdStats stats;
+
+    const int pushAtomTag = 100;
+    const int nonPlatformPushAtomTag = StatsdStats::kMaxPushedAtomId + 100;
+
+    const int numDropped = 10;
+
+    for (int i = 0; i < numDropped; i++) {
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
+    }
+
+    vector<uint8_t> output;
+    stats.dumpStats(&output, true);
+    ASSERT_EQ(0, stats.mPushedAtomDropsStats.size());
+
+    StatsdStatsReport report;
+    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+
+    // Check dropped_count = numDropped for push atoms
+    ASSERT_EQ(2, report.atom_stats_size());
+
+    const auto& pushedAtomStats = report.atom_stats(0);
+    EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
+    EXPECT_EQ(numDropped, pushedAtomStats.count());
+    EXPECT_EQ(numDropped, pushedAtomStats.dropped_count());
+    EXPECT_FALSE(pushedAtomStats.has_error_count());
+
+    const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
+    EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
+    EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.count());
+    EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.dropped_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
+}
+
+TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats) {
+    StatsdStats stats;
+
+    const int pushAtomTag = 100;
+    const int nonPlatformPushAtomTag = StatsdStats::kMaxPushedAtomId + 100;
+
+    const int numLogged = 10;
+    for (int i = 0; i < numLogged; i++) {
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0);
+    }
+
+    const int numDropped = 10;
+    for (int i = 0; i < numDropped; i++) {
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
+    }
+
+    vector<uint8_t> output;
+    stats.dumpStats(&output, false);
+    StatsdStatsReport report;
+    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+
+    // Check dropped_count = numDropped for push atoms
+    ASSERT_EQ(2, report.atom_stats_size());
+
+    const auto& pushedAtomStats = report.atom_stats(0);
+    EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
+    EXPECT_EQ(numLogged + numDropped, pushedAtomStats.count());
+    EXPECT_EQ(numDropped, pushedAtomStats.dropped_count());
+    EXPECT_FALSE(pushedAtomStats.has_error_count());
+
+    const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
+    EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
+    EXPECT_EQ(numLogged + numDropped, nonPlatformPushedAtomStats.count());
+    EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.dropped_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
 }
 
 }  // namespace statsd

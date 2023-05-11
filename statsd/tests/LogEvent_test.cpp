@@ -226,6 +226,31 @@ TEST(LogEventTest, TestPrimitiveParsing) {
     AStatsEvent_release(event);
 }
 
+TEST(LogEventTest, TestFetchHeaderOnly) {
+    AStatsEvent* event = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(event, 100);
+    AStatsEvent_writeInt32(event, 10);
+    AStatsEvent_writeInt64(event, 0x123456789);
+    AStatsEvent_writeFloat(event, 2.0);
+    AStatsEvent_writeBool(event, true);
+    AStatsEvent_build(event);
+
+    size_t size;
+    const uint8_t* buf = AStatsEvent_getBuffer(event, &size);
+
+    LogEvent logEvent(/*uid=*/1000, /*pid=*/1001);
+    EXPECT_TRUE(logEvent.parseBuffer(buf, size, /*fetchHeaderOnly=*/true));
+
+    AStatsEvent_release(event);
+
+    EXPECT_EQ(100, logEvent.GetTagId());
+    EXPECT_EQ(1000, logEvent.GetUid());
+    EXPECT_EQ(1001, logEvent.GetPid());
+    EXPECT_FALSE(logEvent.hasAttributionChain());
+
+    ASSERT_EQ(logEvent.getValues().size(), 0);
+}
+
 TEST(LogEventTest, TestStringAndByteArrayParsing) {
     AStatsEvent* event = AStatsEvent_obtain();
     AStatsEvent_setAtomId(event, 100);
@@ -623,8 +648,7 @@ TEST(LogEventTest, TestEmptyArray) {
     EXPECT_EQ(1000, logEvent.GetUid());
     EXPECT_EQ(1001, logEvent.GetPid());
 
-    const vector<FieldValue>& values = logEvent.getValues();
-    ASSERT_EQ(0, values.size());
+    ASSERT_EQ(logEvent.getValues().size(), 0);
 
     AStatsEvent_release(event);
 }

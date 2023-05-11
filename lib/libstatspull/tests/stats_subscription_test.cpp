@@ -186,8 +186,8 @@ TEST_F(SubscriptionTest, TestSubscription) {
         ASSERT_TRUE(actualShellData.ParseFromArray(callbackData.payload.data(),
                                                    callbackData.payload.size()));
 
-        ASSERT_EQ(actualShellData.timestamp_nanos_size(), 3);
-        EXPECT_THAT(actualShellData.timestamp_nanos(), Each(Gt(0LL)));
+        ASSERT_EQ(actualShellData.elapsed_timestamp_nanos_size(), 3);
+        EXPECT_THAT(actualShellData.elapsed_timestamp_nanos(), Each(Gt(0LL)));
 
         ASSERT_EQ(actualShellData.atom_size(), 3);
 
@@ -244,8 +244,8 @@ TEST_F(SubscriptionTest, TestSubscription) {
         ASSERT_TRUE(actualShellData.ParseFromArray(callbackData.payload.data(),
                                                    callbackData.payload.size()));
 
-        ASSERT_EQ(actualShellData.timestamp_nanos_size(), 1);
-        EXPECT_THAT(actualShellData.timestamp_nanos(), Each(Gt(0LL)));
+        ASSERT_EQ(actualShellData.elapsed_timestamp_nanos_size(), 1);
+        EXPECT_THAT(actualShellData.elapsed_timestamp_nanos(), Each(Gt(0LL)));
 
         ASSERT_EQ(actualShellData.atom_size(), 1);
 
@@ -271,8 +271,8 @@ TEST_F(SubscriptionTest, TestSubscription) {
         ASSERT_TRUE(actualShellData.ParseFromArray(callbackData.payload.data(),
                                                    callbackData.payload.size()));
 
-        ASSERT_EQ(actualShellData.timestamp_nanos_size(), 1);
-        EXPECT_THAT(actualShellData.timestamp_nanos(), Each(Gt(0LL)));
+        ASSERT_EQ(actualShellData.elapsed_timestamp_nanos_size(), 1);
+        EXPECT_THAT(actualShellData.elapsed_timestamp_nanos(), Each(Gt(0LL)));
 
         ASSERT_EQ(actualShellData.atom_size(), 1);
 
@@ -299,8 +299,8 @@ TEST_F(SubscriptionTest, TestSubscription) {
         ASSERT_TRUE(actualShellData.ParseFromArray(callbackData.payload.data(),
                                                    callbackData.payload.size()));
 
-        ASSERT_EQ(actualShellData.timestamp_nanos_size(), 1);
-        EXPECT_THAT(actualShellData.timestamp_nanos(), Each(Gt(0LL)));
+        ASSERT_EQ(actualShellData.elapsed_timestamp_nanos_size(), 1);
+        EXPECT_THAT(actualShellData.elapsed_timestamp_nanos(), Each(Gt(0LL)));
 
         ASSERT_EQ(actualShellData.atom_size(), 1);
 
