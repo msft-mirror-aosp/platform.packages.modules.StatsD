@@ -37,9 +37,6 @@ using IsAtLeastSFunc = std::function<bool()>;
 const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
-const std::string LIMIT_PULL_FLAG = "limit_pull";
-const std::string RESTRICTED_METRICS_FLAG = "enable_restricted_metrics";
-
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
 const std::string FLAG_EMPTY = "";
