@@ -21,6 +21,7 @@
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
+#include <android-modules-utils/sdk_level.h>
 #include <android/binder_ibinder_platform.h>
 #include <cutils/multiuser.h>
 #include <private/android_filesystem_config.h>
@@ -46,6 +47,7 @@
 using namespace android;
 
 using android::base::StringPrintf;
+using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
 
@@ -1405,7 +1407,8 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId
                                                           const int32_t callingUid,
                                                           vector<int64_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+    if (!IsAtLeastU()) {
+        ALOGW("setRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
     mConfigManager->SetRestrictedMetricsChangedReceiver(configPackage, configId, callingUid, pir);
@@ -1421,7 +1424,8 @@ Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t confi
                                                              const string& configPackage,
                                                              const int32_t callingUid) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!FlagProvider::getInstance().getBootFlagBool(RESTRICTED_METRICS_FLAG, FLAG_FALSE)) {
+    if (!IsAtLeastU()) {
+        ALOGW("removeRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
     mConfigManager->RemoveRestrictedMetricsChangedReceiver(configPackage, configId, callingUid);

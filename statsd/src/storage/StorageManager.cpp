@@ -20,6 +20,7 @@
 #include "storage/StorageManager.h"
 
 #include <android-base/file.h>
+#include <android-modules-utils/sdk_level.h>
 #include <private/android_filesystem_config.h>
 #include <sys/stat.h>
 
@@ -34,6 +35,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
 using std::map;
@@ -823,6 +825,9 @@ void StorageManager::printDirStats(int outFd, const char* path) {
 
 void StorageManager::enforceDbGuardrails(const char* path, const int64_t currWallClockSec,
                                          const int64_t maxBytes) {
+    if (!IsAtLeastU()) {
+        return;
+    }
     unique_ptr<DIR, decltype(&closedir)> dir(opendir(path), closedir);
     if (dir == NULL) {
         VLOG("Path %s does not exist", path);
