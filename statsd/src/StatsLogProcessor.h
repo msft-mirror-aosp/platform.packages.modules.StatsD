@@ -347,8 +347,6 @@ private:
     // The time for the next anomaly alarm for alerts.
     int64_t mNextAnomalyAlarmTime = 0;
 
-    bool mIsRestrictedMetricsEnabled;
-
     bool mPrintAllLogs = false;
 
     friend class StatsLogProcessorTestRestricted;

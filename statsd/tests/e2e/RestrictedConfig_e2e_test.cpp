@@ -1,3 +1,18 @@
+// Copyright (C) 2023 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "flags/FlagProvider.h"
@@ -7,6 +22,8 @@
 namespace android {
 namespace os {
 namespace statsd {
+
+using android::modules::sdklevel::IsAtLeastU;
 
 #ifdef __ANDROID__
 
@@ -66,9 +83,9 @@ protected:
     string error;
 
     void SetUp() override {
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
-        FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                                 /*isBootFlag=*/true);
+        if (!IsAtLeastU()) {
+            GTEST_SKIP();
+        }
         StatsServiceConfigTest::SetUp();
 
         mockStatsQueryCallback = SharedRefBase::make<StrictMock<MockStatsQueryCallback>>();
@@ -106,6 +123,9 @@ protected:
                                     /*installer=*/String16(""), /*certificateHash=*/{});
     }
     void TearDown() override {
+        if (!IsAtLeastU()) {
+            GTEST_SKIP();
+        }
         Mock::VerifyAndClear(mockStatsQueryCallback.get());
         queryDataResult.clear();
         columnNamesResult.clear();
