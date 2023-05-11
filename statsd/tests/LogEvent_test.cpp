@@ -14,6 +14,7 @@
 
 #include "src/logd/LogEvent.h"
 
+#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "flags/FlagProvider.h"
@@ -29,6 +30,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::modules::sdklevel::IsAtLeastU;
 using std::string;
 using std::vector;
 using util::ProtoOutputStream;
@@ -1006,8 +1008,9 @@ TEST_P(LogEventTest, TestResetStateAnnotation) {
 }
 
 TEST_P(LogEventTest, TestRestrictionCategoryAnnotation) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_TRUE(createAtomLevelIntAnnotationLogEvent(
@@ -1015,29 +1018,28 @@ TEST_P(LogEventTest, TestRestrictionCategoryAnnotation) {
             /*doHeaderPrefetch=*/GetParam()));
 
     ASSERT_EQ(event.getRestrictionCategory(), restrictionCategory);
-    FlagProvider::getInstance().resetOverrides();
 }
 
 TEST_P(LogEventTest, TestInvalidRestrictionCategoryAnnotation) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     int32_t restrictionCategory = 619;  // unknown category
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_FALSE(createAtomLevelIntAnnotationLogEvent(
             &event, INT32_TYPE, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY, restrictionCategory,
             /*doHeaderPrefetch=*/GetParam()));
-    FlagProvider::getInstance().resetOverrides();
 }
 
-TEST_P(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_FALSE,
-                                             /*isBootFlag=*/true);
+TEST_P(LogEventTest, TestRestrictionCategoryAnnotationBelowUDevice) {
+    if (IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_FALSE(createAtomLevelIntAnnotationLogEvent(
             &event, INT32_TYPE, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY, restrictionCategory,
             /*doHeaderPrefetch=*/GetParam()));
-    FlagProvider::getInstance().resetOverrides();
 }
 
 TEST_P(LogEventTestBadAnnotationFieldTypes, TestResetStateAnnotation) {
@@ -1158,8 +1160,9 @@ INSTANTIATE_TEST_SUITE_P(
         LogEvent_FieldRestrictionTest::ToString);
 
 TEST_P(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_TRUE(
             createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE, std::get<0>(GetParam()), true,
@@ -1171,8 +1174,9 @@ TEST_P(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation) {
 }
 
 TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(
             &event, STRING_TYPE, std::get<0>(GetParam()),
@@ -1180,17 +1184,19 @@ TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType) {
 }
 
 TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                             /*isBootFlag=*/true);
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_FALSE(createAtomLevelBoolAnnotationLogEvent(
             &event, STRING_TYPE, std::get<0>(GetParam()), true,
             /*doHeaderPrefetch=*/std::get<1>(GetParam())));
 }
 
-TEST_P(LogEvent_FieldRestrictionTest, TestRestrictionCategoryAnnotationFlagDisabled) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_FALSE,
-                                             /*isBootFlag=*/true);
+TEST_P(LogEvent_FieldRestrictionTest, TestRestrictionCategoryAnnotationBelowUDevice) {
+    if (IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_FALSE(
