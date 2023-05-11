@@ -133,7 +133,7 @@ public final class StatsManager {
     /**
      * @hide
      **/
-    @VisibleForTesting public static final long DEFAULT_TIMEOUT_MILLIS = 2_000L; // 2 seconds.
+    @VisibleForTesting public static final long DEFAULT_TIMEOUT_MILLIS = 1_500L; // 1.5 seconds.
 
     /**
      * Constructor for StatsManagerClient.
