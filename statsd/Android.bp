@@ -392,6 +392,7 @@ cc_test {
 
     static_libs: [
         "libgmock",
+        "libstatsgtestmatchers",
         "libplatformprotos",
         "libstatslog_statsdtest",
         "libstatssocket_private",
@@ -531,6 +532,15 @@ java_library {
 filegroup {
     name: "libstats_config_protos",
     srcs: ["src/statsd_config.proto"],
+}
+
+// Filegroup for statsd report protos.
+filegroup {
+    name: "libstats_log_protos",
+    srcs: [
+        "src/stats_log.proto",
+        "src/guardrail/invalid_config_reason_enum.proto",
+    ],
 }
 
 // Filegroup for all statsd protos
