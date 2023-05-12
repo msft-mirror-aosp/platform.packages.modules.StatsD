@@ -137,7 +137,6 @@ cc_test {
         "libgmock",
         "libstatsgtestmatchers",
         "libstatslog_statsdtest",
-        "libplatformprotos",
         "libprotobuf-cpp-lite",
     ],
     test_suites: [
