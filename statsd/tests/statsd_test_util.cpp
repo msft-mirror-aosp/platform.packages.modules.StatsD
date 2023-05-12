@@ -49,7 +49,7 @@ ConfigMetricsReport StatsServiceConfigTest::getReports(sp<StatsLogProcessor> pro
     ConfigMetricsReportList reports;
     reports.ParseFromArray(output.data(), output.size());
     EXPECT_EQ(1, reports.reports_size());
-    return reports.reports(kCallingUid);
+    return reports.reports(0);
 }
 
 StatsLogReport outputStreamToProto(ProtoOutputStream* proto) {
