@@ -472,6 +472,8 @@ private:
     FRIEND_TEST(PartialBucketE2eTest, TestCountMetricNoSplitByDefault);
     FRIEND_TEST(RestrictedConfigE2ETest, NonRestrictedConfigGetReport);
     FRIEND_TEST(RestrictedConfigE2ETest, RestrictedConfigNoReport);
+    FRIEND_TEST(RestrictedConfigE2ETest,
+                TestSendRestrictedMetricsChangedBroadcastMultipleMatchedConfigs);
     FRIEND_TEST(ConfigUpdateE2eTest, TestAnomalyDurationMetric);
 
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
