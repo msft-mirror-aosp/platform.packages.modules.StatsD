@@ -71,7 +71,7 @@ const int FIELD_ID_CHANGE_PREV_VERSION_STRING = 9;
 const int FIELD_ID_CHANGE_NEW_VERSION_STRING_HASH = 10;
 const int FIELD_ID_CHANGE_PREV_VERSION_STRING_HASH = 11;
 
-UidMap::UidMap() : mBytesUsed(0), mIncludeCertificateHash(false) {
+UidMap::UidMap() : mBytesUsed(0) {
 }
 
 UidMap::~UidMap() {}
@@ -351,7 +351,7 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
                                       FIELD_ID_SNAPSHOT_PACKAGE_INFO);
         // Get installer index.
         int installerIndex = -1;
-        if (includeInstaller && mIncludeCertificateHash && installerIndices != nullptr) {
+        if (includeInstaller && installerIndices != nullptr) {
             const auto& it = installerIndices->find(appData.installer);
             if (it == installerIndices->end()) {
                 // We have not encountered this installer yet; add it to installerIndices.
@@ -400,17 +400,13 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
             }
         }
 
-        if (mIncludeCertificateHash) {
-            const size_t dumpHashSize =
-                    truncatedCertificateHashSize <= appData.certificateHash.size()
-                            ? truncatedCertificateHashSize
-                            : appData.certificateHash.size();
-            if (dumpHashSize > 0) {
-                proto->write(
-                        FIELD_TYPE_BYTES | FIELD_ID_SNAPSHOT_PACKAGE_TRUNCATED_CERTIFICATE_HASH,
-                        reinterpret_cast<const char*>(appData.certificateHash.data()),
-                        dumpHashSize);
-            }
+        const size_t dumpHashSize = truncatedCertificateHashSize <= appData.certificateHash.size()
+                                            ? truncatedCertificateHashSize
+                                            : appData.certificateHash.size();
+        if (dumpHashSize > 0) {
+            proto->write(FIELD_TYPE_BYTES | FIELD_ID_SNAPSHOT_PACKAGE_TRUNCATED_CERTIFICATE_HASH,
+                         reinterpret_cast<const char*>(appData.certificateHash.data()),
+                         dumpHashSize);
         }
 
         proto->write(FIELD_TYPE_INT64 | FIELD_ID_SNAPSHOT_PACKAGE_VERSION,
@@ -481,7 +477,7 @@ void UidMap::appendUidMap(const int64_t& timestamp, const ConfigKey& key,
         installers[index] = installer;
     }
 
-    if (includeInstaller && mIncludeCertificateHash) {
+    if (includeInstaller) {
         // Write installer list; either strings or hashes.
         for (const string& installerName : installers) {
             if (str_set == nullptr) {  // Strings not hashed
@@ -552,11 +548,6 @@ set<int32_t> UidMap::getAppUid(const string& package) const {
         }
     }
     return results;
-}
-
-void UidMap::setIncludeCertificateHash(const bool include) {
-    lock_guard<mutex> lock(mMutex);
-    mIncludeCertificateHash = include;
 }
 
 // Note not all the following AIDs are used as uids. Some are used only for gids.
