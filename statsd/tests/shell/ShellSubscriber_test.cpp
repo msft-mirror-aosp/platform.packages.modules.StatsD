@@ -23,11 +23,11 @@
 #include <vector>
 
 #include "frameworks/proto_logging/stats/atoms.pb.h"
+#include "gtest_matchers.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/shell/shell_data.pb.h"
 #include "stats_event.h"
 #include "statslog_statsdtest.h"
-#include "tests/gtest_matchers.h"
 #include "tests/metrics/metrics_test_helper.h"
 #include "tests/statsd_test_util.h"
 

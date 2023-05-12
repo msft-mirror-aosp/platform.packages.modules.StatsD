@@ -21,8 +21,8 @@
 
 #include "frameworks/proto_logging/stats/atoms.pb.h"
 #include "frameworks/proto_logging/stats/attribution_node.pb.h"
-#include "src/shell/shell_data.pb.h"
-#include "src/stats_log.pb.h"
+#include "packages/modules/StatsD/statsd/src/shell/shell_data.pb.h"
+#include "packages/modules/StatsD/statsd/src/stats_log.pb.h"
 
 namespace android {
 namespace os {
