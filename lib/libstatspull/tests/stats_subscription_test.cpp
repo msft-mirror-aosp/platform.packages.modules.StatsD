@@ -16,8 +16,8 @@
 
 #include <binder/ProcessState.h>
 #include <gmock/gmock.h>
-#include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
+#include <gtest_matchers.h>
 #include <stats_subscription.h>
 #include <stdint.h>
 #include <utils/Looper.h>
@@ -47,17 +47,11 @@ using android::os::statsd::util::SCREEN_BRIGHTNESS_CHANGED;
 using android::os::statsd::util::stats_write;
 using android::os::statsd::util::TEST_ATOM_REPORTED;
 using android::os::statsd::util::TEST_ATOM_REPORTED__REPEATED_ENUM_FIELD__OFF;
-using google::protobuf::util::MessageDifferencer;
 using std::string;
 using std::vector;
 using std::this_thread::sleep_for;
 
 namespace {
-
-// Checks equality on explicitly set values.
-MATCHER_P(ProtoEq, otherArg, "") {
-    return MessageDifferencer::Equals(arg, otherArg);
-}
 
 class SubscriptionTest : public Test {
 public:
@@ -194,7 +188,7 @@ TEST_F(SubscriptionTest, TestSubscription) {
         // Verify atom 1.
         Atom expectedAtom;
         expectedAtom.mutable_screen_brightness_changed()->set_level(100);
-        EXPECT_THAT(actualShellData.atom(0), ProtoEq(expectedAtom));
+        EXPECT_THAT(actualShellData.atom(0), EqAtom(expectedAtom));
 
         // Verify atom 2.
         expectedAtom.Clear();
@@ -221,11 +215,11 @@ TEST_F(SubscriptionTest, TestSubscription) {
                                                                &repeatedBool[0] + 2};
         *testAtomReported->mutable_repeated_enum_field() = {repeatedEnums.begin(),
                                                             repeatedEnums.end()};
-        EXPECT_THAT(actualShellData.atom(1), ProtoEq(expectedAtom));
+        EXPECT_THAT(actualShellData.atom(1), EqAtom(expectedAtom));
 
         // Verify atom 3.
         testAtomReported->set_int_field(2);
-        EXPECT_THAT(actualShellData.atom(2), ProtoEq(expectedAtom));
+        EXPECT_THAT(actualShellData.atom(2), EqAtom(expectedAtom));
 
         // Log another ScreenBrightnessChanged atom. No callback should occur.
         stats_write(SCREEN_BRIGHTNESS_CHANGED, 99);
@@ -252,7 +246,7 @@ TEST_F(SubscriptionTest, TestSubscription) {
         // Verify atom 1.
         expectedAtom.Clear();
         expectedAtom.mutable_screen_brightness_changed()->set_level(99);
-        EXPECT_THAT(actualShellData.atom(0), ProtoEq(expectedAtom));
+        EXPECT_THAT(actualShellData.atom(0), EqAtom(expectedAtom));
 
         // Log another ScreenBrightnessChanged atom. No callback should occur.
         stats_write(SCREEN_BRIGHTNESS_CHANGED, 98);
@@ -279,7 +273,7 @@ TEST_F(SubscriptionTest, TestSubscription) {
         // Verify atom 1.
         expectedAtom.Clear();
         expectedAtom.mutable_screen_brightness_changed()->set_level(98);
-        EXPECT_THAT(actualShellData.atom(0), ProtoEq(expectedAtom));
+        EXPECT_THAT(actualShellData.atom(0), EqAtom(expectedAtom));
 
         // Log another ScreenBrightnessChanged atom. No callback should occur.
         stats_write(SCREEN_BRIGHTNESS_CHANGED, 97);
@@ -307,7 +301,7 @@ TEST_F(SubscriptionTest, TestSubscription) {
         // Verify atom 1.
         expectedAtom.Clear();
         expectedAtom.mutable_screen_brightness_changed()->set_level(97);
-        EXPECT_THAT(actualShellData.atom(0), ProtoEq(expectedAtom));
+        EXPECT_THAT(actualShellData.atom(0), EqAtom(expectedAtom));
     } else {
         GTEST_SKIP();
     }
