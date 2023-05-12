@@ -24,6 +24,7 @@
 
 #include "HashableDimensionKey.h"
 #include "anomaly/AnomalyTracker.h"
+#include "condition/ConditionTimer.h"
 #include "condition/ConditionWizard.h"
 #include "config/ConfigKey.h"
 #include "guardrail/StatsdStats.h"
@@ -32,6 +33,7 @@
 #include "packages/PackageInfoListener.h"
 #include "state/StateListener.h"
 #include "state/StateManager.h"
+#include "utils/ShardOffsetProvider.h"
 
 namespace android {
 namespace os {
@@ -131,6 +133,13 @@ struct SkippedBucket {
         bucketEndTimeNs = 0;
         dropEvents.clear();
     }
+};
+
+struct SamplingInfo {
+    // Matchers for sampled fields. Currently only one sampled dimension is supported.
+    std::vector<Matcher> sampledWhatFields;
+
+    int shardCount = 0;
 };
 
 template <class T>
@@ -372,6 +381,12 @@ public:
         std::lock_guard<std::mutex> lock(mMutex);
         mAnomalyTrackers.push_back(anomalyTracker);
     }
+
+    void setSamplingInfo(SamplingInfo samplingInfo) {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mSampledWhatFields.swap(samplingInfo.sampledWhatFields);
+        mShardCount = samplingInfo.shardCount;
+    }
     // End: getters/setters
 protected:
     /**
@@ -486,6 +501,8 @@ protected:
     // exceeded the maximum number allowed, which is currently capped at 10.
     bool maxDropEventsReached() const;
 
+    bool passesSampleCheckLocked(const vector<FieldValue>& values) const;
+
     const int64_t mMetricId;
 
     // Hash of the Metric's proto bytes from StatsdConfig, including any activations.
@@ -511,6 +528,8 @@ protected:
     int64_t mBucketSizeNs;
 
     ConditionState mCondition;
+
+    ConditionTimer mConditionTimer;
 
     int mConditionTrackerIndex;
 
@@ -567,6 +586,11 @@ protected:
     // If hard dimension guardrail is hit, do not spam logcat
     bool mHasHitGuardrail;
 
+    // Matchers for sampled fields. Currently only one sampled dimension is supported.
+    std::vector<Matcher> mSampledWhatFields;
+
+    int mShardCount;
+
     FRIEND_TEST(CountMetricE2eTest, TestSlicedState);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithMap);
     FRIEND_TEST(CountMetricE2eTest, TestMultipleSlicedStates);
@@ -605,6 +629,7 @@ protected:
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
 
     FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
+    FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMetricActivations);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateCountMetrics);

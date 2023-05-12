@@ -72,9 +72,9 @@ NumericValueMetricProducer::NumericValueMetricProducer(
                           conditionOptions, stateOptions, activationOptions, guardrailOptions),
       mUseAbsoluteValueOnReset(metric.use_absolute_value_on_reset()),
       mAggregationType(metric.aggregation_type()),
-      mUseSampleSize(metric.has_use_sample_size()
-                             ? metric.use_sample_size()
-                             : metric.aggregation_type() == ValueMetric_AggregationType_AVG),
+      mIncludeSampleSize(metric.has_include_sample_size()
+                                 ? metric.include_sample_size()
+                                 : metric.aggregation_type() == ValueMetric_AggregationType_AVG),
       mUseDiff(metric.has_use_diff() ? metric.use_diff() : isPulled()),
       mValueDirection(metric.value_direction()),
       mSkipZeroDiffOutput(metric.skip_zero_diff_output()),
@@ -121,7 +121,7 @@ void NumericValueMetricProducer::writePastBucketAggregateToProto(
     uint64_t valueToken =
             protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_VALUES);
     protoOutput->write(FIELD_TYPE_INT32 | FIELD_ID_VALUE_INDEX, aggIndex);
-    if (mUseSampleSize) {
+    if (mIncludeSampleSize) {
         protoOutput->write(FIELD_TYPE_INT32 | FIELD_ID_VALUE_SAMPLESIZE, sampleSize);
     }
     if (value.getType() == LONG) {
@@ -183,14 +183,14 @@ int64_t NumericValueMetricProducer::calcPreviousBucketEndTime(const int64_t curr
 // By design, statsd pulls data at bucket boundaries using AlarmManager. These pulls are likely
 // to be delayed. Other events like condition changes or app upgrade which are not based on
 // AlarmManager might have arrived earlier and close the bucket.
-void NumericValueMetricProducer::onDataPulled(const vector<shared_ptr<LogEvent>>& allData,
-                                              bool pullSuccess, int64_t originalPullTimeNs) {
+void NumericValueMetricProducer::onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& allData,
+                                              PullResult pullResult, int64_t originalPullTimeNs) {
     lock_guard<mutex> lock(mMutex);
     if (mCondition == ConditionState::kTrue) {
         // If the pull failed, we won't be able to compute a diff.
-        if (!pullSuccess) {
+        if (pullResult == PullResult::PULL_RESULT_FAIL) {
             invalidateCurrentBucket(originalPullTimeNs, BucketDropReason::PULL_FAILED);
-        } else {
+        } else if (pullResult == PullResult::PULL_RESULT_SUCCESS) {
             bool isEventLate = originalPullTimeNs < getCurrentBucketEndTimeNs();
             if (isEventLate) {
                 // If the event is late, we are in the middle of a bucket. Just
@@ -535,7 +535,7 @@ PastBucket<Value> NumericValueMetricProducer::buildPartialBucket(int64_t bucketE
 
         bucket.aggIndex.push_back(interval.aggIndex);
         bucket.aggregates.push_back(getFinalValue(interval));
-        if (mUseSampleSize) {
+        if (mIncludeSampleSize) {
             bucket.sampleSizes.push_back(interval.sampleSize);
         }
     }

@@ -24,6 +24,7 @@ import com.android.internal.os.StatsdConfigProto.PullAtomPackages;
 import com.android.internal.os.StatsdConfigProto.SimpleAtomMatcher;
 import com.android.internal.os.StatsdConfigProto.StatsdConfig;
 import com.android.internal.os.StatsdConfigProto.TimeUnit;
+import com.android.os.AtomsProto;
 import com.android.os.AtomsProto.Atom;
 import com.android.os.StatsLog;
 import com.android.os.StatsLog.ConfigMetricsReport;
@@ -33,9 +34,14 @@ import com.android.statsd.shelltools.Utils;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.io.Files;
+import com.google.protobuf.CodedInputStream;
+import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
+import com.google.protobuf.DynamicMessage;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -88,6 +94,7 @@ public class TestDrive {
             "com.google.android.permissioncontroller",
             "AID_NFC",
             "AID_SECURE_ELEMENT",
+            "com.google.android.wearable.media.routing",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",
@@ -137,14 +144,16 @@ public class TestDrive {
         LOGGER.severe("\tPath is absolute or relative to current dir or to ANDROID_BUILD_TOP");
         LOGGER.severe("-terse");
         LOGGER.severe("\tTerse output format.");
-        LOGGER.severe("-p additional_allowed_package");
-        LOGGER.severe("\tAllows collection atoms from an additional package");
+        LOGGER.severe("-p additional_allowed_packages_csv");
+        LOGGER.severe("\tAllows collection atoms from an additional packages");
         LOGGER.severe("-s DEVICE_SERIAL_NUMBER");
         LOGGER.severe("\tDevice serial number to use for adb communication");
         LOGGER.severe("-e");
         LOGGER.severe("\tWait for Enter key press before collecting report");
         LOGGER.severe("-d delay_ms");
         LOGGER.severe("\tWait for delay_ms before collecting report, default is 60000 ms");
+        LOGGER.severe("-v");
+        LOGGER.severe("\tDebug logging level");
     }
 
     boolean processArgs(
@@ -169,13 +178,16 @@ public class TestDrive {
                 LOGGER.info("Terse output format.");
                 mDumper = new TerseDumper();
             } else if (remaining_args >= 3 && arg.equals("-p")) {
-                configuration.mAdditionalAllowedPackage = args[++first_arg];
+                Collections.addAll(configuration.mAdditionalAllowedPackages,
+                    args[++first_arg].split(","));
             } else if (remaining_args >= 3 && arg.equals("-i")) {
                 mProtoIncludes.add(args[++first_arg]);
             } else if (remaining_args >= 3 && arg.equals("-s")) {
                 mDeviceSerial = args[++first_arg];
             } else if (remaining_args >= 2 && arg.equals("-e")) {
                 mPressToContinue = true;
+            } else if (remaining_args >= 2 && arg.equals("-v")) {
+                Utils.setUpLogger(LOGGER, true);
             } else if (remaining_args >= 2 && arg.equals("-d")) {
                 mPressToContinue = false;
                 mReportCollectionDelayMillis = Integer.parseInt(args[++first_arg]);
@@ -191,11 +203,6 @@ public class TestDrive {
             mProtoIncludes.add(HW_ATOMS_PROTO_FILEPATH);
         }
 
-        mDeviceSerial = Utils.chooseDevice(mDeviceSerial, connectedDevices, defaultDevice, LOGGER);
-        if (mDeviceSerial == null) {
-            return false;
-        }
-
         for (; first_arg < args.length; ++first_arg) {
             String atom = args[first_arg];
             try {
@@ -203,6 +210,11 @@ public class TestDrive {
             } catch (NumberFormatException e) {
                 LOGGER.severe("Bad atom id provided: " + atom);
             }
+        }
+
+        mDeviceSerial = Utils.chooseDevice(mDeviceSerial, connectedDevices, defaultDevice, LOGGER);
+        if (mDeviceSerial == null) {
+            return false;
         }
 
         return configuration.hasPulledAtoms() || configuration.hasPushedAtoms();
@@ -267,16 +279,18 @@ public class TestDrive {
         @VisibleForTesting
         Set<Integer> mPulledAtoms = new TreeSet<>();
         @VisibleForTesting
-        String mAdditionalAllowedPackage = null;
+        ArrayList<String> mAdditionalAllowedPackages = new ArrayList<>();
         private final Set<Long> mTrackedMetrics = new HashSet<>();
         private final String mAndroidBuildTop = System.getenv("ANDROID_BUILD_TOP");
+
+        private Descriptors.Descriptor externalDescriptor = null;
 
         private void dumpMetrics(ConfigMetricsReportList reportList, Dumper dumper) {
             // We may get multiple reports. Take the last one.
             ConfigMetricsReport report = reportList.getReports(reportList.getReportsCount() - 1);
             for (StatsLogReport statsLog : report.getMetricsList()) {
                 if (isTrackedMetric(statsLog.getMetricId())) {
-                    dumper.dump(statsLog);
+                    dumper.dump(statsLog, externalDescriptor);
                 }
             }
         }
@@ -291,7 +305,8 @@ public class TestDrive {
         }
 
         void addAtom(Integer atom, List<String> protoIncludes) {
-            if (Atom.getDescriptor().findFieldByNumber(atom) == null) {
+            if (Atom.getDescriptor().findFieldByNumber(atom) == null &&
+                    Atom.getDescriptor().isExtensionNumber(atom) == false) {
                 // try to look in alternative locations
                 if (protoIncludes != null) {
                     boolean isAtomDefined = false;
@@ -317,8 +332,10 @@ public class TestDrive {
         private String compileProtoFileIntoDescriptorSet(String protoFileName) {
             final String protoCompilerBinary = "aprotoc";
             final String descSetFlag = "--descriptor_set_out";
-
+            final String includeImportsFlag = "--include_imports";
+            final String includeSourceInfoFlag = "--include_source_info";
             final String dsFileName = generateDescriptorSetFileName(protoFileName);
+
             if (dsFileName == null) return null;
 
             LOGGER.log(Level.FINE, "Target DescriptorSet File " + dsFileName);
@@ -328,11 +345,17 @@ public class TestDrive {
                 cmdArgs.add(protoCompilerBinary);
                 cmdArgs.add(descSetFlag);
                 cmdArgs.add(dsFileName);
+                cmdArgs.add(includeImportsFlag);
+                cmdArgs.add(includeSourceInfoFlag);
 
                 // populate the proto_path argument
                 if (mAndroidBuildTop != null) {
                     cmdArgs.add("-I");
                     cmdArgs.add(mAndroidBuildTop);
+
+                    Path protoBufSrcPath = Paths.get(mAndroidBuildTop, "external/protobuf/src");
+                    cmdArgs.add("-I");
+                    cmdArgs.add(protoBufSrcPath.toString());
                 }
 
                 Path protoPath = Paths.get(protoFileName);
@@ -348,10 +371,8 @@ public class TestDrive {
                 commands = cmdArgs.toArray(commands);
                 Utils.runCommand(null, LOGGER, commands);
                 return dsFileName;
-            } catch (IOException e) {
-                LOGGER.log(Level.SEVERE, "Error while performing proto compilation: " + e);
-            } catch (InterruptedException e) {
-                LOGGER.log(Level.SEVERE, "Error while performing proto compilation: " + e);
+            } catch (InterruptedException | IOException e) {
+                LOGGER.severe("Error while performing proto compilation: " + e.getMessage());
             }
             return null;
         }
@@ -381,7 +402,7 @@ public class TestDrive {
                 dsPath = dsPath.resolve(protoPath.getFileName().toString() + ".ds.tmp");
                 return dsPath.toString();
             } catch (IOException e) {
-                LOGGER.log(Level.INFO, "Could not find file " + protoFileName);
+                LOGGER.severe("Could not find file " + protoFileName);
             }
             return null;
         }
@@ -396,17 +417,55 @@ public class TestDrive {
             try (InputStream input = new FileInputStream(dsFileName)) {
                 DescriptorProtos.FileDescriptorSet fileDescriptorSet =
                         DescriptorProtos.FileDescriptorSet.parseFrom(input);
-
                 Descriptors.FileDescriptor fieldOptionsDesc =
                         DescriptorProtos.FieldOptions.getDescriptor().getFile();
 
-                Descriptors.Descriptor atomMsgDesc = Descriptors.FileDescriptor.buildFrom(
-                        fileDescriptorSet.getFile(0),
-                        new Descriptors.FileDescriptor[]{fieldOptionsDesc}).findMessageTypeByName(
-                        "Atom");
+                LOGGER.fine("Files count is " + fileDescriptorSet.getFileCount());
 
-                if (atomMsgDesc.findFieldByNumber(atom) != null) return true;
-            } catch (Descriptors.DescriptorValidationException | IOException e) {
+                // preparing dependencies list
+                List<Descriptors.FileDescriptor> dependencies =
+                        new ArrayList<Descriptors.FileDescriptor>();
+                for (int fileIndex = 0; fileIndex < fileDescriptorSet.getFileCount(); fileIndex++) {
+                    LOGGER.fine("Processing file " + fileIndex);
+                    try {
+                        Descriptors.FileDescriptor dep = Descriptors.FileDescriptor.buildFrom(
+                                fileDescriptorSet.getFile(fileIndex),
+                                new Descriptors.FileDescriptor[0]);
+                        dependencies.add(dep);
+                    } catch (Descriptors.DescriptorValidationException e) {
+                        LOGGER.fine("Unable to parse atoms proto file: " + fileName + ". Error: "
+                                + e.getDescription());
+                    }
+                }
+
+                Descriptors.FileDescriptor[] fileDescriptorDeps =
+                        new Descriptors.FileDescriptor[dependencies.size()];
+                fileDescriptorDeps = dependencies.toArray(fileDescriptorDeps);
+
+                // looking for a file with an Atom definition
+                for (int fileIndex = 0; fileIndex < fileDescriptorSet.getFileCount(); fileIndex++) {
+                    LOGGER.fine("Processing file " + fileIndex);
+                    Descriptors.Descriptor atomMsgDesc = null;
+                    try {
+                        atomMsgDesc = Descriptors.FileDescriptor.buildFrom(
+                                        fileDescriptorSet.getFile(fileIndex), fileDescriptorDeps,
+                                        true)
+                                .findMessageTypeByName("Atom");
+                    } catch (Descriptors.DescriptorValidationException e) {
+                        LOGGER.severe("Unable to parse atoms proto file: " + fileName + ". Error: "
+                                + e.getDescription());
+                    }
+
+                    if (atomMsgDesc != null) {
+                        LOGGER.fine("Atom message is located");
+                    }
+
+                    if (atomMsgDesc != null && atomMsgDesc.findFieldByNumber(atom) != null) {
+                        externalDescriptor = atomMsgDesc;
+                        return true;
+                    }
+                }
+            } catch (IOException e) {
                 LOGGER.log(Level.WARNING, "Unable to parse atoms proto file: " + fileName, e);
             } finally {
                 File dsFile = new File(dsFileName);
@@ -506,9 +565,7 @@ public class TestDrive {
         private StatsdConfig.Builder baseBuilder() {
             ArrayList<String> allowedSources = new ArrayList<>();
             Collections.addAll(allowedSources, ALLOWED_LOG_SOURCES);
-            if (mAdditionalAllowedPackage != null) {
-                allowedSources.add(mAdditionalAllowedPackage);
-            }
+            allowedSources.addAll(mAdditionalAllowedPackages);
             return StatsdConfig.newBuilder()
                     .addAllAllowedLogSource(allowedSources)
                     .addAllDefaultPullPackages(Arrays.asList(DEFAULT_PULL_SOURCES))
@@ -542,28 +599,29 @@ public class TestDrive {
     }
 
     interface Dumper {
-        void dump(StatsLogReport report);
+        void dump(StatsLogReport report, Descriptors.Descriptor externalDescriptor);
     }
 
     static class BasicDumper implements Dumper {
         @Override
-        public void dump(StatsLogReport report) {
+        public void dump(StatsLogReport report, Descriptors.Descriptor externalDescriptor) {
             System.out.println(report.toString());
         }
     }
 
     static class TerseDumper extends BasicDumper {
         @Override
-        public void dump(StatsLogReport report) {
+        public void dump(StatsLogReport report, Descriptors.Descriptor externalDescriptor) {
             if (report.hasGaugeMetrics()) {
                 dumpGaugeMetrics(report);
             }
             if (report.hasEventMetrics()) {
-                dumpEventMetrics(report);
+                dumpEventMetrics(report, externalDescriptor);
             }
         }
 
-        void dumpEventMetrics(StatsLogReport report) {
+        void dumpEventMetrics(StatsLogReport report,
+                Descriptors.Descriptor externalDescriptor) {
             final List<StatsLog.EventMetricData> data = Utils.getEventMetricData(report);
             if (data.isEmpty()) {
                 return;
@@ -572,8 +630,8 @@ public class TestDrive {
             for (StatsLog.EventMetricData event : data) {
                 final double deltaSec =
                         (event.getElapsedTimestampNanos() - firstTimestampNanos) / 1e9;
-                System.out.println(
-                        String.format("+%.3fs: %s", deltaSec, event.getAtom().toString()));
+                System.out.println(String.format("+%.3fs: %s", deltaSec,
+                        dumpAtom(event.getAtom(), externalDescriptor)));
             }
         }
 
@@ -587,6 +645,33 @@ public class TestDrive {
             }
         }
     }
+
+    private static String dumpAtom(AtomsProto.Atom atom,
+            Descriptors.Descriptor externalDescriptor) {
+        if (atom.getPushedCase().getNumber() != 0 || atom.getPulledCase().getNumber() != 0) {
+            return atom.toString();
+        } else {
+            try {
+                return convertToExternalAtom(atom, externalDescriptor).toString();
+            } catch (Exception e) {
+                LOGGER.severe("Failed to parse an atom: " + e.getMessage());
+                return "";
+            }
+        }
+    }
+
+    private static DynamicMessage convertToExternalAtom(AtomsProto.Atom atom,
+            Descriptors.Descriptor externalDescriptor) throws Exception {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        CodedOutputStream cos = CodedOutputStream.newInstance(outputStream);
+        atom.writeTo(cos);
+        cos.flush();
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(
+                outputStream.toByteArray());
+        CodedInputStream cis = CodedInputStream.newInstance(inputStream);
+        return DynamicMessage.parseFrom(externalDescriptor, cis);
+    }
+
 
     private static String pushConfig(StatsdConfig config, String deviceSerial)
             throws IOException, InterruptedException {

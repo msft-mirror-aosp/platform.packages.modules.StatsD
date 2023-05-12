@@ -62,6 +62,8 @@ MetricProducer::MetricProducer(
       mCurrentBucketStartTimeNs(timeBaseNs),
       mCurrentBucketNum(0),
       mCondition(initialCondition(conditionIndex, initialConditionCache)),
+      // For metrics with pull events, condition timer will be set later within the constructor
+      mConditionTimer(false, timeBaseNs),
       mConditionTrackerIndex(conditionIndex),
       mConditionSliced(false),
       mWizard(wizard),
@@ -74,7 +76,9 @@ MetricProducer::MetricProducer(
       mSlicedStateAtoms(slicedStateAtoms),
       mStateGroupMap(stateGroupMap),
       mSplitBucketForAppUpgrade(splitBucketForAppUpgrade),
-      mHasHitGuardrail(false) {
+      mHasHitGuardrail(false),
+      mSampledWhatFields({}),
+      mShardCount(0) {
 }
 
 optional<InvalidConfigReason> MetricProducer::onConfigUpdatedLocked(
@@ -117,6 +121,10 @@ void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const Lo
     int64_t eventTimeNs = event.GetElapsedTimestampNs();
     // this is old event, maybe statsd restarted?
     if (eventTimeNs < mTimeBaseNs) {
+        return;
+    }
+
+    if (!passesSampleCheckLocked(event.getValues())) {
         return;
     }
 
@@ -360,6 +368,21 @@ DropEvent MetricProducer::buildDropEvent(const int64_t dropTimeNs,
 
 bool MetricProducer::maxDropEventsReached() const {
     return mCurrentSkippedBucket.dropEvents.size() >= StatsdStats::kMaxLoggedBucketDropEvents;
+}
+
+bool MetricProducer::passesSampleCheckLocked(const vector<FieldValue>& values) const {
+    // Only perform sampling if shard count is correct and there is a sampled what field.
+    if (mShardCount <= 1 || mSampledWhatFields.size() == 0) {
+        return true;
+    }
+    // If filtering fails, don't perform sampling. Event could be a gauge trigger event or stop all
+    // event.
+    FieldValue sampleFieldValue;
+    if (!filterValues(mSampledWhatFields[0], values, &sampleFieldValue)) {
+        return true;
+    }
+    return shouldKeepSample(sampleFieldValue, ShardOffsetProvider::getInstance().getShardOffset(),
+                            mShardCount);
 }
 
 }  // namespace statsd
