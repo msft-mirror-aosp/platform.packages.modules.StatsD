@@ -103,8 +103,6 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
 
     public static final int DEATH_THRESHOLD = 10;
 
-    private static final String INCLUDE_CERTIFICATE_HASH = "include_certificate_hash";
-
     private final Context mContext;
     private final AlarmManager mAlarmManager;
     @GuardedBy("sStatsdLock")
@@ -263,15 +261,12 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
                                             | ProtoOutputStream.FIELD_COUNT_SINGLE
                                             | INSTALLER_FIELD_ID,
                                     installer);
-                            if (DeviceConfig.getBoolean(
-                                        NAMESPACE_STATSD_JAVA, INCLUDE_CERTIFICATE_HASH, false)) {
-                                final byte[] certHash = getPackageCertificateHash(
-                                        packagesPlusApex.get(j).signingInfo);
-                                output.write(ProtoOutputStream.FIELD_TYPE_BYTES
-                                                | ProtoOutputStream.FIELD_COUNT_SINGLE
-                                                | CERTIFICATE_HASH_FIELD_ID,
-                                        certHash);
-                            }
+                            final byte[] certHash =
+                                getPackageCertificateHash(packagesPlusApex.get(j).signingInfo);
+                            output.write(ProtoOutputStream.FIELD_TYPE_BYTES
+                                    | ProtoOutputStream.FIELD_COUNT_SINGLE
+                                    | CERTIFICATE_HASH_FIELD_ID,
+                                certHash);
 
                             numRecords++;
                             output.end(applicationInfoToken);
@@ -376,11 +371,7 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
                         final String installer = getInstallerPackageName(pm, app);
 
                         // Get Package certificate hash.
-                        byte[] certHash = new byte[0];
-                        if (DeviceConfig.getBoolean(
-                                    NAMESPACE_STATSD_JAVA, INCLUDE_CERTIFICATE_HASH, false)) {
-                            certHash = getPackageCertificateHash(pi.signingInfo);
-                        }
+                        byte[] certHash = getPackageCertificateHash(pi.signingInfo);
 
                         sStatsd.informOnePackage(
                                 app,
@@ -673,13 +664,6 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
 
     private void onPropertiesChanged(final Properties properties) {
         updateProperties(properties);
-
-        // Re-fetch package information with package certificates if include_certificate_hash
-        // property changed.
-        final Set<String> propertyNames = properties.getKeyset();
-        if (propertyNames.contains(INCLUDE_CERTIFICATE_HASH)) {
-            informAllUids(mContext);
-        }
     }
 
     private void updateProperties(final Properties properties) {
@@ -710,7 +694,7 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
         try {
             statsd.updateProperties(propertyParcels);
         } catch (RemoteException e) {
-            Log.w(TAG, "Failed to inform statsd of an include app certificate flag update", e);
+            Log.w(TAG, "Failed to inform statsd of updated statsd_java properties", e);
         }
     }
 
