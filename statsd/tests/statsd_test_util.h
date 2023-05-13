@@ -117,7 +117,7 @@ class StatsServiceConfigTest : public ::testing::Test {
 protected:
     shared_ptr<StatsService> service;
     const int kConfigKey = 789130123;  // Randomly chosen
-    const int kCallingUid = 0;         // Randomly chosen
+    const int kCallingUid = 10100;     // Randomly chosen
     void SetUp() override {
         service = SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
         // Removing config file from data/misc/stats-service and data/misc/stats-data if present

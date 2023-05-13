@@ -112,20 +112,22 @@ cc_library_static {
 cc_test {
     name: "libstatspull_test",
     srcs: [
+        ":libprotobuf-internal-descriptor-proto",
+        ":libstats_log_protos",
         ":libstats_subscription_protos",
         "tests/pull_atom_metadata_test.cpp",
         "tests/stats_subscription_test.cpp",
     ],
     proto: {
-        type: "full",
+        type: "lite",
         include_dirs: [
             "external/protobuf/src",
         ],
+        static: true,
     },
     shared_libs: [
         "libstatspull",
         "libstatssocket",
-        "libprotobuf-cpp-full",
         "libbase",
         "libbinder",
         "libutils",
@@ -133,8 +135,9 @@ cc_test {
     ],
     static_libs: [
         "libgmock",
+        "libstatsgtestmatchers",
         "libstatslog_statsdtest",
-        "libplatformprotos-test",
+        "libprotobuf-cpp-lite",
     ],
     test_suites: [
         "general-tests",
