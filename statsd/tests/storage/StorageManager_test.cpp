@@ -15,6 +15,7 @@
 #include "src/storage/StorageManager.h"
 
 #include <android-base/unique_fd.h>
+#include <android-modules-utils/sdk_level.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
@@ -31,6 +32,7 @@ namespace os {
 namespace statsd {
 
 using namespace testing;
+using android::modules::sdklevel::IsAtLeastU;
 using std::make_shared;
 using std::shared_ptr;
 using std::vector;
@@ -281,6 +283,9 @@ TEST(StorageManagerTest, TrainInfoReadWrite32To64BitTest) {
 }
 
 TEST(StorageManagerTest, DeleteUnmodifiedOldDbFiles) {
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     ConfigKey key(123, 12345);
     unique_ptr<LogEvent> event = CreateRestrictedLogEvent(/*atomTag=*/10, /*timestampNs=*/1000);
     dbutils::createTableIfNeeded(key, /*metricId=*/1, *event);
@@ -296,6 +301,9 @@ TEST(StorageManagerTest, DeleteUnmodifiedOldDbFiles) {
 }
 
 TEST(StorageManagerTest, DeleteLargeDbFiles) {
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
     ConfigKey key(123, 12345);
     unique_ptr<LogEvent> event = CreateRestrictedLogEvent(/*atomTag=*/10, /*timestampNs=*/1000);
     dbutils::createTableIfNeeded(key, /*metricId=*/1, *event);

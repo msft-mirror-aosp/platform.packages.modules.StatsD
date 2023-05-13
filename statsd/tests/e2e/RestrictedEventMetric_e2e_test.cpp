@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -30,6 +31,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::modules::sdklevel::IsAtLeastU;
 using base::StringPrintf;
 
 #ifdef __ANDROID__
@@ -64,9 +66,9 @@ protected:
 
 private:
     void SetUp() override {
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
-        FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                                 /*isBootFlag=*/true);
+        if (!IsAtLeastU()) {
+            GTEST_SKIP();
+        }
 
         mockStatsQueryCallback = SharedRefBase::make<StrictMock<MockStatsQueryCallback>>();
         EXPECT_CALL(*mockStatsQueryCallback, sendResults(_, _, _, _))
@@ -533,19 +535,6 @@ TEST_F(RestrictedEventMetricE2eTest, TestInvalidQuery) {
     EXPECT_THAT(error, StartsWith("failed to query db"));
 }
 
-TEST_F(RestrictedEventMetricE2eTest, TestFlagDisabled) {
-    processor->mIsRestrictedMetricsEnabled = false;
-
-    std::stringstream query;
-    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
-    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
-                        /*policyConfig=*/{}, mockStatsQueryCallback,
-                        /*configKey=*/configId, /*configPackage=*/config_package_name,
-                        /*callingUid=*/delegate_uid);
-
-    EXPECT_EQ(error, "Restricted metrics are not enabled");
-}
-
 TEST_F(RestrictedEventMetricE2eTest, TestEnforceTtlRemovesOldEvents) {
     int64_t currentWallTimeNs = getWallClockNs();
     // 8 days are used here because the TTL threshold is 7 days.
@@ -944,7 +933,6 @@ TEST_F(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails) {
     EXPECT_THAT(columnTypesResult,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
 
-    processor->mIsRestrictedMetricsEnabled = false;
     processor->enforceDbGuardrailsIfNecessaryLocked(oneMonthLater, dbEnforcementTimeNs);
 
     EXPECT_FALSE(StorageManager::hasFile(
@@ -980,7 +968,6 @@ TEST_F(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeG
     EXPECT_THAT(columnTypesResult,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
 
-    processor->mIsRestrictedMetricsEnabled = false;
     processor->enforceDbGuardrailsIfNecessaryLocked(oneMonthLater, originalEventElapsedTime);
 
     EXPECT_TRUE(StorageManager::hasFile(
