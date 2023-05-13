@@ -22,7 +22,6 @@
 #include <aidl/android/os/IPullAtomResultReceiver.h>
 #include <aidl/android/os/StatsSubscriptionCallbackReason.h>
 #include <gmock/gmock.h>
-#include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "src/StatsLogProcessor.h"
@@ -52,7 +51,6 @@ using ::aidl::android::os::IPullAtomResultReceiver;
 using ::aidl::android::os::StatsSubscriptionCallbackReason;
 using android::util::ProtoReader;
 using google::protobuf::RepeatedPtrField;
-using google::protobuf::util::MessageDifferencer;
 using Status = ::ndk::ScopedAStatus;
 using PackageInfoSnapshot = UidMapping_PackageInfoSnapshot;
 using PackageInfo = UidMapping_PackageInfoSnapshot_PackageInfo;
@@ -119,7 +117,7 @@ class StatsServiceConfigTest : public ::testing::Test {
 protected:
     shared_ptr<StatsService> service;
     const int kConfigKey = 789130123;  // Randomly chosen
-    const int kCallingUid = 0;         // Randomly chosen
+    const int kCallingUid = 10100;     // Randomly chosen
     void SetUp() override {
         service = SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
         // Removing config file from data/misc/stats-service and data/misc/stats-data if present
@@ -778,28 +776,6 @@ std::vector<PackageInfo> buildPackageInfos(
         const std::vector<std::string>& installers,
         const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<bool>& deleted,
         const std::vector<uint32_t>& installerIndices, const bool hashStrings);
-
-// Checks equality on explicitly set values.
-MATCHER_P(ProtoEq, otherArg, "") {
-    return MessageDifferencer::Equals(arg, otherArg);
-}
-
-// Checks equality on explicitly and implicitly set values.
-// Implicitly set values comes from fields with a default value specifier.
-MATCHER_P(ProtoEquiv, otherArg, "") {
-    return MessageDifferencer::Equivalent(arg, otherArg);
-}
-
-// Checks equality on explicitly set values where args are in a 2-tuple.
-MATCHER(ProtoEq, "") {
-    return MessageDifferencer::Equals(std::get<0>(arg), std::get<1>(arg));
-}
-
-// Checks equality on explicitly and implicitly set values where args are in a 2-tuple.
-// Implicitly set values comes from fields with a default value specifier.
-MATCHER(ProtoEquiv, "") {
-    return MessageDifferencer::Equivalent(std::get<0>(arg), std::get<1>(arg));
-}
 
 template <typename T>
 std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {

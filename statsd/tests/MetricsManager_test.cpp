@@ -36,6 +36,7 @@
 using namespace testing;
 using android::sp;
 using android::modules::sdklevel::IsAtLeastS;
+using android::modules::sdklevel::IsAtLeastU;
 using android::os::statsd::Predicate;
 using std::map;
 using std::set;
@@ -371,8 +372,6 @@ TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {
 }
 
 TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
-    FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, GetParam().flagValue,
-                                             /*isBootFlag=*/true);
     sp<UidMap> uidMap;
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     sp<AlarmMonitor> anomalyAlarmMonitor;
@@ -385,7 +384,33 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
     MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
                                   pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
 
-    if (GetParam().flagValue == FLAG_TRUE) {
+    if (IsAtLeastU()) {
+        EXPECT_TRUE(metricsManager.isConfigValid());
+    } else {
+        EXPECT_EQ(metricsManager.mInvalidConfigReason,
+                  INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
+        ASSERT_FALSE(metricsManager.isConfigValid());
+    }
+}
+
+TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate) {
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+
+    StatsdConfig config = buildGoodRestrictedConfig();
+    config.add_allowed_log_source("AID_SYSTEM");
+    config.set_restricted_metrics_delegate_package_name("rm");
+
+    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    StatsdConfig config2 = buildGoodRestrictedConfig();
+    metricsManager.updateConfig(config, timeBaseSec, timeBaseSec, anomalyAlarmMonitor,
+                                periodicAlarmMonitor);
+
+    if (IsAtLeastU()) {
         EXPECT_TRUE(metricsManager.isConfigValid());
     } else {
         EXPECT_EQ(metricsManager.mInvalidConfigReason,
