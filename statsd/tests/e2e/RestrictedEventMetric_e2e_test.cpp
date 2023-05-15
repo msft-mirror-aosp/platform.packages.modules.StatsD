@@ -1189,9 +1189,13 @@ TEST_F(RestrictedEventMetricE2eTest, TestDeviceInfoTableCreated) {
                         /*configKey=*/configId, /*configPackage=*/config_package_name,
                         /*callingUid=*/delegate_uid);
     EXPECT_EQ(rowCountResult, 1);
-    EXPECT_THAT(queryDataResult, ElementsAre(_));
-    EXPECT_THAT(columnNamesResult, ElementsAre("sdkVersion"));
-    EXPECT_THAT(columnTypesResult, ElementsAre(SQLITE_INTEGER));
+    EXPECT_THAT(queryDataResult, ElementsAre(_, _, _, _, _, _, _, _, _, _));
+    EXPECT_THAT(columnNamesResult,
+                ElementsAre("sdkVersion", "model", "product", "hardware", "device", "osBuild",
+                            "fingerprint", "brand", "manufacturer", "board"));
+    EXPECT_THAT(columnTypesResult,
+                ElementsAre(SQLITE_INTEGER, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT,
+                            SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT));
 }
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
