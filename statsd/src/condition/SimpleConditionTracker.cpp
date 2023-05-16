@@ -262,7 +262,7 @@ void SimpleConditionTracker::handleConditionEvent(const HashableDimensionKey& ou
     (*conditionCache) = newCondition;
 
     VLOG("SimplePredicate %lld nonSlicedChange? %d", (long long)mConditionId,
-         conditionChangedCache[mIndex] == true);
+         *conditionChangedCache);
 }
 
 void SimpleConditionTracker::evaluateCondition(
