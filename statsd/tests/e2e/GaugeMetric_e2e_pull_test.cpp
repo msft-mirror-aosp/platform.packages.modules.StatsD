@@ -68,23 +68,7 @@ StatsdConfig CreateStatsdConfig(const GaugeMetric::SamplingType sampling_type,
 
 }  // namespaces
 
-// Setup for test fixture.
-class GaugeMetricE2ePulledTest : public ::testing::TestWithParam<string> {
-    void SetUp() override {
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
-        FlagProvider::getInstance().overrideFlag(LIMIT_PULL_FLAG, GetParam(),
-                                                 /*isBootFlag=*/true);
-    }
-
-    void TearDown() override {
-        FlagProvider::getInstance().resetOverrides();
-    }
-};
-
-INSTANTIATE_TEST_SUITE_P(LimitPull, GaugeMetricE2ePulledTest,
-                         testing::Values(FLAG_FALSE, FLAG_TRUE));
-
-TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
+TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -224,7 +208,7 @@ TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents) {
     EXPECT_GT(data.bucket_info(5).atom(0).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_P(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger) {
+TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger) {
     StatsdConfig config = CreateStatsdConfig(GaugeMetric::FIRST_N_SAMPLES);
     auto gaugeMetric = config.mutable_gauge_metric(0);
     gaugeMetric->set_max_num_gauge_atoms_per_bucket(3);
@@ -346,7 +330,7 @@ TEST_P(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger) {
             /*eventTimesNs=*/{(int64_t)(configAddedTimeNs + (2 * bucketSizeNs) + 2)});
 }
 
-TEST_P(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
+TEST(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
     auto config = CreateStatsdConfig(GaugeMetric::CONDITION_CHANGE_TO_TRUE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -444,7 +428,7 @@ TEST_P(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents) {
     EXPECT_GT(data.bucket_info(2).atom(1).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
+TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -542,7 +526,7 @@ TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm) {
     EXPECT_GT(data.bucket_info(2).atom(0).subsystem_sleep_state().time_millis(), 0);
 }
 
-TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
+TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE, /*useCondition=*/false);
 
     int64_t baseTimeNs = getElapsedRealtimeNs();
@@ -721,7 +705,7 @@ TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation) {
     EXPECT_EQ(gaugeMetrics.skipped_size(), 0);
 }
 
-TEST_P(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation) {
+TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation) {
     StatsdConfig config = CreateStatsdConfig(GaugeMetric::FIRST_N_SAMPLES);
     auto gaugeMetric = config.mutable_gauge_metric(0);
     gaugeMetric->set_max_num_gauge_atoms_per_bucket(2);
@@ -882,7 +866,7 @@ TEST_P(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation)
                              {(int64_t)(configAddedTimeNs + (3 * bucketSizeNs) + 50)});
 }
 
-TEST_P(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition) {
+TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition) {
     auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE, /*useCondition=*/false);
 
     int64_t baseTimeNs = getElapsedRealtimeNs();
