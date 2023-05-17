@@ -525,8 +525,10 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
     const int32_t callingUid = 100;
     ConfigKey configKey(0, 12345);
     const string configPackage = "com.google.android.gm";
+    int64_t beforeNoteMetricSucceed = getWallClockNs();
     stats.noteQueryRestrictedMetricSucceed(configKey.GetId(), configPackage, configKey.GetUid(),
                                            callingUid, /*queryLatencyNs=*/5 * NS_PER_SEC);
+    int64_t afterNoteMetricSucceed = getWallClockNs();
 
     const int64_t configIdWithError = 111;
     stats.noteQueryRestrictedMetricFailed(configIdWithError, configPackage, std::nullopt,
@@ -547,6 +549,9 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
     EXPECT_EQ(callingUid, report.restricted_metric_query_stats(0).calling_uid());
     EXPECT_EQ(configPackage, report.restricted_metric_query_stats(0).config_package());
     EXPECT_FALSE(report.restricted_metric_query_stats(0).has_query_error());
+    EXPECT_LT(beforeNoteMetricSucceed,
+              report.restricted_metric_query_stats(0).query_wall_time_ns());
+    EXPECT_GT(afterNoteMetricSucceed, report.restricted_metric_query_stats(0).query_wall_time_ns());
     EXPECT_EQ(5 * NS_PER_SEC, report.restricted_metric_query_stats(0).query_latency_ns());
     EXPECT_EQ(configIdWithError, report.restricted_metric_query_stats(1).config_id());
     EXPECT_EQ(AMBIGUOUS_CONFIG_KEY, report.restricted_metric_query_stats(1).invalid_query_reason());

@@ -755,7 +755,7 @@ private:
     struct RestrictedMetricQueryStats {
         RestrictedMetricQueryStats(int32_t callingUid, int64_t configId,
                                    const string& configPackage, std::optional<int32_t> configUid,
-                                   int32_t queryTimeNs,
+                                   int64_t queryTimeNs,
                                    std::optional<InvalidQueryReason> invalidQueryReason,
                                    const string& error, std::optional<int64_t> queryLatencyNs)
             : mCallingUid(callingUid),
