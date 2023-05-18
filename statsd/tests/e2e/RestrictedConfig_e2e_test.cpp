@@ -1,3 +1,18 @@
+// Copyright (C) 2023 The Android Open Source Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "flags/FlagProvider.h"
@@ -8,13 +23,15 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::modules::sdklevel::IsAtLeastU;
+
 #ifdef __ANDROID__
 
 namespace {
 const int32_t atomTag = 666;
-const string delegate_package_name = "com.test.restricted.metrics.package";
-const int32_t delegate_uid = 1005;
-const string config_package_name = "com.test.config.package";
+const string delegatePackageName = "com.test.restricted.metrics.package";
+const int32_t delegateUid = 10200;
+const string configPackageName = "com.test.config.package";
 int64_t metricId;
 int64_t anotherMetricId;
 
@@ -66,9 +83,9 @@ protected:
     string error;
 
     void SetUp() override {
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
-        FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                                 /*isBootFlag=*/true);
+        if (!IsAtLeastU()) {
+            GTEST_SKIP();
+        }
         StatsServiceConfigTest::SetUp();
 
         mockStatsQueryCallback = SharedRefBase::make<StrictMock<MockStatsQueryCallback>>();
@@ -96,16 +113,16 @@ protected:
                 }));
 
         int64_t startTimeNs = getElapsedRealtimeNs();
-        service->mUidMap->updateApp(startTimeNs, String16(delegate_package_name.c_str()),
-                                    /*uid=*/delegate_uid, /*versionCode=*/1,
-                                    /*versionString=*/String16("v2"),
-                                    /*installer=*/String16(""), /*certificateHash=*/{});
-        service->mUidMap->updateApp(startTimeNs + 1, String16(config_package_name.c_str()),
-                                    /*uid=*/kCallingUid, /*versionCode=*/1,
-                                    /*versionString=*/String16("v2"),
-                                    /*installer=*/String16(""), /*certificateHash=*/{});
+        service->mUidMap->updateMap(
+                startTimeNs, {delegateUid, kCallingUid},
+                /*versionCode=*/{1, 1}, /*versionString=*/{String16("v2"), String16("v2")},
+                {String16(delegatePackageName.c_str()), String16(configPackageName.c_str())},
+                /*installer=*/{String16(), String16()}, /*certificateHash=*/{{}, {}});
     }
     void TearDown() override {
+        if (!IsAtLeastU()) {
+            GTEST_SKIP();
+        }
         Mock::VerifyAndClear(mockStatsQueryCallback.get());
         queryDataResult.clear();
         columnNamesResult.clear();
@@ -228,7 +245,7 @@ TEST_F(RestrictedConfigE2ETest, NonRestrictedConfigOnTerminateWriteDataToDisk) {
 
 TEST_F(RestrictedConfigE2ETest, RestrictedConfigOnUpdateWithMetricRemoval) {
     StatsdConfig complexConfig = CreateConfigWithTwoMetrics();
-    complexConfig.set_restricted_metrics_delegate_package_name(delegate_package_name);
+    complexConfig.set_restricted_metrics_delegate_package_name(delegatePackageName);
     sendConfig(complexConfig);
     int64_t configAddedTimeNs = getElapsedRealtimeNs();
     std::vector<std::unique_ptr<LogEvent>> logEvents = CreateLogEvents(configAddedTimeNs);
@@ -241,15 +258,15 @@ TEST_F(RestrictedConfigE2ETest, RestrictedConfigOnUpdateWithMetricRemoval) {
     query << "SELECT * FROM metric_" << dbutils::reformatMetricId(metricId);
     service->querySql(query.str(), /*minSqlClientVersion=*/0,
                       /*policyConfig=*/{}, mockStatsQueryCallback,
-                      /*configKey=*/kConfigKey, /*configPackage=*/config_package_name,
-                      /*callingUid=*/delegate_uid);
+                      /*configKey=*/kConfigKey, /*configPackage=*/configPackageName,
+                      /*callingUid=*/delegateUid);
     EXPECT_EQ(error, "");
     EXPECT_EQ(rowCountResult, logEvents.size());
     verifyRestrictedData(logEvents.size(), anotherMetricId, true);
 
     // Update config to have only one metric
     StatsdConfig config = CreateConfigWithOneMetric();
-    config.set_restricted_metrics_delegate_package_name(delegate_package_name);
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
     sendConfig(config);
 
     // Make sure metric data is deleted.
@@ -257,6 +274,202 @@ TEST_F(RestrictedConfigE2ETest, RestrictedConfigOnUpdateWithMetricRemoval) {
     verifyRestrictedData(logEvents.size(), anotherMetricId, false);
 }
 
+TEST_F(RestrictedConfigE2ETest, TestSendRestrictedMetricsChangedBroadcast) {
+    vector<int64_t> receivedMetricIds;
+    int receiveCount = 0;
+    shared_ptr<MockPendingIntentRef> pir = SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*pir, sendRestrictedMetricsChangedBroadcast(_))
+            .Times(7)
+            .WillRepeatedly(Invoke([&receivedMetricIds, &receiveCount](const vector<int64_t>& ids) {
+                receiveCount++;
+                receivedMetricIds = ids;
+                return Status::ok();
+            }));
+
+    // Set the operation. No configs present so empty list is returned.
+    vector<int64_t> returnedMetricIds;
+    service->setRestrictedMetricsChangedOperation(kConfigKey, configPackageName, pir, delegateUid,
+                                                  &returnedMetricIds);
+    EXPECT_EQ(receiveCount, 0);
+    EXPECT_THAT(returnedMetricIds, IsEmpty());
+
+    // Add restricted config. Should receive one metric
+    StatsdConfig config = CreateConfigWithOneMetric();
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
+    sendConfig(config);
+    EXPECT_EQ(receiveCount, 1);
+    EXPECT_THAT(receivedMetricIds, UnorderedElementsAre(metricId));
+
+    // Config update, should receive two metrics.
+    config = CreateConfigWithTwoMetrics();
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
+    sendConfig(config);
+    EXPECT_EQ(receiveCount, 2);
+    EXPECT_THAT(receivedMetricIds, UnorderedElementsAre(metricId, anotherMetricId));
+
+    // Make config unrestricted. Should receive empty list.
+    config.clear_restricted_metrics_delegate_package_name();
+    sendConfig(config);
+    EXPECT_EQ(receiveCount, 3);
+    EXPECT_THAT(receivedMetricIds, IsEmpty());
+
+    // Update the unrestricted config. Nothing should be sent.
+    config = CreateConfigWithOneMetric();
+    sendConfig(config);
+
+    // Update config and make it restricted. Should receive one metric.
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
+    sendConfig(config);
+    EXPECT_EQ(receiveCount, 4);
+    EXPECT_THAT(receivedMetricIds, UnorderedElementsAre(metricId));
+
+    // Send an invalid config. Should receive empty list.
+    config.clear_allowed_log_source();
+    sendConfig(config);
+    EXPECT_EQ(receiveCount, 5);
+    EXPECT_THAT(receivedMetricIds, IsEmpty());
+
+    service->removeRestrictedMetricsChangedOperation(kConfigKey, configPackageName, delegateUid);
+
+    // Nothing should be sent since the operation is removed.
+    config = CreateConfigWithTwoMetrics();
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
+    sendConfig(config);
+
+    // Set the operation. Two metrics should be returned.
+    returnedMetricIds.clear();
+    service->setRestrictedMetricsChangedOperation(kConfigKey, configPackageName, pir, delegateUid,
+                                                  &returnedMetricIds);
+    EXPECT_THAT(returnedMetricIds, UnorderedElementsAre(metricId, anotherMetricId));
+    EXPECT_EQ(receiveCount, 5);
+
+    // Config update, should receive two metrics.
+    config = CreateConfigWithOneMetric();
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
+    sendConfig(config);
+    EXPECT_EQ(receiveCount, 6);
+    EXPECT_THAT(receivedMetricIds, UnorderedElementsAre(metricId));
+
+    // Remove the config and verify an empty list is received
+    service->removeConfiguration(kConfigKey, kCallingUid);
+    EXPECT_EQ(receiveCount, 7);
+    EXPECT_THAT(receivedMetricIds, IsEmpty());
+
+    // Cleanup.
+    service->removeRestrictedMetricsChangedOperation(kConfigKey, configPackageName, delegateUid);
+}
+
+TEST_F(RestrictedConfigE2ETest, TestSendRestrictedMetricsChangedBroadcastMultipleListeners) {
+    const string configPackageName2 = "com.test.config.package2";
+    const int32_t delegateUid2 = delegateUid + 1, delegateUid3 = delegateUid + 2;
+    service->informOnePackage(configPackageName2, kCallingUid, 0, "", "", {});
+    service->informOnePackage(delegatePackageName, delegateUid2, 0, "", "", {});
+    service->informOnePackage("not.a.good.package", delegateUid3, 0, "", "", {});
+
+    vector<int64_t> receivedMetricIds;
+    int receiveCount = 0;
+    shared_ptr<MockPendingIntentRef> pir = SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*pir, sendRestrictedMetricsChangedBroadcast(_))
+            .Times(2)
+            .WillRepeatedly(Invoke([&receivedMetricIds, &receiveCount](const vector<int64_t>& ids) {
+                receiveCount++;
+                receivedMetricIds = ids;
+                return Status::ok();
+            }));
+
+    int receiveCount2 = 0;
+    vector<int64_t> receivedMetricIds2;
+    shared_ptr<MockPendingIntentRef> pir2 = SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*pir2, sendRestrictedMetricsChangedBroadcast(_))
+            .Times(2)
+            .WillRepeatedly(
+                    Invoke([&receivedMetricIds2, &receiveCount2](const vector<int64_t>& ids) {
+                        receiveCount2++;
+                        receivedMetricIds2 = ids;
+                        return Status::ok();
+                    }));
+
+    // This one should never be called.
+    shared_ptr<MockPendingIntentRef> pir3 = SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*pir3, sendRestrictedMetricsChangedBroadcast(_)).Times(0);
+
+    // Set the operations. No configs present so empty list is returned.
+    vector<int64_t> returnedMetricIds;
+    service->setRestrictedMetricsChangedOperation(kConfigKey, configPackageName, pir, delegateUid,
+                                                  &returnedMetricIds);
+    EXPECT_EQ(receiveCount, 0);
+    EXPECT_THAT(returnedMetricIds, IsEmpty());
+
+    vector<int64_t> returnedMetricIds2;
+    service->setRestrictedMetricsChangedOperation(kConfigKey, configPackageName2, pir2,
+                                                  delegateUid2, &returnedMetricIds2);
+    EXPECT_EQ(receiveCount2, 0);
+    EXPECT_THAT(returnedMetricIds2, IsEmpty());
+
+    // Represents a package listening for changes but doesn't match the restricted package in the
+    // config.
+    vector<int64_t> returnedMetricIds3;
+    service->setRestrictedMetricsChangedOperation(kConfigKey, configPackageName, pir3, delegateUid3,
+                                                  &returnedMetricIds3);
+    EXPECT_THAT(returnedMetricIds3, IsEmpty());
+
+    // Add restricted config. Should receive one metric on pir1 and 2.
+    StatsdConfig config = CreateConfigWithOneMetric();
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
+    sendConfig(config);
+    EXPECT_EQ(receiveCount, 1);
+    EXPECT_THAT(receivedMetricIds, UnorderedElementsAre(metricId));
+    EXPECT_EQ(receiveCount2, 1);
+    EXPECT_THAT(receivedMetricIds2, UnorderedElementsAre(metricId));
+
+    // Config update, should receive two metrics on pir1 and 2.
+    config = CreateConfigWithTwoMetrics();
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
+    sendConfig(config);
+    EXPECT_EQ(receiveCount, 2);
+    EXPECT_THAT(receivedMetricIds, UnorderedElementsAre(metricId, anotherMetricId));
+    EXPECT_EQ(receiveCount2, 2);
+    EXPECT_THAT(receivedMetricIds2, UnorderedElementsAre(metricId, anotherMetricId));
+
+    // Cleanup.
+    service->removeRestrictedMetricsChangedOperation(kConfigKey, configPackageName, delegateUid);
+    service->removeRestrictedMetricsChangedOperation(kConfigKey, configPackageName2, delegateUid2);
+    service->removeRestrictedMetricsChangedOperation(kConfigKey, configPackageName, delegateUid3);
+}
+
+TEST_F(RestrictedConfigE2ETest, TestSendRestrictedMetricsChangedBroadcastMultipleMatchedConfigs) {
+    const int32_t callingUid2 = kCallingUid + 1;
+    service->informOnePackage(configPackageName, callingUid2, 0, "", "", {});
+
+    // Add restricted config.
+    StatsdConfig config = CreateConfigWithOneMetric();
+    config.set_restricted_metrics_delegate_package_name(delegatePackageName);
+    sendConfig(config);
+
+    // Add a second config.
+    const int64_t metricId2 = 42;
+    config.mutable_event_metric(0)->set_id(42);
+    string str;
+    config.SerializeToString(&str);
+    std::vector<uint8_t> configAsVec(str.begin(), str.end());
+    service->addConfiguration(kConfigKey, configAsVec, callingUid2);
+
+    // Set the operation. Matches multiple configs so a union of metrics are returned.
+    shared_ptr<MockPendingIntentRef> pir = SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    vector<int64_t> returnedMetricIds;
+    service->setRestrictedMetricsChangedOperation(kConfigKey, configPackageName, pir, delegateUid,
+                                                  &returnedMetricIds);
+    EXPECT_THAT(returnedMetricIds, UnorderedElementsAre(metricId, metricId2));
+
+    // Cleanup.
+    service->removeRestrictedMetricsChangedOperation(kConfigKey, configPackageName, delegateUid);
+
+    ConfigKey cfgKey(callingUid2, kConfigKey);
+    service->removeConfiguration(kConfigKey, callingUid2);
+    service->mProcessor->onDumpReport(cfgKey, getElapsedRealtimeNs(),
+                                      false /* include_current_bucket*/, true /* erase_data */,
+                                      ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
+}
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif

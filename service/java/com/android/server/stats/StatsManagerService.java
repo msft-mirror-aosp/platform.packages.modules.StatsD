@@ -577,7 +577,6 @@ public class StatsManagerService extends IStatsManagerService.Stub {
         final long token = Binder.clearCallingIdentity();
         try {
             IStatsd statsd = waitForStatsd();
-            // TODO(b/266654123): Queue queries if statsd is unavailable.
             if (statsd != null) {
                 statsd.querySql(
                     sqlQuery,
@@ -587,6 +586,8 @@ public class StatsManagerService extends IStatsManagerService.Stub {
                     configKey,
                     configPackage,
                     callingUid);
+            } else {
+                queryCallback.sendFailure("Could not connect to statsd from system server");
             }
         } catch (RemoteException e) {
             throw new IllegalStateException(e.getMessage(), e);

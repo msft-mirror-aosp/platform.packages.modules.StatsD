@@ -32,7 +32,6 @@
 #include "../statscompanion_util.h"
 #include "StatsCallbackPuller.h"
 #include "TrainInfoPuller.h"
-#include "flags/FlagProvider.h"
 #include "statslog_statsd.h"
 
 using std::shared_ptr;
@@ -50,8 +49,7 @@ StatsPullerManager::StatsPullerManager()
               // TrainInfo.
               {{.atomTag = util::TRAIN_INFO, .uid = AID_STATSD}, new TrainInfoPuller()},
       }),
-      mNextPullTimeNs(NO_ALARM_UPDATE),
-      mLimitPull(FlagProvider::getInstance().getBootFlagBool(LIMIT_PULL_FLAG, FLAG_FALSE)) {
+      mNextPullTimeNs(NO_ALARM_UPDATE) {
 }
 
 bool StatsPullerManager::Pull(int tagId, const ConfigKey& configKey, const int64_t eventTimeNs,
@@ -229,33 +227,22 @@ void StatsPullerManager::OnAlarmFired(int64_t elapsedTimeNs) {
         vector<ReceiverInfo*> receivers;
         if (pair.second.size() != 0) {
             for (ReceiverInfo& receiverInfo : pair.second) {
-                // If mLimitPull is true, check if metric needs to pull data (pullNecessary).
                 // If pullNecessary and enough time has passed for the next bucket, then add
                 // receiver to the list that will pull on this alarm.
                 // If pullNecessary is false, check if next pull time needs to be updated.
-                if (mLimitPull) {
-                    sp<PullDataReceiver> receiverPtr = receiverInfo.receiver.promote();
-                    const bool pullNecessary =
-                            receiverPtr != nullptr && receiverPtr->isPullNeeded();
-                    if (receiverInfo.nextPullTimeNs <= elapsedTimeNs && pullNecessary) {
-                        receivers.push_back(&receiverInfo);
-                    } else {
-                        if (receiverInfo.nextPullTimeNs <= elapsedTimeNs) {
-                            receiverPtr->onDataPulled({}, PullResult::PULL_NOT_NEEDED,
-                                                      elapsedTimeNs);
-                            int numBucketsAhead = (elapsedTimeNs - receiverInfo.nextPullTimeNs) /
-                                                  receiverInfo.intervalNs;
-                            receiverInfo.nextPullTimeNs +=
-                                    (numBucketsAhead + 1) * receiverInfo.intervalNs;
-                        }
-                        minNextPullTimeNs = min(receiverInfo.nextPullTimeNs, minNextPullTimeNs);
-                    }
+                sp<PullDataReceiver> receiverPtr = receiverInfo.receiver.promote();
+                const bool pullNecessary = receiverPtr != nullptr && receiverPtr->isPullNeeded();
+                if (receiverInfo.nextPullTimeNs <= elapsedTimeNs && pullNecessary) {
+                    receivers.push_back(&receiverInfo);
                 } else {
                     if (receiverInfo.nextPullTimeNs <= elapsedTimeNs) {
-                        receivers.push_back(&receiverInfo);
-                    } else {
-                        minNextPullTimeNs = min(receiverInfo.nextPullTimeNs, minNextPullTimeNs);
+                        receiverPtr->onDataPulled({}, PullResult::PULL_NOT_NEEDED, elapsedTimeNs);
+                        int numBucketsAhead = (elapsedTimeNs - receiverInfo.nextPullTimeNs) /
+                                              receiverInfo.intervalNs;
+                        receiverInfo.nextPullTimeNs +=
+                                (numBucketsAhead + 1) * receiverInfo.intervalNs;
                     }
+                    minNextPullTimeNs = min(receiverInfo.nextPullTimeNs, minNextPullTimeNs);
                 }
             }
             if (receivers.size() > 0) {
