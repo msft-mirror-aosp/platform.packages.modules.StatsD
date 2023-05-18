@@ -382,6 +382,7 @@ cc_test {
 
     static_libs: [
         "libgmock",
+        "libstatsgtestmatchers",
         "libplatformprotos",
         "libstatslog_statsdtest",
         "libstatssocket_private",
