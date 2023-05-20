@@ -58,7 +58,8 @@ namespace statsd {
 
 class StatsService : public BnStatsd {
 public:
-    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue);
+    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
+                 const std::shared_ptr<LogEventFilter>& logEventFilter);
     virtual ~StatsService();
 
     /** The anomaly alarm registered with AlarmManager won't be updated by less than this. */
@@ -441,6 +442,7 @@ private:
      */
     mutable mutex mShellSubscriberMutex;
     shared_ptr<LogEventQueue> mEventQueue;
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";

@@ -341,6 +341,12 @@ void ShellSubscriberClient::onUnsubscribe() {
     triggerCallback(StatsSubscriptionCallbackReason::SUBSCRIPTION_ENDED);
 }
 
+void ShellSubscriberClient::addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const {
+    for (const auto& matcher : mPushedMatchers) {
+        allAtomIds.insert(matcher.atom_id());
+    }
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
