@@ -69,6 +69,7 @@ const int FIELD_ID_ATOM_STATS_TAG = 1;
 const int FIELD_ID_ATOM_STATS_COUNT = 2;
 const int FIELD_ID_ATOM_STATS_ERROR_COUNT = 3;
 const int FIELD_ID_ATOM_STATS_DROPS_COUNT = 4;
+const int FIELD_ID_ATOM_STATS_SKIP_COUNT = 5;
 
 const int FIELD_ID_ANOMALY_ALARMS_REGISTERED = 1;
 const int FIELD_ID_PERIODIC_ALARMS_REGISTERED = 1;
@@ -296,7 +297,8 @@ void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes)
     noteDataDropped(key, totalBytes, getWallClockSec());
 }
 
-void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId) {
+void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId,
+                                         bool isSkipped) {
     lock_guard<std::mutex> lock(mLock);
 
     mOverflowCount++;
@@ -311,7 +313,7 @@ void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t
         mMinQueueHistoryNs = history;
     }
 
-    noteAtomLoggedLocked(atomId);
+    noteAtomLoggedLocked(atomId, isSkipped);
     noteAtomDroppedLocked(atomId);
 }
 
@@ -525,22 +527,24 @@ void StatsdStats::notePullExceedMaxDelay(int pullAtomId) {
     mPulledAtomStats[pullAtomId].pullExceedMaxDelay++;
 }
 
-void StatsdStats::noteAtomLogged(int atomId, int32_t /*timeSec*/) {
+void StatsdStats::noteAtomLogged(int atomId, int32_t /*timeSec*/, bool isSkipped) {
     lock_guard<std::mutex> lock(mLock);
 
-    noteAtomLoggedLocked(atomId);
+    noteAtomLoggedLocked(atomId, isSkipped);
 }
 
-void StatsdStats::noteAtomLoggedLocked(int atomId) {
+void StatsdStats::noteAtomLoggedLocked(int atomId, bool isSkipped) {
     if (atomId >= 0 && atomId <= kMaxPushedAtomId) {
-        mPushedAtomStats[atomId]++;
+        mPushedAtomStats[atomId].logCount++;
+        mPushedAtomStats[atomId].skipCount += isSkipped;
     } else {
         if (atomId < 0) {
             android_errorWriteLog(0x534e4554, "187957589");
         }
         if (mNonPlatformPushedAtomStats.size() < kMaxNonPlatformPushedAtoms ||
             mNonPlatformPushedAtomStats.find(atomId) != mNonPlatformPushedAtomStats.end()) {
-            mNonPlatformPushedAtomStats[atomId]++;
+            mNonPlatformPushedAtomStats[atomId].logCount++;
+            mNonPlatformPushedAtomStats[atomId].skipCount += isSkipped;
         }
     }
 }
@@ -805,7 +809,7 @@ void StatsdStats::resetInternalLocked() {
     // Reset the historical data, but keep the active ConfigStats
     mStartTimeSec = getWallClockSec();
     mIceBox.clear();
-    std::fill(mPushedAtomStats.begin(), mPushedAtomStats.end(), 0);
+    std::fill(mPushedAtomStats.begin(), mPushedAtomStats.end(), PushedAtomStats());
     mNonPlatformPushedAtomStats.clear();
     mAnomalyAlarmRegisteredStats = 0;
     mPeriodicAlarmRegisteredStats = 0;
@@ -1034,16 +1038,17 @@ void StatsdStats::dumpStats(int out) const {
     dprintf(out, "********Pushed Atom stats***********\n");
     const size_t atomCounts = mPushedAtomStats.size();
     for (size_t i = 2; i < atomCounts; i++) {
-        if (mPushedAtomStats[i] > 0) {
-            dprintf(out, "Atom %zu->(total count)%d, (error count)%d, (drop count)%d\n", i,
-                    mPushedAtomStats[i], getPushedAtomErrorsLocked((int)i),
-                    getPushedAtomDropsLocked((int)i));
+        if (mPushedAtomStats[i].logCount > 0) {
+            dprintf(out,
+                    "Atom %zu->(total count)%d, (error count)%d, (drop count)%d, (skip count)%d\n",
+                    i, mPushedAtomStats[i].logCount, getPushedAtomErrorsLocked((int)i),
+                    getPushedAtomDropsLocked((int)i), mPushedAtomStats[i].skipCount);
         }
     }
     for (const auto& pair : mNonPlatformPushedAtomStats) {
-        dprintf(out, "Atom %d->(total count)%d, (error count)%d, (drop count)%d\n", pair.first,
-                pair.second, getPushedAtomErrorsLocked(pair.first),
-                getPushedAtomDropsLocked((int)pair.first));
+        dprintf(out, "Atom %d->(total count)%d, (error count)%d, (drop count)%d, (skip count)%d\n",
+                pair.first, pair.second.logCount, getPushedAtomErrorsLocked(pair.first),
+                getPushedAtomDropsLocked((int)pair.first), pair.second.skipCount);
     }
 
     dprintf(out, "********Pulled Atom stats***********\n");
@@ -1070,7 +1075,7 @@ void StatsdStats::dumpStats(int out) const {
             string uptimeMillis = "(pull timeout system uptime millis) ";
             string pullTimeoutMillis = "(pull timeout elapsed time millis) ";
             for (const auto& stats : pair.second.pullTimeoutMetadata) {
-                uptimeMillis.append(to_string(stats.pullTimeoutUptimeMillis)).append(",");;
+                uptimeMillis.append(to_string(stats.pullTimeoutUptimeMillis)).append(",");
                 pullTimeoutMillis.append(to_string(stats.pullTimeoutElapsedMillis)).append(",");
             }
             uptimeMillis.pop_back();
@@ -1351,17 +1356,19 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
 
     const size_t atomCounts = mPushedAtomStats.size();
     for (size_t i = 2; i < atomCounts; i++) {
-        if (mPushedAtomStats[i] > 0) {
+        if (mPushedAtomStats[i].logCount > 0) {
             uint64_t token =
                     proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM_STATS | FIELD_COUNT_REPEATED);
             proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_TAG, (int32_t)i);
-            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, mPushedAtomStats[i]);
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, mPushedAtomStats[i].logCount);
             const int errors = getPushedAtomErrorsLocked(i);
             writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors,
                                      &proto);
             const int drops = getPushedAtomDropsLocked(i);
             writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops,
                                      &proto);
+            writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_SKIP_COUNT,
+                                     mPushedAtomStats[i].skipCount, &proto);
             proto.end(token);
         }
     }
@@ -1370,12 +1377,14 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
         uint64_t token =
                 proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM_STATS | FIELD_COUNT_REPEATED);
         proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_TAG, pair.first);
-        proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, pair.second);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, pair.second.logCount);
         const int errors = getPushedAtomErrorsLocked(pair.first);
         writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors,
                                  &proto);
         const int drops = getPushedAtomDropsLocked(pair.first);
         writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops, &proto);
+        writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_SKIP_COUNT,
+                                 pair.second.skipCount, &proto);
         proto.end(token);
     }
 

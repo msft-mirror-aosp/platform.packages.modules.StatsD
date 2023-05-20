@@ -23,6 +23,7 @@
 #include "log/log_event_list.h"
 #include "stats_annotations.h"
 #include "stats_event.h"
+#include "statsd_test_util.h"
 
 #ifdef __ANDROID__
 
@@ -33,8 +34,8 @@ namespace statsd {
 using android::modules::sdklevel::IsAtLeastU;
 using std::string;
 using std::vector;
-using util::ProtoOutputStream;
-using util::ProtoReader;
+using ::util::ProtoOutputStream;
+using ::util::ProtoReader;
 
 namespace {
 
@@ -47,50 +48,10 @@ Field getField(int32_t tag, const vector<int32_t>& pos, int32_t depth, const vec
     return f;
 }
 
-void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId) {
-    int int32Array[2] = {3, 6};
-    uint32_t uids[] = {1001, 1002};
-    const char* tags[] = {"tag1", "tag2"};
-
-    switch (typeId) {
-        case INT32_TYPE:
-            AStatsEvent_writeInt32(statsEvent, 10);
-            break;
-        case INT64_TYPE:
-            AStatsEvent_writeInt64(statsEvent, 1000L);
-            break;
-        case STRING_TYPE:
-            AStatsEvent_writeString(statsEvent, "test");
-            break;
-        case LIST_TYPE:
-            AStatsEvent_writeInt32Array(statsEvent, int32Array, 2);
-            break;
-        case FLOAT_TYPE:
-            AStatsEvent_writeFloat(statsEvent, 1.3f);
-            break;
-        case BOOL_TYPE:
-            AStatsEvent_writeBool(statsEvent, 1);
-            break;
-        case BYTE_ARRAY_TYPE:
-            AStatsEvent_writeByteArray(statsEvent, (uint8_t*)"test", strlen("test"));
-            break;
-        case ATTRIBUTION_CHAIN_TYPE:
-            AStatsEvent_writeAttributionChain(statsEvent, uids, tags, 2);
-            break;
-        default:
-            break;
-    }
-}
-
-void createStatsEvent(AStatsEvent* statsEvent, uint8_t typeId) {
-    AStatsEvent_setAtomId(statsEvent, /*atomId=*/100);
-    fillStatsEventWithSampleValue(statsEvent, typeId);
-}
-
 bool createFieldWithBoolAnnotationLogEvent(LogEvent* logEvent, uint8_t typeId, uint8_t annotationId,
                                            bool annotationValue, bool doHeaderPrefetch) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
-    createStatsEvent(statsEvent, typeId);
+    createStatsEvent(statsEvent, typeId, /*atomId=*/100);
     AStatsEvent_addBoolAnnotation(statsEvent, annotationId, annotationValue);
     AStatsEvent_build(statsEvent);
 
@@ -111,7 +72,7 @@ bool createFieldWithBoolAnnotationLogEvent(LogEvent* logEvent, uint8_t typeId, u
 bool createFieldWithIntAnnotationLogEvent(LogEvent* logEvent, uint8_t typeId, uint8_t annotationId,
                                           int annotationValue, bool doHeaderPrefetch) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
-    createStatsEvent(statsEvent, typeId);
+    createStatsEvent(statsEvent, typeId, /*atomId=*/100);
     AStatsEvent_addInt32Annotation(statsEvent, annotationId, annotationValue);
     AStatsEvent_build(statsEvent);
 
@@ -212,13 +173,12 @@ INSTANTIATE_TEST_SUITE_P(BadAnnotationFieldTypes, LogEventTestBadAnnotationField
                          LogEventTestBadAnnotationFieldTypes::ToString);
 
 class LogEventTest : public testing::TestWithParam<bool> {
-protected:
+public:
     bool ParseBuffer(LogEvent& logEvent, const uint8_t* buf, size_t size) {
         size_t bufferOffset = 0;
         if (GetParam()) {
             // Testing LogEvent header prefetch logic
             const LogEvent::BodyBufferInfo bodyInfo = logEvent.parseHeader(buf, size);
-            EXPECT_TRUE(logEvent.isValid());
             EXPECT_TRUE(logEvent.isParsedHeaderOnly());
             const bool parseResult = logEvent.parseBody(bodyInfo);
             EXPECT_EQ(parseResult, logEvent.isValid());
@@ -230,10 +190,14 @@ protected:
         }
         return logEvent.isValid();
     }
+
+    static std::string ToString(testing::TestParamInfo<bool> info) {
+        return info.param ? "PrefetchTrue" : "PrefetchFalse";
+    }
 };
 
 INSTANTIATE_TEST_SUITE_P(LogEventTestBufferParsing, LogEventTest, testing::Bool(),
-                         testing::PrintToStringParamName());
+                         LogEventTest::ToString);
 
 TEST_P(LogEventTest, TestPrimitiveParsing) {
     AStatsEvent* event = AStatsEvent_obtain();
@@ -281,6 +245,32 @@ TEST_P(LogEventTest, TestPrimitiveParsing) {
     EXPECT_EQ(expectedField, boolItem.mField);
     EXPECT_EQ(Type::INT, boolItem.mValue.getType());  // FieldValue does not support boolean type
     EXPECT_EQ(1, boolItem.mValue.int_value);
+
+    AStatsEvent_release(event);
+}
+
+TEST_P(LogEventTest, TestEventWithInvalidHeaderParsing) {
+    AStatsEvent* event = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(event, 100);
+    AStatsEvent_writeInt32(event, 10);
+    AStatsEvent_writeInt64(event, 0x123456789);
+    AStatsEvent_writeFloat(event, 2.0);
+    AStatsEvent_writeBool(event, true);
+    AStatsEvent_build(event);
+
+    size_t size;
+    const uint8_t* buf = AStatsEvent_getBuffer(event, &size);
+
+    // Corrupt LogEvent header info
+    // OBJECT_TYPE | NUM_FIELDS | TIMESTAMP | ATOM_ID
+    // Corrupting first 4 bytes will be sufficient
+    uint8_t* bufMod = const_cast<uint8_t*>(buf);
+    memset(static_cast<void*>(bufMod), 4, ERROR_TYPE);
+
+    LogEvent logEvent(/*uid=*/1000, /*pid=*/1001);
+    EXPECT_FALSE(ParseBuffer(logEvent, buf, size));
+    EXPECT_FALSE(logEvent.isValid());
+    EXPECT_FALSE(logEvent.isParsedHeaderOnly());
 
     AStatsEvent_release(event);
 }

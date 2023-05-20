@@ -183,6 +183,9 @@ public:
     // Slow, should not be called in a hotpath.
     vector<int64_t> getAllMetricIds() const;
 
+    // Adds all atom ids referenced by matchers in the MetricsManager's config
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
+
 private:
     // For test only.
     inline int64_t getTtlEndNs() const { return mTtlEndNs; }
