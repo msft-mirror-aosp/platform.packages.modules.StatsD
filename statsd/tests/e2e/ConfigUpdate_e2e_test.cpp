@@ -47,12 +47,44 @@ void ValidateSubsystemSleepDimension(const DimensionsValue& value, string name) 
     EXPECT_EQ(value.value_tuple().dimensions_value(0).value_str(), name);
 }
 
+sp<StatsLogProcessor> CreateStatsLogProcessor(
+        const int64_t timeBaseNs, const int64_t currentTimeNs, const StatsdConfig& config,
+        const ConfigKey& key, const shared_ptr<MockLogEventFilter>& logEventFilter) {
+    if (logEventFilter) {
+        // call from StatsLogProcessor constructor
+        Expectation initCall = EXPECT_CALL(*logEventFilter,
+                                           setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+                                       .Times(1);
+        EXPECT_CALL(*logEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
+                .Times(1)
+                .After(initCall);
+    }
+
+    return CreateStatsLogProcessor(timeBaseNs, currentTimeNs, config, key, nullptr, 0, new UidMap(),
+                                   logEventFilter);
+}
+
 }  // Anonymous namespace.
 
 // Setup for test fixture.
-class ConfigUpdateE2eTest : public ::testing::Test {};
+class ConfigUpdateE2eTest : public testing::TestWithParam<bool> {
+protected:
+    std::shared_ptr<MockLogEventFilter> mLogEventFilter;
 
-TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
+    void SetUp() override {
+        mLogEventFilter = GetParam() ? std::make_shared<MockLogEventFilter>() : nullptr;
+    }
+
+public:
+    static std::string ToString(testing::TestParamInfo<bool> info) {
+        return info.param ? "WithLogEventFilter" : "NoLogEventFilter";
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(ConfigUpdateE2eTest, ConfigUpdateE2eTest, testing::Bool(),
+                         ConfigUpdateE2eTest::ToString);
+
+TEST_P(ConfigUpdateE2eTest, TestEventMetric) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
 
@@ -99,8 +131,8 @@ TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
 
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = 10000000000;  // 0:10
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
 
     int app1Uid = 123;
     vector<int> attributionUids1 = {app1Uid};
@@ -161,6 +193,11 @@ TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
     *newConfig.add_event_metric() = eventPersist;
 
     int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Send events after the update.
@@ -274,7 +311,7 @@ TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
     EXPECT_EQ(data.atom().sync_state_changed().sync_name(), "sync3");
 }
 
-TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
+TEST_P(ConfigUpdateE2eTest, TestCountMetric) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
 
@@ -336,8 +373,8 @@ TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
 
     int app1Uid = 123, app2Uid = 456;
     vector<int> attributionUids1 = {app1Uid};
@@ -399,6 +436,11 @@ TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     *newConfig.add_count_metric() = countPersist;
 
     int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Send events after the update. Counts reset to 0 since this is a new bucket.
@@ -527,7 +569,7 @@ TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     ValidateCountBucket(data.bucket_info(0), updateTimeNs, bucketStartTimeNs + bucketSizeNs, 2);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
+TEST_P(ConfigUpdateE2eTest, TestDurationMetric) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
 
@@ -607,8 +649,8 @@ TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
 
     int app1Uid = 123, app2Uid = 456, app3Uid = 789;
     vector<int> attributionUids1 = {app1Uid};
@@ -683,6 +725,11 @@ TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
     // At update, only uid 1 is syncing & holding a wakelock, duration=33. Max is paused for uid3.
     // Before the update, only uid2 will report a duration for max, since others are started/paused.
     int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Send events after the update.
@@ -880,7 +927,7 @@ TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
     ValidateDurationBucket(data.bucket_info(0), updateTimeNs, bucketEndTimeNs, 20 * NS_PER_SEC);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
+TEST_P(ConfigUpdateE2eTest, TestGaugeMetric) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
@@ -941,9 +988,19 @@ TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = getElapsedRealtimeNs();  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            bucketStartTimeNs, bucketStartTimeNs, config, key,
-            SharedRefBase::make<FakeSubsystemSleepCallback>(), util::SUBSYSTEM_SLEEP_STATE);
+    if (GetParam()) {
+        // call from StatsLogProcessor constructor
+        Expectation initCall = EXPECT_CALL(*mLogEventFilter,
+                                           setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+                                       .Times(1);
+        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
+                .Times(1)
+                .After(initCall);
+    }
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key,
+                                    SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                    util::SUBSYSTEM_SLEEP_STATE, new UidMap(), mLogEventFilter);
 
     int app1Uid = 123, app2Uid = 456;
 
@@ -1009,6 +1066,9 @@ TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
 
     int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
     // Update pulls gaugePullPersist and gaugeNew.
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Verify puller manager is properly set.
@@ -1275,7 +1335,7 @@ TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
     EXPECT_EQ(data.bucket_info(0).atom(0).subsystem_sleep_state().time_millis(), 902);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
+TEST_P(ConfigUpdateE2eTest, TestValueMetric) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
@@ -1329,10 +1389,20 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = getElapsedRealtimeNs();
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
+    if (GetParam()) {
+        // call from StatsLogProcessor constructor
+        Expectation initCall = EXPECT_CALL(*mLogEventFilter,
+                                           setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+                                       .Times(1);
+        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
+                .Times(1)
+                .After(initCall);
+    }
     // Config creation triggers pull #1.
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            bucketStartTimeNs, bucketStartTimeNs, config, key,
-            SharedRefBase::make<FakeSubsystemSleepCallback>(), util::SUBSYSTEM_SLEEP_STATE);
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key,
+                                    SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                    util::SUBSYSTEM_SLEEP_STATE, new UidMap(), mLogEventFilter);
 
     // Initialize log events before update.
     // ValuePushPersist and ValuePullPersist will skip the bucket due to condition unknown.
@@ -1380,6 +1450,9 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
 
     int64_t updateTimeNs = bucketStartTimeNs + 30 * NS_PER_SEC;
     // Update pulls valuePullPersist and valueNew. Pull #3.
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Verify puller manager is properly set.
@@ -1602,7 +1675,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     EXPECT_EQ(skipBucket.drop_event(0).drop_reason(), BucketDropReason::DUMP_REPORT_REQUESTED);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
+TEST_P(ConfigUpdateE2eTest, TestKllMetric) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
 
@@ -1637,8 +1710,8 @@ TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
     ConfigKey key(123, 987);
     const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
 
     // Initialize log events before update.
     // kllPersist and kllRemove will skip the bucket due to condition unknown.
@@ -1684,6 +1757,11 @@ TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
     *newConfig.add_kll_metric() = kllPersist;
 
     int64_t updateTimeNs = bucketStartTimeNs + 30 * NS_PER_SEC;
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Send events after the update. This is a new bucket.
@@ -1815,7 +1893,7 @@ TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
     EXPECT_EQ(kllPersistAfter.kll_metrics().skipped_size(), 0);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
+TEST_P(ConfigUpdateE2eTest, TestMetricActivation) {
     ALOGE("Start ConfigUpdateE2eTest#TestMetricActivation");
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
@@ -1893,8 +1971,8 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
     int uid1 = 55555;
 
     // Initialize log events before update.
@@ -1943,6 +2021,11 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     *newConfig.add_metric_activation() = immediateMetricActivation;
 
     int64_t updateTimeNs = bucketStartTimeNs + 40 * NS_PER_SEC;
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // The reboot will write to disk again, so sleep for 1 second to avoid this.
@@ -1961,7 +2044,7 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
 
     // On boot, use StartUp. However, skip config manager for simplicity.
     int64_t bootTimeNs = bucketStartTimeNs + 55 * NS_PER_SEC;
-    processor = CreateStatsLogProcessor(bootTimeNs, bootTimeNs, newConfig, key);
+    processor = CreateStatsLogProcessor(bootTimeNs, bootTimeNs, newConfig, key, mLogEventFilter);
     processor->LoadActiveConfigsFromDisk();
     processor->LoadMetadataFromDisk(getWallClockNs(), bootTimeNs);
 
@@ -2066,7 +2149,7 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     ALOGE("End ConfigUpdateE2eTest#TestMetricActivation");
 }
 
-TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
+TEST_P(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
 
@@ -2163,8 +2246,8 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
     uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     uint64_t bucket2StartTimeNs = bucketStartTimeNs + bucketSizeNs;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
 
     StatsDimensionsValueParcel wlUid1 =
             CreateAttributionUidDimensionsValueParcel(util::WAKELOCK_STATE_CHANGED, app1Uid);
@@ -2242,6 +2325,11 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, newSubId, newBroadcast);
 
     int64_t updateTimeNs = bucket2StartTimeNs + 15 * NS_PER_SEC;
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Within refractory of AlertPreserve, but AlertNew should fire since the full bucket has 2.
@@ -2277,7 +2365,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, newSubId);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
+TEST_P(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
 
@@ -2381,8 +2469,17 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, removeSubId, removeBroadcast);
 
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    if (GetParam()) {
+        // call from StatsLogProcessor constructor
+        Expectation initCall = EXPECT_CALL(*mLogEventFilter,
+                                           setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+                                       .Times(1);
+        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
+                .Times(1)
+                .After(initCall);
+    }
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ mLogEventFilter);
     sp<StatsLogProcessor> processor = service->mProcessor;
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
     int64_t bucketStartTimeNs = processor->mTimeBaseNs;
@@ -2569,6 +2666,9 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, newSubId, newBroadcast);
 
     int64_t updateTimeNs = bucket2StartTimeNs + 50 * NS_PER_SEC;
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Alert preserve will set alarm after the refractory period, but alert new will set it for
@@ -2628,7 +2728,7 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, newSubId);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestAlarms) {
+TEST_P(ConfigUpdateE2eTest, TestAlarms) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
     Alarm alarmPreserve = createAlarm("AlarmPreserve", /*offset*/ 5 * MS_PER_SEC,
@@ -2700,7 +2800,7 @@ TEST_F(ConfigUpdateE2eTest, TestAlarms) {
 
     int64_t startTimeSec = 10;
     sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            startTimeSec * NS_PER_SEC, startTimeSec * NS_PER_SEC, config, key);
+            startTimeSec * NS_PER_SEC, startTimeSec * NS_PER_SEC, config, key, mLogEventFilter);
 
     sp<AlarmMonitor> alarmMonitor = processor->getPeriodicAlarmMonitor();
     // First alarm is for alarm preserve's offset of 5 seconds.
@@ -2756,7 +2856,9 @@ TEST_F(ConfigUpdateE2eTest, TestAlarms) {
                 return Status::ok();
             });
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, newSubId, newBroadcast);
-
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
+    }
     processor->OnConfigUpdated((startTimeSec + 90) * NS_PER_SEC, key, newConfig);
     // After the update, the alarm time should remain unchanged since alarm replace now fires every
     // minute with no offset.
@@ -2796,7 +2898,7 @@ TEST_F(ConfigUpdateE2eTest, TestAlarms) {
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, newSubId);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
+TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
@@ -2808,8 +2910,8 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(FIVE_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
 
     int app1Uid = 123;
     vector<int> attributionUids1 = {app1Uid};
@@ -2828,6 +2930,11 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
     durationMetric->set_bucket(FIVE_MINUTES);
 
     uint64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;  // 1:00
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, config);
 
     event = CreateReleaseWakelockEvent(bucketStartTimeNs + 80 * NS_PER_SEC, attributionUids1,
@@ -2858,7 +2965,7 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
     EXPECT_EQ(bucketInfo.duration_nanos(), 20 * NS_PER_SEC);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
+TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
@@ -2880,8 +2987,8 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(FIVE_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
 
     int app1Uid = 123, app2Uid = 456;
     vector<int> attributionUids1 = {app1Uid};
@@ -2918,6 +3025,11 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
             CreateDimensions(util::ACTIVITY_FOREGROUND_STATE_CHANGED, {1 /*uid*/});
 
     uint64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;  // 1:00
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, config);
 
     event = CreateMoveToBackgroundEvent(bucketStartTimeNs + 73 * NS_PER_SEC, app2Uid);  // 1:13
@@ -2957,7 +3069,7 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
     EXPECT_EQ(bucketInfo.duration_nanos(), 17 * NS_PER_SEC);
 }
 
-TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedState) {
+TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedState) {
     StatsdConfig config;
     config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
@@ -2992,8 +3104,8 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedState) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(FIVE_MINUTES) * 1000000LL;
-    sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs,
+                                                              config, key, mLogEventFilter);
 
     int app1Uid = 123, app2Uid = 456;
     vector<int> attributionUids1 = {app1Uid};
@@ -3032,6 +3144,11 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedState) {
             CreateDimensions(util::UID_PROCESS_STATE_CHANGED, {1 /*uid*/});
 
     uint64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;  // 1:00
+    if (GetParam()) {
+        EXPECT_CALL(*mLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
+                .Times(1);
+    }
     processor->OnConfigUpdated(updateTimeNs, key, config);
 
     event = CreateAcquireWakelockEvent(bucketStartTimeNs + 72 * NS_PER_SEC, attributionUids2,
