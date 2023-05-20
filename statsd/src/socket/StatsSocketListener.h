@@ -15,8 +15,11 @@
  */
 #pragma once
 
+#include <gtest/gtest_prod.h>
 #include <sysutils/SocketListener.h>
 #include <utils/RefBase.h>
+
+#include "LogEventFilter.h"
 #include "logd/LogEventQueue.h"
 
 // DEFAULT_OVERFLOWUID is defined in linux/highuid.h, which is not part of
@@ -35,20 +38,38 @@ namespace statsd {
 
 class StatsSocketListener : public SocketListener, public virtual RefBase {
 public:
-    explicit StatsSocketListener(std::shared_ptr<LogEventQueue> queue);
+    explicit StatsSocketListener(std::shared_ptr<LogEventQueue> queue,
+                                 const std::shared_ptr<LogEventFilter>& logEventFilter);
 
-    virtual ~StatsSocketListener();
+    virtual ~StatsSocketListener() = default;
 
 protected:
-    virtual bool onDataAvailable(SocketClient* cli);
+    bool onDataAvailable(SocketClient* cli) override;
 
 private:
     static int getLogSocket();
+
+    bool processMessage(const uint8_t* msg, uint32_t len, uint32_t uid, uint32_t pid);
     /**
      * Who is going to get the events when they're read.
      */
     std::shared_ptr<LogEventQueue> mQueue;
+
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
+
+    friend class SocketListenerTest;
+    friend void generateAtomLogging(StatsSocketListener& socketListener, int eventCount,
+                                    int startAtomId);
+
+    FRIEND_TEST(SocketListenerTestNoFiltering, TestProcessMessageNoFiltering);
+    FRIEND_TEST(SocketListenerTestNoFiltering,
+                TestProcessMessageNoFilteringWithEmptySetExplicitSet);
+    FRIEND_TEST(SocketListenerTest, TestProcessMessageFilterEmptySet);
+    FRIEND_TEST(SocketListenerTest, TestProcessMessageFilterCompleteSet);
+    FRIEND_TEST(SocketListenerTest, TestProcessMessageFilterPartialSet);
+    FRIEND_TEST(SocketListenerTest, TestProcessMessageFilterToggle);
 };
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

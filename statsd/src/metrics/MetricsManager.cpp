@@ -567,12 +567,13 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
         return;
     }
 
+    // TODO(b/212755214): this check could be done once on the StatsLogProcessor level
     if (!eventSanityCheck(event)) {
         return;
     }
 
-    int tagId = event.GetTagId();
-    int64_t eventTimeNs = event.GetElapsedTimestampNs();
+    const int tagId = event.GetTagId();
+    const int64_t eventTimeNs = event.GetElapsedTimestampNs();
 
     bool isActive = mIsAlwaysActive;
 
@@ -596,6 +597,15 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     if (matchersIt == mTagIdsToMatchersMap.end()) {
         // Not interesting...
+        return;
+    }
+
+    if (event.isParsedHeaderOnly()) {
+        // This should not happen if metric config is defined for certain atom id
+        const int64_t firstMatcherId =
+                mAllAtomMatchingTrackers[*matchersIt->second.begin()]->getId();
+        ALOGW("Atom %d is mistakenly skipped - there is a matcher %lld for it", tagId,
+              (long long)firstMatcherId);
         return;
     }
 
@@ -867,6 +877,12 @@ vector<int64_t> MetricsManager::getAllMetricIds() const {
         metricIds.push_back(metricId);
     }
     return metricIds;
+}
+
+void MetricsManager::addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const {
+    for (const auto& [atomId, _] : mTagIdsToMatchersMap) {
+        allIds.insert(atomId);
+    }
 }
 
 }  // namespace statsd
