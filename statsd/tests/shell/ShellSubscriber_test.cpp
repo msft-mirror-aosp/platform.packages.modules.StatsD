@@ -153,7 +153,8 @@ void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
                   sp<MockStatsPullerManager> pullerManager,
                   const vector<std::shared_ptr<LogEvent>>& pushedEvents,
                   const vector<ShellData>& expectedData, int numClients) {
-    sp<ShellSubscriber> shellManager = new ShellSubscriber(uidMap, pullerManager);
+    sp<ShellSubscriber> shellManager =
+            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
 
     size_t bufferSize = config.ByteSize();
     vector<uint8_t> buffer(bufferSize);
@@ -231,7 +232,8 @@ protected:
     ShellSubscriberCallbackTest()
         : uidMap(new NaggyMock<MockUidMap>()),
           pullerManager(new StrictMock<MockStatsPullerManager>()),
-          shellSubscriber(uidMap, pullerManager),
+          mockLogEventFilter(std::make_shared<MockLogEventFilter>()),
+          shellSubscriber(uidMap, pullerManager, mockLogEventFilter),
           callback(SharedRefBase::make<StrictMock<MockStatsSubscriptionCallback>>()),
           reason(nullopt) {
     }
@@ -249,8 +251,15 @@ protected:
         configBytes = protoToBytes(config);
     }
 
+    void TearDown() override {
+        // Expect empty call from the shellSubscriber destructor
+        LogEventFilter::AtomIdSet tagIds;
+        EXPECT_CALL(*mockLogEventFilter, setAtomIds(tagIds, &shellSubscriber)).Times(1);
+    }
+
     sp<MockUidMap> uidMap;
     sp<MockStatsPullerManager> pullerManager;
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter;
     ShellSubscriber shellSubscriber;
     std::shared_ptr<MockStatsSubscriptionCallback> callback;
     vector<uint8_t> configBytes;
@@ -282,14 +291,37 @@ protected:
     unique_ptr<ShellSubscriberClient> shellSubscriberClient;
 };
 
+LogEventFilter::AtomIdSet CreateAtomIdSetFromShellSubscriptionBytes(const vector<uint8_t>& bytes) {
+    LogEventFilter::AtomIdSet result;
+
+    ShellSubscription config;
+    config.ParseFromArray(bytes.data(), bytes.size());
+
+    for (int i = 0; i < config.pushed_size(); i++) {
+        const auto& pushed = config.pushed(i);
+        EXPECT_TRUE(pushed.has_atom_id());
+        result.insert(pushed.atom_id());
+    }
+
+    return result;
+}
+
 }  // namespace
 
 TEST_F(ShellSubscriberCallbackTest, testAddSubscription) {
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     EXPECT_TRUE(shellSubscriber.startNewSubscription(configBytes, callback));
 }
 
 TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
     const size_t maxSubs = ShellSubscriber::getMaxSubscriptions();
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(maxSubs);
     vector<bool> results(maxSubs, false);
     for (int i = 0; i < maxSubs; i++) {
         results[i] = shellSubscriber.startNewSubscription(configBytes, callback);
@@ -305,7 +337,10 @@ TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
 TEST_F(ShellSubscriberCallbackTest, testPushedEventsAreCached) {
     // Expect callback to not be invoked
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     // Log an event that does NOT invoke the callack.
@@ -316,7 +351,10 @@ TEST_F(ShellSubscriberCallbackTest, testPushedEventsAreCached) {
 TEST_F(ShellSubscriberCallbackTest, testOverflowCacheIsFlushed) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
@@ -349,7 +387,10 @@ TEST_F(ShellSubscriberCallbackTest, testOverflowCacheIsFlushed) {
 TEST_F(ShellSubscriberCallbackTest, testFlushTrigger) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
@@ -374,7 +415,10 @@ TEST_F(ShellSubscriberCallbackTest, testFlushTrigger) {
 TEST_F(ShellSubscriberCallbackTest, testFlushTriggerEmptyCache) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     shellSubscriber.flushSubscription(callback);
@@ -393,6 +437,15 @@ TEST_F(ShellSubscriberCallbackTest, testFlushTriggerEmptyCache) {
 TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    Expectation newSubcriptionEvent =
+            EXPECT_CALL(*mockLogEventFilter,
+                        setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes),
+                                   &shellSubscriber))
+                    .Times(1);
+    LogEventFilter::AtomIdSet idSetEmpty;
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(idSetEmpty, &shellSubscriber))
+            .Times(1)
+            .After(newSubcriptionEvent);
 
     shellSubscriber.startNewSubscription(configBytes, callback);
 
@@ -425,6 +478,15 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
 TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    Expectation newSubcriptionEvent =
+            EXPECT_CALL(*mockLogEventFilter,
+                        setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes),
+                                   &shellSubscriber))
+                    .Times(1);
+    LogEventFilter::AtomIdSet idSetEmpty;
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(idSetEmpty, &shellSubscriber))
+            .Times(1)
+            .After(newSubcriptionEvent);
 
     shellSubscriber.startNewSubscription(configBytes, callback);
 
@@ -444,7 +506,10 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
 TEST_F(ShellSubscriberCallbackTest, testTruncateTimestampAtom) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     shellSubscriber.onLogEvent(*CreatePhoneSignalStrengthChangedEvent(
@@ -628,7 +693,8 @@ TEST(ShellSubscriberTest, testBothSubscriptions) {
 TEST(ShellSubscriberTest, testMaxSizeGuard) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
-    sp<ShellSubscriber> shellManager = new ShellSubscriber(uidMap, pullerManager);
+    sp<ShellSubscriber> shellManager =
+            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
 
     // set up 2 pipes for read/write config and data
     int fds_config[2];
@@ -651,7 +717,8 @@ TEST(ShellSubscriberTest, testMaxSizeGuard) {
 TEST(ShellSubscriberTest, testMaxSubscriptionsGuard) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
-    sp<ShellSubscriber> shellManager = new ShellSubscriber(uidMap, pullerManager);
+    sp<ShellSubscriber> shellManager =
+            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
 
     // create a simple config to get screen events
     ShellSubscription config;
@@ -700,7 +767,8 @@ TEST(ShellSubscriberTest, testMaxSubscriptionsGuard) {
 TEST(ShellSubscriberTest, testDifferentConfigs) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
-    sp<ShellSubscriber> shellManager = new ShellSubscriber(uidMap, pullerManager);
+    sp<ShellSubscriber> shellManager =
+            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
 
     // number of different configs
     int numConfigs = 2;
