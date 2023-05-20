@@ -37,6 +37,8 @@ using IsAtLeastSFunc = std::function<bool()>;
 const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
+const std::string OPTIMIZATION_SOCKET_PARSING_FLAG = "optimization_socket_parsing";
+
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
 const std::string FLAG_EMPTY = "";
