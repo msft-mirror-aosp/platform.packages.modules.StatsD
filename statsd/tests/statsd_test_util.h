@@ -86,6 +86,12 @@ public:
     MOCK_METHOD(std::set<int32_t>, getAppUid, (const string& package), (const));
 };
 
+class BasicMockLogEventFilter : public LogEventFilter {
+public:
+    MOCK_METHOD(void, setFilteringEnabled, (bool isEnabled), (override));
+    MOCK_METHOD(void, setAtomIds, (AtomIdSet tagIds, ConsumerId consumer), (override));
+};
+
 class MockPendingIntentRef : public aidl::android::os::BnPendingIntentRef {
 public:
     MOCK_METHOD1(sendDataBroadcast, Status(int64_t lastReportTimeNs));
@@ -96,6 +102,8 @@ public:
                         int64_t subscriptionRuleId, const vector<string>& cookies,
                         const StatsDimensionsValueParcel& dimensionsValueParcel));
 };
+
+typedef StrictMock<BasicMockLogEventFilter> MockLogEventFilter;
 
 class MockStatsQueryCallback : public BnStatsQueryCallback {
 public:
@@ -119,7 +127,8 @@ protected:
     const int kConfigKey = 789130123;  // Randomly chosen
     const int kCallingUid = 10100;     // Randomly chosen
     void SetUp() override {
-        service = SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+        service = SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
+                                                    /* LogEventFilter */ nullptr);
         // Removing config file from data/misc/stats-service and data/misc/stats-data if present
         ConfigKey configKey(kCallingUid, kConfigKey);
         service->removeConfiguration(kConfigKey, kCallingUid);
@@ -540,12 +549,19 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         const bool* repeatedBoolField, const size_t repeatedBoolFieldLength,
         const vector<int>& repeatedEnumField);
 
+void createStatsEvent(AStatsEvent* statsEvent, uint8_t typeId, uint32_t atomId);
+
+void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId);
+
 // Create a statsd log event processor upon the start time in seconds, config and key.
-sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const int64_t currentTimeNs,
-                                              const StatsdConfig& config, const ConfigKey& key,
-                                              const shared_ptr<IPullAtomCallback>& puller = nullptr,
-                                              const int32_t atomTag = 0 /*for puller only*/,
-                                              const sp<UidMap> = new UidMap());
+sp<StatsLogProcessor> CreateStatsLogProcessor(
+        const int64_t timeBaseNs, const int64_t currentTimeNs, const StatsdConfig& config,
+        const ConfigKey& key, const shared_ptr<IPullAtomCallback>& puller = nullptr,
+        const int32_t atomTag = 0 /*for puller only*/, const sp<UidMap> = new UidMap(),
+        const shared_ptr<LogEventFilter>& logEventFilter = nullptr);
+
+LogEventFilter::AtomIdSet CreateAtomIdSetDefault();
+LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config);
 
 // Util function to sort the log events by timestamp.
 void sortLogEventsByTimestamp(std::vector<std::unique_ptr<LogEvent>> *events);
