@@ -27,6 +27,7 @@
 #include "external/StatsPullerManager.h"
 #include "logd/LogEvent.h"
 #include "packages/UidMap.h"
+#include "socket/LogEventFilter.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/statsd_config.pb.h"
 
@@ -92,6 +93,8 @@ public:
     static size_t getMaxSizeKb() {
         return kMaxSizeKb;
     }
+
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const;
 
 private:
     int64_t pullIfNeeded(int64_t nowSecs, int64_t nowMillis, int64_t nowNanos);

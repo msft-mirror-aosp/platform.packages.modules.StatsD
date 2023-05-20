@@ -33,6 +33,7 @@ ShellSubscriber::~ShellSubscriber() {
     {
         std::unique_lock<std::mutex> lock(mMutex);
         mClientSet.clear();
+        updateLogEventFilterLocked();
     }
     mThreadSleepCV.notify_one();
     if (mThread.joinable()) {
@@ -74,6 +75,7 @@ bool ShellSubscriber::startNewSubscriptionLocked(unique_ptr<ShellSubscriberClien
 
     // Add new valid client to the client set
     mClientSet.insert(std::move(client));
+    updateLogEventFilterLocked();
 
     // Only spawn one thread to manage pulling atoms and sending
     // heartbeats.
@@ -106,6 +108,7 @@ void ShellSubscriber::pullAndSendHeartbeats() {
             } else {
                 VLOG("ShellSubscriber: removing client!");
                 clientIt = mClientSet.erase(clientIt);
+                updateLogEventFilterLocked();
             }
         }
         if (mClientSet.empty()) {
@@ -119,11 +122,15 @@ void ShellSubscriber::pullAndSendHeartbeats() {
 }
 
 void ShellSubscriber::onLogEvent(const LogEvent& event) {
-    std::unique_lock<std::mutex> lock(mMutex);
+    // Skip if event is skipped
+    if (event.isParsedHeaderOnly()) {
+        return;
+    }
     // Skip RestrictedLogEvents
     if (event.isRestricted()) {
         return;
     }
+    std::unique_lock<std::mutex> lock(mMutex);
     for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end();) {
         (*clientIt)->onLogEvent(event);
         if ((*clientIt)->isAlive()) {
@@ -131,6 +138,7 @@ void ShellSubscriber::onLogEvent(const LogEvent& event) {
         } else {
             VLOG("ShellSubscriber: removing client!");
             clientIt = mClientSet.erase(clientIt);
+            updateLogEventFilterLocked();
         }
     }
 }
@@ -151,6 +159,7 @@ void ShellSubscriber::flushSubscription(const shared_ptr<IStatsSubscriptionCallb
                 // moves the iterator, skipping a value. This is fine because we do an early return
                 // before next iteration of the loop.
                 clientIt = mClientSet.erase(clientIt);
+                updateLogEventFilterLocked();
             }
             return;
         }
@@ -173,9 +182,23 @@ void ShellSubscriber::unsubscribe(const shared_ptr<IStatsSubscriptionCallback>& 
             // moves the iterator, skipping a value. This is fine because we do an early return
             // before next iteration of the loop.
             clientIt = mClientSet.erase(clientIt);
+            updateLogEventFilterLocked();
             return;
         }
     }
+}
+
+void ShellSubscriber::updateLogEventFilterLocked() const {
+    VLOG("ShellSubscriber: Updating allAtomIds");
+    if (!mLogEventFilter) {
+        return;
+    }
+    LogEventFilter::AtomIdSet allAtomIds;
+    for (const auto& client : mClientSet) {
+        client->addAllAtomIds(allAtomIds);
+    }
+    VLOG("ShellSubscriber: Updating allAtomIds done. Total atoms %d", (int)allAtomIds.size());
+    mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
 }
 
 }  // namespace statsd
