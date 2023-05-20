@@ -252,6 +252,9 @@ TEST(MetricActivationE2eTest, TestCountMetric) {
 
     long timeBase1 = 1;
     int broadcastCount = 0;
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+            .Times(1);
     StatsLogProcessor processor(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, bucketStartTimeNs,
             [](const ConfigKey& key) { return true; },
@@ -264,7 +267,10 @@ TEST(MetricActivationE2eTest, TestCountMetric) {
                                               activeConfigs.end());
                 return true;
             },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
+
+    const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
@@ -464,6 +470,9 @@ TEST(MetricActivationE2eTest, TestCountMetricWithOneDeactivation) {
 
     long timeBase1 = 1;
     int broadcastCount = 0;
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+            .Times(1);
     StatsLogProcessor processor(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, bucketStartTimeNs,
             [](const ConfigKey& key) { return true; },
@@ -476,7 +485,10 @@ TEST(MetricActivationE2eTest, TestCountMetricWithOneDeactivation) {
                                               activeConfigs.end());
                 return true;
             },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
+
+    const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
@@ -786,6 +798,9 @@ TEST(MetricActivationE2eTest, TestCountMetricWithTwoDeactivations) {
 
     long timeBase1 = 1;
     int broadcastCount = 0;
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+            .Times(1);
     StatsLogProcessor processor(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, bucketStartTimeNs,
             [](const ConfigKey& key) { return true; },
@@ -798,7 +813,10 @@ TEST(MetricActivationE2eTest, TestCountMetricWithTwoDeactivations) {
                                               activeConfigs.end());
                 return true;
             },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
+
+    const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
@@ -1120,6 +1138,9 @@ TEST(MetricActivationE2eTest, TestCountMetricWithSameDeactivation) {
 
     long timeBase1 = 1;
     int broadcastCount = 0;
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+            .Times(1);
     StatsLogProcessor processor(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, bucketStartTimeNs,
             [](const ConfigKey& key) { return true; },
@@ -1132,7 +1153,10 @@ TEST(MetricActivationE2eTest, TestCountMetricWithSameDeactivation) {
                                               activeConfigs.end());
                 return true;
             },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
+
+    const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
@@ -1318,6 +1342,9 @@ TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations) {
 
     long timeBase1 = 1;
     int broadcastCount = 0;
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+            .Times(1);
     StatsLogProcessor processor(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, bucketStartTimeNs,
             [](const ConfigKey& key) { return true; },
@@ -1330,7 +1357,10 @@ TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations) {
                                               activeConfigs.end());
                 return true;
             },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
+
+    const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);
 
