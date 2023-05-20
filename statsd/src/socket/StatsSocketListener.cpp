@@ -36,11 +36,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
-StatsSocketListener::StatsSocketListener(std::shared_ptr<LogEventQueue> queue)
-    : SocketListener(getLogSocket(), false /*start listen*/), mQueue(std::move(queue)) {
-}
-
-StatsSocketListener::~StatsSocketListener() {
+StatsSocketListener::StatsSocketListener(std::shared_ptr<LogEventQueue> queue,
+                                         const std::shared_ptr<LogEventFilter>& logEventFilter)
+    : SocketListener(getLogSocket(), false /*start listen*/),
+      mQueue(std::move(queue)),
+      mLogEventFilter(logEventFilter) {
 }
 
 bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
@@ -120,19 +120,33 @@ bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
     }
 
     // move past the 4-byte StatsEventTag
-    uint8_t* msg = ptr + sizeof(uint32_t);
-    uint32_t len = n - sizeof(uint32_t);
-    uint32_t uid = cred->uid;
-    uint32_t pid = cred->pid;
+    const uint8_t* msg = ptr + sizeof(uint32_t);
+    const uint32_t len = n - sizeof(uint32_t);
+    const uint32_t uid = cred->uid;
+    const uint32_t pid = cred->pid;
 
-    int64_t oldestTimestamp;
+    return processMessage(msg, len, uid, pid);
+}
+
+bool StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint32_t uid,
+                                         uint32_t pid) {
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
-    logEvent->parseBuffer(msg, len);
-    const int32_t atomId = logEvent->GetTagId();
-    if (!mQueue->push(std::move(logEvent), &oldestTimestamp)) {
-        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId);
+
+    if (mLogEventFilter && mLogEventFilter->getFilteringEnabled()) {
+        const LogEvent::BodyBufferInfo bodyInfo = logEvent->parseHeader(msg, len);
+        if (mLogEventFilter->isAtomInUse(logEvent->GetTagId())) {
+            logEvent->parseBody(bodyInfo);
+        }
+    } else {
+        logEvent->parseBuffer(msg, len);
     }
 
+    const int32_t atomId = logEvent->GetTagId();
+    const bool isAtomSkipped = logEvent->isParsedHeaderOnly();
+    int64_t oldestTimestamp;
+    if (!mQueue->push(std::move(logEvent), &oldestTimestamp)) {
+        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId, isAtomSkipped);
+    }
     return true;
 }
 
