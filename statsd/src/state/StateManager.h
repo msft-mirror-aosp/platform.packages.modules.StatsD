@@ -24,6 +24,7 @@
 
 #include "HashableDimensionKey.h"
 #include "packages/UidMap.h"
+#include "socket/LogEventFilter.h"
 #include "state/StateListener.h"
 #include "state/StateTracker.h"
 
@@ -83,6 +84,8 @@ public:
         }
         return -1;
     }
+
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
 
 private:
     mutable std::mutex mMutex;

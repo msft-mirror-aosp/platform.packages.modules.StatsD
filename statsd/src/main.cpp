@@ -78,12 +78,17 @@ int main(int /*argc*/, char** /*argv*/) {
             std::make_shared<LogEventQueue>(8000 /*buffer limit. Buffer is NOT pre-allocated*/);
 
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags({});
+    FlagProvider::getInstance().initBootFlags({OPTIMIZATION_SOCKET_PARSING_FLAG});
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
+    const bool logsFilteringEnabled = FlagProvider::getInstance().getBootFlagBool(
+            OPTIMIZATION_SOCKET_PARSING_FLAG, FLAG_FALSE);
+    std::shared_ptr<LogEventFilter> logEventFilter =
+            logsFilteringEnabled ? std::make_shared<LogEventFilter>() : nullptr;
+
     // Create the service
-    gStatsService = SharedRefBase::make<StatsService>(uidMap, eventQueue);
+    gStatsService = SharedRefBase::make<StatsService>(uidMap, eventQueue, logEventFilter);
     auto binder = gStatsService->asBinder();
 
     // We want to be able to ask for the selinux context of callers:
@@ -103,7 +108,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     gStatsService->Startup();
 
-    gSocketListener = new StatsSocketListener(eventQueue);
+    gSocketListener = new StatsSocketListener(eventQueue, logEventFilter);
 
     ALOGI("Statsd starts to listen to socket.");
     // Backlog and /proc/sys/net/unix/max_dgram_qlen set to large value
