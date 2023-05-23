@@ -125,16 +125,19 @@ bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
     const uint32_t uid = cred->uid;
     const uint32_t pid = cred->pid;
 
-    return processMessage(msg, len, uid, pid);
+    processMessage(msg, len, uid, pid, mQueue, mLogEventFilter);
+
+    return true;
 }
 
-bool StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint32_t uid,
-                                         uint32_t pid) {
+void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint32_t uid,
+                                         uint32_t pid, const std::shared_ptr<LogEventQueue>& queue,
+                                         const std::shared_ptr<LogEventFilter>& filter) {
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
 
-    if (mLogEventFilter && mLogEventFilter->getFilteringEnabled()) {
+    if (filter && filter->getFilteringEnabled()) {
         const LogEvent::BodyBufferInfo bodyInfo = logEvent->parseHeader(msg, len);
-        if (mLogEventFilter->isAtomInUse(logEvent->GetTagId())) {
+        if (filter->isAtomInUse(logEvent->GetTagId())) {
             logEvent->parseBody(bodyInfo);
         }
     } else {
@@ -144,10 +147,9 @@ bool StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
     const int32_t atomId = logEvent->GetTagId();
     const bool isAtomSkipped = logEvent->isParsedHeaderOnly();
     int64_t oldestTimestamp;
-    if (!mQueue->push(std::move(logEvent), &oldestTimestamp)) {
+    if (!queue->push(std::move(logEvent), &oldestTimestamp)) {
         StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId, isAtomSkipped);
     }
-    return true;
 }
 
 int StatsSocketListener::getLogSocket() {
