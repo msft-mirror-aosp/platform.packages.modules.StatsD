@@ -549,8 +549,8 @@ TEST_F(ShellSubscriberCallbackPulledTest, testPullAtInterval) {
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
 
     // This pull should NOT trigger a cache flush.
-    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 3, /* nowMillis= */ 3000,
-                                                         /* nowNanos= */ 3'000'000'000);
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 61, /* nowMillis= */ 61'000,
+                                                         /* nowNanos= */ 61'000'000'000);
 }
 
 TEST_F(ShellSubscriberCallbackPulledTest, testCachedPullIsFlushed) {
@@ -558,8 +558,8 @@ TEST_F(ShellSubscriberCallbackPulledTest, testCachedPullIsFlushed) {
     EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(1));
 
     // This pull should NOT trigger a cache flush.
-    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 3, /* nowMillis= */ 3000,
-                                                         /* nowNanos= */ 3'000'000'000);
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 61, /* nowMillis= */ 61'000,
+                                                         /* nowNanos= */ 61'000'000'000);
 
     // Expect callback to be invoked once flush is requested.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
@@ -584,8 +584,8 @@ TEST_F(ShellSubscriberCallbackPulledTest, testPullAtCacheTimeout) {
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
 
     // This pull should trigger a cache flush.
-    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 4, /* nowMillis= */ 4000,
-                                                         /* nowNanos= */ 4'000'000'000);
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 70, /* nowMillis= */ 70'000,
+                                                         /* nowNanos= */ 70'000'000'000);
 
     EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::STATSD_INITIATED));
 
@@ -594,6 +594,28 @@ TEST_F(ShellSubscriberCallbackPulledTest, testPullAtCacheTimeout) {
     ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
 
     EXPECT_THAT(actualShellData, EqShellData(getExpectedPulledData()));
+}
+
+TEST_F(ShellSubscriberCallbackPulledTest, testPullFrequencyTooShort) {
+    // Pull should NOT happen.
+    EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(0));
+
+    // This should not trigger a pull even though the timestamp passed in matches the pull interval
+    // specified in the config.
+    const int64_t sleepTimeMs =
+            shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(2, 2000, 2'000'000'000);
+}
+
+TEST_F(ShellSubscriberCallbackPulledTest, testMinSleep) {
+    // Pull should NOT happen.
+    EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(0));
+
+    const int64_t sleepTimeMs =
+            shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(59, 59'000, 59'000'000'000);
+
+    // Even though there is only 1000 ms left until the next pull, the sleep time returned is
+    // kMinCallbackSleepIntervalMs.
+    EXPECT_THAT(sleepTimeMs, Eq(ShellSubscriberClient::kMinCallbackSleepIntervalMs));
 }
 
 TEST(ShellSubscriberTest, testPushedSubscription) {
