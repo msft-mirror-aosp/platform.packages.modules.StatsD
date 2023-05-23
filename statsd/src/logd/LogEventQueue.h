@@ -53,15 +53,15 @@ private:
     std::mutex mMutex;
     std::queue<std::unique_ptr<LogEvent>> mQueue;
 
-    friend class SocketListenerTest;
+    friend class SocketParseMessageTest;
 
-    FRIEND_TEST(SocketListenerTestNoFiltering, TestProcessMessageNoFiltering);
-    FRIEND_TEST(SocketListenerTestNoFiltering,
+    FRIEND_TEST(SocketParseMessageTestNoFiltering, TestProcessMessageNoFiltering);
+    FRIEND_TEST(SocketParseMessageTestNoFiltering,
                 TestProcessMessageNoFilteringWithEmptySetExplicitSet);
-    FRIEND_TEST(SocketListenerTest, TestProcessMessageFilterEmptySet);
-    FRIEND_TEST(SocketListenerTest, TestProcessMessageFilterCompleteSet);
-    FRIEND_TEST(SocketListenerTest, TestProcessMessageFilterPartialSet);
-    FRIEND_TEST(SocketListenerTest, TestProcessMessageFilterToggle);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterEmptySet);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterCompleteSet);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterPartialSet);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterToggle);
 };
 
 }  // namespace statsd
