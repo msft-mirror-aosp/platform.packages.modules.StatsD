@@ -55,26 +55,26 @@ public:
 
 }  //  namespace
 
-void generateAtomLogging(StatsSocketListener& socketListener, int eventCount, int startAtomId) {
+void generateAtomLogging(const std::shared_ptr<LogEventQueue>& queue,
+                         const std::shared_ptr<LogEventFilter>& filter, int eventCount,
+                         int startAtomId) {
     // create number of AStatsEvent
     for (int i = 0; i < eventCount; i++) {
         AStatsEventWrapper event(startAtomId + i);
         auto [buf, size] = event.getBuffer();
-        EXPECT_TRUE(socketListener.processMessage(buf, size, kTestUid, kTestPid));
+        StatsSocketListener::processMessage(buf, size, kTestUid, kTestPid, queue, filter);
     }
 }
 
-class SocketListenerTestNoFiltering : public testing::TestWithParam<bool> {
+class SocketParseMessageTestNoFiltering : public testing::TestWithParam<bool> {
 protected:
     std::shared_ptr<LogEventQueue> mEventQueue;
     std::shared_ptr<LogEventFilter> mLogEventFilter;
-    StatsSocketListener mSocketListener;
 
 public:
-    SocketListenerTestNoFiltering()
+    SocketParseMessageTestNoFiltering()
         : mEventQueue(std::make_shared<LogEventQueue>(kEventCount /*buffer limit*/)),
-          mLogEventFilter(GetParam() ? std::make_shared<LogEventFilter>() : nullptr),
-          mSocketListener(mEventQueue, mLogEventFilter) {
+          mLogEventFilter(GetParam() ? std::make_shared<LogEventFilter>() : nullptr) {
     }
 
     static std::string ToString(testing::TestParamInfo<bool> info) {
@@ -82,22 +82,15 @@ public:
     }
 };
 
-INSTANTIATE_TEST_SUITE_P(SocketListenerTestNoFiltering, SocketListenerTestNoFiltering,
-                         testing::Bool(), SocketListenerTestNoFiltering::ToString);
+INSTANTIATE_TEST_SUITE_P(SocketParseMessageTestNoFiltering, SocketParseMessageTestNoFiltering,
+                         testing::Bool(), SocketParseMessageTestNoFiltering::ToString);
 
-TEST_P(SocketListenerTestNoFiltering, TestProcessMessageNoFiltering) {
+TEST_P(SocketParseMessageTestNoFiltering, TestProcessMessageNoFiltering) {
     if (GetParam()) {
         mLogEventFilter->setFilteringEnabled(false);
     }
 
-    // create number of AStatsEvent
-    for (int i = 0; i < kEventCount; i++) {
-        AStatsEventWrapper event(kAtomId + i);
-        auto [buf, size] = event.getBuffer();
-        EXPECT_TRUE(mSocketListener.processMessage(buf, size, kTestUid, kTestPid));
-    }
-
-    generateAtomLogging(mSocketListener, kEventCount, kAtomId);
+    generateAtomLogging(mEventQueue, mLogEventFilter, kEventCount, kAtomId);
 
     // check content of the queue
     EXPECT_EQ(kEventCount, mEventQueue->mQueue.size());
@@ -109,14 +102,14 @@ TEST_P(SocketListenerTestNoFiltering, TestProcessMessageNoFiltering) {
     }
 }
 
-TEST_P(SocketListenerTestNoFiltering, TestProcessMessageNoFilteringWithEmptySetExplicitSet) {
+TEST_P(SocketParseMessageTestNoFiltering, TestProcessMessageNoFilteringWithEmptySetExplicitSet) {
     if (GetParam()) {
         mLogEventFilter->setFilteringEnabled(false);
         LogEventFilter::AtomIdSet idsList;
         mLogEventFilter->setAtomIds(idsList, nullptr);
     }
 
-    generateAtomLogging(mSocketListener, kEventCount, kAtomId);
+    generateAtomLogging(mEventQueue, mLogEventFilter, kEventCount, kAtomId);
 
     // check content of the queue
     EXPECT_EQ(kEventCount, mEventQueue->mQueue.size());
@@ -128,15 +121,13 @@ TEST_P(SocketListenerTestNoFiltering, TestProcessMessageNoFilteringWithEmptySetE
     }
 }
 
-TEST(SocketListenerTest, TestProcessMessageFilterEmptySet) {
+TEST(SocketParseMessageTest, TestProcessMessageFilterEmptySet) {
     std::shared_ptr<LogEventQueue> eventQueue =
             std::make_shared<LogEventQueue>(kEventCount /*buffer limit*/);
 
-    // Setup socket
     std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
-    StatsSocketListener socketListener(eventQueue, logEventFilter);
 
-    generateAtomLogging(socketListener, kEventCount, kAtomId);
+    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId);
 
     // check content of the queue
     for (int i = 0; i < kEventCount; i++) {
@@ -147,17 +138,16 @@ TEST(SocketListenerTest, TestProcessMessageFilterEmptySet) {
     }
 }
 
-TEST(SocketListenerTest, TestProcessMessageFilterEmptySetExplicitSet) {
+TEST(SocketParseMessageTest, TestProcessMessageFilterEmptySetExplicitSet) {
     std::shared_ptr<LogEventQueue> eventQueue =
             std::make_shared<LogEventQueue>(kEventCount /*buffer limit*/);
 
-    // Setup socket
     std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
-    StatsSocketListener socketListener(eventQueue, logEventFilter);
+
     LogEventFilter::AtomIdSet idsList;
     logEventFilter->setAtomIds(idsList, nullptr);
 
-    generateAtomLogging(socketListener, kEventCount, kAtomId);
+    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId);
 
     // check content of the queue
     for (int i = 0; i < kEventCount; i++) {
@@ -168,20 +158,19 @@ TEST(SocketListenerTest, TestProcessMessageFilterEmptySetExplicitSet) {
     }
 }
 
-TEST(SocketListenerTest, TestProcessMessageFilterCompleteSet) {
+TEST(SocketParseMessageTest, TestProcessMessageFilterCompleteSet) {
     std::shared_ptr<LogEventQueue> eventQueue =
             std::make_shared<LogEventQueue>(kEventCount /*buffer limit*/);
 
-    // Setup socket
     std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
-    StatsSocketListener socketListener(eventQueue, logEventFilter);
+
     LogEventFilter::AtomIdSet idsList;
     for (int i = 0; i < kEventCount; i++) {
         idsList.insert(kAtomId + i);
     }
     logEventFilter->setAtomIds(idsList, nullptr);
 
-    generateAtomLogging(socketListener, kEventCount, kAtomId);
+    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId);
 
     // check content of the queue
     EXPECT_EQ(kEventCount, eventQueue->mQueue.size());
@@ -193,20 +182,19 @@ TEST(SocketListenerTest, TestProcessMessageFilterCompleteSet) {
     }
 }
 
-TEST(SocketListenerTest, TestProcessMessageFilterPartialSet) {
+TEST(SocketParseMessageTest, TestProcessMessageFilterPartialSet) {
     std::shared_ptr<LogEventQueue> eventQueue =
             std::make_shared<LogEventQueue>(kEventCount /*buffer limit*/);
 
-    // Setup socket
     std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
-    StatsSocketListener socketListener(eventQueue, logEventFilter);
+
     LogEventFilter::AtomIdSet idsList;
     for (int i = 0; i < kEventFilteredCount; i++) {
         idsList.insert(kAtomId + i);
     }
     logEventFilter->setAtomIds(idsList, nullptr);
 
-    generateAtomLogging(socketListener, kEventCount, kAtomId);
+    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId);
 
     // check content of the queue
     EXPECT_EQ(kEventCount, eventQueue->mQueue.size());
@@ -225,13 +213,12 @@ TEST(SocketListenerTest, TestProcessMessageFilterPartialSet) {
     }
 }
 
-TEST(SocketListenerTest, TestProcessMessageFilterToggle) {
+TEST(SocketParseMessageTest, TestProcessMessageFilterToggle) {
     std::shared_ptr<LogEventQueue> eventQueue =
             std::make_shared<LogEventQueue>(kEventCount * 3 /*buffer limit*/);
 
-    // Setup socket
     std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
-    StatsSocketListener socketListener(eventQueue, logEventFilter);
+
     LogEventFilter::AtomIdSet idsList;
     for (int i = 0; i < kEventFilteredCount; i++) {
         idsList.insert(kAtomId + i);
@@ -239,12 +226,12 @@ TEST(SocketListenerTest, TestProcessMessageFilterToggle) {
     // events with ids from kAtomId to kAtomId + kEventFilteredCount should not be skipped
     logEventFilter->setAtomIds(idsList, nullptr);
 
-    generateAtomLogging(socketListener, kEventCount, kAtomId);
+    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId);
 
     logEventFilter->setFilteringEnabled(false);
     // since filtering is disabled - events with any ids should not be skipped
     // will generate events with ids [kAtomId + kEventCount, kAtomId + kEventCount * 2]
-    generateAtomLogging(socketListener, kEventCount, kAtomId + kEventCount);
+    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId + kEventCount);
 
     logEventFilter->setFilteringEnabled(true);
     LogEventFilter::AtomIdSet idsList2;
@@ -255,7 +242,7 @@ TEST(SocketListenerTest, TestProcessMessageFilterToggle) {
     logEventFilter->setAtomIds(idsList2, nullptr);
 
     // will generate events with ids [kAtomId + kEventCount * 2, kAtomId + kEventCount * 3]
-    generateAtomLogging(socketListener, kEventCount, kAtomId + kEventCount * 2);
+    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId + kEventCount * 2);
 
     // check content of the queue
     EXPECT_EQ(kEventCount * 3, eventQueue->mQueue.size());
