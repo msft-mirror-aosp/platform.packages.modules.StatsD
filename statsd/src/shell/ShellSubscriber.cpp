@@ -20,6 +20,7 @@
 
 #include <android-base/file.h>
 #include <inttypes.h>
+#include <utils/Timers.h>
 
 #include "stats_log_util.h"
 
@@ -95,10 +96,10 @@ void ShellSubscriber::pullAndSendHeartbeats() {
     VLOG("ShellSubscriber: helper thread starting");
     std::unique_lock<std::mutex> lock(mMutex);
     while (true) {
-        int64_t sleepTimeMs = INT_MAX;
-        int64_t nowSecs = getElapsedRealtimeSec();
-        int64_t nowMillis = getElapsedRealtimeMillis();
-        int64_t nowNanos = getElapsedRealtimeNs();
+        int64_t sleepTimeMs = 24 * 60 * 60 * 1000;  // 24 hours.
+        const int64_t nowNanos = getElapsedRealtimeNs();
+        const int64_t nowMillis = nanoseconds_to_milliseconds(nowNanos);
+        const int64_t nowSecs = nanoseconds_to_seconds(nowNanos);
         for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end();) {
             int64_t subscriptionSleepMs =
                     (*clientIt)->pullAndSendHeartbeatsIfNeeded(nowSecs, nowMillis, nowNanos);
