@@ -383,8 +383,7 @@ cc_test {
         "tests/state/StateTracker_test.cpp",
         "tests/statsd_test_util.cpp",
         "tests/statsd_test_util_test.cpp",
-        // TODO (b/283536696): this tests fail on AVD
-        // "tests/SocketListener_test.cpp",
+        "tests/SocketListener_test.cpp",
         "tests/StatsLogProcessor_test.cpp",
         "tests/StatsService_test.cpp",
         "tests/storage/StorageManager_test.cpp",
