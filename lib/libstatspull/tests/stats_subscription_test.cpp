@@ -254,9 +254,9 @@ TEST_F(SubscriptionTest, TestSubscription) {
         EXPECT_EQ(callbackData.count, 2);
 
         // Trigger callback through cache timeout.
-        // Two 500 ms sleeps have occurred already so the total sleep is 5000 ms since last callback
-        // invocation.
-        sleep_for(std::chrono::milliseconds(4000));
+        // Two 500 ms sleeps have occurred already so the total sleep is 71000 ms since last
+        // callback invocation.
+        sleep_for(std::chrono::milliseconds(70'000));
         EXPECT_EQ(callbackData.subId, subId);
         EXPECT_EQ(callbackData.reason, ASTATSMANAGER_SUBSCRIPTION_CALLBACK_REASON_STATSD_INITIATED);
         EXPECT_EQ(callbackData.count, 3);
