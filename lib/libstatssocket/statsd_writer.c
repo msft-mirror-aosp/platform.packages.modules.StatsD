@@ -107,7 +107,7 @@ static int statsdOpen() {
         if (sock < 0) {
             ret = -errno;
         } else {
-            int sndbuf = 1 * 1024 * 1024;  // set max send buffer size 1MB
+            const int sndbuf = 2 * 1024 * 1024;  // set max send buffer size 2MB
             socklen_t bufLen = sizeof(sndbuf);
             // SO_RCVBUF does not have an effect on unix domain socket, but SO_SNDBUF does.
             // Proceed to connect even setsockopt fails.
