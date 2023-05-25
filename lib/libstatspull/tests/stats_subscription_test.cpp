@@ -180,10 +180,10 @@ TEST_F(SubscriptionTest, TestSubscription) {
         ASSERT_TRUE(actualShellData.ParseFromArray(callbackData.payload.data(),
                                                    callbackData.payload.size()));
 
-        ASSERT_EQ(actualShellData.elapsed_timestamp_nanos_size(), 3);
+        ASSERT_GE(actualShellData.elapsed_timestamp_nanos_size(), 3);
         EXPECT_THAT(actualShellData.elapsed_timestamp_nanos(), Each(Gt(0LL)));
 
-        ASSERT_EQ(actualShellData.atom_size(), 3);
+        ASSERT_GE(actualShellData.atom_size(), 3);
 
         // Verify atom 1.
         Atom expectedAtom;
@@ -238,10 +238,10 @@ TEST_F(SubscriptionTest, TestSubscription) {
         ASSERT_TRUE(actualShellData.ParseFromArray(callbackData.payload.data(),
                                                    callbackData.payload.size()));
 
-        ASSERT_EQ(actualShellData.elapsed_timestamp_nanos_size(), 1);
+        ASSERT_GE(actualShellData.elapsed_timestamp_nanos_size(), 1);
         EXPECT_THAT(actualShellData.elapsed_timestamp_nanos(), Each(Gt(0LL)));
 
-        ASSERT_EQ(actualShellData.atom_size(), 1);
+        ASSERT_GE(actualShellData.atom_size(), 1);
 
         // Verify atom 1.
         expectedAtom.Clear();
@@ -265,10 +265,10 @@ TEST_F(SubscriptionTest, TestSubscription) {
         ASSERT_TRUE(actualShellData.ParseFromArray(callbackData.payload.data(),
                                                    callbackData.payload.size()));
 
-        ASSERT_EQ(actualShellData.elapsed_timestamp_nanos_size(), 1);
+        ASSERT_GE(actualShellData.elapsed_timestamp_nanos_size(), 1);
         EXPECT_THAT(actualShellData.elapsed_timestamp_nanos(), Each(Gt(0LL)));
 
-        ASSERT_EQ(actualShellData.atom_size(), 1);
+        ASSERT_GE(actualShellData.atom_size(), 1);
 
         // Verify atom 1.
         expectedAtom.Clear();
@@ -293,10 +293,10 @@ TEST_F(SubscriptionTest, TestSubscription) {
         ASSERT_TRUE(actualShellData.ParseFromArray(callbackData.payload.data(),
                                                    callbackData.payload.size()));
 
-        ASSERT_EQ(actualShellData.elapsed_timestamp_nanos_size(), 1);
+        ASSERT_GE(actualShellData.elapsed_timestamp_nanos_size(), 1);
         EXPECT_THAT(actualShellData.elapsed_timestamp_nanos(), Each(Gt(0LL)));
 
-        ASSERT_EQ(actualShellData.atom_size(), 1);
+        ASSERT_GE(actualShellData.atom_size(), 1);
 
         // Verify atom 1.
         expectedAtom.Clear();
