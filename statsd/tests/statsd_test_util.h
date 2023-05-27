@@ -19,7 +19,6 @@
 #include <aidl/android/os/IPullAtomCallback.h>
 #include <aidl/android/os/IPullAtomResultReceiver.h>
 #include <gmock/gmock.h>
-#include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "src/StatsLogProcessor.h"
@@ -45,7 +44,6 @@ using ::aidl::android::os::IPullAtomCallback;
 using ::aidl::android::os::IPullAtomResultReceiver;
 using android::util::ProtoReader;
 using google::protobuf::RepeatedPtrField;
-using google::protobuf::util::MessageDifferencer;
 using Status = ::ndk::ScopedAStatus;
 using PackageInfoSnapshot = UidMapping_PackageInfoSnapshot;
 using PackageInfo = UidMapping_PackageInfoSnapshot_PackageInfo;
@@ -748,17 +746,6 @@ std::vector<PackageInfo> buildPackageInfos(
         const std::vector<std::string>& installers,
         const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<bool>& deleted,
         const std::vector<uint32_t>& installerIndices, const bool hashStrings);
-
-// Checks equality on explicitly set values.
-MATCHER(ProtoEq, "") {
-    return MessageDifferencer::Equals(std::get<0>(arg), std::get<1>(arg));
-}
-
-// Checks equality on explicitly and implicitly set values.
-// Implicitly set values comes from fields with a default value specifier.
-MATCHER(ProtoEquiv, "") {
-    return MessageDifferencer::Equivalent(std::get<0>(arg), std::get<1>(arg));
-}
 
 template <typename T>
 std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
