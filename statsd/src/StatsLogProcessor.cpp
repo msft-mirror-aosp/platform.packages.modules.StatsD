@@ -36,6 +36,7 @@
 #include "stats_util.h"
 #include "statslog_statsd.h"
 #include "storage/StorageManager.h"
+#include "utils/api_tracing.h"
 
 using namespace android;
 using android::base::StringPrintf;
@@ -389,6 +390,7 @@ void StatsLogProcessor::resetConfigsLocked(const int64_t timestampNs) {
 }
 
 void StatsLogProcessor::OnLogEvent(LogEvent* event) {
+    ATRACE_CALL();
     OnLogEvent(event, getElapsedRealtimeNs());
 }
 
@@ -1455,6 +1457,7 @@ void StatsLogProcessor::onUidMapReceived(const int64_t eventTimeNs) {
 }
 
 void StatsLogProcessor::onStatsdInitCompleted(const int64_t elapsedTimeNs) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received boot completed signal");
     for (const auto& it : mMetricsManagers) {

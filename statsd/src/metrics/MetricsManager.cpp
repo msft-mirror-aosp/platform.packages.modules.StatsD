@@ -34,6 +34,7 @@
 #include "stats_util.h"
 #include "statslog_statsd.h"
 #include "utils/DbUtils.h"
+#include "utils/api_tracing.h"
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_INT32;
@@ -421,6 +422,7 @@ void MetricsManager::onUidMapReceived(const int64_t eventTimeNs) {
 }
 
 void MetricsManager::onStatsdInitCompleted(const int64_t eventTimeNs) {
+    ATRACE_CALL();
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
         it->onStatsdInitCompleted(eventTimeNs);
