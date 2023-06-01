@@ -193,7 +193,7 @@ public:
 
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
-    static const int kMaxPushedAtomId = 750;
+    static const int kMaxPushedAtomId = 900;
 
     // Atom id that is the start of the pulled atoms.
     static const int kPullAtomStartTag = 10000;
@@ -485,9 +485,9 @@ public:
      */
     void noteBucketUnknownCondition(int64_t metricId);
 
-    /* Reports one event has been dropped due to queue overflow, and the oldest event timestamp in
-     * the queue */
-    void noteEventQueueOverflow(int64_t oldestEventTimestampNs);
+    /* Reports one event id has been dropped due to queue overflow, and the oldest event timestamp
+     * in the queue */
+    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId);
 
     /**
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
@@ -603,6 +603,10 @@ private:
     // The max size of the map is kMaxNonPlatformPushedAtoms.
     std::unordered_map<int, int> mNonPlatformPushedAtomStats;
 
+    // Stores the number of times a pushed atom is dropped due to queue overflow event.
+    // The max size of the map is kMaxPushedAtomId + kMaxNonPlatformPushedAtoms.
+    std::unordered_map<int, int> mPushedAtomDropsStats;
+
     // Maps PullAtomId to its stats. The size is capped by the puller atom counts.
     std::map<int, PulledAtomStats> mPulledAtomStats;
 
@@ -667,6 +671,10 @@ private:
 
     void resetInternalLocked();
 
+    void noteAtomLoggedLocked(int atomId);
+
+    void noteAtomDroppedLocked(int atomId);
+
     void noteDataDropped(const ConfigKey& key, const size_t totalBytes, int32_t timeSec);
 
     void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes, int32_t timeSec);
@@ -679,7 +687,9 @@ private:
 
     void addToIceBoxLocked(std::shared_ptr<ConfigStats>& stats);
 
-    int getPushedAtomErrors(int atomId) const;
+    int getPushedAtomErrorsLocked(int atomId) const;
+
+    int getPushedAtomDropsLocked(int atomId) const;
 
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
@@ -702,6 +712,8 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
     FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
