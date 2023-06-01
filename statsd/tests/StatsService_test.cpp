@@ -31,10 +31,40 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 using ::ndk::SharedRefBase;
 
 #ifdef __ANDROID__
+
+namespace {
+
+const int64_t metricId = 123456;
+const int32_t ATOM_TAG = util::SUBSYSTEM_SLEEP_STATE;
+
+StatsdConfig CreateStatsdConfig(const GaugeMetric::SamplingType samplingType) {
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");     // LogEvent defaults to UID of root.
+    config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
+    auto atomMatcher = CreateSimpleAtomMatcher("TestMatcher", ATOM_TAG);
+    *config.add_atom_matcher() = atomMatcher;
+    *config.add_gauge_metric() =
+            createGaugeMetric("GAUGE1", atomMatcher.id(), samplingType, nullopt, nullopt);
+    config.set_hash_strings_in_metric_report(false);
+    return config;
+}
+
+class FakeSubsystemSleepCallbackWithTiming : public FakeSubsystemSleepCallback {
+public:
+    Status onPullAtom(int atomTag,
+                      const shared_ptr<IPullAtomResultReceiver>& resultReceiver) override {
+        mPullTimeNs = getElapsedRealtimeNs();
+        return FakeSubsystemSleepCallback::onPullAtom(atomTag, resultReceiver);
+    }
+    int64_t mPullTimeNs = 0;
+};
+
+}  // namespace
 
 TEST(StatsServiceTest, TestAddConfig_simple) {
     const sp<UidMap> uidMap = new UidMap();
@@ -116,6 +146,114 @@ TEST(StatsServiceTest, TestGetUidFromArgs) {
     // For a non-userdebug, uid "1" cannot be impersonated.
     service->mEngBuild = false;
     EXPECT_FALSE(service->getUidFromArgs(args, 2, uid));
+}
+
+class StatsServiceStatsdInitTest : public StatsServiceConfigTest,
+                                   public testing::WithParamInterface<bool> {
+public:
+    StatsServiceStatsdInitTest() : kInitDelaySec(GetParam() ? 0 : 3) {
+    }
+
+    static std::string ToString(testing::TestParamInfo<bool> info) {
+        return info.param ? "NoDelay" : "WithDelay";
+    }
+
+protected:
+    const int kInitDelaySec = 0;
+
+    shared_ptr<StatsService> createStatsService() override {
+        return SharedRefBase::make<StatsService>(new UidMap(), /*queue=*/nullptr,
+                                                 /*LogEventFilter=*/nullptr,
+                                                 /*initEventDelaySecs=*/kInitDelaySec);
+    }
+};
+
+INSTANTIATE_TEST_SUITE_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest, testing::Bool(),
+                         StatsServiceStatsdInitTest::ToString);
+
+TEST_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest) {
+    // used for error threshold tolerance due to sleep() is involved
+    const int64_t ERROR_THRESHOLD_NS = GetParam() ? 1000000 : 5 * 1000000;
+
+    auto pullAtomCallback = SharedRefBase::make<FakeSubsystemSleepCallbackWithTiming>();
+
+    // TODO: evaluate to use service->registerNativePullAtomCallback() API
+    service->mPullerManager->RegisterPullAtomCallback(/*uid=*/0, ATOM_TAG, NS_PER_SEC,
+                                                      NS_PER_SEC * 10, {}, pullAtomCallback);
+
+    const int64_t createConfigTimeNs = getElapsedRealtimeNs();
+    StatsdConfig config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
+    config.set_id(kConfigKey);
+    ASSERT_TRUE(sendConfig(config));
+    ASSERT_EQ(2, pullAtomCallback->pullNum);
+
+    service->mProcessor->mPullerManager->ForceClearPullerCache();
+
+    const int64_t initCompletedTimeNs = getElapsedRealtimeNs();
+    service->onStatsdInitCompleted();
+    ASSERT_EQ(3, pullAtomCallback->pullNum);
+
+    // Checking pull with or without delay according to the flag value
+    const int64_t lastPullNs = pullAtomCallback->mPullTimeNs;
+
+    if (GetParam()) {
+        // when flag is defined - should be small delay between init & pull
+        // expect delay smaller than 1 second
+        EXPECT_GE(lastPullNs, initCompletedTimeNs);
+        EXPECT_LE(lastPullNs, initCompletedTimeNs + ERROR_THRESHOLD_NS);
+    } else {
+        // when flag is not defined - big delay is expected (kInitDelaySec)
+        EXPECT_GE(lastPullNs, initCompletedTimeNs + kInitDelaySec * NS_PER_SEC);
+        EXPECT_LE(lastPullNs,
+                  initCompletedTimeNs + kInitDelaySec * NS_PER_SEC + ERROR_THRESHOLD_NS);
+    }
+
+    const int64_t bucketSizeNs =
+            TimeUnitToBucketSizeInMillis(config.gauge_metric(0).bucket()) * 1000000;
+    const int64_t dumpReportTsNanos = createConfigTimeNs + bucketSizeNs + NS_PER_SEC;
+
+    vector<uint8_t> output;
+    ConfigKey configKey(kCallingUid, kConfigKey);
+    service->mProcessor->onDumpReport(configKey, dumpReportTsNanos,
+                                      /*include_current_bucket=*/false, /*erase_data=*/true,
+                                      ADB_DUMP, FAST, &output);
+    ConfigMetricsReportList reports;
+    reports.ParseFromArray(output.data(), output.size());
+    ASSERT_EQ(1, reports.reports_size());
+
+    backfillDimensionPath(&reports);
+    backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
+    StatsLogReport::GaugeMetricDataWrapper gaugeMetrics =
+            reports.reports(0).metrics(0).gauge_metrics();
+    ASSERT_EQ(gaugeMetrics.skipped_size(), 0);
+    ASSERT_GT((int)gaugeMetrics.data_size(), 0);
+    const auto data = gaugeMetrics.data(0);
+    ASSERT_EQ(2, data.bucket_info_size());
+
+    const auto bucketInfo0 = data.bucket_info(0);
+    const auto bucketInfo1 = data.bucket_info(1);
+
+    EXPECT_GE(NanoToMillis(bucketInfo0.start_bucket_elapsed_nanos()),
+              NanoToMillis(createConfigTimeNs));
+    EXPECT_LE(NanoToMillis(bucketInfo0.start_bucket_elapsed_nanos()),
+              NanoToMillis(createConfigTimeNs + ERROR_THRESHOLD_NS));
+
+    EXPECT_EQ(NanoToMillis(bucketInfo0.end_bucket_elapsed_nanos()),
+              NanoToMillis(bucketInfo1.start_bucket_elapsed_nanos()));
+
+    ASSERT_EQ(1, bucketInfo1.atom_size());
+    ASSERT_GT(bucketInfo1.atom(0).subsystem_sleep_state().time_millis(), 0);
+
+    EXPECT_GE(NanoToMillis(bucketInfo1.start_bucket_elapsed_nanos()),
+              NanoToMillis(createConfigTimeNs + kInitDelaySec * NS_PER_SEC));
+    EXPECT_LE(NanoToMillis(bucketInfo1.start_bucket_elapsed_nanos()),
+              NanoToMillis(createConfigTimeNs + kInitDelaySec * NS_PER_SEC + ERROR_THRESHOLD_NS));
+
+    EXPECT_GE(NanoToMillis(createConfigTimeNs + bucketSizeNs),
+              NanoToMillis(bucketInfo1.end_bucket_elapsed_nanos()));
+    EXPECT_LE(NanoToMillis(createConfigTimeNs + bucketSizeNs),
+              NanoToMillis(bucketInfo1.end_bucket_elapsed_nanos() + ERROR_THRESHOLD_NS));
 }
 
 #else
