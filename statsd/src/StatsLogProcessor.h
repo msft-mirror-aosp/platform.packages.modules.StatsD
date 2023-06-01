@@ -409,6 +409,8 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
 
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
+
+    FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
 };
 
 }  // namespace statsd
