@@ -19,8 +19,7 @@
 #include <sys/cdefs.h>
 
 #ifndef __STATSD_SUBS_MIN_API__
-// TODO(b/274054228): Change this to __ANDROID_API_U__ once U is finalized.
-#define __STATSD_SUBS_MIN_API__ __ANDROID_API_FUTURE__
+#define __STATSD_SUBS_MIN_API__ __ANDROID_API_U__
 #endif
 
 __BEGIN_DECLS
