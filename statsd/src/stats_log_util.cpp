@@ -627,10 +627,10 @@ void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event
     }
 }
 
-std::string toHexString(const vector<uint8_t>& bytes) {
+std::string toHexString(const string& bytes) {
     static const char* kLookup = "0123456789ABCDEF";
     string hex;
-    for (const uint8_t byte : bytes) {
+    for (const char byte : bytes) {
         hex.push_back(kLookup[(byte & 0xF0) >> 4]);
         hex.push_back(kLookup[byte & 0x0F]);
     }
