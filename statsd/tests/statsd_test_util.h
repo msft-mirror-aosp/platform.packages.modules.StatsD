@@ -769,6 +769,9 @@ void writeBootFlag(const std::string& flagName, const std::string& flagValue);
 
 PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap);
 
+ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
+                                      const string& versionString, const string& package);
+
 PackageInfo buildPackageInfo(const std::string& name, const int32_t uid, const int64_t version,
                              const std::string& versionString,
                              const std::optional<std::string> installer,
