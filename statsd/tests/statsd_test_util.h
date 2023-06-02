@@ -16,8 +16,10 @@
 
 #include <aidl/android/os/BnPendingIntentRef.h>
 #include <aidl/android/os/BnPullAtomCallback.h>
+#include <aidl/android/os/BnStatsSubscriptionCallback.h>
 #include <aidl/android/os/IPullAtomCallback.h>
 #include <aidl/android/os/IPullAtomResultReceiver.h>
+#include <aidl/android/os/StatsSubscriptionCallbackReason.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -40,8 +42,10 @@ namespace statsd {
 
 using namespace testing;
 using ::aidl::android::os::BnPullAtomCallback;
+using ::aidl::android::os::BnStatsSubscriptionCallback;
 using ::aidl::android::os::IPullAtomCallback;
 using ::aidl::android::os::IPullAtomResultReceiver;
+using ::aidl::android::os::StatsSubscriptionCallbackReason;
 using android::util::ProtoReader;
 using google::protobuf::RepeatedPtrField;
 using Status = ::ndk::ScopedAStatus;
@@ -87,6 +91,14 @@ public:
                  Status(int64_t configUid, int64_t configId, int64_t subscriptionId,
                         int64_t subscriptionRuleId, const vector<string>& cookies,
                         const StatsDimensionsValueParcel& dimensionsValueParcel));
+};
+
+class MockStatsSubscriptionCallback : public BnStatsSubscriptionCallback {
+public:
+    MOCK_METHOD(Status, onSubscriptionData,
+                (StatsSubscriptionCallbackReason in_reason,
+                 const std::vector<uint8_t>& in_subscriptionPayload),
+                (override));
 };
 
 class StatsServiceConfigTest : public ::testing::Test {
@@ -755,6 +767,14 @@ std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
 }
 
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int atom_id);
+
+template <typename P>
+std::vector<uint8_t> protoToBytes(const P& proto) {
+    const size_t byteSize = proto.ByteSizeLong();
+    vector<uint8_t> bytes(byteSize);
+    proto.SerializeToArray(bytes.data(), byteSize);
+    return bytes;
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
