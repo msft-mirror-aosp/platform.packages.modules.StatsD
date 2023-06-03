@@ -28,6 +28,7 @@
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
+#include <android/binder_ibinder_platform.h>
 #include <cutils/multiuser.h>
 #include <src/statsd_config.pb.h>
 #include <src/uid_data.pb.h>
@@ -53,7 +54,7 @@ namespace statsd {
 
 constexpr const char* kPermissionDump = "android.permission.DUMP";
 
-constexpr const char* kPermissionReadLogs = "android.permission.READ_LOGS";
+constexpr const char* kTracedProbesSid = "u:r:traced_probes:s0";
 
 constexpr const char* kPermissionRegisterPullAtom = "android.permission.REGISTER_STATS_PULL_ATOM";
 
@@ -89,6 +90,34 @@ Status checkUid(uid_t expectedUid) {
         return status;                                            \
     }                                                             \
 }
+
+Status checkSid(const char* expectedSid) {
+    const char* sid = nullptr;
+    if (__builtin_available(android __ANDROID_API_U__, *)) {
+        sid = AIBinder_getCallingSid();
+    }
+
+    // root (which is the uid in tests for example) has all permissions.
+    uid_t uid = AIBinder_getCallingUid();
+    if (uid == AID_ROOT) {
+        return Status::ok();
+    }
+
+    if (sid != nullptr && strcmp(expectedSid, sid) == 0) {
+        return Status::ok();
+    } else {
+        return exception(EX_SECURITY,
+                         StringPrintf("SID '%s' is not expected SID '%s'", sid, expectedSid));
+    }
+}
+
+#define ENFORCE_SID(sid)                 \
+    {                                    \
+        Status status = checkSid((sid)); \
+        if (!status.isOk()) {            \
+            return status;               \
+        }                                \
+    }
 
 StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue)
     : mUidMap(uidMap),
@@ -1345,14 +1374,8 @@ void StatsService::statsCompanionServiceDiedImpl() {
 
 Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,
                                      const shared_ptr<IStatsSubscriptionCallback>& callback) {
-    ENFORCE_UID(AID_NOBODY);
-    if (!checkPermission(kPermissionReadLogs)) {
-        return exception(
-                EX_SECURITY,
-                StringPrintf(
-                        "Uid %d does not have the %s permission when subscribing to atom events",
-                        AIBinder_getCallingUid(), kPermissionReadLogs));
-    }
+    ENFORCE_SID(kTracedProbesSid);
+
     initShellSubscriber();
 
     mShellSubscriber->startNewSubscription(subscriptionConfig, callback);
@@ -1361,12 +1384,8 @@ Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,
 }
 
 Status StatsService::removeSubscription(const shared_ptr<IStatsSubscriptionCallback>& callback) {
-    ENFORCE_UID(AID_NOBODY);
-    if (!checkPermission(kPermissionReadLogs)) {
-        return exception(EX_SECURITY, StringPrintf("Uid %d does not have the %s permission when "
-                                                   "unsubscribing from atom events",
-                                                   AIBinder_getCallingUid(), kPermissionReadLogs));
-    }
+    ENFORCE_SID(kTracedProbesSid);
+
     if (mShellSubscriber != nullptr) {
         mShellSubscriber->unsubscribe(callback);
     }
@@ -1374,12 +1393,8 @@ Status StatsService::removeSubscription(const shared_ptr<IStatsSubscriptionCallb
 }
 
 Status StatsService::flushSubscription(const shared_ptr<IStatsSubscriptionCallback>& callback) {
-    ENFORCE_UID(AID_NOBODY);
-    if (!checkPermission(kPermissionReadLogs)) {
-        return exception(EX_SECURITY, StringPrintf("Uid %d does not have the %s permission when "
-                                                   "flushing an atoms subscription",
-                                                   AIBinder_getCallingUid(), kPermissionReadLogs));
-    }
+    ENFORCE_SID(kTracedProbesSid);
+
     if (mShellSubscriber != nullptr) {
         mShellSubscriber->flushSubscription(callback);
     }
