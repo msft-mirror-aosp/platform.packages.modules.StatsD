@@ -250,7 +250,7 @@ interface IStatsd {
      * the subscriber. IStatsSubscriptionCallback also uniquely identifies this subscription - it
      * should not be reused for another subscription.
      *
-     * Enforces READ_LOGS permission.
+     * Enforces caller is in the traced_probes selinux domain.
      */
     oneway void addSubscription(in byte[] subscriptionConfig,
             IStatsSubscriptionCallback callback);
@@ -261,7 +261,7 @@ interface IStatsd {
      * This will subsequently trigger IStatsSubscriptionCallback with pending data
      * for this subscription.
      *
-     * Enforces READ_LOGS permission.
+     * Enforces caller is in the traced_probes selinux domain.
      */
     oneway void removeSubscription(IStatsSubscriptionCallback callback);
 
@@ -271,7 +271,7 @@ interface IStatsd {
      * This will subsequently trigger IStatsSubscriptionCallback with pending data
      * for this subscription.
      *
-     * Enforces READ_LOGS permission.
+     * Enforces caller is in the traced_probes selinux domain.
      */
     oneway void flushSubscription(IStatsSubscriptionCallback callback);
 }
