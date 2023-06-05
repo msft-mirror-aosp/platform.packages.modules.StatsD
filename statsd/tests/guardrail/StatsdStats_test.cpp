@@ -327,11 +327,11 @@ TEST(StatsdStatsTest, TestAtomLog) {
     StatsdStats stats;
     time_t now = time(nullptr);
     // old event, we get it from the stats buffer. should be ignored.
-    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, 1000);
+    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, 1000, false);
 
-    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 1);
-    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 2);
-    stats.noteAtomLogged(util::APP_CRASH_OCCURRED, now + 3);
+    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 1, false);
+    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 2, false);
+    stats.noteAtomLogged(util::APP_CRASH_OCCURRED, now + 3, false);
 
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
@@ -351,6 +351,7 @@ TEST(StatsdStatsTest, TestAtomLog) {
             dropboxAtomGood = true;
         }
         EXPECT_FALSE(atomStats.has_dropped_count());
+        EXPECT_FALSE(atomStats.has_skip_count());
     }
 
     EXPECT_TRUE(dropboxAtomGood);
@@ -363,9 +364,9 @@ TEST(StatsdStatsTest, TestNonPlatformAtomLog) {
     int newAtom1 = StatsdStats::kMaxPushedAtomId + 1;
     int newAtom2 = StatsdStats::kMaxPushedAtomId + 2;
 
-    stats.noteAtomLogged(newAtom1, now + 1);
-    stats.noteAtomLogged(newAtom1, now + 2);
-    stats.noteAtomLogged(newAtom2, now + 3);
+    stats.noteAtomLogged(newAtom1, now + 1, false);
+    stats.noteAtomLogged(newAtom1, now + 2, false);
+    stats.noteAtomLogged(newAtom2, now + 3, false);
 
     vector<uint8_t> output;
     stats.dumpStats(&output, false);
@@ -385,6 +386,7 @@ TEST(StatsdStatsTest, TestNonPlatformAtomLog) {
             newAtom2Good = true;
         }
         EXPECT_FALSE(atomStats.has_dropped_count());
+        EXPECT_FALSE(atomStats.has_skip_count());
     }
 
     EXPECT_TRUE(newAtom1Good);
@@ -530,8 +532,10 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
     const int32_t callingUid = 100;
     ConfigKey configKey(0, 12345);
     const string configPackage = "com.google.android.gm";
+    int64_t beforeNoteMetricSucceed = getWallClockNs();
     stats.noteQueryRestrictedMetricSucceed(configKey.GetId(), configPackage, configKey.GetUid(),
                                            callingUid, /*queryLatencyNs=*/5 * NS_PER_SEC);
+    int64_t afterNoteMetricSucceed = getWallClockNs();
 
     const int64_t configIdWithError = 111;
     stats.noteQueryRestrictedMetricFailed(configIdWithError, configPackage, std::nullopt,
@@ -552,6 +556,9 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
     EXPECT_EQ(callingUid, report.restricted_metric_query_stats(0).calling_uid());
     EXPECT_EQ(configPackage, report.restricted_metric_query_stats(0).config_package());
     EXPECT_FALSE(report.restricted_metric_query_stats(0).has_query_error());
+    EXPECT_LT(beforeNoteMetricSucceed,
+              report.restricted_metric_query_stats(0).query_wall_time_ns());
+    EXPECT_GT(afterNoteMetricSucceed, report.restricted_metric_query_stats(0).query_wall_time_ns());
     EXPECT_EQ(5 * NS_PER_SEC, report.restricted_metric_query_stats(0).query_latency_ns());
     EXPECT_EQ(configIdWithError, report.restricted_metric_query_stats(1).config_id());
     EXPECT_EQ(AMBIGUOUS_CONFIG_KEY, report.restricted_metric_query_stats(1).invalid_query_reason());
@@ -704,7 +711,7 @@ TEST(StatsdStatsTest, TestAtomErrorStats) {
         // We must call noteAtomLogged as well because only those pushed atoms
         // that have been logged will have stats printed about them in the
         // proto.
-        stats.noteAtomLogged(pushAtomTag, /*timeSec=*/0);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec=*/0, false);
         stats.noteAtomError(pushAtomTag, /*pull=*/false);
 
         stats.noteAtomError(pullAtomTag, /*pull=*/true);
@@ -721,6 +728,7 @@ TEST(StatsdStatsTest, TestAtomErrorStats) {
     EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
     EXPECT_EQ(numErrors, pushedAtomStats.error_count());
     EXPECT_FALSE(pushedAtomStats.has_dropped_count());
+    EXPECT_FALSE(pushedAtomStats.has_skip_count());
 
     // Check error count = numErrors for pull atom
     ASSERT_EQ(1, report.pulled_atom_stats_size());
@@ -736,10 +744,9 @@ TEST(StatsdStatsTest, TestAtomDroppedStats) {
     const int nonPlatformPushAtomTag = StatsdStats::kMaxPushedAtomId + 100;
 
     const int numDropped = 10;
-
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
     }
 
     vector<uint8_t> output;
@@ -757,15 +764,17 @@ TEST(StatsdStatsTest, TestAtomDroppedStats) {
     EXPECT_EQ(numDropped, pushedAtomStats.count());
     EXPECT_EQ(numDropped, pushedAtomStats.dropped_count());
     EXPECT_FALSE(pushedAtomStats.has_error_count());
+    EXPECT_FALSE(pushedAtomStats.has_skip_count());
 
     const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
     EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
     EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.count());
     EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.dropped_count());
     EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_skip_count());
 }
 
-TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats) {
+TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats) {
     StatsdStats stats;
 
     const int pushAtomTag = 100;
@@ -773,14 +782,14 @@ TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats) {
 
     const int numLogged = 10;
     for (int i = 0; i < numLogged; i++) {
-        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0);
-        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, false);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, false);
     }
 
     const int numDropped = 10;
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
     }
 
     vector<uint8_t> output;
@@ -796,11 +805,87 @@ TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats) {
     EXPECT_EQ(numLogged + numDropped, pushedAtomStats.count());
     EXPECT_EQ(numDropped, pushedAtomStats.dropped_count());
     EXPECT_FALSE(pushedAtomStats.has_error_count());
+    EXPECT_FALSE(pushedAtomStats.has_skip_count());
 
     const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
     EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
     EXPECT_EQ(numLogged + numDropped, nonPlatformPushedAtomStats.count());
     EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.dropped_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_skip_count());
+}
+
+TEST(StatsdStatsTest, TestAtomSkippedStats) {
+    StatsdStats stats;
+
+    const int pushAtomTag = 100;
+    const int nonPlatformPushAtomTag = StatsdStats::kMaxPushedAtomId + 100;
+    const int numSkipped = 10;
+
+    for (int i = 0; i < numSkipped; i++) {
+        stats.noteAtomLogged(pushAtomTag, /*timeSec=*/0, /*isSkipped*/ true);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec=*/0, /*isSkipped*/ true);
+    }
+
+    vector<uint8_t> output;
+    stats.dumpStats(&output, false);
+    StatsdStatsReport report;
+    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+
+    // Check skip_count = numSkipped for push atoms
+    ASSERT_EQ(2, report.atom_stats_size());
+
+    const auto& pushedAtomStats = report.atom_stats(0);
+    EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
+    EXPECT_EQ(numSkipped, pushedAtomStats.count());
+    EXPECT_EQ(numSkipped, pushedAtomStats.skip_count());
+    EXPECT_FALSE(pushedAtomStats.has_error_count());
+
+    const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
+    EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
+    EXPECT_EQ(numSkipped, nonPlatformPushedAtomStats.count());
+    EXPECT_EQ(numSkipped, nonPlatformPushedAtomStats.skip_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
+}
+
+TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats) {
+    StatsdStats stats;
+
+    const int pushAtomTag = 100;
+    const int nonPlatformPushAtomTag = StatsdStats::kMaxPushedAtomId + 100;
+
+    const int numLogged = 10;
+    for (int i = 0; i < numLogged; i++) {
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, false);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, false);
+    }
+
+    const int numDropped = 10;
+    for (int i = 0; i < numDropped; i++) {
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, true);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, true);
+    }
+
+    vector<uint8_t> output;
+    stats.dumpStats(&output, false);
+    StatsdStatsReport report;
+    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+
+    // Check dropped_count = numDropped for push atoms
+    ASSERT_EQ(2, report.atom_stats_size());
+
+    const auto& pushedAtomStats = report.atom_stats(0);
+    EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
+    EXPECT_EQ(numLogged + numDropped, pushedAtomStats.count());
+    EXPECT_EQ(numDropped, pushedAtomStats.dropped_count());
+    EXPECT_EQ(numDropped, pushedAtomStats.skip_count());
+    EXPECT_FALSE(pushedAtomStats.has_error_count());
+
+    const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
+    EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
+    EXPECT_EQ(numLogged + numDropped, nonPlatformPushedAtomStats.count());
+    EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.dropped_count());
+    EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.skip_count());
     EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
 }
 

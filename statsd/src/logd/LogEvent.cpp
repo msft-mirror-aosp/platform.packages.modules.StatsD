@@ -597,6 +597,10 @@ bool LogEvent::parseBody(const BodyBufferInfo& bodyInfo) {
 bool LogEvent::parseBuffer(const uint8_t* buf, size_t len) {
     BodyBufferInfo bodyInfo = parseHeader(buf, len);
 
+    // emphasize intention to parse the body, however atom data could be incomplete
+    // if header/body parsing was failed due to invalid buffer content for example
+    mParsedHeaderOnly = false;
+
     // early termination if header is invalid
     if (!mValid) {
         mBuf = nullptr;

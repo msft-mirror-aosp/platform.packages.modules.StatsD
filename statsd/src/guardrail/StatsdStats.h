@@ -246,6 +246,9 @@ public:
     // Maximum number of pushed atoms statsd stats will track above kMaxPushedAtomId.
     static const int kMaxNonPlatformPushedAtoms = 600;
 
+    // Maximum number of pushed atoms error statsd stats will track.
+    static const int kMaxPushedAtomErrorStatsSize = 100;
+
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
     static const int kMaxPushedAtomId = 900;
@@ -380,7 +383,7 @@ public:
     /**
      * Report an atom event has been logged.
      */
-    void noteAtomLogged(int atomId, int32_t timeSec);
+    void noteAtomLogged(int atomId, int32_t timeSec, bool isSkipped);
 
     /**
      * Report that statsd modified the anomaly alarm registered with StatsCompanionService.
@@ -552,7 +555,7 @@ public:
 
     /* Reports one event id has been dropped due to queue overflow, and the oldest event timestamp
      * in the queue */
-    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId);
+    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId, bool isSkipped);
 
     /**
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
@@ -699,17 +702,23 @@ private:
     // The size of the vector is capped by kMaxIceBoxSize.
     std::list<const std::shared_ptr<ConfigStats>> mIceBox;
 
-    // Stores the number of times a pushed atom is logged.
+    // Stores the number of times a pushed atom is logged and skipped (if skipped).
     // The size of the vector is the largest pushed atom id in atoms.proto + 1. Atoms
     // out of that range will be put in mNonPlatformPushedAtomStats.
     // This is a vector, not a map because it will be accessed A LOT -- for each stats log.
-    std::vector<int> mPushedAtomStats;
+    struct PushedAtomStats {
+        int logCount = 0;
+        int skipCount = 0;
+    };
 
-    // Stores the number of times a pushed atom is logged for atom ids above kMaxPushedAtomId.
-    // The max size of the map is kMaxNonPlatformPushedAtoms.
-    std::unordered_map<int, int> mNonPlatformPushedAtomStats;
+    std::vector<PushedAtomStats> mPushedAtomStats;
+
+    // Stores the number of times a pushed atom is logged and skipped for atom ids above
+    // kMaxPushedAtomId. The max size of the map is kMaxNonPlatformPushedAtoms.
+    std::unordered_map<int, PushedAtomStats> mNonPlatformPushedAtomStats;
 
     // Stores the number of times a pushed atom is dropped due to queue overflow event.
+    // We do not expect it will happen too often so the map is preferable vs pre-allocated vector
     // The max size of the map is kMaxPushedAtomId + kMaxNonPlatformPushedAtoms.
     std::unordered_map<int, int> mPushedAtomDropsStats;
 
@@ -718,9 +727,8 @@ private:
 
     // Stores the number of times a pushed atom was logged erroneously. The
     // corresponding counts for pulled atoms are stored in PulledAtomStats.
-    // The max size of this map is kMaxAtomErrorsStatsSize.
+    // The max size of this map is kMaxPushedAtomErrorStatsSize.
     std::map<int, int> mPushedAtomErrorStats;
-    int kMaxPushedAtomErrorStatsSize = 100;
 
     // Maps metric ID to its stats. The size is capped by the number of metrics.
     std::map<int64_t, AtomMetricStats> mAtomMetricStats;
@@ -767,7 +775,7 @@ private:
     struct RestrictedMetricQueryStats {
         RestrictedMetricQueryStats(int32_t callingUid, int64_t configId,
                                    const string& configPackage, std::optional<int32_t> configUid,
-                                   int32_t queryTimeNs,
+                                   int64_t queryTimeNs,
                                    std::optional<InvalidQueryReason> invalidQueryReason,
                                    const string& error, std::optional<int64_t> queryLatencyNs)
             : mCallingUid(callingUid),
@@ -811,7 +819,7 @@ private:
 
     void resetInternalLocked();
 
-    void noteAtomLoggedLocked(int atomId);
+    void noteAtomLoggedLocked(int atomId, bool isSkipped);
 
     void noteAtomDroppedLocked(int atomId);
 
@@ -852,10 +860,12 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
     FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
     FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
