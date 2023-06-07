@@ -14,24 +14,42 @@
 
 #include "src/shell/ShellSubscriber.h"
 
+#include <aidl/android/os/StatsSubscriptionCallbackReason.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
 #include <unistd.h>
 
+#include <optional>
 #include <vector>
 
 #include "frameworks/proto_logging/stats/atoms.pb.h"
+#include "gtest_matchers.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/shell/shell_data.pb.h"
 #include "stats_event.h"
+#include "statslog_statsdtest.h"
 #include "tests/metrics/metrics_test_helper.h"
 #include "tests/statsd_test_util.h"
 
+using ::aidl::android::os::StatsSubscriptionCallbackReason;
 using android::sp;
+using android::os::statsd::TestAtomReported;
+using android::os::statsd::TrainExperimentIds;
+using android::os::statsd::util::BytesField;
+using android::os::statsd::util::CPU_ACTIVE_TIME;
+using android::os::statsd::util::PLUGGED_STATE_CHANGED;
+using android::os::statsd::util::SCREEN_STATE_CHANGED;
+using android::os::statsd::util::TEST_ATOM_REPORTED;
 using std::vector;
 using testing::_;
+using testing::A;
+using testing::ByMove;
+using testing::DoAll;
 using testing::Invoke;
 using testing::NaggyMock;
+using testing::Return;
+using testing::SaveArg;
+using testing::SetArgPointee;
 using testing::StrictMock;
 
 namespace android {
@@ -48,6 +66,8 @@ int kUid2 = 2000;
 int kCpuTime1 = 100;
 int kCpuTime2 = 200;
 
+int64_t kCpuActiveTimeEventTimestampNs = 1111L;
+
 // Number of clients running simultaneously
 
 // Just a single client
@@ -61,10 +81,12 @@ ShellData getExpectedPulledData() {
     auto* atom1 = shellData.add_atom()->mutable_cpu_active_time();
     atom1->set_uid(kUid1);
     atom1->set_time_millis(kCpuTime1);
+    shellData.add_elapsed_timestamp_nanos(kCpuActiveTimeEventTimestampNs);
 
     auto* atom2 = shellData.add_atom()->mutable_cpu_active_time();
     atom2->set_uid(kUid2);
     atom2->set_time_millis(kCpuTime2);
+    shellData.add_elapsed_timestamp_nanos(kCpuActiveTimeEventTimestampNs);
 
     return shellData;
 }
@@ -73,7 +95,7 @@ ShellData getExpectedPulledData() {
 ShellSubscription getPulledConfig() {
     ShellSubscription config;
     auto* pull_config = config.add_pulled();
-    pull_config->mutable_matcher()->set_atom_id(10016);
+    pull_config->mutable_matcher()->set_atom_id(CPU_ACTIVE_TIME);
     pull_config->set_freq_millis(2000);
     return config;
 }
@@ -81,8 +103,8 @@ ShellSubscription getPulledConfig() {
 // Utility to adjust CPU time for pulled events
 shared_ptr<LogEvent> makeCpuActiveTimeAtom(int32_t uid, int64_t timeMillis) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
-    AStatsEvent_setAtomId(statsEvent, 10016);
-    AStatsEvent_overwriteTimestamp(statsEvent, 1111L);
+    AStatsEvent_setAtomId(statsEvent, CPU_ACTIVE_TIME);
+    AStatsEvent_overwriteTimestamp(statsEvent, kCpuActiveTimeEventTimestampNs);
     AStatsEvent_writeInt32(statsEvent, uid);
     AStatsEvent_writeInt64(statsEvent, timeMillis);
 
@@ -110,8 +132,8 @@ vector<std::shared_ptr<LogEvent>> getPushedEvents() {
     return pushedList;
 }
 
-// Utility to read & return a string representing ShellData, skipping heartbeats.
-string readData(int fd) {
+// Utility to read & return ShellData proto, skipping heartbeats.
+static ShellData readData(int fd) {
     ssize_t dataSize = 0;
     while (dataSize == 0) {
         read(fd, &dataSize, sizeof(dataSize));
@@ -123,7 +145,7 @@ string readData(int fd) {
     // Make sure the received bytes can be parsed to an atom.
     ShellData receivedAtom;
     EXPECT_TRUE(receivedAtom.ParseFromArray(dataBuffer.data(), dataSize) != 0);
-    return string(dataBuffer.begin(), dataBuffer.end());
+    return receivedAtom;
 }
 
 void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
@@ -159,31 +181,329 @@ void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
         shellManager->onLogEvent(*event);
     }
 
-    // Because we might receive heartbeats from statsd, consisting of data sizes
-    // of 0, encapsulate reads within a while loop.
-    vector<string> expectedDataSerialized;
-    for (size_t i = 0; i < expectedData.size(); i++) {
-        expectedDataSerialized.push_back(expectedData[i].SerializeAsString());
-    }
-
     for (int i = 0; i < numClients; i++) {
-        vector<string> expectedDataCopy(expectedDataSerialized);
-
-        while (expectedDataCopy.size() > 1) {
-            // Use readData utility to read data in string format.
-            string dataString = readData(fds_datas[i][0]);
-
-            // Search for string within the expected data vector
-            auto it = find(expectedDataCopy.begin(), expectedDataCopy.end(), dataString);
-            EXPECT_NE(it, expectedDataCopy.end());
-            expectedDataCopy.erase(it);
+        vector<ShellData> actualData;
+        for (int j = 1; j <= expectedData.size(); j++) {
+            actualData.push_back(readData(fds_datas[i][0]));
         }
+
+        EXPECT_THAT(expectedData, UnorderedPointwise(EqShellData(), actualData));
     }
 
     // Not closing fds_datas[i][0] because this causes writes within ShellSubscriberClient to hang
 }
 
+unique_ptr<LogEvent> createTestAtomReportedEvent(const uint64_t timestampNs,
+                                                 const int32_t intFieldValue,
+                                                 const vector<int64_t>& expIds) {
+    TrainExperimentIds trainExpIds;
+    *trainExpIds.mutable_experiment_id() = {expIds.begin(), expIds.end()};
+    const vector<uint8_t> trainExpIdsBytes = protoToBytes(trainExpIds);
+    return CreateTestAtomReportedEvent(
+            timestampNs, /* attributionUids */ {1001},
+            /* attributionTags */ {"app1"}, intFieldValue, /*longField */ 0LL,
+            /* floatField */ 0.0f,
+            /* stringField */ "abc", /* boolField */ false, TestAtomReported::OFF, trainExpIdsBytes,
+            /* repeatedIntField */ {}, /* repeatedLongField */ {}, /* repeatedFloatField */ {},
+            /* repeatedStringField */ {}, /* repeatedBoolField */ {},
+            /* repeatedBoolFieldLength */ 0, /* repeatedEnumField */ {});
+}
+
+TestAtomReported createTestAtomReportedProto(const int32_t intFieldValue,
+                                             const vector<int64_t>& expIds) {
+    TestAtomReported t;
+    auto* attributionNode = t.add_attribution_node();
+    attributionNode->set_uid(1001);
+    attributionNode->set_tag("app1");
+    t.set_int_field(intFieldValue);
+    t.set_long_field(0);
+    t.set_float_field(0.0f);
+    t.set_string_field("abc");
+    t.set_boolean_field(false);
+    t.set_state(TestAtomReported_State_OFF);
+    *t.mutable_bytes_field()->mutable_experiment_id() = {expIds.begin(), expIds.end()};
+    return t;
+}
+
+class ShellSubscriberCallbackTest : public ::testing::Test {
+protected:
+    ShellSubscriberCallbackTest()
+        : uidMap(new NaggyMock<MockUidMap>()),
+          pullerManager(new StrictMock<MockStatsPullerManager>()),
+          shellSubscriber(uidMap, pullerManager),
+          callback(SharedRefBase::make<StrictMock<MockStatsSubscriptionCallback>>()),
+          reason(nullopt) {
+    }
+
+    void SetUp() override {
+        // Save callback arguments when it is invoked.
+        ON_CALL(*callback, onSubscriptionData(_, _))
+                .WillByDefault(DoAll(SaveArg<0>(&reason), SaveArg<1>(&payload),
+                                     Return(ByMove(Status::ok()))));
+
+        ShellSubscription config;
+        config.add_pushed()->set_atom_id(TEST_ATOM_REPORTED);
+        config.add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
+        configBytes = protoToBytes(config);
+    }
+
+    sp<MockUidMap> uidMap;
+    sp<MockStatsPullerManager> pullerManager;
+    ShellSubscriber shellSubscriber;
+    std::shared_ptr<MockStatsSubscriptionCallback> callback;
+    vector<uint8_t> configBytes;
+
+    // Capture callback arguments.
+    std::optional<StatsSubscriptionCallbackReason> reason;
+    vector<uint8_t> payload;
+};
+
+class ShellSubscriberCallbackPulledTest : public ShellSubscriberCallbackTest {
+protected:
+    void SetUp() override {
+        ShellSubscriberCallbackTest::SetUp();
+
+        const vector<int32_t> uids{AID_SYSTEM};
+        const vector<std::shared_ptr<LogEvent>> pulledData{
+                makeCpuActiveTimeAtom(/*uid=*/kUid1, /*timeMillis=*/kCpuTime1),
+                makeCpuActiveTimeAtom(/*uid=*/kUid2, /*timeMillis=*/kCpuTime2)};
+        ON_CALL(*pullerManager, Pull(CPU_ACTIVE_TIME, uids, _, _))
+                .WillByDefault(DoAll(SetArgPointee<3>(pulledData), Return(true)));
+
+        configBytes = protoToBytes(getPulledConfig());
+
+        // Used to call pullAndSendHeartbeatsIfNeeded directly without depending on sleep.
+        shellSubscriberClient = std::move(ShellSubscriberClient::create(
+                configBytes, callback, /* startTimeSec= */ 0, uidMap, pullerManager));
+    }
+
+    unique_ptr<ShellSubscriberClient> shellSubscriberClient;
+};
+
 }  // namespace
+
+TEST_F(ShellSubscriberCallbackTest, testAddSubscription) {
+    EXPECT_TRUE(shellSubscriber.startNewSubscription(configBytes, callback));
+}
+
+TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
+    const size_t maxSubs = ShellSubscriber::getMaxSubscriptions();
+    vector<bool> results(maxSubs, false);
+    for (int i = 0; i < maxSubs; i++) {
+        results[i] = shellSubscriber.startNewSubscription(configBytes, callback);
+    }
+
+    // First maxSubs subscriptions should succeed.
+    EXPECT_THAT(results, Each(IsTrue()));
+
+    // Subsequent startNewSubscription should fail.
+    EXPECT_FALSE(shellSubscriber.startNewSubscription(configBytes, callback));
+}
+
+TEST_F(ShellSubscriberCallbackTest, testPushedEventsAreCached) {
+    // Expect callback to not be invoked
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
+
+    shellSubscriber.startNewSubscription(configBytes, callback);
+
+    // Log an event that does NOT invoke the callack.
+    shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
+            1000 /*timestamp*/, ::android::view::DisplayStateEnum::DISPLAY_STATE_ON));
+}
+
+TEST_F(ShellSubscriberCallbackTest, testOverflowCacheIsFlushed) {
+    // Expect callback to be invoked once.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+
+    shellSubscriber.startNewSubscription(configBytes, callback);
+
+    shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
+            1000 /*timestamp*/, ::android::view::DisplayStateEnum::DISPLAY_STATE_ON));
+
+    // Inflate size of TestAtomReported through the MODE_BYTES field.
+    const vector<int64_t> expIds = vector<int64_t>(200, INT64_MAX);
+
+    // This event should trigger cache overflow flush.
+    shellSubscriber.onLogEvent(*createTestAtomReportedEvent(/*timestampNs=*/1100,
+                                                            /*intFieldValue=*/1, expIds));
+
+    EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::STATSD_INITIATED));
+
+    // Get ShellData proto from the bytes payload of the callback.
+    ShellData actualShellData;
+    ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
+
+    ShellData expectedShellData;
+    expectedShellData.add_atom()->mutable_screen_state_changed()->set_state(
+            ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
+    *expectedShellData.add_atom()->mutable_test_atom_reported() =
+            createTestAtomReportedProto(/* intFieldValue=*/1, expIds);
+    expectedShellData.add_elapsed_timestamp_nanos(1000);
+    expectedShellData.add_elapsed_timestamp_nanos(1100);
+
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
+}
+
+TEST_F(ShellSubscriberCallbackTest, testFlushTrigger) {
+    // Expect callback to be invoked once.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+
+    shellSubscriber.startNewSubscription(configBytes, callback);
+
+    shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
+            1000 /*timestamp*/, ::android::view::DisplayStateEnum::DISPLAY_STATE_ON));
+
+    shellSubscriber.flushSubscription(callback);
+
+    EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::FLUSH_REQUESTED));
+
+    // Get ShellData proto from the bytes payload of the callback.
+    ShellData actualShellData;
+    ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
+
+    ShellData expectedShellData;
+    expectedShellData.add_atom()->mutable_screen_state_changed()->set_state(
+            ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
+    expectedShellData.add_elapsed_timestamp_nanos(1000);
+
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
+}
+
+TEST_F(ShellSubscriberCallbackTest, testFlushTriggerEmptyCache) {
+    // Expect callback to be invoked once.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+
+    shellSubscriber.startNewSubscription(configBytes, callback);
+
+    shellSubscriber.flushSubscription(callback);
+
+    EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::FLUSH_REQUESTED));
+
+    // Get ShellData proto from the bytes payload of the callback.
+    ShellData actualShellData;
+    ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
+
+    ShellData expectedShellData;
+
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
+}
+
+TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
+    // Expect callback to be invoked once.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+
+    shellSubscriber.startNewSubscription(configBytes, callback);
+
+    shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
+            1000 /*timestamp*/, ::android::view::DisplayStateEnum::DISPLAY_STATE_ON));
+
+    shellSubscriber.unsubscribe(callback);
+
+    EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::SUBSCRIPTION_ENDED));
+
+    // Get ShellData proto from the bytes payload of the callback.
+    ShellData actualShellData;
+    ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
+
+    ShellData expectedShellData;
+    expectedShellData.add_atom()->mutable_screen_state_changed()->set_state(
+            ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
+    expectedShellData.add_elapsed_timestamp_nanos(1000);
+
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
+
+    // This event is ignored as the subscription has ended.
+    shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
+            1000 /*timestamp*/, ::android::view::DisplayStateEnum::DISPLAY_STATE_ON));
+
+    // This should be a no-op as we've already unsubscribed.
+    shellSubscriber.unsubscribe(callback);
+}
+
+TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
+    // Expect callback to be invoked once.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+
+    shellSubscriber.startNewSubscription(configBytes, callback);
+
+    shellSubscriber.unsubscribe(callback);
+
+    EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::SUBSCRIPTION_ENDED));
+
+    // Get ShellData proto from the bytes payload of the callback.
+    ShellData actualShellData;
+    ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
+
+    ShellData expectedShellData;
+
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
+}
+
+TEST_F(ShellSubscriberCallbackPulledTest, testPullIfNeededBeforeInterval) {
+    // Pull should not happen
+    EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(0));
+
+    // Expect callback to not be invoked.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
+
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 0, /* nowMillis= */ 0,
+                                                         /* nowNanos= */ 0);
+}
+
+TEST_F(ShellSubscriberCallbackPulledTest, testPullAtInterval) {
+    // Pull should happen once. The data is cached.
+    EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(1));
+
+    // Expect callback to not be invoked.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
+
+    // This pull should NOT trigger a cache flush.
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 3, /* nowMillis= */ 3000,
+                                                         /* nowNanos= */ 3'000'000'000);
+}
+
+TEST_F(ShellSubscriberCallbackPulledTest, testCachedPullIsFlushed) {
+    // Pull should happen once. The data is cached.
+    EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(1));
+
+    // This pull should NOT trigger a cache flush.
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 3, /* nowMillis= */ 3000,
+                                                         /* nowNanos= */ 3'000'000'000);
+
+    // Expect callback to be invoked once flush is requested.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+
+    // This should flush out data cached from the pull.
+    shellSubscriberClient->flush();
+
+    EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::FLUSH_REQUESTED));
+
+    // Get ShellData proto from the bytes payload of the callback.
+    ShellData actualShellData;
+    ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
+
+    EXPECT_THAT(actualShellData, EqShellData(getExpectedPulledData()));
+}
+
+TEST_F(ShellSubscriberCallbackPulledTest, testPullAtCacheTimeout) {
+    // Pull should happen once. The data is flushed.
+    EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(1));
+
+    // Expect callback to be invoked.
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+
+    // This pull should trigger a cache flush.
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 4, /* nowMillis= */ 4000,
+                                                         /* nowNanos= */ 4'000'000'000);
+
+    EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::STATSD_INITIATED));
+
+    // Get ShellData proto from the bytes payload of the callback.
+    ShellData actualShellData;
+    ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
+
+    EXPECT_THAT(actualShellData, EqShellData(getExpectedPulledData()));
+}
 
 TEST(ShellSubscriberTest, testPushedSubscription) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
@@ -193,24 +513,27 @@ TEST(ShellSubscriberTest, testPushedSubscription) {
 
     // create a simple config to get screen events
     ShellSubscription config;
-    config.add_pushed()->set_atom_id(29);
+    config.add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
 
     // this is the expected screen event atom.
     vector<ShellData> expectedData;
     ShellData shellData1;
     shellData1.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
+    shellData1.add_elapsed_timestamp_nanos(pushedList[0]->GetElapsedTimestampNs());
     ShellData shellData2;
     shellData2.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
+    shellData2.add_elapsed_timestamp_nanos(pushedList[1]->GetElapsedTimestampNs());
     expectedData.push_back(shellData1);
     expectedData.push_back(shellData2);
 
     // Test with single client
-    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kSingleClient);
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData,
+               kSingleClient);
 
     // Test with multiple client
-    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
 }
 
 TEST(ShellSubscriberTest, testPulledSubscription) {
@@ -218,7 +541,7 @@ TEST(ShellSubscriberTest, testPulledSubscription) {
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
 
     const vector<int32_t> uids = {AID_SYSTEM};
-    EXPECT_CALL(*pullerManager, Pull(10016, uids, _, _))
+    EXPECT_CALL(*pullerManager, Pull(CPU_ACTIVE_TIME, uids, _, _))
             .WillRepeatedly(Invoke([](int tagId, const vector<int32_t>&, const int64_t,
                                       vector<std::shared_ptr<LogEvent>>* data) {
                 data->clear();
@@ -228,12 +551,12 @@ TEST(ShellSubscriberTest, testPulledSubscription) {
             }));
 
     // Test with single client
-    runShellTest(getPulledConfig(), uidMap, pullerManager, {}, {getExpectedPulledData()},
-                 kSingleClient);
+    TRACE_CALL(runShellTest, getPulledConfig(), uidMap, pullerManager, /*pushedEvents=*/{},
+               {getExpectedPulledData()}, kSingleClient);
 
     // Test with multiple clients.
-    runShellTest(getPulledConfig(), uidMap, pullerManager, {}, {getExpectedPulledData()},
-                 kNumClients);
+    TRACE_CALL(runShellTest, getPulledConfig(), uidMap, pullerManager, {},
+               {getExpectedPulledData()}, kNumClients);
 }
 
 TEST(ShellSubscriberTest, testBothSubscriptions) {
@@ -241,7 +564,7 @@ TEST(ShellSubscriberTest, testBothSubscriptions) {
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
 
     const vector<int32_t> uids = {AID_SYSTEM};
-    EXPECT_CALL(*pullerManager, Pull(10016, uids, _, _))
+    EXPECT_CALL(*pullerManager, Pull(CPU_ACTIVE_TIME, uids, _, _))
             .WillRepeatedly(Invoke([](int tagId, const vector<int32_t>&, const int64_t,
                                       vector<std::shared_ptr<LogEvent>>* data) {
                 data->clear();
@@ -253,24 +576,27 @@ TEST(ShellSubscriberTest, testBothSubscriptions) {
     vector<std::shared_ptr<LogEvent>> pushedList = getPushedEvents();
 
     ShellSubscription config = getPulledConfig();
-    config.add_pushed()->set_atom_id(29);
+    config.add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
 
     vector<ShellData> expectedData;
     ShellData shellData1;
     shellData1.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
+    shellData1.add_elapsed_timestamp_nanos(pushedList[0]->GetElapsedTimestampNs());
     ShellData shellData2;
     shellData2.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
+    shellData2.add_elapsed_timestamp_nanos(pushedList[1]->GetElapsedTimestampNs());
     expectedData.push_back(getExpectedPulledData());
     expectedData.push_back(shellData1);
     expectedData.push_back(shellData2);
 
     // Test with single client
-    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kSingleClient);
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData,
+               kSingleClient);
 
     // Test with multiple client
-    runShellTest(config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
 }
 
 TEST(ShellSubscriberTest, testMaxSizeGuard) {
@@ -303,7 +629,7 @@ TEST(ShellSubscriberTest, testMaxSubscriptionsGuard) {
 
     // create a simple config to get screen events
     ShellSubscription config;
-    config.add_pushed()->set_atom_id(29);
+    config.add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
 
     size_t bufferSize = config.ByteSize();
     vector<uint8_t> buffer(bufferSize);
@@ -355,8 +681,8 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
 
     // create a simple config to get screen events
     ShellSubscription configs[numConfigs];
-    configs[0].add_pushed()->set_atom_id(29);
-    configs[1].add_pushed()->set_atom_id(32);
+    configs[0].add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
+    configs[1].add_pushed()->set_atom_id(PLUGGED_STATE_CHANGED);
 
     vector<vector<uint8_t>> configBuffers;
     for (int i = 0; i < numConfigs; i++) {
@@ -387,35 +713,40 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
     }
 
     // send a log event that matches the config.
-    for (const auto& event : getPushedEvents()) {
+    vector<std::shared_ptr<LogEvent>> pushedList = getPushedEvents();
+    for (const auto& event : pushedList) {
         shellManager->onLogEvent(*event);
     }
 
     // Validate Config 1
-    string receivedData = readData(fds_datas[0][0]);
+    ShellData actual1 = readData(fds_datas[0][0]);
     ShellData expected1;
     expected1.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
-    EXPECT_EQ(receivedData, expected1.SerializeAsString());
+    expected1.add_elapsed_timestamp_nanos(pushedList[0]->GetElapsedTimestampNs());
+    EXPECT_THAT(expected1, EqShellData(actual1));
 
-    receivedData = readData(fds_datas[0][0]);
+    ShellData actual2 = readData(fds_datas[0][0]);
     ShellData expected2;
     expected2.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
-    EXPECT_EQ(receivedData, expected2.SerializeAsString());
+    expected2.add_elapsed_timestamp_nanos(pushedList[1]->GetElapsedTimestampNs());
+    EXPECT_THAT(expected2, EqShellData(actual2));
 
     // Validate Config 2, repeating the process
-    receivedData = readData(fds_datas[1][0]);
+    ShellData actual3 = readData(fds_datas[1][0]);
     ShellData expected3;
     expected3.add_atom()->mutable_plugged_state_changed()->set_state(
             BatteryPluggedStateEnum::BATTERY_PLUGGED_USB);
-    EXPECT_EQ(receivedData, expected3.SerializeAsString());
+    expected3.add_elapsed_timestamp_nanos(pushedList[2]->GetElapsedTimestampNs());
+    EXPECT_THAT(expected3, EqShellData(actual3));
 
-    receivedData = readData(fds_datas[1][0]);
+    ShellData actual4 = readData(fds_datas[1][0]);
     ShellData expected4;
     expected4.add_atom()->mutable_plugged_state_changed()->set_state(
             BatteryPluggedStateEnum::BATTERY_PLUGGED_NONE);
-    EXPECT_EQ(receivedData, expected4.SerializeAsString());
+    expected4.add_elapsed_timestamp_nanos(pushedList[3]->GetElapsedTimestampNs());
+    EXPECT_THAT(expected4, EqShellData(actual4));
 
     // Not closing fds_datas[i][0] because this causes writes within ShellSubscriberClient to hang
 }
