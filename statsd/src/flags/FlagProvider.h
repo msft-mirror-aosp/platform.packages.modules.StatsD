@@ -38,6 +38,7 @@ const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
 const std::string OPTIMIZATION_SOCKET_PARSING_FLAG = "optimization_socket_parsing";
+const std::string STATSD_INIT_COMPLETED_NO_DELAY_FLAG = "statsd_init_completed_no_delay";
 
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
