@@ -33,11 +33,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
-void StatsServiceConfigTest::sendConfig(const StatsdConfig& config) {
+bool StatsServiceConfigTest::sendConfig(const StatsdConfig& config) {
     string str;
     config.SerializeToString(&str);
     std::vector<uint8_t> configAsVec(str.begin(), str.end());
-    service->addConfiguration(kConfigKey, configAsVec, kCallingUid);
+    return service->addConfiguration(kConfigKey, configAsVec, kCallingUid).isOk();
 }
 
 ConfigMetricsReport StatsServiceConfigTest::getReports(sp<StatsLogProcessor> processor,
