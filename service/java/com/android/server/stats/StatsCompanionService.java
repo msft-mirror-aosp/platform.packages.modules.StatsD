@@ -279,6 +279,7 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
                 }
             } finally {
                 if (DEBUG) Log.d(TAG, "End thread for sending uid map data.");
+                FileUtils.closeQuietly(fout);
                 backgroundThread.quit();
             }
         });
