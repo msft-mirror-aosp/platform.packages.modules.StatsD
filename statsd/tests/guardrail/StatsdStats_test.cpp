@@ -889,6 +889,17 @@ TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats) {
     EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
 }
 
+TEST(StatsdStatsTest, TestShardOffsetProvider) {
+    StatsdStats stats;
+    ShardOffsetProvider::getInstance().setShardOffset(15);
+    vector<uint8_t> output;
+    stats.dumpStats(&output, false);
+
+    StatsdStatsReport report;
+    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    EXPECT_EQ(report.shard_offset(), 15);
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
