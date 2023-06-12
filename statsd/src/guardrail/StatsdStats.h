@@ -866,6 +866,7 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
