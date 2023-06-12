@@ -16,6 +16,7 @@
 
 package android.os;
 
+import android.os.IStatsSubscriptionCallback;
 import android.os.IPendingIntentRef;
 import android.os.IPullAtomCallback;
 import android.os.ParcelFileDescriptor;
@@ -240,4 +241,37 @@ interface IStatsd {
      * Notifies of properties in statsd_java namespace.
      */
     oneway void updateProperties(in PropertyParcel[] properties);
+
+    /** Section for atoms subscription methods. */
+    /**
+     * Adds a subscription for atom events.
+     *
+     * IStatsSubscriptionCallback Binder interface will be used to deliver subscription data back to
+     * the subscriber. IStatsSubscriptionCallback also uniquely identifies this subscription - it
+     * should not be reused for another subscription.
+     *
+     * Enforces caller is in the traced_probes selinux domain.
+     */
+    oneway void addSubscription(in byte[] subscriptionConfig,
+            IStatsSubscriptionCallback callback);
+
+    /**
+     * Unsubscribe from a given subscription identified by the IBinder token.
+     *
+     * This will subsequently trigger IStatsSubscriptionCallback with pending data
+     * for this subscription.
+     *
+     * Enforces caller is in the traced_probes selinux domain.
+     */
+    oneway void removeSubscription(IStatsSubscriptionCallback callback);
+
+    /**
+     * Flush data for a subscription.
+     *
+     * This will subsequently trigger IStatsSubscriptionCallback with pending data
+     * for this subscription.
+     *
+     * Enforces caller is in the traced_probes selinux domain.
+     */
+    oneway void flushSubscription(IStatsSubscriptionCallback callback);
 }

@@ -20,6 +20,7 @@
 #include <aidl/android/os/BnStatsd.h>
 #include <aidl/android/os/IPendingIntentRef.h>
 #include <aidl/android/os/IPullAtomCallback.h>
+#include <aidl/android/os/IStatsSubscriptionCallback.h>
 #include <aidl/android/util/PropertyParcel.h>
 #include <gtest/gtest_prod.h>
 #include <utils/Looper.h>
@@ -40,10 +41,12 @@ using namespace android;
 using namespace android::os;
 using namespace std;
 
+using ::ndk::SpAIBinder;
 using Status = ::ndk::ScopedAStatus;
 using aidl::android::os::BnStatsd;
 using aidl::android::os::IPendingIntentRef;
 using aidl::android::os::IPullAtomCallback;
+using aidl::android::os::IStatsSubscriptionCallback;
 using aidl::android::util::PropertyParcel;
 using ::ndk::ScopedAIBinder_DeathRecipient;
 using ::ndk::ScopedFileDescriptor;
@@ -206,6 +209,24 @@ public:
      */
     virtual Status updateProperties(const vector<PropertyParcel>& properties);
 
+    /**
+     * Binder call to add a subscription.
+     */
+    virtual Status addSubscription(const vector<uint8_t>& subscriptionConfig,
+                                   const shared_ptr<IStatsSubscriptionCallback>& callback) override;
+
+    /**
+     * Binder call to remove a subscription.
+     */
+    virtual Status removeSubscription(
+            const shared_ptr<IStatsSubscriptionCallback>& callback) override;
+
+    /**
+     * Binder call to flush atom events for a subscription.
+     */
+    virtual Status flushSubscription(
+            const shared_ptr<IStatsSubscriptionCallback>& callback) override;
+
 private:
     /**
      * Load system properties at init.
@@ -346,6 +367,11 @@ private:
      * Implementation of statsCompanionServiceDied.
      */
     void statsCompanionServiceDiedImpl();
+
+    /**
+     * Initialize ShellSubscriber
+     */
+    void initShellSubscriber();
 
     /**
      * Tracks the uid <--> package name mapping.
