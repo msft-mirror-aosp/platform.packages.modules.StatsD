@@ -173,7 +173,7 @@ INSTANTIATE_TEST_SUITE_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest,
 
 TEST_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest) {
     // used for error threshold tolerance due to sleep() is involved
-    const int64_t ERROR_THRESHOLD_NS = GetParam() ? 1000000 : 5 * 1000000;
+    const int64_t ERROR_THRESHOLD_NS = 25 * 1000000;  // 25 ms
 
     auto pullAtomCallback = SharedRefBase::make<FakeSubsystemSleepCallbackWithTiming>();
 
@@ -181,9 +181,9 @@ TEST_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest) {
     service->mPullerManager->RegisterPullAtomCallback(/*uid=*/0, ATOM_TAG, NS_PER_SEC,
                                                       NS_PER_SEC * 10, {}, pullAtomCallback);
 
-    const int64_t createConfigTimeNs = getElapsedRealtimeNs();
     StatsdConfig config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
     config.set_id(kConfigKey);
+    const int64_t createConfigTimeNs = getElapsedRealtimeNs();
     ASSERT_TRUE(sendConfig(config));
     ASSERT_EQ(2, pullAtomCallback->pullNum);
 
@@ -246,14 +246,13 @@ TEST_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest) {
     ASSERT_GT(bucketInfo1.atom(0).subsystem_sleep_state().time_millis(), 0);
 
     EXPECT_GE(NanoToMillis(bucketInfo1.start_bucket_elapsed_nanos()),
-              NanoToMillis(createConfigTimeNs + kInitDelaySec * NS_PER_SEC));
+              NanoToMillis(initCompletedTimeNs + kInitDelaySec * NS_PER_SEC));
     EXPECT_LE(NanoToMillis(bucketInfo1.start_bucket_elapsed_nanos()),
-              NanoToMillis(createConfigTimeNs + kInitDelaySec * NS_PER_SEC + ERROR_THRESHOLD_NS));
+              NanoToMillis(initCompletedTimeNs + kInitDelaySec * NS_PER_SEC + ERROR_THRESHOLD_NS));
 
-    EXPECT_GE(NanoToMillis(createConfigTimeNs + bucketSizeNs),
-              NanoToMillis(bucketInfo1.end_bucket_elapsed_nanos()));
-    EXPECT_LE(NanoToMillis(createConfigTimeNs + bucketSizeNs),
-              NanoToMillis(bucketInfo1.end_bucket_elapsed_nanos() + ERROR_THRESHOLD_NS));
+    // this check confirms that bucket end is not affected by the StatsService init delay
+    EXPECT_EQ(NanoToMillis(bucketInfo1.end_bucket_elapsed_nanos()),
+              NanoToMillis(service->mProcessor->mTimeBaseNs + bucketSizeNs));
 }
 
 #else
