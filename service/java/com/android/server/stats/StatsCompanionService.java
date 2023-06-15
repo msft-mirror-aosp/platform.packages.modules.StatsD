@@ -216,16 +216,6 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
             if (statsd == null) {
                 return;
             }
-            try {
-                statsd.informAllUidData(fds[0]);
-            } catch (RemoteException e) {
-                Log.e(TAG, "Failed to send uid map to statsd");
-            }
-            try {
-                fds[0].close();
-            } catch (IOException e) {
-                Log.e(TAG, "Failed to close the read side of the pipe.", e);
-            }
             FileOutputStream fout = new ParcelFileDescriptor.AutoCloseOutputStream(fds[1]);
             try {
                 ProtoOutputStream output = new ProtoOutputStream(fout);
@@ -273,7 +263,18 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
                         }
                     }
                 }
-                output.flush();
+                try {
+                    // inform statsd about data is ready to be consumed to avoid blocking in
+                    // statsd while reading & in this thread while writing (see flush below)
+                    statsd.informAllUidData(fds[0]);
+                    // close read fd since it is duped by binder transaction
+                    fds[0].close();
+                    output.flush();
+                } catch (RemoteException e) {
+                    Log.e(TAG, "Failed to send uid map to statsd");
+                } catch (IOException e) {
+                    Log.e(TAG, "Failed to close the read side of the pipe.", e);
+                }
                 if (DEBUG) {
                     Log.d(TAG, "Sent data for " + numRecords + " apps");
                 }
