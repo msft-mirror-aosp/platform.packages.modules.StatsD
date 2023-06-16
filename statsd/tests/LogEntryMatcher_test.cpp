@@ -234,15 +234,14 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "pkg0");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event));
 
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event));
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
@@ -388,15 +387,15 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
 
 TEST(AtomMatcherTest, TestUidFieldMatcher) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     // Set up matcher
     AtomMatcher matcher;
@@ -427,15 +426,15 @@ TEST(AtomMatcherTest, TestUidFieldMatcher) {
 
 TEST(AtomMatcherTest, TestRepeatedUidFieldMatcher) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     // Set up matcher.
     AtomMatcher matcher;
@@ -514,15 +513,15 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_SingleString) {
 
 TEST(AtomMatcherTest, TestNeqAnyStringMatcher_AttributionUids) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     std::vector<int> attributionUids = {1111, 2222, 3333, 1066};
     std::vector<string> attributionTags = {"location1", "location2", "location3", "location3"};
@@ -576,15 +575,15 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_AttributionUids) {
 
 TEST(AtomMatcherTest, TestEqAnyStringMatcher) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     std::vector<int> attributionUids = {1067, 2222, 3333, 1066};
     std::vector<string> attributionTags = {"location1", "location2", "location3", "location3"};
@@ -1205,18 +1204,17 @@ TEST(AtomMatcherTest, TestNorMatcher) {
     matcherResults.push_back(MatchingState::kMatched);
     EXPECT_FALSE(combinationMatch(children, operation, matcherResults));
 }
-
+//
 TEST(AtomMatcherTest, TestUidFieldMatcherWithWildcardString) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("package0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("package2"), android::String16("package3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "package0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "package2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "package3");
+
+    uidMap->updateMap(1, uidData);
 
     // Set up matcher
     AtomMatcher matcher;
