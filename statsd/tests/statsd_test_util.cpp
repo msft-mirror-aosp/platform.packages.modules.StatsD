@@ -2157,6 +2157,16 @@ vector<PackageInfo> buildPackageInfos(
     return packageInfos;
 }
 
+ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
+                                      const string& versionString, const string& package) {
+    ApplicationInfo info;
+    info.set_uid(uid);
+    info.set_version(version);
+    info.set_version_string(versionString);
+    info.set_package_name(package);
+    return info;
+}
+
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {
     vector<uint8_t> statsBuffer;
     StatsdStats::getInstance().dumpStats(&statsBuffer, false /*reset stats*/);

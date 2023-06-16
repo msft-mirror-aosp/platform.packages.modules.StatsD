@@ -119,10 +119,7 @@ int64_t UidMap::getAppVersion(int uid, const string& packageName) const {
     return it->second.versionCode;
 }
 
-void UidMap::updateMap(const int64_t& timestamp, const vector<int32_t>& uid,
-                       const vector<int64_t>& versionCode, const vector<String16>& versionString,
-                       const vector<String16>& packageName, const vector<String16>& installer,
-                       const vector<vector<uint8_t>>& certificateHash) {
+void UidMap::updateMap(const int64_t& timestamp, const UidData& uidData) {
     wp<PackageInfoListener> broadcast = NULL;
     {
         lock_guard<mutex> lock(mMutex);  // Exclusively lock for updates.
@@ -137,12 +134,10 @@ void UidMap::updateMap(const int64_t& timestamp, const vector<int32_t>& uid,
         }
 
         mMap.clear();
-        for (size_t j = 0; j < uid.size(); j++) {
-            const string package = string(String8(packageName[j]).string());
-            const string installerName = string(String8(installer[j]).string());
-            mMap[std::make_pair(uid[j], package)] =
-                    AppData(versionCode[j], string(String8(versionString[j]).string()),
-                            installerName, certificateHash[j]);
+        for (const auto& appInfo : uidData.app_info()) {
+            mMap[std::make_pair(appInfo.uid(), appInfo.package_name())] =
+                    AppData(appInfo.version(), appInfo.version_string(), appInfo.installer(),
+                            appInfo.certificate_hash());
         }
 
         for (const auto& kv : deletedApps) {
@@ -167,26 +162,26 @@ void UidMap::updateMap(const int64_t& timestamp, const vector<int32_t>& uid,
     }
 }
 
-void UidMap::updateApp(const int64_t& timestamp, const String16& app_16, const int32_t& uid,
-                       const int64_t& versionCode, const String16& versionString,
-                       const String16& installer, const vector<uint8_t>& certificateHash) {
+void UidMap::updateApp(const int64_t& timestamp, const string& appName, const int32_t& uid,
+                       const int64_t& versionCode, const string& versionString,
+                       const string& installer, const vector<uint8_t>& certificateHash) {
     wp<PackageInfoListener> broadcast = NULL;
-    const string appName = string(String8(app_16).string());
-    const string installerName = string(String8(installer).string());
+
+    const string certificateHashString = string(certificateHash.begin(), certificateHash.end());
     {
         lock_guard<mutex> lock(mMutex);
         int32_t prevVersion = 0;
         string prevVersionString = "";
-        string newVersionString = string(String8(versionString).string());
-        auto it = mMap.find(std::make_pair(uid, appName));
+        auto key = std::make_pair(uid, appName);
+        auto it = mMap.find(key);
         if (it != mMap.end()) {
             prevVersion = it->second.versionCode;
             prevVersionString = it->second.versionString;
             it->second.versionCode = versionCode;
-            it->second.versionString = newVersionString;
-            it->second.installer = installerName;
+            it->second.versionString = versionString;
+            it->second.installer = installer;
             it->second.deleted = false;
-            it->second.certificateHash = certificateHash;
+            it->second.certificateHash = certificateHashString;
 
             // Only notify the listeners if this is an app upgrade. If this app is being installed
             // for the first time, then we don't notify the listeners.
@@ -195,11 +190,10 @@ void UidMap::updateApp(const int64_t& timestamp, const String16& app_16, const i
             broadcast = mSubscriber;
         } else {
             // Otherwise, we need to add an app at this uid.
-            mMap[std::make_pair(uid, appName)] =
-                    AppData(versionCode, newVersionString, installerName, certificateHash);
+            mMap[key] = AppData(versionCode, versionString, installer, certificateHashString);
         }
 
-        mChanges.emplace_back(false, timestamp, appName, uid, versionCode, newVersionString,
+        mChanges.emplace_back(false, timestamp, appName, uid, versionCode, versionString,
                               prevVersion, prevVersionString);
         mBytesUsed += kBytesChangeRecord;
         ensureBytesUsedBelowLimit();
@@ -230,9 +224,8 @@ void UidMap::ensureBytesUsedBelowLimit() {
     }
 }
 
-void UidMap::removeApp(const int64_t& timestamp, const String16& app_16, const int32_t& uid) {
+void UidMap::removeApp(const int64_t& timestamp, const string& app, const int32_t& uid) {
     wp<PackageInfoListener> broadcast = NULL;
-    string app = string(String8(app_16).string());
     {
         lock_guard<mutex> lock(mMutex);
 
@@ -405,8 +398,7 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
                                             : appData.certificateHash.size();
         if (dumpHashSize > 0) {
             proto->write(FIELD_TYPE_BYTES | FIELD_ID_SNAPSHOT_PACKAGE_TRUNCATED_CERTIFICATE_HASH,
-                         reinterpret_cast<const char*>(appData.certificateHash.data()),
-                         dumpHashSize);
+                         appData.certificateHash.c_str(), dumpHashSize);
         }
 
         proto->write(FIELD_TYPE_INT64 | FIELD_ID_SNAPSHOT_PACKAGE_VERSION,
