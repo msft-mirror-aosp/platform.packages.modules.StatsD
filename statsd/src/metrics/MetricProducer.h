@@ -296,7 +296,7 @@ public:
         return byteSizeLocked();
     }
 
-    void dumpStates(FILE* out, bool verbose) const {
+    void dumpStates(int out, bool verbose) const {
         std::lock_guard<std::mutex> lock(mMutex);
         dumpStatesLocked(out, verbose);
     }
@@ -453,7 +453,7 @@ protected:
     virtual void clearPastBucketsLocked(const int64_t dumpTimeNs) = 0;
     virtual void prepareFirstBucketLocked(){};
     virtual size_t byteSizeLocked() const = 0;
-    virtual void dumpStatesLocked(FILE* out, bool verbose) const = 0;
+    virtual void dumpStatesLocked(int out, bool verbose) const = 0;
     virtual void dropDataLocked(const int64_t dropTimeNs) = 0;
     void loadActiveMetricLocked(const ActiveMetric& activeMetric, int64_t currentTimeNs);
     void activateLocked(int activationTrackerIndex, int64_t elapsedTimestampNs);

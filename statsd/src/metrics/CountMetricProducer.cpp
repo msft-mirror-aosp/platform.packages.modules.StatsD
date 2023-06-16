@@ -184,17 +184,17 @@ void CountMetricProducer::onStateChanged(const int64_t eventTimeNs, const int32_
          oldState.mValue.int_value, newState.mValue.int_value);
 }
 
-void CountMetricProducer::dumpStatesLocked(FILE* out, bool verbose) const {
+void CountMetricProducer::dumpStatesLocked(int out, bool verbose) const {
     if (mCurrentSlicedCounter == nullptr ||
         mCurrentSlicedCounter->size() == 0) {
         return;
     }
 
-    fprintf(out, "CountMetric %lld dimension size %lu\n", (long long)mMetricId,
+    dprintf(out, "CountMetric %lld dimension size %lu\n", (long long)mMetricId,
             (unsigned long)mCurrentSlicedCounter->size());
     if (verbose) {
         for (const auto& it : *mCurrentSlicedCounter) {
-            fprintf(out, "\t(what)%s\t(state)%s  %lld\n",
+            dprintf(out, "\t(what)%s\t(state)%s  %lld\n",
                     it.first.getDimensionKeyInWhat().toString().c_str(),
                     it.first.getStateValuesKey().toString().c_str(), (unsigned long long)it.second);
         }
