@@ -38,14 +38,14 @@ MaxDurationTracker::MaxDurationTracker(const ConfigKey& key, const int64_t& id,
 }
 
 bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey,
-                                      size_t dimensionHardLimit) {
+                                      size_t dimensionHardLimit) const {
     // ===========GuardRail==============
     if (mInfos.find(newKey) != mInfos.end()) {
         // if the key existed, we are good!
         return false;
     }
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mInfos.size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mInfos.size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mInfos.size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
