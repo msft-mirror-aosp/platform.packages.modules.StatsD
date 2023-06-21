@@ -29,6 +29,7 @@
 #include <statslog_statsd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/random.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <utils/String16.h>
@@ -227,6 +228,8 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
 
     init_system_properties();
 
+    init_seed_random();
+
     if (mEventQueue != nullptr) {
         std::thread pushedEventThread([this] { readLogs(); });
         pushedEventThread.detach();
@@ -259,6 +262,18 @@ void StatsService::init_system_properties() {
     if (buildType != NULL) {
         __system_property_read_callback(buildType, init_build_type_callback, this);
     }
+}
+
+void StatsService::init_seed_random() {
+    unsigned int seed = 0;
+    // getrandom() reads bytes from urandom source into buf. If getrandom()
+    // is unable to read from urandom source, then it returns -1 and we set
+    // out seed to be time(nullptr) as a fallback.
+    if (TEMP_FAILURE_RETRY(
+                getrandom(static_cast<void*>(&seed), sizeof(unsigned int), GRND_NONBLOCK)) < 0) {
+        seed = time(nullptr);
+    }
+    srand(seed);
 }
 
 void StatsService::init_build_type_callback(void* cookie, const char* /*name*/, const char* value,
