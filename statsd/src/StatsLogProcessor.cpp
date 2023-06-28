@@ -573,16 +573,10 @@ size_t StatsLogProcessor::GetMetricsSize(const ConfigKey& key) const {
 
 void StatsLogProcessor::dumpStates(int out, bool verbose) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
-    FILE* fout = fdopen(out, "w");
-    if (fout == NULL) {
-        return;
-    }
-    fprintf(fout, "MetricsManager count: %lu\n", (unsigned long)mMetricsManagers.size());
+    dprintf(out, "MetricsManager count: %lu\n", (unsigned long)mMetricsManagers.size());
     for (auto metricsManager : mMetricsManagers) {
-        metricsManager.second->dumpStates(fout, verbose);
+        metricsManager.second->dumpStates(out, verbose);
     }
-
-    fclose(fout);
 }
 
 /*
