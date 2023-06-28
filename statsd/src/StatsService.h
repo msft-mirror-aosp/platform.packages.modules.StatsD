@@ -409,6 +409,13 @@ private:
     void onStatsdInitCompleted();
 
     /**
+     *  This method is used to stop log reader thread.
+     */
+    void stopReadingLogs();
+
+    std::atomic<bool> mIsStopRequested = false;
+
+    /**
      * Tracks the uid <--> package name mapping.
      */
     const sp<UidMap> mUidMap;
@@ -451,6 +458,8 @@ private:
     mutable mutex mShellSubscriberMutex;
     shared_ptr<LogEventQueue> mEventQueue;
     std::shared_ptr<LogEventFilter> mLogEventFilter;
+
+    std::unique_ptr<std::thread> mLogsReaderThread;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";
