@@ -714,6 +714,7 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats);
+    FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };

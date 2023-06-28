@@ -19,9 +19,11 @@
 #include "StatsdStats.h"
 
 #include <android/util/ProtoOutputStream.h>
+
 #include "../stats_log_util.h"
 #include "statslog_statsd.h"
 #include "storage/StorageManager.h"
+#include "utils/ShardOffsetProvider.h"
 
 namespace android {
 namespace os {
@@ -35,6 +37,7 @@ using android::util::FIELD_TYPE_INT32;
 using android::util::FIELD_TYPE_INT64;
 using android::util::FIELD_TYPE_MESSAGE;
 using android::util::FIELD_TYPE_STRING;
+using android::util::FIELD_TYPE_UINT32;
 using android::util::ProtoOutputStream;
 using std::lock_guard;
 using std::shared_ptr;
@@ -53,6 +56,7 @@ const int FIELD_ID_SYSTEM_SERVER_RESTART = 15;
 const int FIELD_ID_LOGGER_ERROR_STATS = 16;
 const int FIELD_ID_OVERFLOW = 18;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
+const int FIELD_ID_SHARD_OFFSET = 21;
 
 const int FIELD_ID_ATOM_STATS_TAG = 1;
 const int FIELD_ID_ATOM_STATS_COUNT = 2;
@@ -908,6 +912,9 @@ void StatsdStats::dumpStats(int out) const {
         }
         dprintf(out, "\n");
     }
+
+    dprintf(out, "********Shard Offset Provider stats***********\n");
+    dprintf(out, "Shard Offset: %u\n", ShardOffsetProvider::getInstance().getShardOffset());
 }
 
 void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* proto) {
@@ -1171,6 +1178,9 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
         }
         proto.end(token);
     }
+
+    proto.write(FIELD_TYPE_UINT32 | FIELD_ID_SHARD_OFFSET,
+                static_cast<long>(ShardOffsetProvider::getInstance().getShardOffset()));
 
     output->clear();
     size_t bufferSize = proto.size();
