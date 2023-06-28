@@ -622,6 +622,8 @@ message StatsdStatsReport {
     }
 
     repeated ActivationBroadcastGuardrail activation_guardrail_stats = 19;
+
+    optional uint32 shard_offset = 21;
 }
 
 message AlertTriggerDetails {
