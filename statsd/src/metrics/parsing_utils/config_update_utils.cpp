@@ -744,6 +744,12 @@ optional<InvalidConfigReason> updateMetrics(
     newMetricProducers.reserve(allMetricsCount);
     optional<InvalidConfigReason> invalidConfigReason;
 
+    if (config.has_restricted_metrics_delegate_package_name() &&
+        allMetricsCount != config.event_metric_size()) {
+        ALOGE("Restricted metrics only support event metric");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED);
+    }
+
     // Construct map from metric id to metric activation index. The map will be used to determine
     // the metric activation corresponding to a metric.
     unordered_map<int64_t, int> metricToActivationMap;
@@ -1056,6 +1062,15 @@ optional<InvalidConfigReason> updateMetrics(
     for (size_t i = 0; i < newMetricProducers.size(); i++) {
         if (metricsToUpdate[i] == UPDATE_REPLACE || metricsToUpdate[i] == UPDATE_NEW) {
             newMetricProducers[i]->prepareFirstBucket();
+        }
+    }
+
+    for (const sp<MetricProducer>& oldMetricProducer : oldMetricProducers) {
+        const auto& it = newMetricProducerMap.find(oldMetricProducer->getMetricId());
+        // Consider metric removed if it's not present in newMetricProducerMap or it's replaced.
+        if (it == newMetricProducerMap.end() ||
+            replacedMetrics.find(oldMetricProducer->getMetricId()) != replacedMetrics.end()) {
+            oldMetricProducer->onMetricRemove();
         }
     }
     return nullopt;
