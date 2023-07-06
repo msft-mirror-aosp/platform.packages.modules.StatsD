@@ -37,7 +37,6 @@ cc_test_library {
     },
     static_libs: [
         "libgmock",
-        "libplatformprotos",
         "libprotobuf-cpp-lite",
     ],
     shared: {
