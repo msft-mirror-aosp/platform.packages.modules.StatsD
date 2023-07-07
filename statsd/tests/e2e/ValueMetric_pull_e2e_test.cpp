@@ -17,7 +17,6 @@
 
 #include <vector>
 
-#include "flags/FlagProvider.h"
 #include "src/StatsLogProcessor.h"
 #include "src/stats_log_util.h"
 #include "tests/statsd_test_util.h"
@@ -144,20 +143,6 @@ StatsdConfig CreateStatsdConfigWithStates() {
 
 }  // namespace
 
-// Setup for test fixture.
-class ValueMetricE2eTest : public testing::TestWithParam<string> {
-    void SetUp() override {
-        FlagProvider::getInstance().overrideFlag(LIMIT_PULL_FLAG, GetParam(),
-                                                 /*isBootFlag=*/true);
-    }
-
-    void TearDown() override {
-        FlagProvider::getInstance().resetOverrides();
-    }
-};
-
-INSTANTIATE_TEST_SUITE_P(LimitPull, ValueMetricE2eTest, testing::Values(FLAG_FALSE, FLAG_TRUE));
-
 /**
  * Tests the initial condition and condition after the first log events for
  * value metrics with either a combination condition or simple condition.
@@ -217,7 +202,7 @@ TEST(ValueMetricE2eTest, TestInitialConditionChanges) {
     EXPECT_EQ(ConditionState::kTrue, metricProducer2->mCondition);
 }
 
-TEST_P(ValueMetricE2eTest, TestPulledEvents) {
+TEST(ValueMetricE2eTest, TestPulledEvents) {
     auto config = CreateStatsdConfig();
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -337,7 +322,7 @@ TEST_P(ValueMetricE2eTest, TestPulledEvents) {
               skipped.end_bucket_elapsed_nanos());
 }
 
-TEST_P(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
+TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
     auto config = CreateStatsdConfig();
     int64_t baseTimeNs = getElapsedRealtimeNs();
     // 10 mins == 2 bucket durations.
@@ -464,7 +449,7 @@ TEST_P(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
               skipped.end_bucket_elapsed_nanos());
 }
 
-TEST_P(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
+TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     auto config = CreateStatsdConfig(false);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;

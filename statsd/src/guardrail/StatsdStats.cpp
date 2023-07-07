@@ -19,9 +19,11 @@
 #include "StatsdStats.h"
 
 #include <android/util/ProtoOutputStream.h>
+
 #include "../stats_log_util.h"
 #include "statslog_statsd.h"
 #include "storage/StorageManager.h"
+#include "utils/ShardOffsetProvider.h"
 
 namespace android {
 namespace os {
@@ -35,6 +37,7 @@ using android::util::FIELD_TYPE_INT32;
 using android::util::FIELD_TYPE_INT64;
 using android::util::FIELD_TYPE_MESSAGE;
 using android::util::FIELD_TYPE_STRING;
+using android::util::FIELD_TYPE_UINT32;
 using android::util::ProtoOutputStream;
 using std::lock_guard;
 using std::shared_ptr;
@@ -53,10 +56,24 @@ const int FIELD_ID_SYSTEM_SERVER_RESTART = 15;
 const int FIELD_ID_LOGGER_ERROR_STATS = 16;
 const int FIELD_ID_OVERFLOW = 18;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS = 20;
+const int FIELD_ID_SHARD_OFFSET = 21;
+
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_UID = 3;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_PACKAGE = 4;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_INVALID_QUERY_REASON = 5;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_QUERY_WALL_TIME_NS = 6;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_HAS_ERROR = 7;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_ERROR = 8;
+const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_LATENCY_NS = 9;
 
 const int FIELD_ID_ATOM_STATS_TAG = 1;
 const int FIELD_ID_ATOM_STATS_COUNT = 2;
 const int FIELD_ID_ATOM_STATS_ERROR_COUNT = 3;
+const int FIELD_ID_ATOM_STATS_DROPS_COUNT = 4;
+const int FIELD_ID_ATOM_STATS_SKIP_COUNT = 5;
 
 const int FIELD_ID_ANOMALY_ALARMS_REGISTERED = 1;
 const int FIELD_ID_PERIODIC_ALARMS_REGISTERED = 1;
@@ -98,6 +115,12 @@ const int FIELD_ID_CONFIG_STATS_ACTIVATION = 22;
 const int FIELD_ID_CONFIG_STATS_DEACTIVATION = 23;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT64 = 1;
 const int FIELD_ID_CONFIG_STATS_ANNOTATION_INT32 = 2;
+const int FIELD_ID_CONFIG_STATS_RESTRICTED_METRIC_STATS = 25;
+const int FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED = 26;
+const int FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT = 27;
+const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY = 28;
+const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_TIME_SEC = 29;
+const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_BYTES = 30;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -124,6 +147,14 @@ const int FIELD_ID_UID_MAP_DELETED_APPS = 4;
 
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL_UID = 1;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL_TIME = 2;
+
+// for RestrictedMetricStats proto
+const int FIELD_ID_RESTRICTED_STATS_METRIC_ID = 1;
+const int FIELD_ID_RESTRICTED_STATS_INSERT_ERROR = 2;
+const int FIELD_ID_RESTRICTED_STATS_TABLE_CREATION_ERROR = 3;
+const int FIELD_ID_RESTRICTED_STATS_TABLE_DELETION_ERROR = 4;
+const int FIELD_ID_RESTRICTED_STATS_FLUSH_LATENCY = 5;
+const int FIELD_ID_RESTRICTED_STATS_CATEGORY_CHANGED_COUNT = 6;
 
 const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySizeLimitMap = {
         {util::BINDER_CALLS, {6000, 10000}},
@@ -270,7 +301,8 @@ void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes)
     noteDataDropped(key, totalBytes, getWallClockSec());
 }
 
-void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs) {
+void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId,
+                                         bool isSkipped) {
     lock_guard<std::mutex> lock(mLock);
 
     mOverflowCount++;
@@ -283,6 +315,17 @@ void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs) {
 
     if (history < mMinQueueHistoryNs) {
         mMinQueueHistoryNs = history;
+    }
+
+    noteAtomLoggedLocked(atomId, isSkipped);
+    noteAtomDroppedLocked(atomId);
+}
+
+void StatsdStats::noteAtomDroppedLocked(int32_t atomId) {
+    constexpr int kMaxPushedAtomDroppedStatsSize = kMaxPushedAtomId + kMaxNonPlatformPushedAtoms;
+    if (mPushedAtomDropsStats.size() < kMaxPushedAtomDroppedStatsSize ||
+        mPushedAtomDropsStats.find(atomId) != mPushedAtomDropsStats.end()) {
+        mPushedAtomDropsStats[atomId]++;
     }
 }
 
@@ -317,6 +360,26 @@ void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t num_b
         it->second->dump_report_stats.pop_front();
     }
     it->second->dump_report_stats.push_back(std::make_pair(timeSec, num_bytes));
+}
+
+void StatsdStats::noteDeviceInfoTableCreationFailed(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->device_info_table_creation_failed = true;
+}
+
+void StatsdStats::noteDbCorrupted(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_corrupted_count++;
 }
 
 void StatsdStats::noteUidMapDropped(int deltas) {
@@ -468,17 +531,24 @@ void StatsdStats::notePullExceedMaxDelay(int pullAtomId) {
     mPulledAtomStats[pullAtomId].pullExceedMaxDelay++;
 }
 
-void StatsdStats::noteAtomLogged(int atomId, int32_t timeSec) {
+void StatsdStats::noteAtomLogged(int atomId, int32_t /*timeSec*/, bool isSkipped) {
     lock_guard<std::mutex> lock(mLock);
 
+    noteAtomLoggedLocked(atomId, isSkipped);
+}
+
+void StatsdStats::noteAtomLoggedLocked(int atomId, bool isSkipped) {
     if (atomId >= 0 && atomId <= kMaxPushedAtomId) {
-        mPushedAtomStats[atomId]++;
+        mPushedAtomStats[atomId].logCount++;
+        mPushedAtomStats[atomId].skipCount += isSkipped;
     } else {
         if (atomId < 0) {
             android_errorWriteLog(0x534e4554, "187957589");
         }
-        if (mNonPlatformPushedAtomStats.size() < kMaxNonPlatformPushedAtoms) {
-            mNonPlatformPushedAtomStats[atomId]++;
+        if (mNonPlatformPushedAtomStats.size() < kMaxNonPlatformPushedAtoms ||
+            mNonPlatformPushedAtomStats.find(atomId) != mNonPlatformPushedAtomStats.end()) {
+            mNonPlatformPushedAtomStats[atomId].logCount++;
+            mNonPlatformPushedAtomStats[atomId].skipCount += isSkipped;
         }
     }
 }
@@ -594,6 +664,137 @@ void StatsdStats::noteAtomError(int atomTag, bool pull) {
     }
 }
 
+void StatsdStats::noteQueryRestrictedMetricSucceed(const int64_t configId,
+                                                   const string& configPackage,
+                                                   const std::optional<int32_t> configUid,
+                                                   const int32_t callingUid,
+                                                   const int64_t latencyNs) {
+    lock_guard<std::mutex> lock(mLock);
+
+    if (mRestrictedMetricQueryStats.size() == kMaxRestrictedMetricQueryCount) {
+        mRestrictedMetricQueryStats.pop_front();
+    }
+    mRestrictedMetricQueryStats.emplace_back(RestrictedMetricQueryStats(
+            callingUid, configId, configPackage, configUid, getWallClockNs(),
+            /*invalidQueryReason=*/std::nullopt, /*error=*/"", latencyNs));
+}
+
+void StatsdStats::noteQueryRestrictedMetricFailed(const int64_t configId,
+                                                  const string& configPackage,
+                                                  const std::optional<int32_t> configUid,
+                                                  const int32_t callingUid,
+                                                  const InvalidQueryReason reason) {
+    lock_guard<std::mutex> lock(mLock);
+    noteQueryRestrictedMetricFailedLocked(configId, configPackage, configUid, callingUid, reason,
+                                          /*error=*/"");
+}
+
+void StatsdStats::noteQueryRestrictedMetricFailed(
+        const int64_t configId, const string& configPackage, const std::optional<int32_t> configUid,
+        const int32_t callingUid, const InvalidQueryReason reason, const string& error) {
+    lock_guard<std::mutex> lock(mLock);
+    noteQueryRestrictedMetricFailedLocked(configId, configPackage, configUid, callingUid, reason,
+                                          error);
+}
+
+void StatsdStats::noteQueryRestrictedMetricFailedLocked(
+        const int64_t configId, const string& configPackage, const std::optional<int32_t> configUid,
+        const int32_t callingUid, const InvalidQueryReason reason, const string& error) {
+    if (mRestrictedMetricQueryStats.size() == kMaxRestrictedMetricQueryCount) {
+        mRestrictedMetricQueryStats.pop_front();
+    }
+    mRestrictedMetricQueryStats.emplace_back(RestrictedMetricQueryStats(
+            callingUid, configId, configPackage, configUid, getWallClockNs(), reason, error,
+            /*queryLatencyNs=*/std::nullopt));
+}
+
+void StatsdStats::noteRestrictedMetricInsertError(const ConfigKey& configKey,
+                                                  const int64_t metricId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it != mConfigStats.end()) {
+        it->second->restricted_metric_stats[metricId].insertError++;
+    }
+}
+
+void StatsdStats::noteRestrictedMetricTableCreationError(const ConfigKey& configKey,
+                                                         const int64_t metricId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it != mConfigStats.end()) {
+        it->second->restricted_metric_stats[metricId].tableCreationError++;
+    }
+}
+
+void StatsdStats::noteRestrictedMetricTableDeletionError(const ConfigKey& configKey,
+                                                         const int64_t metricId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it != mConfigStats.end()) {
+        it->second->restricted_metric_stats[metricId].tableDeletionError++;
+    }
+}
+
+void StatsdStats::noteRestrictedMetricFlushLatency(const ConfigKey& configKey,
+                                                   const int64_t metricId,
+                                                   const int64_t flushLatencyNs) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", configKey.ToString().c_str());
+        return;
+    }
+    auto& restrictedMetricStats = it->second->restricted_metric_stats[metricId];
+    if (restrictedMetricStats.flushLatencyNs.size() == kMaxRestrictedMetricFlushLatencyCount) {
+        restrictedMetricStats.flushLatencyNs.pop_front();
+    }
+    restrictedMetricStats.flushLatencyNs.push_back(flushLatencyNs);
+}
+
+void StatsdStats::noteRestrictedConfigFlushLatency(const ConfigKey& configKey,
+                                                   const int64_t totalFlushLatencyNs) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", configKey.ToString().c_str());
+        return;
+    }
+    std::list<int64_t>& totalFlushLatencies = it->second->total_flush_latency_ns;
+    if (totalFlushLatencies.size() == kMaxRestrictedConfigFlushLatencyCount) {
+        totalFlushLatencies.pop_front();
+    }
+    totalFlushLatencies.push_back(totalFlushLatencyNs);
+}
+
+void StatsdStats::noteRestrictedConfigDbSize(const ConfigKey& configKey,
+                                             const int64_t elapsedTimeNs, const int64_t dbSize) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", configKey.ToString().c_str());
+        return;
+    }
+    std::list<int64_t>& totalDbSizeTimestamps = it->second->total_db_size_timestamps;
+    std::list<int64_t>& totaDbSizes = it->second->total_db_sizes;
+    if (totalDbSizeTimestamps.size() == kMaxRestrictedConfigDbSizeCount) {
+        totalDbSizeTimestamps.pop_front();
+        totaDbSizes.pop_front();
+    }
+    totalDbSizeTimestamps.push_back(elapsedTimeNs);
+    totaDbSizes.push_back(dbSize);
+}
+
+void StatsdStats::noteRestrictedMetricCategoryChanged(const ConfigKey& configKey,
+                                                      const int64_t metricId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(configKey);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", configKey.ToString().c_str());
+        return;
+    }
+    it->second->restricted_metric_stats[metricId].categoryChangedCount++;
+}
+
 StatsdStats::AtomMetricStats& StatsdStats::getAtomMetricStats(int64_t metricId) {
     auto atomMetricStatsIter = mAtomMetricStats.find(metricId);
     if (atomMetricStatsIter != mAtomMetricStats.end()) {
@@ -612,7 +813,7 @@ void StatsdStats::resetInternalLocked() {
     // Reset the historical data, but keep the active ConfigStats
     mStartTimeSec = getWallClockSec();
     mIceBox.clear();
-    std::fill(mPushedAtomStats.begin(), mPushedAtomStats.end(), 0);
+    std::fill(mPushedAtomStats.begin(), mPushedAtomStats.end(), PushedAtomStats());
     mNonPlatformPushedAtomStats.clear();
     mAnomalyAlarmRegisteredStats = 0;
     mPeriodicAlarmRegisteredStats = 0;
@@ -634,6 +835,11 @@ void StatsdStats::resetInternalLocked() {
         config.second->metric_stats.clear();
         config.second->metric_dimension_in_condition_stats.clear();
         config.second->alert_stats.clear();
+        config.second->restricted_metric_stats.clear();
+        config.second->db_corrupted_count = 0;
+        config.second->total_flush_latency_ns.clear();
+        config.second->total_db_size_timestamps.clear();
+        config.second->total_db_sizes.clear();
     }
     for (auto& pullStats : mPulledAtomStats) {
         pullStats.second.totalPull = 0;
@@ -660,6 +866,8 @@ void StatsdStats::resetInternalLocked() {
     mAtomMetricStats.clear();
     mActivationBroadcastGuardrailStats.clear();
     mPushedAtomErrorStats.clear();
+    mPushedAtomDropsStats.clear();
+    mRestrictedMetricQueryStats.clear();
 }
 
 string buildTimeString(int64_t timeSec) {
@@ -670,9 +878,18 @@ string buildTimeString(int64_t timeSec) {
     return string(timeBuffer);
 }
 
-int StatsdStats::getPushedAtomErrors(int atomId) const {
+int StatsdStats::getPushedAtomErrorsLocked(int atomId) const {
     const auto& it = mPushedAtomErrorStats.find(atomId);
     if (it != mPushedAtomErrorStats.end()) {
+        return it->second;
+    } else {
+        return 0;
+    }
+}
+
+int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
+    const auto& it = mPushedAtomDropsStats.find(atomId);
+    if (it != mPushedAtomDropsStats.end()) {
         return it->second;
     } else {
         return 0;
@@ -690,11 +907,13 @@ void StatsdStats::dumpStats(int out) const {
     for (const auto& configStats : mIceBox) {
         dprintf(out,
                 "Config {%d_%lld}: creation=%d, deletion=%d, reset=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d, device_info_table_creation_failed=%d, "
+                "db_corrupted_count=%d\n",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->reset_time_sec,
                 configStats->metric_count, configStats->condition_count, configStats->matcher_count,
-                configStats->alert_count, configStats->is_valid);
+                configStats->alert_count, configStats->is_valid,
+                configStats->device_info_table_creation_failed, configStats->db_corrupted_count);
 
         if (!configStats->is_valid) {
             dprintf(out, "\tinvalid config reason: %s\n",
@@ -720,17 +939,43 @@ void StatsdStats::dumpStats(int out) const {
             dprintf(out, "\tdata drop time: %d with size %lld", *dropTimePtr,
                     (long long)*dropBytesPtr);
         }
+
+        for (const auto& stats : configStats->restricted_metric_stats) {
+            dprintf(out, "Restricted MetricId %lld: ", (long long)stats.first);
+            dprintf(out, "Insert error %lld, ", (long long)stats.second.insertError);
+            dprintf(out, "Table creation error %lld, ", (long long)stats.second.tableCreationError);
+            dprintf(out, "Table deletion error %lld ", (long long)stats.second.tableDeletionError);
+            dprintf(out, "Category changed count %lld\n ",
+                    (long long)stats.second.categoryChangedCount);
+            string flushLatencies = "Flush Latencies: ";
+            for (const int64_t latencyNs : stats.second.flushLatencyNs) {
+                flushLatencies.append(to_string(latencyNs).append(","));
+            }
+            flushLatencies.pop_back();
+            flushLatencies.push_back('\n');
+            dprintf(out, "%s", flushLatencies.c_str());
+        }
+
+        for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
+            dprintf(out, "\tflush latency time ns: %lld\n", (long long)flushLatency);
+        }
+
+        for (const int64_t dbSize : configStats->total_db_sizes) {
+            dprintf(out, "\tdb size: %lld\n", (long long)dbSize);
+        }
     }
     dprintf(out, "%lu Active Configs\n", (unsigned long)mConfigStats.size());
     for (auto& pair : mConfigStats) {
         auto& configStats = pair.second;
         dprintf(out,
                 "Config {%d-%lld}: creation=%d, deletion=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d, device_info_table_creation_failed=%d, "
+                "db_corrupted_count=%d\n",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->metric_count,
                 configStats->condition_count, configStats->matcher_count, configStats->alert_count,
-                configStats->is_valid);
+                configStats->is_valid, configStats->device_info_table_creation_failed,
+                configStats->db_corrupted_count);
 
         if (!configStats->is_valid) {
             dprintf(out, "\tinvalid config reason: %s\n",
@@ -787,20 +1032,47 @@ void StatsdStats::dumpStats(int out) const {
         for (const auto& stats : pair.second->alert_stats) {
             dprintf(out, "alert %lld declared %d times\n", (long long)stats.first, stats.second);
         }
+
+        for (const auto& stats : configStats->restricted_metric_stats) {
+            dprintf(out, "Restricted MetricId %lld: ", (long long)stats.first);
+            dprintf(out, "Insert error %lld, ", (long long)stats.second.insertError);
+            dprintf(out, "Table creation error %lld, ", (long long)stats.second.tableCreationError);
+            dprintf(out, "Table deletion error %lld ", (long long)stats.second.tableDeletionError);
+            dprintf(out, "Category changed count %lld\n ",
+                    (long long)stats.second.categoryChangedCount);
+            string flushLatencies = "Flush Latencies: ";
+            for (const int64_t latencyNs : stats.second.flushLatencyNs) {
+                flushLatencies.append(to_string(latencyNs).append(","));
+            }
+            flushLatencies.pop_back();
+            flushLatencies.push_back('\n');
+            dprintf(out, "%s", flushLatencies.c_str());
+        }
+
+        for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
+            dprintf(out, "flush latency time ns: %lld\n", (long long)flushLatency);
+        }
+
+        for (const int64_t dbSize : configStats->total_db_sizes) {
+            dprintf(out, "\tdb size: %lld\n", (long long)dbSize);
+        }
     }
     dprintf(out, "********Disk Usage stats***********\n");
     StorageManager::printStats(out);
     dprintf(out, "********Pushed Atom stats***********\n");
     const size_t atomCounts = mPushedAtomStats.size();
     for (size_t i = 2; i < atomCounts; i++) {
-        if (mPushedAtomStats[i] > 0) {
-            dprintf(out, "Atom %zu->(total count)%d, (error count)%d\n", i, mPushedAtomStats[i],
-                    getPushedAtomErrors((int)i));
+        if (mPushedAtomStats[i].logCount > 0) {
+            dprintf(out,
+                    "Atom %zu->(total count)%d, (error count)%d, (drop count)%d, (skip count)%d\n",
+                    i, mPushedAtomStats[i].logCount, getPushedAtomErrorsLocked((int)i),
+                    getPushedAtomDropsLocked((int)i), mPushedAtomStats[i].skipCount);
         }
     }
     for (const auto& pair : mNonPlatformPushedAtomStats) {
-        dprintf(out, "Atom %d->(total count)%d, (error count)%d\n", pair.first, pair.second,
-                getPushedAtomErrors(pair.first));
+        dprintf(out, "Atom %d->(total count)%d, (error count)%d, (drop count)%d, (skip count)%d\n",
+                pair.first, pair.second.logCount, getPushedAtomErrorsLocked(pair.first),
+                getPushedAtomDropsLocked((int)pair.first), pair.second.skipCount);
     }
 
     dprintf(out, "********Pulled Atom stats***********\n");
@@ -827,7 +1099,7 @@ void StatsdStats::dumpStats(int out) const {
             string uptimeMillis = "(pull timeout system uptime millis) ";
             string pullTimeoutMillis = "(pull timeout elapsed time millis) ";
             for (const auto& stats : pair.second.pullTimeoutMetadata) {
-                uptimeMillis.append(to_string(stats.pullTimeoutUptimeMillis)).append(",");;
+                uptimeMillis.append(to_string(stats.pullTimeoutUptimeMillis)).append(",");
                 pullTimeoutMillis.append(to_string(stats.pullTimeoutElapsedMillis)).append(",");
             }
             uptimeMillis.pop_back();
@@ -879,6 +1151,30 @@ void StatsdStats::dumpStats(int out) const {
         }
         dprintf(out, "\n");
     }
+
+    if (mRestrictedMetricQueryStats.size() > 0) {
+        dprintf(out, "********Restricted Metric Query stats***********\n");
+        for (const auto& stat : mRestrictedMetricQueryStats) {
+            if (stat.mHasError) {
+                dprintf(out,
+                        "Query with error type: %d - %lld (query time ns), "
+                        "%d (calling uid), %lld (config id), %s (config package), %s (error)\n",
+                        stat.mInvalidQueryReason.value(), (long long)stat.mQueryWallTimeNs,
+                        stat.mCallingUid, (long long)stat.mConfigId, stat.mConfigPackage.c_str(),
+                        stat.mError.c_str());
+            } else {
+                dprintf(out,
+                        "Query succeed - %lld (query time ns), %d (calling uid), "
+                        "%lld (config id), %s (config package), %d (config uid), "
+                        "%lld (queryLatencyNs)\n",
+                        (long long)stat.mQueryWallTimeNs, stat.mCallingUid,
+                        (long long)stat.mConfigId, stat.mConfigPackage.c_str(),
+                        stat.mConfigUid.value(), (long long)stat.mQueryLatencyNs.value());
+            }
+        }
+    }
+    dprintf(out, "********Shard Offset Provider stats***********\n");
+    dprintf(out, "Shard Offset: %u\n", ShardOffsetProvider::getInstance().getShardOffset());
 }
 
 void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* proto) {
@@ -1025,6 +1321,47 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
         proto->end(tmpToken);
     }
 
+    for (const auto& pair : configStats.restricted_metric_stats) {
+        uint64_t token =
+                proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_STATS_RESTRICTED_METRIC_STATS |
+                             FIELD_COUNT_REPEATED);
+
+        proto->write(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_METRIC_ID, (long long)pair.first);
+        writeNonZeroStatToStream(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_INSERT_ERROR,
+                                 (long long)pair.second.insertError, proto);
+        writeNonZeroStatToStream(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_TABLE_CREATION_ERROR,
+                                 (long long)pair.second.tableCreationError, proto);
+        writeNonZeroStatToStream(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_TABLE_DELETION_ERROR,
+                                 (long long)pair.second.tableDeletionError, proto);
+        for (const int64_t flushLatencyNs : pair.second.flushLatencyNs) {
+            proto->write(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_FLUSH_LATENCY |
+                                 FIELD_COUNT_REPEATED,
+                         flushLatencyNs);
+        }
+        writeNonZeroStatToStream(
+                FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_STATS_CATEGORY_CHANGED_COUNT,
+                (long long)pair.second.categoryChangedCount, proto);
+        proto->end(token);
+    }
+    proto->write(FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED,
+                 configStats.device_info_table_creation_failed);
+    proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT,
+                 configStats.db_corrupted_count);
+    for (int64_t latency : configStats.total_flush_latency_ns) {
+        proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY |
+                             FIELD_COUNT_REPEATED,
+                     latency);
+    }
+    for (int64_t dbSizeTimestamp : configStats.total_db_size_timestamps) {
+        proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_TIME_SEC |
+                             FIELD_COUNT_REPEATED,
+                     dbSizeTimestamp);
+    }
+    for (int64_t dbSize : configStats.total_db_sizes) {
+        proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_BYTES |
+                             FIELD_COUNT_REPEATED,
+                     dbSize);
+    }
     proto->end(token);
 }
 
@@ -1045,15 +1382,19 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
 
     const size_t atomCounts = mPushedAtomStats.size();
     for (size_t i = 2; i < atomCounts; i++) {
-        if (mPushedAtomStats[i] > 0) {
+        if (mPushedAtomStats[i].logCount > 0) {
             uint64_t token =
                     proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM_STATS | FIELD_COUNT_REPEATED);
             proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_TAG, (int32_t)i);
-            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, mPushedAtomStats[i]);
-            int errors = getPushedAtomErrors(i);
-            if (errors > 0) {
-                proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors);
-            }
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, mPushedAtomStats[i].logCount);
+            const int errors = getPushedAtomErrorsLocked(i);
+            writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors,
+                                     &proto);
+            const int drops = getPushedAtomDropsLocked(i);
+            writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops,
+                                     &proto);
+            writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_SKIP_COUNT,
+                                     mPushedAtomStats[i].skipCount, &proto);
             proto.end(token);
         }
     }
@@ -1062,11 +1403,14 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
         uint64_t token =
                 proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM_STATS | FIELD_COUNT_REPEATED);
         proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_TAG, pair.first);
-        proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, pair.second);
-        int errors = getPushedAtomErrors(pair.first);
-        if (errors > 0) {
-            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors);
-        }
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_COUNT, pair.second.logCount);
+        const int errors = getPushedAtomErrorsLocked(pair.first);
+        writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_ERROR_COUNT, errors,
+                                 &proto);
+        const int drops = getPushedAtomDropsLocked(pair.first);
+        writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops, &proto);
+        writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_SKIP_COUNT,
+                                 pair.second.skipCount, &proto);
         proto.end(token);
     }
 
@@ -1139,6 +1483,42 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
         }
         proto.end(token);
     }
+
+    for (const auto& stat : mRestrictedMetricQueryStats) {
+        uint64_t token = proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS |
+                                     FIELD_COUNT_REPEATED);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID,
+                    stat.mCallingUid);
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID,
+                    stat.mConfigId);
+        proto.write(FIELD_TYPE_STRING | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_PACKAGE,
+                    stat.mConfigPackage);
+        if (stat.mConfigUid.has_value()) {
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_UID,
+                        stat.mConfigUid.value());
+        }
+        if (stat.mInvalidQueryReason.has_value()) {
+            proto.write(
+                    FIELD_TYPE_ENUM | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_INVALID_QUERY_REASON,
+                    stat.mInvalidQueryReason.value());
+        }
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_QUERY_WALL_TIME_NS,
+                    stat.mQueryWallTimeNs);
+        proto.write(FIELD_TYPE_BOOL | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_HAS_ERROR,
+                    stat.mHasError);
+        if (stat.mHasError && !stat.mError.empty()) {
+            proto.write(FIELD_TYPE_STRING | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_ERROR,
+                        stat.mError);
+        }
+        if (stat.mQueryLatencyNs.has_value()) {
+            proto.write(FIELD_TYPE_INT64 | FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_LATENCY_NS,
+                        stat.mQueryLatencyNs.value());
+        }
+        proto.end(token);
+    }
+
+    proto.write(FIELD_TYPE_UINT32 | FIELD_ID_SHARD_OFFSET,
+                static_cast<long>(ShardOffsetProvider::getInstance().getShardOffset()));
 
     output->clear();
     size_t bufferSize = proto.size();
