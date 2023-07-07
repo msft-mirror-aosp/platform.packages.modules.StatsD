@@ -35,9 +35,6 @@ namespace statsd {
 
 namespace {
 
-const int kConfigKey = 789130124;
-const int kCallingUid = 0;
-
 StatsdConfig CreateStatsdConfig(int num_buckets,
                                 uint64_t threshold_ns,
                                 DurationMetric::AggregationType aggregationType,
@@ -98,25 +95,19 @@ MetricDimensionKey dimensionKey2(
                                            (int32_t)0x02010101), Value((int32_t)222))}),
     DEFAULT_DIMENSION_KEY);
 
-void sendConfig(shared_ptr<StatsService>& service, const StatsdConfig& config) {
-    string str;
-    config.SerializeToString(&str);
-    std::vector<uint8_t> configAsVec(str.begin(), str.end());
-    service->addConfiguration(kConfigKey, configAsVec, kCallingUid);
-}
-
 }  // namespace
 
-TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_single_bucket) {
+// Setup for test fixture.
+class AnomalyDurationDetectionE2eTest : public StatsServiceConfigTest {};
+
+TEST_F(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket) {
     const int num_buckets = 1;
     const uint64_t threshold_ns = NS_PER_SEC;
     auto config = CreateStatsdConfig(num_buckets, threshold_ns, DurationMetric::SUM, true);
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
-    sendConfig(service, config);
+    sendConfig(config);
 
     auto processor = service->mProcessor;
     ASSERT_EQ(processor->mMetricsManagers.size(), 1u);
@@ -291,16 +282,14 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_single_bucket) {
     EXPECT_EQ(0u, anomalyTracker->getAlarmTimestampSec(dimensionKey1));
 }
 
-TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets) {
+TEST_F(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets) {
     const int num_buckets = 3;
     const uint64_t threshold_ns = NS_PER_SEC;
     auto config = CreateStatsdConfig(num_buckets, threshold_ns, DurationMetric::SUM, true);
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
-    sendConfig(service, config);
+    sendConfig(config);
 
     auto processor = service->mProcessor;
     ASSERT_EQ(processor->mMetricsManagers.size(), 1u);
@@ -415,16 +404,14 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets) {
               anomalyTracker->getRefractoryPeriodEndsSec(dimensionKey1));
 }
 
-TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
+TEST_F(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
     const int num_buckets = 1;
     const uint64_t threshold_ns = NS_PER_SEC;
     auto config = CreateStatsdConfig(num_buckets, threshold_ns, DurationMetric::SUM, true);
     const uint64_t alert_id = config.alert(0).id();
     const uint32_t refractory_period_sec = config.alert(0).refractory_period_secs();
 
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
-    sendConfig(service, config);
+    sendConfig(config);
 
     auto processor = service->mProcessor;
     ASSERT_EQ(processor->mMetricsManagers.size(), 1u);
@@ -435,9 +422,9 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
     int64_t roundedBucketStartTimeNs = bucketStartTimeNs / NS_PER_SEC * NS_PER_SEC;
     int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.duration_metric(0).bucket()) * 1e6;
 
-    service->mUidMap->updateMap(bucketStartTimeNs, {1}, {1}, {String16("v1")},
-                                {String16("randomApp")}, {String16("")},
-                                /* certificateHash */ {{}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "randomApp");
+    processor->getUidMap()->updateMap(bucketStartTimeNs, uidData);
 
     sp<AnomalyTracker> anomalyTracker =
             processor->mMetricsManagers.begin()->second->mAllAnomalyTrackers[0];
@@ -472,8 +459,8 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
 
     // Partial bucket split.
     int64_t appUpgradeTimeNs = bucketStartTimeNs + 500;
-    service->mUidMap->updateApp(appUpgradeTimeNs, String16("randomApp"), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(appUpgradeTimeNs, "randomApp", 1, 2, "v2", "",
+                                /* certificateHash */ {});
     EXPECT_EQ(0u, anomalyTracker->getAlarmTimestampSec(dimensionKey1));
     EXPECT_EQ(0u, anomalyTracker->getRefractoryPeriodEndsSec(dimensionKey1));
     EXPECT_EQ((bucketStartTimeNs + 110 + threshold_ns) / NS_PER_SEC + 1,
@@ -505,7 +492,7 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
               anomalyTracker->getRefractoryPeriodEndsSec(dimensionKey1));
 }
 
-TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period) {
+TEST_F(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period) {
     const int num_buckets = 2;
     const uint64_t threshold_ns = 3 * NS_PER_SEC;
     auto config = CreateStatsdConfig(num_buckets, threshold_ns, DurationMetric::SUM, false);
@@ -514,9 +501,7 @@ TEST(AnomalyDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period) {
     const uint32_t refractory_period_sec = 3 * bucketSizeNs / NS_PER_SEC;
     config.mutable_alert(0)->set_refractory_period_secs(refractory_period_sec);
 
-    shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
-    sendConfig(service, config);
+    sendConfig(config);
 
     auto processor = service->mProcessor;
     ASSERT_EQ(processor->mMetricsManagers.size(), 1u);

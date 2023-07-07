@@ -24,13 +24,18 @@
 
 #include "HashableDimensionKey.h"
 #include "anomaly/AnomalyTracker.h"
+#include "condition/ConditionTimer.h"
 #include "condition/ConditionWizard.h"
 #include "config/ConfigKey.h"
+#include "guardrail/StatsdStats.h"
 #include "matchers/EventMatcherWizard.h"
 #include "matchers/matcher_util.h"
 #include "packages/PackageInfoListener.h"
+#include "src/statsd_metadata.pb.h"  // MetricMetadata
 #include "state/StateListener.h"
 #include "state/StateManager.h"
+#include "utils/DbUtils.h"
+#include "utils/ShardOffsetProvider.h"
 
 namespace android {
 namespace os {
@@ -132,6 +137,13 @@ struct SkippedBucket {
     }
 };
 
+struct SamplingInfo {
+    // Matchers for sampled fields. Currently only one sampled dimension is supported.
+    std::vector<Matcher> sampledWhatFields;
+
+    int shardCount = 0;
+};
+
 template <class T>
 optional<bool> getAppUpgradeBucketSplit(const T& metric) {
     return metric.has_split_bucket_for_app_upgrade()
@@ -166,7 +178,7 @@ public:
     // This metric and all of its dependencies are guaranteed to be preserved across the update.
     // This function also updates several maps used by metricsManager.
     // This function clears all anomaly trackers. All anomaly trackers need to be added again.
-    bool onConfigUpdated(
+    optional<InvalidConfigReason> onConfigUpdated(
             const StatsdConfig& config, const int configIndex, const int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -253,7 +265,7 @@ public:
                 dumpLatency, str_set, protoOutput);
     }
 
-    virtual bool onConfigUpdatedLocked(
+    virtual optional<InvalidConfigReason> onConfigUpdatedLocked(
             const StatsdConfig& config, const int configIndex, const int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -286,7 +298,7 @@ public:
         return byteSizeLocked();
     }
 
-    void dumpStates(FILE* out, bool verbose) const {
+    void dumpStates(int out, bool verbose) const {
         std::lock_guard<std::mutex> lock(mMutex);
         dumpStatesLocked(out, verbose);
     }
@@ -324,6 +336,21 @@ public:
 
     void writeActiveMetricToProtoOutputStream(
             int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto);
+
+    virtual void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs){};
+
+    virtual bool writeMetricMetadataToProto(metadata::MetricMetadata* metricMetadata) {
+        return false;
+    }
+
+    virtual void loadMetricMetadataFromProto(const metadata::MetricMetadata& metricMetadata){};
+
+    /* Called when the metric is to about to be removed from config. */
+    virtual void onMetricRemove() {
+    }
+
+    virtual void flushRestrictedData() {
+    }
 
     // Start: getters/setters
     inline int64_t getMetricId() const {
@@ -370,6 +397,12 @@ public:
     virtual void addAnomalyTracker(sp<AnomalyTracker>& anomalyTracker, const int64_t updateTimeNs) {
         std::lock_guard<std::mutex> lock(mMutex);
         mAnomalyTrackers.push_back(anomalyTracker);
+    }
+
+    void setSamplingInfo(SamplingInfo samplingInfo) {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mSampledWhatFields.swap(samplingInfo.sampledWhatFields);
+        mShardCount = samplingInfo.shardCount;
     }
     // End: getters/setters
 protected:
@@ -437,7 +470,7 @@ protected:
     virtual void clearPastBucketsLocked(const int64_t dumpTimeNs) = 0;
     virtual void prepareFirstBucketLocked(){};
     virtual size_t byteSizeLocked() const = 0;
-    virtual void dumpStatesLocked(FILE* out, bool verbose) const = 0;
+    virtual void dumpStatesLocked(int out, bool verbose) const = 0;
     virtual void dropDataLocked(const int64_t dropTimeNs) = 0;
     void loadActiveMetricLocked(const ActiveMetric& activeMetric, int64_t currentTimeNs);
     void activateLocked(int activationTrackerIndex, int64_t elapsedTimestampNs);
@@ -485,6 +518,8 @@ protected:
     // exceeded the maximum number allowed, which is currently capped at 10.
     bool maxDropEventsReached() const;
 
+    bool passesSampleCheckLocked(const vector<FieldValue>& values) const;
+
     const int64_t mMetricId;
 
     // Hash of the Metric's proto bytes from StatsdConfig, including any activations.
@@ -510,6 +545,8 @@ protected:
     int64_t mBucketSizeNs;
 
     ConditionState mCondition;
+
+    ConditionTimer mConditionTimer;
 
     int mConditionTrackerIndex;
 
@@ -563,6 +600,14 @@ protected:
     // Buckets that were invalidated and had their data dropped.
     std::vector<SkippedBucket> mSkippedBuckets;
 
+    // If hard dimension guardrail is hit, do not spam logcat
+    bool mHasHitGuardrail;
+
+    // Matchers for sampled fields. Currently only one sampled dimension is supported.
+    std::vector<Matcher> mSampledWhatFields;
+
+    int mShardCount;
+
     FRIEND_TEST(CountMetricE2eTest, TestSlicedState);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithMap);
     FRIEND_TEST(CountMetricE2eTest, TestMultipleSlicedStates);
@@ -600,7 +645,8 @@ protected:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
 
-    FRIEND_TEST(MetricsManagerTest, TestInitialConditions);
+    FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
+    FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMetricActivations);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateCountMetrics);

@@ -90,8 +90,6 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
       mDimensionSoftLimit(guardrailOptions.dimensionSoftLimit),
       mDimensionHardLimit(guardrailOptions.dimensionHardLimit),
       mCurrentBucketIsSkipped(false),
-      // Condition timer will be set later within the constructor after pulling events
-      mConditionTimer(false, bucketOptions.timeBaseNs),
       mConditionCorrectionThresholdNs(bucketOptions.conditionCorrectionThresholdNs) {
     // TODO(b/185722221): inject directly via initializer list in MetricProducer.
     mBucketSizeNs = bucketOptions.bucketSizeNs;
@@ -174,7 +172,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::notifyAppUpgradeInternalLo
 }
 
 template <typename AggregatedValue, typename DimExtras>
-bool ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
+optional<InvalidConfigReason>
+ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -188,35 +187,37 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    if (!MetricProducer::onConfigUpdatedLocked(
-                config, configIndex, metricIndex, allAtomMatchingTrackers,
-                oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
-                allConditionTrackers, conditionTrackerMap, wizard, metricToActivationMap,
-                trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
-                deactivationAtomTrackerToMetricMap, metricsWithActivation)) {
-        return false;
+    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+            config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
+            newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
+            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+            metricsWithActivation);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
-
     // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
     const int64_t atomMatcherId = getWhatAtomMatcherIdForMetric(config, configIndex);
-    if (!handleMetricWithAtomMatchingTrackers(atomMatcherId, metricIndex, /*enforceOneAtom=*/false,
-                                              allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                              trackerToMetricMap, mWhatMatcherIndex)) {
-        return false;
+    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+            atomMatcherId, mMetricId, metricIndex, /*enforceOneAtom=*/false,
+            allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap,
+            mWhatMatcherIndex);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
     }
-
     const optional<int64_t>& conditionIdOpt = getConditionIdForMetric(config, configIndex);
     const ConditionLinks& conditionLinks = getConditionLinksForMetric(config, configIndex);
-    if (conditionIdOpt.has_value() &&
-        !handleMetricWithConditions(conditionIdOpt.value(), metricIndex, conditionTrackerMap,
-                                    conditionLinks, allConditionTrackers, mConditionTrackerIndex,
-                                    conditionToMetricMap)) {
-        return false;
+    if (conditionIdOpt.has_value()) {
+        invalidConfigReason = handleMetricWithConditions(
+                conditionIdOpt.value(), mMetricId, metricIndex, conditionTrackerMap, conditionLinks,
+                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
     }
-
     sp<EventMatcherWizard> tmpEventWizard = mEventMatcherWizard;
     mEventMatcherWizard = matcherWizard;
-    return true;
+    return nullopt;
 }
 
 template <typename AggregatedValue, typename DimExtras>
@@ -293,6 +294,11 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
         const DumpLatency dumpLatency, set<string>* strSet, ProtoOutputStream* protoOutput) {
     VLOG("metric %lld dump report now...", (long long)mMetricId);
 
+    // Pulled metrics need to pull before flushing, which is why they do not call flushIfNeeded.
+    // TODO: b/249823426 see if we can pull and call flushIfneeded for pulled value metrics.
+    if (!isPulled()) {
+        flushIfNeededLocked(dumpTimeNs);
+    }
     if (includeCurrentPartialBucket) {
         // For pull metrics, we need to do a pull at bucket boundaries. If we do not do that the
         // current bucket will have incomplete data and the next will have the wrong snapshot to do
@@ -417,8 +423,9 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
             for (int i = 0; i < (int)bucket.aggIndex.size(); i++) {
                 VLOG("\t bucket [%lld - %lld]", (long long)bucket.mBucketStartNs,
                      (long long)bucket.mBucketEndNs);
+                int sampleSize = !bucket.sampleSizes.empty() ? bucket.sampleSizes[i] : 0;
                 writePastBucketAggregateToProto(bucket.aggIndex[i], bucket.aggregates[i],
-                                                protoOutput);
+                                                sampleSize, protoOutput);
             }
             protoOutput->end(bucketInfoToken);
         }
@@ -582,18 +589,18 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::updateCurrentSlicedBucketC
 }
 
 template <typename AggregatedValue, typename DimExtras>
-void ValueMetricProducer<AggregatedValue, DimExtras>::dumpStatesLocked(FILE* out,
+void ValueMetricProducer<AggregatedValue, DimExtras>::dumpStatesLocked(int out,
                                                                        bool verbose) const {
     if (mCurrentSlicedBucket.size() == 0) {
         return;
     }
 
-    fprintf(out, "ValueMetricProducer %lld dimension size %lu\n", (long long)mMetricId,
+    dprintf(out, "ValueMetricProducer %lld dimension size %lu\n", (long long)mMetricId,
             (unsigned long)mCurrentSlicedBucket.size());
     if (verbose) {
         for (const auto& [metricDimensionKey, currentBucket] : mCurrentSlicedBucket) {
             for (const Interval& interval : currentBucket.intervals) {
-                fprintf(out, "\t(what)%s\t(states)%s  (aggregate)%s\n",
+                dprintf(out, "\t(what)%s\t(states)%s  (aggregate)%s\n",
                         metricDimensionKey.getDimensionKeyInWhat().toString().c_str(),
                         metricDimensionKey.getStateValuesKey().toString().c_str(),
                         aggregatedValueToString(interval.aggregate).c_str());
@@ -609,7 +616,7 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::hasReachedGuardRailLimit()
 
 template <typename AggregatedValue, typename DimExtras>
 bool ValueMetricProducer<AggregatedValue, DimExtras>::hitGuardRailLocked(
-        const MetricDimensionKey& newKey) const {
+        const MetricDimensionKey& newKey) {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mCurrentSlicedBucket.find(newKey) != mCurrentSlicedBucket.end()) {
@@ -620,8 +627,11 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::hitGuardRailLocked(
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
         if (hasReachedGuardRailLimit()) {
-            ALOGE("ValueMetricProducer %lld dropping data for dimension key %s",
-                  (long long)mMetricId, newKey.toString().c_str());
+            if (!mHasHitGuardrail) {
+                ALOGE("ValueMetricProducer %lld dropping data for dimension key %s",
+                      (long long)mMetricId, newKey.toString().c_str());
+                mHasHitGuardrail = true;
+            }
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -874,6 +884,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
     mCurrentSkippedBucket.reset();
 
     mCurrentBucketStartTimeNs = nextBucketStartTimeNs;
+    // Reset mHasHitGuardrail boolean since bucket was reset
+    mHasHitGuardrail = false;
     VLOG("metric %lld: new bucket start time: %lld", (long long)mMetricId,
          (long long)mCurrentBucketStartTimeNs);
 }
