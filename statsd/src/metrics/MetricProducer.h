@@ -31,8 +31,10 @@
 #include "matchers/EventMatcherWizard.h"
 #include "matchers/matcher_util.h"
 #include "packages/PackageInfoListener.h"
+#include "src/statsd_metadata.pb.h"  // MetricMetadata
 #include "state/StateListener.h"
 #include "state/StateManager.h"
+#include "utils/DbUtils.h"
 #include "utils/ShardOffsetProvider.h"
 
 namespace android {
@@ -296,7 +298,7 @@ public:
         return byteSizeLocked();
     }
 
-    void dumpStates(FILE* out, bool verbose) const {
+    void dumpStates(int out, bool verbose) const {
         std::lock_guard<std::mutex> lock(mMutex);
         dumpStatesLocked(out, verbose);
     }
@@ -334,6 +336,21 @@ public:
 
     void writeActiveMetricToProtoOutputStream(
             int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto);
+
+    virtual void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs){};
+
+    virtual bool writeMetricMetadataToProto(metadata::MetricMetadata* metricMetadata) {
+        return false;
+    }
+
+    virtual void loadMetricMetadataFromProto(const metadata::MetricMetadata& metricMetadata){};
+
+    /* Called when the metric is to about to be removed from config. */
+    virtual void onMetricRemove() {
+    }
+
+    virtual void flushRestrictedData() {
+    }
 
     // Start: getters/setters
     inline int64_t getMetricId() const {
@@ -453,7 +470,7 @@ protected:
     virtual void clearPastBucketsLocked(const int64_t dumpTimeNs) = 0;
     virtual void prepareFirstBucketLocked(){};
     virtual size_t byteSizeLocked() const = 0;
-    virtual void dumpStatesLocked(FILE* out, bool verbose) const = 0;
+    virtual void dumpStatesLocked(int out, bool verbose) const = 0;
     virtual void dropDataLocked(const int64_t dropTimeNs) = 0;
     void loadActiveMetricLocked(const ActiveMetric& activeMetric, int64_t currentTimeNs);
     void activateLocked(int activationTrackerIndex, int64_t elapsedTimestampNs);

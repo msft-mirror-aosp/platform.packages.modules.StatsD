@@ -20,10 +20,12 @@
 #include "logd/LogEvent.h"
 
 #include <android-base/stringprintf.h>
+#include <android-modules-utils/sdk_level.h>
 #include <android/binder_ibinder.h>
 #include <private/android_filesystem_config.h>
 
-#include "annotations.h"
+#include "flags/FlagProvider.h"
+#include "stats_annotations.h"
 #include "stats_log_util.h"
 #include "statslog_statsd.h"
 
@@ -36,12 +38,25 @@ const int FIELD_ID_EXPERIMENT_ID = 1;
 
 using namespace android::util;
 using android::base::StringPrintf;
+using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 using std::string;
 using std::vector;
 
+namespace {
+
+uint8_t getTypeId(uint8_t typeInfo) {
+    return typeInfo & 0x0F;  // type id in lower 4 bytes
+}
+
+uint8_t getNumAnnotations(uint8_t typeInfo) {
+    return (typeInfo >> 4) & 0x0F;  // num annotations in upper 4 bytes
+}
+
+}  // namespace
+
 LogEvent::LogEvent(int32_t uid, int32_t pid)
-    : mLogdTimestampNs(time(nullptr)), mLogUid(uid), mLogPid(pid) {
+    : mLogdTimestampNs(getWallClockNs()), mLogUid(uid), mLogPid(pid) {
 }
 
 LogEvent::LogEvent(const string& trainName, int64_t trainVersionCode, bool requiresStaging,
@@ -333,7 +348,7 @@ void LogEvent::parsePrimaryFieldFirstUidAnnotation(uint8_t annotationType,
 
 void LogEvent::parseExclusiveStateAnnotation(uint8_t annotationType,
                                              std::optional<uint8_t> numElements) {
-    // Allowed types: INT
+    // Allowed types: BOOL
     if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
         VLOG("Atom ID %d error while parseExclusiveStateAnnotation()", mTagId);
@@ -361,7 +376,7 @@ void LogEvent::parseTriggerStateResetAnnotation(uint8_t annotationType,
 
 void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
                                           std::optional<uint8_t> numElements) {
-    // Allowed types: INT
+    // Allowed types: BOOL
     if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
         VLOG("Atom ID %d error while parseStateNestedAnnotation()", mTagId);
@@ -371,6 +386,38 @@ void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
 
     bool nested = readNextValue<uint8_t>();
     mValues[mValues.size() - 1].mAnnotations.setNested(nested);
+}
+
+void LogEvent::parseRestrictionCategoryAnnotation(uint8_t annotationType) {
+    // Allowed types: INT, field value should be empty since this is atom-level annotation.
+    if (!mValues.empty() || annotationType != INT32_TYPE) {
+        mValid = false;
+        return;
+    }
+    int value = readNextValue<int32_t>();
+    // should be one of predefined category in StatsLog.java
+    switch (value) {
+        // Only diagnostic is currently supported for use.
+        case ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC:
+            break;
+        default:
+            mValid = false;
+            return;
+    }
+    mRestrictionCategory = static_cast<StatsdRestrictionCategory>(value);
+    return;
+}
+
+void LogEvent::parseFieldRestrictionAnnotation(uint8_t annotationType) {
+    // Allowed types: BOOL
+    if (mValues.empty() || annotationType != BOOL_TYPE) {
+        mValid = false;
+        return;
+    }
+    // Read the value so that the rest of the event is correctly parsed
+    // TODO: store the field annotations once the metrics need to parse them.
+    readNextValue<uint8_t>();
+    return;
 }
 
 // firstUidInChainIndex is a default parameter that is only needed when parsing
@@ -383,26 +430,49 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
         uint8_t annotationType = readNextValue<uint8_t>();
 
         switch (annotationId) {
-            case ANNOTATION_ID_IS_UID:
+            case ASTATSLOG_ANNOTATION_ID_IS_UID:
                 parseIsUidAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_TRUNCATE_TIMESTAMP:
+            case ASTATSLOG_ANNOTATION_ID_TRUNCATE_TIMESTAMP:
                 parseTruncateTimestampAnnotation(annotationType);
                 break;
-            case ANNOTATION_ID_PRIMARY_FIELD:
+            case ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD:
                 parsePrimaryFieldAnnotation(annotationType, numElements, firstUidInChainIndex);
                 break;
-            case ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID:
+            case ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID:
                 parsePrimaryFieldFirstUidAnnotation(annotationType, firstUidInChainIndex);
                 break;
-            case ANNOTATION_ID_EXCLUSIVE_STATE:
+            case ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE:
                 parseExclusiveStateAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_TRIGGER_STATE_RESET:
+            case ASTATSLOG_ANNOTATION_ID_TRIGGER_STATE_RESET:
                 parseTriggerStateResetAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_STATE_NESTED:
+            case ASTATSLOG_ANNOTATION_ID_STATE_NESTED:
                 parseStateNestedAnnotation(annotationType, numElements);
+                break;
+            case ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY:
+                if (IsAtLeastU()) {
+                    parseRestrictionCategoryAnnotation(annotationType);
+                } else {
+                    mValid = false;
+                }
+                break;
+            // Currently field restrictions are ignored, so we parse but do not store them.
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
+                if (IsAtLeastU()) {
+                    parseFieldRestrictionAnnotation(annotationType);
+                } else {
+                    mValid = false;
+                }
                 break;
             default:
                 VLOG("Atom ID %d error while parseAnnotations() - wrong annotationId(%d)", mTagId,
@@ -413,24 +483,34 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
     }
 }
 
-uint8_t LogEvent::parseHeader() {
+LogEvent::BodyBufferInfo LogEvent::parseHeader(const uint8_t* buf, size_t len) {
+    BodyBufferInfo bodyInfo;
+
+    mParsedHeaderOnly = true;
+
+    mBuf = buf;
+    mRemainingLen = (uint32_t)len;
+
     // Beginning of buffer is OBJECT_TYPE | NUM_FIELDS | TIMESTAMP | ATOM_ID
     uint8_t typeInfo = readNextValue<uint8_t>();
     if (getTypeId(typeInfo) != OBJECT_TYPE) {
         mValid = false;
-        return 0;
+        mBuf = nullptr;
+        return bodyInfo;
     }
 
     uint8_t numElements = readNextValue<uint8_t>();
     if (numElements < 2 || numElements > INT8_MAX) {
         mValid = false;
-        return 0;
+        mBuf = nullptr;
+        return bodyInfo;
     }
 
     typeInfo = readNextValue<uint8_t>();
     if (getTypeId(typeInfo) != INT64_TYPE) {
         mValid = false;
-        return 0;
+        mBuf = nullptr;
+        return bodyInfo;
     }
     mElapsedTimestampNs = readNextValue<int64_t>();
     numElements--;
@@ -438,34 +518,33 @@ uint8_t LogEvent::parseHeader() {
     typeInfo = readNextValue<uint8_t>();
     if (getTypeId(typeInfo) != INT32_TYPE) {
         mValid = false;
-        return 0;
+        mBuf = nullptr;
+        return bodyInfo;
     }
     mTagId = readNextValue<int32_t>();
     numElements--;
 
     parseAnnotations(getNumAnnotations(typeInfo));  // atom-level annotations
 
-    return numElements;
+    bodyInfo.numElements = numElements;
+    bodyInfo.buffer = mBuf;
+    bodyInfo.bufferSize = mRemainingLen;
+
+    mBuf = nullptr;
+    return bodyInfo;
 }
 
-// This parsing logic is tied to the encoding scheme used in StatsEvent.java and
-// stats_event.c
-bool LogEvent::parseBuffer(const uint8_t* buf, size_t len, bool fetchHeaderOnly) {
-    mBuf = buf;
-    mRemainingLen = (uint32_t)len;
+bool LogEvent::parseBody(const BodyBufferInfo& bodyInfo) {
+    mParsedHeaderOnly = false;
 
-    const uint8_t numElements = parseHeader();
-
-    if (!mValid || fetchHeaderOnly) {
-        mBuf = nullptr;
-        return mValid;
-    }
+    mBuf = bodyInfo.buffer;
+    mRemainingLen = (uint32_t)bodyInfo.bufferSize;
 
     int32_t pos[] = {1, 1, 1};
     bool last[] = {false, false, false};
 
-    for (pos[0] = 1; pos[0] <= numElements && mValid; pos[0]++) {
-        last[0] = (pos[0] == numElements);
+    for (pos[0] = 1; pos[0] <= bodyInfo.numElements && mValid; pos[0]++) {
+        last[0] = (pos[0] == bodyInfo.numElements);
 
         uint8_t typeInfo = readNextValue<uint8_t>();
         uint8_t typeId = getTypeId(typeInfo);
@@ -513,12 +592,22 @@ bool LogEvent::parseBuffer(const uint8_t* buf, size_t len, bool fetchHeaderOnly)
     return mValid;
 }
 
-uint8_t LogEvent::getTypeId(uint8_t typeInfo) {
-    return typeInfo & 0x0F;  // type id in lower 4 bytes
-}
+// This parsing logic is tied to the encoding scheme used in StatsEvent.java and
+// stats_event.c
+bool LogEvent::parseBuffer(const uint8_t* buf, size_t len) {
+    BodyBufferInfo bodyInfo = parseHeader(buf, len);
 
-uint8_t LogEvent::getNumAnnotations(uint8_t typeInfo) {
-    return (typeInfo >> 4) & 0x0F;  // num annotations in upper 4 bytes
+    // emphasize intention to parse the body, however atom data could be incomplete
+    // if header/body parsing was failed due to invalid buffer content for example
+    mParsedHeaderOnly = false;
+
+    // early termination if header is invalid
+    if (!mValid) {
+        mBuf = nullptr;
+        return false;
+    }
+
+    return parseBody(bodyInfo);
 }
 
 int64_t LogEvent::GetLong(size_t key, status_t* err) const {
@@ -659,6 +748,11 @@ string LogEvent::ToString() const {
     }
     if (annotations.size()) {
         result += " [" + annotations + "] ";
+    }
+
+    if (isParsedHeaderOnly()) {
+        result += " ParsedHeaderOnly }";
+        return result;
     }
 
     for (const auto& value : mValues) {
