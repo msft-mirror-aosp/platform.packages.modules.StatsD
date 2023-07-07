@@ -231,8 +231,7 @@ bool MaxDurationTracker::flushIfNeeded(
     return flushCurrentBucket(eventTimeNs, uploadThreshold, /*globalConditionTrueNs*/ 0, output);
 }
 
-void MaxDurationTracker::onSlicedConditionMayChange(bool overallCondition,
-                                                    const int64_t timestamp) {
+void MaxDurationTracker::onSlicedConditionMayChange(const int64_t timestamp) {
     // Now for each of the on-going event, check if the condition has changed for them.
     for (auto& pair : mInfos) {
         if (pair.second.state == kStopped) {
@@ -317,9 +316,9 @@ int64_t MaxDurationTracker::predictAnomalyTimestampNs(const AnomalyTracker& anom
     return std::max(anomalyTimeNs, refractoryEndNs);
 }
 
-void MaxDurationTracker::dumpStates(FILE* out, bool verbose) const {
-    fprintf(out, "\t\t sub-durations %lu\n", (unsigned long)mInfos.size());
-    fprintf(out, "\t\t current duration %lld\n", (long long)mDuration);
+void MaxDurationTracker::dumpStates(int out, bool verbose) const {
+    dprintf(out, "\t\t sub-durations %lu\n", (unsigned long)mInfos.size());
+    dprintf(out, "\t\t current duration %lld\n", (long long)mDuration);
 }
 
 int64_t MaxDurationTracker::getCurrentStateKeyDuration() const {

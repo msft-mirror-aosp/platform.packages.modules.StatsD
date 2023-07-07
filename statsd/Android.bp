@@ -21,6 +21,10 @@ package {
 cc_defaults {
     name: "statsd_defaults",
 
+    cflags: [
+        "-Wno-deprecated-declarations",
+    ],
+
     srcs: [
         "src/active_config_list.proto",
         "src/anomaly/AlarmMonitor.cpp",
@@ -77,6 +81,7 @@ cc_defaults {
         "src/state/StateManager.cpp",
         "src/state/StateTracker.cpp",
         "src/stats_log_util.cpp",
+        "src/stats_policy_config.proto",
         "src/statscompanion_util.cpp",
         "src/statsd_config.proto",
         "src/statsd_metadata.proto",
@@ -89,6 +94,7 @@ cc_defaults {
         "src/uid_data.proto",
         "src/utils/MultiConditionTrigger.cpp",
         "src/utils/DbUtils.cpp",
+        "src/utils/RestrictedPolicyManager.cpp",
         "src/utils/ShardOffsetProvider.cpp",
     ],
 
@@ -230,10 +236,6 @@ cc_binary {
         "test_com.android.os.statsd",
     ],
     min_sdk_version: "30",
-
-    sanitize: {
-        memtag_heap: true,
-    },
 }
 
 // ==============
@@ -311,6 +313,9 @@ cc_test {
     ],
 
     srcs: [
+        // atom_field_options.proto needs field_options.proto, but that is
+        // not included in libprotobuf-cpp-lite, so compile it here.
+        ":libprotobuf-internal-protos",
         ":libstats_internal_protos",
 
         "src/shell/shell_data.proto",
@@ -368,11 +373,13 @@ cc_test {
         "tests/metrics/parsing_utils/config_update_utils_test.cpp",
         "tests/metrics/parsing_utils/metrics_manager_util_test.cpp",
         "tests/subscriber/SubscriberReporter_test.cpp",
+        "tests/LogEventFilter_test.cpp",
         "tests/MetricsManager_test.cpp",
         "tests/shell/ShellSubscriber_test.cpp",
         "tests/state/StateTracker_test.cpp",
         "tests/statsd_test_util.cpp",
         "tests/statsd_test_util_test.cpp",
+        "tests/SocketListener_test.cpp",
         "tests/StatsLogProcessor_test.cpp",
         "tests/StatsService_test.cpp",
         "tests/storage/StorageManager_test.cpp",
@@ -383,16 +390,18 @@ cc_test {
 
     static_libs: [
         "libgmock",
-        "libplatformprotos-test",
+        "libstatsgtestmatchers",
         "libstatslog_statsdtest",
         "libstatssocket_private",
     ],
 
     proto: {
-        type: "full",
+        type: "lite",
         include_dirs: [
             "external/protobuf/src",
+            "frameworks/proto_logging/stats",
         ],
+        static: true,
     },
     min_sdk_version: "30",
 
@@ -418,6 +427,7 @@ cc_benchmark {
         "benchmark/get_dimensions_for_condition_benchmark.cpp",
         "benchmark/hello_world_benchmark.cpp",
         "benchmark/log_event_benchmark.cpp",
+        "benchmark/log_event_filter_benchmark.cpp",
         "benchmark/main.cpp",
         "benchmark/metric_util.cpp",
         "benchmark/stats_write_benchmark.cpp",
@@ -518,8 +528,17 @@ java_library {
 
 // Filegroup for statsd config proto definition.
 filegroup {
-    name: "statsd-config-proto-def",
+    name: "libstats_config_protos",
     srcs: ["src/statsd_config.proto"],
+}
+
+// Filegroup for statsd report protos.
+filegroup {
+    name: "libstats_log_protos",
+    srcs: [
+        "src/stats_log.proto",
+        "src/guardrail/invalid_config_reason_enum.proto",
+    ],
 }
 
 // Filegroup for all statsd protos
@@ -537,3 +556,15 @@ filegroup {
         "src/guardrail/invalid_config_reason_enum.proto",
     ],
 }
+
+// Filegroup for subscription protos.
+filegroup {
+    name: "libstats_subscription_protos",
+    srcs: [
+        ":libstats_internal_protos",
+        ":libstats_config_protos",
+        "src/shell/shell_config.proto",
+        "src/shell/shell_data.proto",
+    ],
+}
+

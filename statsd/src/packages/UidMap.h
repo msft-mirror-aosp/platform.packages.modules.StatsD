@@ -16,11 +16,8 @@
 
 #pragma once
 
-#include "config/ConfigKey.h"
-#include "packages/PackageInfoListener.h"
-#include "stats_util.h"
-
 #include <gtest/gtest_prod.h>
+#include <src/uid_data.pb.h>
 #include <stdio.h>
 #include <utils/RefBase.h>
 #include <utils/String16.h>
@@ -30,6 +27,10 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+
+#include "config/ConfigKey.h"
+#include "packages/PackageInfoListener.h"
+#include "stats_util.h"
 
 using namespace android;
 using namespace std;
@@ -45,14 +46,14 @@ struct AppData {
     string versionString;
     string installer;
     bool deleted;
-    vector<uint8_t> certificateHash;
+    string certificateHash;
 
     // Empty constructor needed for unordered map.
     AppData() {
     }
 
     AppData(const int64_t v, const string& versionString, const string& installer,
-            const vector<uint8_t> certificateHash)
+            const string& certificateHash)
         : versionCode(v),
           versionString(versionString),
           installer(installer),
@@ -97,19 +98,13 @@ public:
     static const std::map<std::string, uint32_t> sAidToUidMapping;
 
     static sp<UidMap> getInstance();
-    /*
-     * All six inputs must be the same size, and the jth element in each array refers to the same
-     * tuple, ie. uid[j] corresponds to packageName[j] with versionCode[j] etc.
-     */
-    void updateMap(const int64_t& timestamp, const vector<int32_t>& uid,
-                   const vector<int64_t>& versionCode, const vector<String16>& versionString,
-                   const vector<String16>& packageName, const vector<String16>& installer,
-                   const vector<vector<uint8_t>>& certificateHash);
 
-    void updateApp(const int64_t& timestamp, const String16& packageName, const int32_t& uid,
-                   const int64_t& versionCode, const String16& versionString,
-                   const String16& installer, const vector<uint8_t>& certificateHash);
-    void removeApp(const int64_t& timestamp, const String16& packageName, const int32_t& uid);
+    void updateMap(const int64_t& timestamp, const UidData& uidData);
+
+    void updateApp(const int64_t& timestamp, const string& appName, const int32_t& uid,
+                   const int64_t& versionCode, const string& versionString, const string& installer,
+                   const vector<uint8_t>& certificateHash);
+    void removeApp(const int64_t& timestamp, const string& app, const int32_t& uid);
 
     // Returns true if the given uid contains the specified app (eg. com.google.android.gms).
     bool hasApp(int uid, const string& packageName) const;
@@ -169,8 +164,6 @@ public:
                              std::map<string, int>* installerIndices, std::set<string>* str_set,
                              ProtoOutputStream* proto) const;
 
-    void setIncludeCertificateHash(const bool include);
-
 private:
     std::set<string> getAppNamesFromUidLocked(const int32_t& uid, bool returnNormalized) const;
     string normalizeAppName(const string& appName) const;
@@ -227,9 +220,10 @@ private:
     // Cache the size of mOutput;
     size_t mBytesUsed;
 
-    bool mIncludeCertificateHash;
-
     // Allows unit-test to access private methods.
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestRestrictedConfigUpdateDoesNotUpdateUidMap);
+    FRIEND_TEST(RestrictedEventMetricE2eTest,
+                TestRestrictedConfigUpdateAddsDelegateRemovesUidMapEntry);
     FRIEND_TEST(UidMapTest, TestClearingOutput);
     FRIEND_TEST(UidMapTest, TestRemovedAppRetained);
     FRIEND_TEST(UidMapTest, TestRemovedAppOverGuardrail);

@@ -245,6 +245,14 @@ public class AtomTestCase extends BaseTestCase {
                 + " cat " + path + " ; else echo -1 ; fi");
     }
 
+    protected void enableSystemTracing() throws Exception {
+        getDevice().executeShellCommand("setprop persist.traced.enable 1");
+    }
+
+    protected void disableSystemTracing() throws Exception {
+        getDevice().executeShellCommand("setprop persist.traced.enable 0");
+    }
+
     /**
      * Determines whether perfetto enabled the kernel ftrace tracer.
      */
@@ -296,14 +304,16 @@ public class AtomTestCase extends BaseTestCase {
     protected void uploadConfig(StatsdConfig config) throws Exception {
         LogUtil.CLog.d("Uploading the following config:\n" + config.toString());
         File configFile = File.createTempFile("statsdconfig", ".config");
-        configFile.deleteOnExit();
-        Files.write(config.toByteArray(), configFile);
-        String remotePath = "/data/local/tmp/" + configFile.getName();
-        getDevice().pushFile(configFile, remotePath);
-        getDevice().executeShellCommand(
-                String.join(" ", "cat", remotePath, "|", UPDATE_CONFIG_CMD,
-                        String.valueOf(SHELL_UID), String.valueOf(CONFIG_ID)));
-        getDevice().executeShellCommand("rm " + remotePath);
+        try {
+            Files.write(config.toByteArray(), configFile);
+            String remotePath = "/data/local/tmp/" + configFile.getName();
+            getDevice().pushFile(configFile, remotePath);
+            getDevice().executeShellCommand(String.join(" ", "cat", remotePath, "|",
+                    UPDATE_CONFIG_CMD, String.valueOf(SHELL_UID), String.valueOf(CONFIG_ID)));
+            getDevice().executeShellCommand("rm " + remotePath);
+        } finally {
+            configFile.delete();
+        }
     }
 
     protected void removeConfig(long configId) throws Exception {

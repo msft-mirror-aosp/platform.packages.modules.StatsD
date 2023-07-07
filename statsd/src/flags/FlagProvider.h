@@ -37,9 +37,9 @@ using IsAtLeastSFunc = std::function<bool()>;
 const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
-const std::string OPTIMIZATION_ATOM_MATCHER_MAP_FLAG = "optimization_atom_matcher_map";
-const std::string LIMIT_PULL_FLAG = "limit_pull";
-const std::string RESTRICTED_METRICS_FLAG = "enable_restricted_metrics";
+const std::string OPTIMIZATION_SOCKET_PARSING_FLAG = "optimization_socket_parsing";
+const std::string STATSD_INIT_COMPLETED_NO_DELAY_FLAG = "statsd_init_completed_no_delay";
+const std::string INCREASE_EVENT_QUEUE_50000_FLAG = "increase_event_queue_50000";
 
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
@@ -119,6 +119,7 @@ private:
     friend class RestrictedEventMetricProducerTest;
     friend class RestrictedConfigE2ETest;
     friend class RestrictedEventMetricE2eTest;
+    friend class LogEvent_FieldRestrictionTest;
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
@@ -134,12 +135,15 @@ private:
     FRIEND_TEST(FlagProviderTest_SPlus, TestGetFlagBoolServerFlagEmptyDefaultTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagFalse);
-    FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlagDisabled);
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestRestrictionCategoryAnnotationFlagDisabled);
 };
 
 }  // namespace statsd

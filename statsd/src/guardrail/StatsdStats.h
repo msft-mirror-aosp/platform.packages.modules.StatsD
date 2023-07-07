@@ -52,6 +52,27 @@ struct InvalidConfigReason {
     }
 };
 
+// Keep this in sync with InvalidQueryReason enum in stats_log.proto
+enum InvalidQueryReason {
+    UNKNOWN_REASON = 0,
+    FLAG_DISABLED = 1,
+    UNSUPPORTED_SQLITE_VERSION = 2,
+    AMBIGUOUS_CONFIG_KEY = 3,
+    CONFIG_KEY_NOT_FOUND = 4,
+    CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5,
+    QUERY_FAILURE = 6,
+    INCONSISTENT_ROW_SIZE = 7,
+    NULL_CALLBACK = 8
+};
+
+typedef struct {
+    int64_t insertError = 0;
+    int64_t tableCreationError = 0;
+    int64_t tableDeletionError = 0;
+    std::list<int64_t> flushLatencyNs;
+    int64_t categoryChangedCount = 0;
+} RestrictedMetricStats;
+
 struct ConfigStats {
     int32_t uid;
     int64_t id;
@@ -63,6 +84,8 @@ struct ConfigStats {
     int32_t matcher_count;
     int32_t alert_count;
     bool is_valid;
+    bool device_info_table_creation_failed = false;
+    int32_t db_corrupted_count = 0;
 
     // Stores reasons for why config is valid or not
     std::optional<InvalidConfigReason> reason;
@@ -105,6 +128,17 @@ struct ConfigStats {
 
     // Stores the config ID for each sub-config used.
     std::list<std::pair<const int64_t, const int32_t>> annotations;
+
+    // Maps metric ID of restricted metric to its stats.
+    std::map<int64_t, RestrictedMetricStats> restricted_metric_stats;
+
+    std::list<int64_t> total_flush_latency_ns;
+
+    // Stores the last 20 timestamps for computing sqlite db size.
+    std::list<int64_t> total_db_size_timestamps;
+
+    // Stores the last 20 sizes of the sqlite db.
+    std::list<int64_t> total_db_sizes;
 };
 
 struct UidMapStats {
@@ -146,6 +180,14 @@ public:
 
     const static int kMaxPullAtomPackages = 100;
 
+    const static int kMaxRestrictedMetricQueryCount = 20;
+
+    const static int kMaxRestrictedMetricFlushLatencyCount = 20;
+
+    const static int kMaxRestrictedConfigFlushLatencyCount = 20;
+
+    const static int kMaxRestrictedConfigDbSizeCount = 20;
+
     // Max memory allowed for storing metrics per configuration. If this limit is exceeded, statsd
     // drops the metrics data in memory.
     static const size_t kMaxMetricsBytesPerConfig = 2 * 1024 * 1024;
@@ -153,6 +195,10 @@ public:
     // Soft memory limit per configuration. Once this limit is exceeded, we begin notifying the
     // data subscriber that it's time to call getData.
     static const size_t kBytesPerConfigTriggerGetData = 192 * 1024;
+
+    // Soft memory limit per restricted configuration. Once this limit is exceeded,
+    // we begin flush in-memory restricted metrics to database.
+    static const size_t kBytesPerRestrictedConfigTriggerFlush = 25 * 1024;
 
     // Cap the UID map's memory usage to this. This should be fairly high since the UID information
     // is critical for understanding the metrics.
@@ -169,6 +215,12 @@ public:
 
     /* Min period between two checks of restricted metrics TTLs. */
     static const int64_t kMinTtlCheckPeriodNs = 60 * 60 * NS_PER_SEC;
+
+    /* Min period between two flush operations of restricted metrics. */
+    static const int64_t kMinFlushRestrictedPeriodNs = 60 * 60 * NS_PER_SEC;
+
+    /* Min period between two db guardrail check operations of restricted metrics. */
+    static const int64_t kMinDbGuardrailEnforcementPeriodNs = 60 * 60 * NS_PER_SEC;
 
     /* Minimum period between two activation broadcasts in nanoseconds. */
     static const int64_t kMinActivationBroadcastPeriodNs = 10 * NS_PER_SEC;
@@ -194,9 +246,12 @@ public:
     // Maximum number of pushed atoms statsd stats will track above kMaxPushedAtomId.
     static const int kMaxNonPlatformPushedAtoms = 600;
 
+    // Maximum number of pushed atoms error statsd stats will track.
+    static const int kMaxPushedAtomErrorStatsSize = 100;
+
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
-    static const int kMaxPushedAtomId = 750;
+    static const int kMaxPushedAtomId = 900;
 
     // Atom id that is the start of the pulled atoms.
     static const int kPullAtomStartTag = 10000;
@@ -264,6 +319,16 @@ public:
     void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes);
 
     /**
+     * Report failure in creating the device info metadata table for restricted configs.
+     */
+    void noteDeviceInfoTableCreationFailed(const ConfigKey& key);
+
+    /**
+     * Report db corruption for restricted configs.
+     */
+    void noteDbCorrupted(const ConfigKey& key);
+
+    /**
      * Report the size of output tuple of a condition.
      *
      * Note: only report when the condition has an output dimension, and the tuple
@@ -318,7 +383,7 @@ public:
     /**
      * Report an atom event has been logged.
      */
-    void noteAtomLogged(int atomId, int32_t timeSec);
+    void noteAtomLogged(int atomId, int32_t timeSec, bool isSkipped);
 
     /**
      * Report that statsd modified the anomaly alarm registered with StatsCompanionService.
@@ -488,25 +553,65 @@ public:
      */
     void noteBucketUnknownCondition(int64_t metricId);
 
-    /* Reports one event has been dropped due to queue overflow, and the oldest event timestamp in
-     * the queue */
-    void noteEventQueueOverflow(int64_t oldestEventTimestampNs);
+    /* Reports one event id has been dropped due to queue overflow, and the oldest event timestamp
+     * in the queue */
+    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId, bool isSkipped);
 
     /**
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
      * should have been sent, but instead was skipped due to hitting the guardrail.
      */
-     void noteActivationBroadcastGuardrailHit(const int uid);
+    void noteActivationBroadcastGuardrailHit(const int uid);
 
-     /**
-      * Reports that an atom is erroneous or cannot be parsed successfully by
-      * statsd. An atom tag of 0 indicates that the client did not supply the
-      * atom id within the encoding.
-      *
-      * For pushed atoms only, this call should be preceded by a call to
-      * noteAtomLogged.
-      */
-     void noteAtomError(int atomTag, bool pull=false);
+    /**
+     * Reports that an atom is erroneous or cannot be parsed successfully by
+     * statsd. An atom tag of 0 indicates that the client did not supply the
+     * atom id within the encoding.
+     *
+     * For pushed atoms only, this call should be preceded by a call to
+     * noteAtomLogged.
+     */
+    void noteAtomError(int atomTag, bool pull = false);
+
+    /** Report query of restricted metric succeed **/
+    void noteQueryRestrictedMetricSucceed(const int64_t configId, const string& configPackage,
+                                          const std::optional<int32_t> configUid,
+                                          const int32_t callingUid, const int64_t queryLatencyNs);
+
+    /** Report query of restricted metric failed **/
+    void noteQueryRestrictedMetricFailed(const int64_t configId, const string& configPackage,
+                                         const std::optional<int32_t> configUid,
+                                         const int32_t callingUid, const InvalidQueryReason reason);
+
+    /** Report query of restricted metric failed along with an error string **/
+    void noteQueryRestrictedMetricFailed(const int64_t configId, const string& configPackage,
+                                         const std::optional<int32_t> configUid,
+                                         const int32_t callingUid, const InvalidQueryReason reason,
+                                         const string& error);
+
+    // Reports that a restricted metric fails to be inserted to database.
+    void noteRestrictedMetricInsertError(const ConfigKey& configKey, int64_t metricId);
+
+    // Reports that a restricted metric fails to create table in database.
+    void noteRestrictedMetricTableCreationError(const ConfigKey& configKey, const int64_t metricId);
+
+    // Reports that a restricted metric fails to delete table in database.
+    void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, const int64_t metricId);
+
+    // Reports the time it takes for a restricted metric to flush the data to the database.
+    void noteRestrictedMetricFlushLatency(const ConfigKey& configKey, const int64_t metricId,
+                                          const int64_t flushLatencyNs);
+
+    // Reports that a restricted metric had a category change.
+    void noteRestrictedMetricCategoryChanged(const ConfigKey& configKey, const int64_t metricId);
+
+    // Reports the time is takes to flush a restricted config to the database.
+    void noteRestrictedConfigFlushLatency(const ConfigKey& configKey,
+                                          const int64_t totalFlushLatencyNs);
+
+    // Reports the size of the internal sqlite db.
+    void noteRestrictedConfigDbSize(const ConfigKey& configKey, const int64_t elapsedTimeNs,
+                                    const int64_t dbSize);
 
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
@@ -535,9 +640,10 @@ public:
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
         int64_t pullTimeoutElapsedMillis;
-        PullTimeoutMetadata(int64_t uptimeMillis, int64_t elapsedMillis) :
-            pullTimeoutUptimeMillis(uptimeMillis),
-            pullTimeoutElapsedMillis(elapsedMillis) {/* do nothing */}
+        PullTimeoutMetadata(int64_t uptimeMillis, int64_t elapsedMillis)
+            : pullTimeoutUptimeMillis(uptimeMillis),
+              pullTimeoutElapsedMillis(elapsedMillis) { /* do nothing */
+        }
     } PullTimeoutMetadata;
 
     typedef struct {
@@ -596,24 +702,33 @@ private:
     // The size of the vector is capped by kMaxIceBoxSize.
     std::list<const std::shared_ptr<ConfigStats>> mIceBox;
 
-    // Stores the number of times a pushed atom is logged.
+    // Stores the number of times a pushed atom is logged and skipped (if skipped).
     // The size of the vector is the largest pushed atom id in atoms.proto + 1. Atoms
     // out of that range will be put in mNonPlatformPushedAtomStats.
     // This is a vector, not a map because it will be accessed A LOT -- for each stats log.
-    std::vector<int> mPushedAtomStats;
+    struct PushedAtomStats {
+        int logCount = 0;
+        int skipCount = 0;
+    };
 
-    // Stores the number of times a pushed atom is logged for atom ids above kMaxPushedAtomId.
-    // The max size of the map is kMaxNonPlatformPushedAtoms.
-    std::unordered_map<int, int> mNonPlatformPushedAtomStats;
+    std::vector<PushedAtomStats> mPushedAtomStats;
+
+    // Stores the number of times a pushed atom is logged and skipped for atom ids above
+    // kMaxPushedAtomId. The max size of the map is kMaxNonPlatformPushedAtoms.
+    std::unordered_map<int, PushedAtomStats> mNonPlatformPushedAtomStats;
+
+    // Stores the number of times a pushed atom is dropped due to queue overflow event.
+    // We do not expect it will happen too often so the map is preferable vs pre-allocated vector
+    // The max size of the map is kMaxPushedAtomId + kMaxNonPlatformPushedAtoms.
+    std::unordered_map<int, int> mPushedAtomDropsStats;
 
     // Maps PullAtomId to its stats. The size is capped by the puller atom counts.
     std::map<int, PulledAtomStats> mPulledAtomStats;
 
     // Stores the number of times a pushed atom was logged erroneously. The
     // corresponding counts for pulled atoms are stored in PulledAtomStats.
-    // The max size of this map is kMaxAtomErrorsStatsSize.
+    // The max size of this map is kMaxPushedAtomErrorStatsSize.
     std::map<int, int> mPushedAtomErrorStats;
-    int kMaxPushedAtomErrorStatsSize = 100;
 
     // Maps metric ID to its stats. The size is capped by the number of metrics.
     std::map<int64_t, AtomMetricStats> mAtomMetricStats;
@@ -657,6 +772,40 @@ private:
 
     std::list<int32_t> mSystemServerRestartSec;
 
+    struct RestrictedMetricQueryStats {
+        RestrictedMetricQueryStats(int32_t callingUid, int64_t configId,
+                                   const string& configPackage, std::optional<int32_t> configUid,
+                                   int64_t queryTimeNs,
+                                   std::optional<InvalidQueryReason> invalidQueryReason,
+                                   const string& error, std::optional<int64_t> queryLatencyNs)
+            : mCallingUid(callingUid),
+              mConfigId(configId),
+              mConfigPackage(configPackage),
+              mConfigUid(configUid),
+              mQueryWallTimeNs(queryTimeNs),
+              mInvalidQueryReason(invalidQueryReason),
+              mError(error),
+              mQueryLatencyNs(queryLatencyNs) {
+            mHasError = invalidQueryReason.has_value();
+        }
+        int32_t mCallingUid;
+        int64_t mConfigId;
+        string mConfigPackage;
+        std::optional<int32_t> mConfigUid;
+        int64_t mQueryWallTimeNs;
+        std::optional<InvalidQueryReason> mInvalidQueryReason;
+        bool mHasError;
+        string mError;
+        std::optional<int64_t> mQueryLatencyNs;
+    };
+    std::list<RestrictedMetricQueryStats> mRestrictedMetricQueryStats;
+
+    void noteQueryRestrictedMetricFailedLocked(const int64_t configId, const string& configPackage,
+                                               const std::optional<int32_t> configUid,
+                                               const int32_t callingUid,
+                                               const InvalidQueryReason reason,
+                                               const string& error);
+
     // Stores the number of times statsd modified the anomaly alarm registered with
     // StatsCompanionService.
     int mAnomalyAlarmRegisteredStats = 0;
@@ -670,6 +819,10 @@ private:
 
     void resetInternalLocked();
 
+    void noteAtomLoggedLocked(int atomId, bool isSkipped);
+
+    void noteAtomDroppedLocked(int atomId);
+
     void noteDataDropped(const ConfigKey& key, const size_t totalBytes, int32_t timeSec);
 
     void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes, int32_t timeSec);
@@ -682,7 +835,9 @@ private:
 
     void addToIceBoxLocked(std::shared_ptr<ConfigStats>& stats);
 
-    int getPushedAtomErrors(int atomId) const;
+    int getPushedAtomErrorsLocked(int atomId) const;
+
+    int getPushedAtomDropsLocked(int atomId) const;
 
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
@@ -705,6 +860,13 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
     FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
+    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };

@@ -216,17 +216,17 @@ optional<InvalidConfigReason> GaugeMetricProducer::onConfigUpdatedLocked(
     return nullopt;
 }
 
-void GaugeMetricProducer::dumpStatesLocked(FILE* out, bool verbose) const {
+void GaugeMetricProducer::dumpStatesLocked(int out, bool verbose) const {
     if (mCurrentSlicedBucket == nullptr ||
         mCurrentSlicedBucket->size() == 0) {
         return;
     }
 
-    fprintf(out, "GaugeMetric %lld dimension size %lu\n", (long long)mMetricId,
+    dprintf(out, "GaugeMetric %lld dimension size %lu\n", (long long)mMetricId,
             (unsigned long)mCurrentSlicedBucket->size());
     if (verbose) {
         for (const auto& it : *mCurrentSlicedBucket) {
-            fprintf(out, "\t(what)%s\t(states)%s  %d atoms\n",
+            dprintf(out, "\t(what)%s\t(states)%s  %d atoms\n",
                     it.first.getDimensionKeyInWhat().toString().c_str(),
                     it.first.getStateValuesKey().toString().c_str(), (int)it.second.size());
         }
@@ -451,7 +451,7 @@ void GaugeMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
     flushIfNeededLocked(eventTimeNs);
     // If the condition is sliced, mCondition is true if any of the dimensions is true. And we will
     // pull for every dimension.
-    if (overallCondition && mIsPulled) {
+    if (overallCondition && mIsPulled && mTriggerAtomId == -1) {
         pullAndMatchEventsLocked(eventTimeNs);
     }  // else: Push mode. No need to proactively pull the gauge data.
 }

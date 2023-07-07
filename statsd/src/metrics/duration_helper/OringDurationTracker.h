@@ -41,7 +41,7 @@ public:
                   const bool stopAll) override;
     void noteStopAll(const int64_t eventTime) override;
 
-    void onSlicedConditionMayChange(bool overallCondition, const int64_t timestamp) override;
+    void onSlicedConditionMayChange(const int64_t timestamp) override;
     void onConditionChanged(bool condition, const int64_t timestamp) override;
 
     void onStateChanged(const int64_t timestamp, const int32_t atomId,
@@ -57,7 +57,7 @@ public:
 
     int64_t predictAnomalyTimestampNs(const AnomalyTracker& anomalyTracker,
                                       const int64_t currentTimestamp) const override;
-    void dumpStates(FILE* out, bool verbose) const override;
+    void dumpStates(int out, bool verbose) const override;
 
     int64_t getCurrentStateKeyDuration() const override;
 

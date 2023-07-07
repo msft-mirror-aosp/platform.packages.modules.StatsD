@@ -239,8 +239,7 @@ bool OringDurationTracker::flushIfNeeded(
     return flushCurrentBucket(eventTimeNs, uploadThreshold, /*globalConditionTrueNs=*/0, output);
 }
 
-void OringDurationTracker::onSlicedConditionMayChange(bool overallCondition,
-                                                      const int64_t timestamp) {
+void OringDurationTracker::onSlicedConditionMayChange(const int64_t timestamp) {
     vector<pair<HashableDimensionKey, int>> startedToPaused;
     vector<pair<HashableDimensionKey, int>> pausedToStarted;
     if (!mStarted.empty()) {
@@ -442,10 +441,10 @@ int64_t OringDurationTracker::predictAnomalyTimestampNs(const AnomalyTracker& an
     return std::max(eventTimestampNs + thresholdNs, refractoryPeriodEndNs);
 }
 
-void OringDurationTracker::dumpStates(FILE* out, bool verbose) const {
-    fprintf(out, "\t\t started count %lu\n", (unsigned long)mStarted.size());
-    fprintf(out, "\t\t paused count %lu\n", (unsigned long)mPaused.size());
-    fprintf(out, "\t\t current duration %lld\n", (long long)getCurrentStateKeyDuration());
+void OringDurationTracker::dumpStates(int out, bool verbose) const {
+    dprintf(out, "\t\t started count %lu\n", (unsigned long)mStarted.size());
+    dprintf(out, "\t\t paused count %lu\n", (unsigned long)mPaused.size());
+    dprintf(out, "\t\t current duration %lld\n", (long long)getCurrentStateKeyDuration());
 }
 
 int64_t OringDurationTracker::getCurrentStateKeyDuration() const {

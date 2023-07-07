@@ -27,6 +27,7 @@
 #include "logd/LogEvent.h"
 #include "metrics/MetricsManager.h"
 #include "packages/UidMap.h"
+#include "socket/LogEventFilter.h"
 #include "src/statsd_config.pb.h"
 #include "src/statsd_metadata.pb.h"
 
@@ -43,7 +44,8 @@ public:
             const std::function<bool(const ConfigKey&)>& sendBroadcast,
             const std::function<bool(const int&, const vector<int64_t>&)>& sendActivationBroadcast,
             const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
-                    sendRestrictedMetricsBroadcast);
+                    sendRestrictedMetricsBroadcast,
+            const std::shared_ptr<LogEventFilter>& logEventFilter);
 
     virtual ~StatsLogProcessor();
 
@@ -77,7 +79,7 @@ public:
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies periodic alarmSet. */
     void onPeriodicAlarmFired(
             const int64_t& timestampNs,
-            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     /* Flushes data to disk. Data on memory will be gone after written to disk. */
     void WriteDataToDisk(const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
@@ -109,6 +111,9 @@ public:
     void SetMetadataState(const metadata::StatsMetadataList& statsMetadataList,
                           int64_t currentWallClockTimeNs,
                           int64_t systemElapsedTimeNs);
+
+    /* Enforces ttls for restricted metrics */
+    void EnforceDataTtls(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
 
     /* Sets the active status/ttl for all configs and metrics to the status in ActiveConfigList. */
     void SetConfigsActiveState(const ActiveConfigList& activeConfigList, int64_t currentTimeNs);
@@ -144,6 +149,12 @@ public:
     inline void setPrintLogs(bool enabled) {
         std::lock_guard<std::mutex> lock(mMetricsMutex);
         mPrintAllLogs = enabled;
+
+        if (mLogEventFilter) {
+            // Turning on print logs turns off pushed event filtering to enforce
+            // complete log event buffer parsing
+            mLogEventFilter->setFilteringEnabled(!enabled);
+        }
     }
 
     // Add a specific config key to the possible configs to dump ASAP.
@@ -154,9 +165,15 @@ public:
     void cancelAnomalyAlarm();
 
     void querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
-                  const aidl::android::os::StatsPolicyConfigParcel& policyConfig,
+                  const optional<vector<uint8_t>>& policyConfig,
                   const shared_ptr<aidl::android::os::IStatsQueryCallback>& callback,
                   const int64_t configId, const string& configPackage, const int32_t callingUid);
+
+    void fillRestrictedMetrics(const int64_t configId, const string& configPackage,
+                               const int32_t delegateUid, vector<int64_t>* output);
+
+    /* Returns pre-defined list of atoms to parse by LogEventFilter */
+    static LogEventFilter::AtomIdSet getDefaultAtomIdSet();
 
 private:
     // For testing only.
@@ -188,6 +205,12 @@ private:
     // Tracks when we last checked the ttl for restricted metrics.
     int64_t mLastTtlTime;
 
+    // Tracks when we last flushed restricted metrics.
+    int64_t mLastFlushRestrictedTime;
+
+    // Tracks when we last checked db guardrails.
+    int64_t mLastDbGuardrailEnforcementTime;
+
     // Tracks which config keys has metric reports on disk
     std::set<ConfigKey> mOnDiskDataConfigs;
 
@@ -198,6 +221,8 @@ private:
     sp<AlarmMonitor> mAnomalyAlarmMonitor;
 
     sp<AlarmMonitor> mPeriodicAlarmMonitor;
+
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     void OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs);
 
@@ -246,6 +271,10 @@ private:
     // Enforces ttls on all restricted metrics.
     void enforceDataTtlsLocked(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
 
+    // Enforces that dbs are within guardrail parameters.
+    void enforceDbGuardrailsIfNecessaryLocked(const int64_t wallClockNs,
+                                              const int64_t elapsedRealtimeNs);
+
     /* Check if we should send a broadcast if approaching memory limits and if we're over, we
      * actually delete the data. */
     void flushIfNecessaryLocked(const ConfigKey& key, MetricsManager& metricsManager);
@@ -253,7 +282,8 @@ private:
     set<ConfigKey> getRestrictedConfigKeysToQueryLocked(const int32_t callingUid,
                                                         const int64_t configId,
                                                         const set<int32_t>& configPackageUids,
-                                                        string& err);
+                                                        string& err,
+                                                        InvalidQueryReason& invalidQueryReason);
 
     // Maps the isolated uid in the log event to host uid if the log event contains uid fields.
     void mapIsolatedUidToHostUidIfNecessaryLocked(LogEvent* event) const;
@@ -289,7 +319,14 @@ private:
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies anomaly alarmSet. */
     void processFiredAnomalyAlarmsLocked(
             const int64_t& timestampNs,
-            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet);
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
+
+    void flushRestrictedDataLocked(const int64_t elapsedRealtimeNs);
+
+    void flushRestrictedDataIfNecessaryLocked(const int64_t elapsedRealtimeNs);
+
+    /* Tells LogEventFilter about atom ids to parse */
+    void updateLogEventFilterLocked() const;
 
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
@@ -326,8 +363,6 @@ private:
     // The time for the next anomaly alarm for alerts.
     int64_t mNextAnomalyAlarmTime = 0;
 
-    bool mIsRestrictedMetricsEnabled;
-
     bool mPrintAllLogs = false;
 
     friend class StatsLogProcessorTestRestricted;
@@ -342,6 +377,11 @@ private:
     FRIEND_TEST(StatsLogProcessorTest,
             TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
+    FRIEND_TEST(StatsLogProcessorTest, LogEventFilterOnSetPrintLogs);
+    FRIEND_TEST(StatsLogProcessorTest, TestUidMapHasSnapshot);
+    FRIEND_TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap);
+    FRIEND_TEST(StatsLogProcessorTest, TestReportIncludesSubConfig);
+    FRIEND_TEST(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate);
     FRIEND_TEST(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigUpdate);
     FRIEND_TEST(StatsLogProcessorTestRestricted, TestRestrictedLogEventPassed);
     FRIEND_TEST(StatsLogProcessorTestRestricted, TestRestrictedLogEventNotPassed);
@@ -351,6 +391,8 @@ private:
     FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricOnDumpReportNotEmpty);
     FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotWriteToDisk);
     FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricWriteToDisk);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricFlushIfReachMemoryLimit);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotFlushIfNotReachMemoryLimit);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration1);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration2);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration3);
@@ -361,15 +403,28 @@ private:
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks2);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestRepeatedFieldsForPushedEvent);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents);
-    FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvents_FIRST_N);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEvent_LateAlarm);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceTtlRemovesOldEvents);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlagDisabled);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestQueryEnforceTtls);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsDoesNotEnforceTtls);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestNotFlushed);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushInWriteDataToDisk);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushPeriodically);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestOnLogEventMalformedDbNameDeleted);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeGuardrail);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestRestrictedMetricLoadsTtlFromDisk);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);
@@ -429,6 +484,8 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
 
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
+
+    FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
 };
 
 }  // namespace statsd

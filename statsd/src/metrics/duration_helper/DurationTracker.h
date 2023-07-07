@@ -105,7 +105,7 @@ public:
                           const bool stopAll) = 0;
     virtual void noteStopAll(const int64_t eventTime) = 0;
 
-    virtual void onSlicedConditionMayChange(bool overallCondition, const int64_t timestamp) = 0;
+    virtual void onSlicedConditionMayChange(const int64_t timestamp) = 0;
     virtual void onConditionChanged(bool condition, const int64_t timestamp) = 0;
 
     virtual void onStateChanged(const int64_t timestamp, const int32_t atomId,
@@ -128,7 +128,7 @@ public:
     virtual int64_t predictAnomalyTimestampNs(const AnomalyTracker& anomalyTracker,
                                               const int64_t currentTimestamp) const = 0;
     // Dump internal states for debugging
-    virtual void dumpStates(FILE* out, bool verbose) const = 0;
+    virtual void dumpStates(int out, bool verbose) const = 0;
 
     virtual int64_t getCurrentStateKeyDuration() const = 0;
 

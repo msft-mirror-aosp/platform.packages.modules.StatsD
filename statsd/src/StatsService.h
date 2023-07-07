@@ -20,7 +20,7 @@
 #include <aidl/android/os/BnStatsd.h>
 #include <aidl/android/os/IPendingIntentRef.h>
 #include <aidl/android/os/IPullAtomCallback.h>
-#include <aidl/android/os/StatsPolicyConfigParcel.h>
+#include <aidl/android/os/IStatsSubscriptionCallback.h>
 #include <aidl/android/util/PropertyParcel.h>
 #include <gtest/gtest_prod.h>
 #include <utils/Looper.h>
@@ -41,25 +41,26 @@ using namespace android;
 using namespace android::os;
 using namespace std;
 
+using ::ndk::SpAIBinder;
 using Status = ::ndk::ScopedAStatus;
 using aidl::android::os::BnStatsd;
 using aidl::android::os::IPendingIntentRef;
 using aidl::android::os::IPullAtomCallback;
 using aidl::android::os::IStatsQueryCallback;
+using aidl::android::os::IStatsSubscriptionCallback;
 using aidl::android::util::PropertyParcel;
 using ::ndk::ScopedAIBinder_DeathRecipient;
 using ::ndk::ScopedFileDescriptor;
-using std::shared_ptr;
 
 namespace android {
 namespace os {
 namespace statsd {
 
-constexpr const char* kIncludeCertificateHash = "include_certificate_hash";
-
 class StatsService : public BnStatsd {
 public:
-    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue);
+    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
+                 const std::shared_ptr<LogEventFilter>& logEventFilter,
+                 int initEventDelaySecs = kStatsdInitDelaySecs);
     virtual ~StatsService();
 
     /** The anomaly alarm registered with AlarmManager won't be updated by less than this. */
@@ -178,7 +179,7 @@ public:
      */
     virtual Status registerPullAtomCallback(
             int32_t uid, int32_t atomTag, int64_t coolDownMillis, int64_t timeoutMillis,
-            const std::vector<int32_t>& additiveFields,
+            const vector<int32_t>& additiveFields,
             const shared_ptr<IPullAtomCallback>& pullerCallback) override;
 
     /**
@@ -186,7 +187,7 @@ public:
      */
     virtual Status registerNativePullAtomCallback(
             int32_t atomTag, int64_t coolDownMillis, int64_t timeoutMillis,
-            const std::vector<int32_t>& additiveFields,
+            const vector<int32_t>& additiveFields,
             const shared_ptr<IPullAtomCallback>& pullerCallback) override;
 
     /**
@@ -202,12 +203,12 @@ public:
     /**
      * Binder call to get registered experiment IDs.
      */
-    virtual Status getRegisteredExperimentIds(std::vector<int64_t>* expIdsOut);
+    virtual Status getRegisteredExperimentIds(vector<int64_t>* expIdsOut);
 
     /**
      * Binder call to update properties in statsd_java namespace.
      */
-    virtual Status updateProperties(const std::vector<PropertyParcel>& properties);
+    virtual Status updateProperties(const vector<PropertyParcel>& properties);
 
     /**
      * Binder call to let clients register the restricted metrics changed operation for the given
@@ -231,10 +232,30 @@ public:
      * Binder call to query data in statsd sql store.
      */
     virtual Status querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
-                            const aidl::android::os::StatsPolicyConfigParcel& policyConfig,
+                            const optional<vector<uint8_t>>& policyConfig,
                             const shared_ptr<IStatsQueryCallback>& callback,
                             const int64_t configKey, const string& configPackage,
                             const int32_t callingUid);
+
+    /**
+     * Binder call to add a subscription.
+     */
+    virtual Status addSubscription(const vector<uint8_t>& subscriptionConfig,
+                                   const shared_ptr<IStatsSubscriptionCallback>& callback) override;
+
+    /**
+     * Binder call to remove a subscription.
+     */
+    virtual Status removeSubscription(
+            const shared_ptr<IStatsSubscriptionCallback>& callback) override;
+
+    /**
+     * Binder call to flush atom events for a subscription.
+     */
+    virtual Status flushSubscription(
+            const shared_ptr<IStatsSubscriptionCallback>& callback) override;
+
+    const static int kStatsdInitDelaySecs = 90;
 
 private:
     /**
@@ -378,6 +399,16 @@ private:
     void statsCompanionServiceDiedImpl();
 
     /**
+     * Initialize ShellSubscriber
+     */
+    void initShellSubscriber();
+
+    /*
+     * Notify StatsLogProcessor of boot completed
+     */
+    void onStatsdInitCompleted();
+
+    /**
      * Tracks the uid <--> package name mapping.
      */
     const sp<UidMap> mUidMap;
@@ -418,7 +449,8 @@ private:
      * Mutex for setting the shell subscriber
      */
     mutable mutex mShellSubscriberMutex;
-    std::shared_ptr<LogEventQueue> mEventQueue;
+    shared_ptr<LogEventQueue> mEventQueue;
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";
@@ -427,7 +459,11 @@ private:
 
     ScopedAIBinder_DeathRecipient mStatsCompanionServiceDeathRecipient;
 
+    const int mInitEventDelaySecs;
+
     friend class StatsServiceConfigTest;
+    friend class StatsServiceStatsdInitTest;
+    friend class RestrictedConfigE2ETest;
 
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
     FRIEND_TEST(StatsServiceTest, TestAddConfig_simple);
@@ -449,12 +485,16 @@ private:
     FRIEND_TEST(PartialBucketE2eTest, TestCountMetricNoSplitByDefault);
     FRIEND_TEST(RestrictedConfigE2ETest, NonRestrictedConfigGetReport);
     FRIEND_TEST(RestrictedConfigE2ETest, RestrictedConfigNoReport);
+    FRIEND_TEST(RestrictedConfigE2ETest,
+                TestSendRestrictedMetricsChangedBroadcastMultipleMatchedConfigs);
     FRIEND_TEST(ConfigUpdateE2eTest, TestAnomalyDurationMetric);
 
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
+
+    FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
 };
 
 }  // namespace statsd
