@@ -105,13 +105,12 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid) {
     EXPECT_TRUE(processor->mMetricsManagers.begin()->second->isConfigValid());
 
     // Here it assumes that GMS core has two uids.
-    processor->getUidMap()->updateMap(
-            1, {222, 444, 111, 333}, {1, 1, 2, 2},
-            {String16("v1"), String16("v1"), String16("v2"), String16("v2")},
-            {String16("com.android.gmscore"), String16("com.android.gmscore"), String16("app1"),
-             String16("APP3")},
-            {String16(""), String16(""), String16(""), String16("")},
-            /* certificateHash */ {{}, {}, {}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 222, 1, "v1", "com.android.gmscore");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 444, 1, "v1", "com.android.gmscore");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 111, 2, "v2", "app1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 333, 2, "v2", "APP3");
+    processor->getUidMap()->updateMap(1, uidData);
 
     std::vector<std::unique_ptr<LogEvent>> events;
     // Events 1~4 are in the 1st bucket.
@@ -164,8 +163,8 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid) {
     ASSERT_EQ(countMetrics.data_size(), 4);
 
     auto data = countMetrics.data(0);
-    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(),
-                                          util::WAKELOCK_STATE_CHANGED, 111, "App1");
+    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), util::WAKELOCK_STATE_CHANGED,
+                                          111, "App1");
     ASSERT_EQ(data.bucket_info_size(), 2);
     EXPECT_EQ(data.bucket_info(0).count(), 2);
     EXPECT_EQ(data.bucket_info(0).start_bucket_elapsed_nanos(), bucketStartTimeNs);
@@ -176,9 +175,8 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid) {
     EXPECT_EQ(data.bucket_info(1).end_bucket_elapsed_nanos(), bucketStartTimeNs + 3 * bucketSizeNs);
 
     data = countMetrics.data(1);
-    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(),
-                                          util::WAKELOCK_STATE_CHANGED, 222,
-                                          "GMSCoreModule1");
+    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), util::WAKELOCK_STATE_CHANGED,
+                                          222, "GMSCoreModule1");
     ASSERT_EQ(data.bucket_info_size(), 2);
     EXPECT_EQ(data.bucket_info(0).count(), 1);
     EXPECT_EQ(data.bucket_info(0).start_bucket_elapsed_nanos(), bucketStartTimeNs);
@@ -188,9 +186,8 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid) {
     EXPECT_EQ(data.bucket_info(1).end_bucket_elapsed_nanos(), bucketStartTimeNs + 2 * bucketSizeNs);
 
     data = countMetrics.data(2);
-    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(),
-                                          util::WAKELOCK_STATE_CHANGED, 222,
-                                          "GMSCoreModule3");
+    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), util::WAKELOCK_STATE_CHANGED,
+                                          222, "GMSCoreModule3");
     ASSERT_EQ(data.bucket_info_size(), 1);
     EXPECT_EQ(data.bucket_info(0).count(), 1);
     EXPECT_EQ(data.bucket_info(0).start_bucket_elapsed_nanos(),
@@ -198,9 +195,8 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid) {
     EXPECT_EQ(data.bucket_info(0).end_bucket_elapsed_nanos(), bucketStartTimeNs + 4 * bucketSizeNs);
 
     data = countMetrics.data(3);
-    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(),
-                                          util::WAKELOCK_STATE_CHANGED, 444,
-                                          "GMSCoreModule2");
+    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), util::WAKELOCK_STATE_CHANGED,
+                                          444, "GMSCoreModule2");
     ASSERT_EQ(data.bucket_info_size(), 1);
     EXPECT_EQ(data.bucket_info(0).count(), 1);
     EXPECT_EQ(data.bucket_info(0).start_bucket_elapsed_nanos(),
@@ -219,13 +215,12 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain) {
     EXPECT_TRUE(processor->mMetricsManagers.begin()->second->isConfigValid());
 
     // Here it assumes that GMS core has two uids.
-    processor->getUidMap()->updateMap(
-            1, {222, 444, 111, 333}, {1, 1, 2, 2},
-            {String16("v1"), String16("v1"), String16("v2"), String16("v2")},
-            {String16("com.android.gmscore"), String16("com.android.gmscore"), String16("app1"),
-             String16("APP3")},
-            {String16(""), String16(""), String16(""), String16("")},
-            /* certificateHash */ {{}, {}, {}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 222, 1, "v1", "com.android.gmscore");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 444, 1, "v1", "com.android.gmscore");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 111, 2, "v2", "app1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 333, 2, "v2", "APP3");
+    processor->getUidMap()->updateMap(1, uidData);
 
     std::vector<std::unique_ptr<LogEvent>> events;
     // Events 1~4 are in the 1st bucket.
@@ -278,9 +273,8 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain) {
     ASSERT_EQ(countMetrics.data_size(), 6);
 
     auto data = countMetrics.data(0);
-    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(),
-                                          util::WAKELOCK_STATE_CHANGED, 222,
-                                          "GMSCoreModule1");
+    ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), util::WAKELOCK_STATE_CHANGED,
+                                          222, "GMSCoreModule1");
     ASSERT_EQ(2, data.bucket_info_size());
     EXPECT_EQ(1, data.bucket_info(0).count());
     EXPECT_EQ(bucketStartTimeNs + bucketSizeNs, data.bucket_info(0).start_bucket_elapsed_nanos());
@@ -293,8 +287,7 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain) {
     data = countMetrics.data(1);
     ValidateUidDimension(data.dimensions_in_what(), 0, util::WAKELOCK_STATE_CHANGED, 222);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 0,
-                                          util::WAKELOCK_STATE_CHANGED, 222,
-                                          "GMSCoreModule1");
+                                          util::WAKELOCK_STATE_CHANGED, 222, "GMSCoreModule1");
     ValidateUidDimension(data.dimensions_in_what(), 1, util::WAKELOCK_STATE_CHANGED, 333);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 1,
                                           util::WAKELOCK_STATE_CHANGED, 333, "App3");
@@ -306,12 +299,10 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain) {
     data = countMetrics.data(2);
     ValidateUidDimension(data.dimensions_in_what(), 0, util::WAKELOCK_STATE_CHANGED, 444);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 0,
-                                          util::WAKELOCK_STATE_CHANGED, 444,
-                                          "GMSCoreModule2");
+                                          util::WAKELOCK_STATE_CHANGED, 444, "GMSCoreModule2");
     ValidateUidDimension(data.dimensions_in_what(), 1, util::WAKELOCK_STATE_CHANGED, 222);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 1,
-                                          util::WAKELOCK_STATE_CHANGED, 222,
-                                          "GMSCoreModule1");
+                                          util::WAKELOCK_STATE_CHANGED, 222, "GMSCoreModule1");
     ASSERT_EQ(data.bucket_info_size(), 1);
     EXPECT_EQ(data.bucket_info(0).count(), 1);
     EXPECT_EQ(bucketStartTimeNs + 2 * bucketSizeNs,
@@ -324,8 +315,7 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain) {
                                           util::WAKELOCK_STATE_CHANGED, 111, "App1");
     ValidateUidDimension(data.dimensions_in_what(), 1, util::WAKELOCK_STATE_CHANGED, 222);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 1,
-                                          util::WAKELOCK_STATE_CHANGED, 222,
-                                          "GMSCoreModule1");
+                                          util::WAKELOCK_STATE_CHANGED, 222, "GMSCoreModule1");
     ValidateUidDimension(data.dimensions_in_what(), 2, util::WAKELOCK_STATE_CHANGED, 333);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 2,
                                           util::WAKELOCK_STATE_CHANGED, 333, "App3");
@@ -343,8 +333,7 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain) {
                                           util::WAKELOCK_STATE_CHANGED, 333, "App3");
     ValidateUidDimension(data.dimensions_in_what(), 2, util::WAKELOCK_STATE_CHANGED, 222);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 2,
-                                          util::WAKELOCK_STATE_CHANGED, 222,
-                                          "GMSCoreModule1");
+                                          util::WAKELOCK_STATE_CHANGED, 222, "GMSCoreModule1");
     ASSERT_EQ(data.bucket_info_size(), 1);
     EXPECT_EQ(data.bucket_info(0).count(), 1);
     EXPECT_EQ(bucketStartTimeNs, data.bucket_info(0).start_bucket_elapsed_nanos());
@@ -356,8 +345,7 @@ TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain) {
                                           util::WAKELOCK_STATE_CHANGED, 111, "App1");
     ValidateUidDimension(data.dimensions_in_what(), 1, util::WAKELOCK_STATE_CHANGED, 444);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 1,
-                                          util::WAKELOCK_STATE_CHANGED, 444,
-                                          "GMSCoreModule2");
+                                          util::WAKELOCK_STATE_CHANGED, 444, "GMSCoreModule2");
     ValidateUidDimension(data.dimensions_in_what(), 2, util::WAKELOCK_STATE_CHANGED, 333);
     ValidateAttributionUidAndTagDimension(data.dimensions_in_what(), 2,
                                           util::WAKELOCK_STATE_CHANGED, 333, "App3");
