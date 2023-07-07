@@ -128,7 +128,7 @@ public:
     virtual int64_t predictAnomalyTimestampNs(const AnomalyTracker& anomalyTracker,
                                               const int64_t currentTimestamp) const = 0;
     // Dump internal states for debugging
-    virtual void dumpStates(FILE* out, bool verbose) const = 0;
+    virtual void dumpStates(int out, bool verbose) const = 0;
 
     virtual int64_t getCurrentStateKeyDuration() const = 0;
 
