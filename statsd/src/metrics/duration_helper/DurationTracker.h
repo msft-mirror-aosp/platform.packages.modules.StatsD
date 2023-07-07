@@ -55,6 +55,7 @@ struct DurationBucket {
     int64_t mBucketStartNs;
     int64_t mBucketEndNs;
     int64_t mDuration;
+    int64_t mConditionTrueNs;
 };
 
 struct DurationValues {
@@ -86,7 +87,8 @@ public:
           mStartTimeNs(startTimeNs),
           mConditionSliced(conditionSliced),
           mHasLinksToAllConditionDimensionsInTracker(fullLink),
-          mAnomalyTrackers(anomalyTrackers){};
+          mAnomalyTrackers(anomalyTrackers),
+          mHasHitGuardrail(false){};
 
     virtual ~DurationTracker(){};
 
@@ -103,7 +105,7 @@ public:
                           const bool stopAll) = 0;
     virtual void noteStopAll(const int64_t eventTime) = 0;
 
-    virtual void onSlicedConditionMayChange(bool overallCondition, const int64_t timestamp) = 0;
+    virtual void onSlicedConditionMayChange(const int64_t timestamp) = 0;
     virtual void onConditionChanged(bool condition, const int64_t timestamp) = 0;
 
     virtual void onStateChanged(const int64_t timestamp, const int32_t atomId,
@@ -119,13 +121,14 @@ public:
     // an app upgrade, we assume that we're trying to form a partial bucket.
     virtual bool flushCurrentBucket(
             const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+            const int64_t globalConditionTrueNs,
             std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) = 0;
 
     // Predict the anomaly timestamp given the current status.
     virtual int64_t predictAnomalyTimestampNs(const AnomalyTracker& anomalyTracker,
                                               const int64_t currentTimestamp) const = 0;
     // Dump internal states for debugging
-    virtual void dumpStates(FILE* out, bool verbose) const = 0;
+    virtual void dumpStates(int out, bool verbose) const = 0;
 
     virtual int64_t getCurrentStateKeyDuration() const = 0;
 
@@ -265,6 +268,8 @@ protected:
     bool mHasLinksToAllConditionDimensionsInTracker;
 
     std::vector<sp<AnomalyTracker>> mAnomalyTrackers;
+
+    bool mHasHitGuardrail;
 
     FRIEND_TEST(OringDurationTrackerTest, TestPredictAnomalyTimestamp);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionExpiredAlarm);

@@ -15,11 +15,11 @@
 #include <android/binder_interface_utils.h>
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "src/StatsLogProcessor.h"
 #include "src/stats_log_util.h"
 #include "tests/statsd_test_util.h"
-
-#include <vector>
 
 using ::ndk::SharedRefBase;
 
@@ -303,6 +303,23 @@ TEST(ValueMetricE2eTest, TestPulledEvents) {
     EXPECT_EQ(baseTimeNs + 7 * bucketSizeNs, data.bucket_info(3).start_bucket_elapsed_nanos());
     EXPECT_EQ(baseTimeNs + 8 * bucketSizeNs, data.bucket_info(3).end_bucket_elapsed_nanos());
     ASSERT_EQ(1, data.bucket_info(3).values_size());
+
+    valueMetrics = reports.reports(0).metrics(0).value_metrics();
+    ASSERT_EQ(2, valueMetrics.skipped_size());
+
+    StatsLogReport::SkippedBuckets skipped = valueMetrics.skipped(0);
+    EXPECT_EQ(BucketDropReason::CONDITION_UNKNOWN, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 2 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 3 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
+
+    skipped = valueMetrics.skipped(1);
+    EXPECT_EQ(BucketDropReason::NO_DATA, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 5 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 6 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
 }
 
 TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
@@ -406,6 +423,30 @@ TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
     EXPECT_EQ(baseTimeNs + 9 * bucketSizeNs, data.bucket_info(2).start_bucket_elapsed_nanos());
     EXPECT_EQ(baseTimeNs + 10 * bucketSizeNs, data.bucket_info(2).end_bucket_elapsed_nanos());
     ASSERT_EQ(1, data.bucket_info(2).values_size());
+
+    valueMetrics = reports.reports(0).metrics(0).value_metrics();
+    ASSERT_EQ(3, valueMetrics.skipped_size());
+
+    StatsLogReport::SkippedBuckets skipped = valueMetrics.skipped(0);
+    EXPECT_EQ(BucketDropReason::CONDITION_UNKNOWN, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 2 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 5 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
+
+    skipped = valueMetrics.skipped(1);
+    EXPECT_EQ(BucketDropReason::NO_DATA, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 6 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 7 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
+
+    skipped = valueMetrics.skipped(2);
+    EXPECT_EQ(BucketDropReason::NO_DATA, skipped.drop_event(0).drop_reason());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 7 * bucketSizeNs)),
+              skipped.start_bucket_elapsed_nanos());
+    EXPECT_EQ(MillisToNano(NanoToMillis(baseTimeNs + 8 * bucketSizeNs)),
+              skipped.end_bucket_elapsed_nanos());
 }
 
 TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
@@ -454,7 +495,8 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     processor->onStatsdInitCompleted(metricInitTimeNs);
 
     // Check no pull occurred since metric not active.
-    StatsdStatsReport_PulledAtomStats pulledAtomStats = getPulledAtomStats();
+    StatsdStatsReport_PulledAtomStats pulledAtomStats =
+            getPulledAtomStats(util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
@@ -477,7 +519,7 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     processor->notifyAppUpgrade(appUpgradeTimeNs, "appName", 1000 /* uid */, 2 /* version */);
 
     // Check no pull occurred since metric not active.
-    pulledAtomStats = getPulledAtomStats();
+    pulledAtomStats = getPulledAtomStats(util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
@@ -498,7 +540,7 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     buffer.clear();
     processor->onDumpReport(cfgKey, dumpReportTimeNs, true /* include_current_partial_bucket */,
                             true /* erase_data */, ADB_DUMP, NO_TIME_CONSTRAINTS, &buffer);
-    pulledAtomStats = getPulledAtomStats();
+    pulledAtomStats = getPulledAtomStats(util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.atom_id(), util::SUBSYSTEM_SLEEP_STATE);
     EXPECT_EQ(pulledAtomStats.total_pull(), 0);
 
