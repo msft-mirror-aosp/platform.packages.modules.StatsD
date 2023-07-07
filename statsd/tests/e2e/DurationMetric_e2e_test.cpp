@@ -237,6 +237,10 @@ TEST(DurationMetricE2eTest, TestWithActivation) {
     sp<AlarmMonitor> subscriberAlarmMonitor;
     vector<int64_t> activeConfigsBroadcast;
 
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+            .Times(1);
+
     int broadcastCount = 0;
     StatsLogProcessor processor(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, bucketStartTimeNs,
@@ -249,7 +253,11 @@ TEST(DurationMetricE2eTest, TestWithActivation) {
                 activeConfigsBroadcast.insert(activeConfigsBroadcast.end(), activeConfigs.begin(),
                                               activeConfigs.end());
                 return true;
-            });
+            },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
+
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), &processor))
+            .Times(1);
 
     processor.OnConfigUpdated(bucketStartTimeNs, cfgKey, config);  // 0:00
 

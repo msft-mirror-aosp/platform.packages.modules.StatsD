@@ -37,6 +37,8 @@ using std::pair;
 using std::string;
 using std::vector;
 
+using Status = ::ndk::ScopedAStatus;
+
 #define STATS_SERVICE_DIR "/data/misc/stats-service"
 
 using android::base::StringPrintf;
@@ -152,6 +154,83 @@ void ConfigManager::RemoveActiveConfigsChangedReceiver(const int uid,
     }
 }
 
+void ConfigManager::SetRestrictedMetricsChangedReceiver(const string& configPackage,
+                                                        const int64_t configId,
+                                                        const int32_t callingUid,
+                                                        const shared_ptr<IPendingIntentRef>& pir) {
+    lock_guard<mutex> lock(mMutex);
+    ConfigKeyWithPackage configKey(configPackage, configId);
+    mRestrictedMetricsChangedReceivers[configKey][callingUid] = pir;
+}
+
+void ConfigManager::RemoveRestrictedMetricsChangedReceiver(const string& configPackage,
+                                                           const int64_t configId,
+                                                           const int32_t callingUid) {
+    lock_guard<mutex> lock(mMutex);
+    ConfigKeyWithPackage configKey(configPackage, configId);
+    const auto& it = mRestrictedMetricsChangedReceivers.find(configKey);
+    if (it != mRestrictedMetricsChangedReceivers.end()) {
+        it->second.erase(callingUid);
+        if (it->second.empty()) {
+            mRestrictedMetricsChangedReceivers.erase(it);
+        }
+    }
+}
+
+void ConfigManager::RemoveRestrictedMetricsChangedReceiver(
+        const ConfigKeyWithPackage& key, const int32_t delegateUid,
+        const shared_ptr<IPendingIntentRef>& pir) {
+    lock_guard<mutex> lock(mMutex);
+    const auto& it = mRestrictedMetricsChangedReceivers.find(key);
+    if (it != mRestrictedMetricsChangedReceivers.end()) {
+        const auto& pirIt = it->second.find(delegateUid);
+        if (pirIt != it->second.end() && pirIt->second == pir) {
+            it->second.erase(delegateUid);
+            if (it->second.empty()) {
+                mRestrictedMetricsChangedReceivers.erase(it);
+            }
+        }
+    }
+}
+
+void ConfigManager::SendRestrictedMetricsBroadcast(const set<string>& configPackages,
+                                                   const int64_t configId,
+                                                   const set<int32_t>& delegateUids,
+                                                   const vector<int64_t>& metricIds) {
+    map<ConfigKeyWithPackage, map<int32_t, shared_ptr<IPendingIntentRef>>> intentsToSend;
+    {
+        lock_guard<mutex> lock(mMutex);
+        // Invoke the pending intent for all matching configs, as long as the listening delegates
+        // match the allowed delegate uids specified by the config.
+        for (const string& configPackage : configPackages) {
+            ConfigKeyWithPackage key(configPackage, configId);
+            const auto& it = mRestrictedMetricsChangedReceivers.find(key);
+            if (it != mRestrictedMetricsChangedReceivers.end()) {
+                for (const auto& [delegateUid, pir] : it->second) {
+                    if (delegateUids.find(delegateUid) != delegateUids.end()) {
+                        intentsToSend[key][delegateUid] = pir;
+                    }
+                }
+            }
+        }
+    }
+
+    // Invoke the pending intents without holding the lock.
+    for (const auto& [key, innerMap] : intentsToSend) {
+        for (const auto& [delegateUid, pir] : innerMap) {
+            Status status = pir->sendRestrictedMetricsChangedBroadcast(metricIds);
+            if (status.isOk()) {
+                VLOG("ConfigManager::SendRestrictedMetricsBroadcast succeeded");
+            }
+            if (status.getExceptionCode() == EX_TRANSACTION_FAILED &&
+                status.getStatus() == STATUS_DEAD_OBJECT) {
+                // Must also be called without the lock, since remove will acquire the lock.
+                RemoveRestrictedMetricsChangedReceiver(key, delegateUid, pir);
+            }
+        }
+    }
+}
+
 void ConfigManager::RemoveConfig(const ConfigKey& key) {
     vector<sp<ConfigListener>> broadcastList;
     {
@@ -181,6 +260,7 @@ void ConfigManager::remove_saved_configs(const ConfigKey& key) {
     StorageManager::deleteSuffixedFiles(STATS_SERVICE_DIR, suffix.c_str());
 }
 
+// TODO(b/xxx): consider removing all receivers associated with this uid.
 void ConfigManager::RemoveConfigs(int uid) {
     vector<ConfigKey> removed;
     vector<sp<ConfigListener>> broadcastList;
