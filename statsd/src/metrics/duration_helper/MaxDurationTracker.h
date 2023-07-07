@@ -58,7 +58,7 @@ public:
 
     int64_t predictAnomalyTimestampNs(const AnomalyTracker& anomalyTracker,
                                       const int64_t currentTimestamp) const override;
-    void dumpStates(FILE* out, bool verbose) const override;
+    void dumpStates(int out, bool verbose) const override;
 
     int64_t getCurrentStateKeyDuration() const override;
 
