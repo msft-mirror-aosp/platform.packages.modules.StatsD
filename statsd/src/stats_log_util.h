@@ -119,7 +119,7 @@ inline bool isPulledAtom(int atomId) {
 
 void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event);
 
-std::string toHexString(const vector<uint8_t>& bytes);
+std::string toHexString(const string& bytes);
 
 }  // namespace statsd
 }  // namespace os

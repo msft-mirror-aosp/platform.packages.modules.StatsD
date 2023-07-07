@@ -133,7 +133,7 @@ public final class StatsManager {
     /**
      * @hide
      **/
-    @VisibleForTesting public static final long DEFAULT_TIMEOUT_MILLIS = 2_000L; // 2 seconds.
+    @VisibleForTesting public static final long DEFAULT_TIMEOUT_MILLIS = 1_500L; // 1.5 seconds.
 
     /**
      * Constructor for StatsManagerClient.
@@ -428,7 +428,26 @@ public final class StatsManager {
      * Queries the underlying service based on query received and populates the OutcomeReceiver via
      * callback. This call is blocking on statsd being available, but is otherwise nonblocking.
      * i.e. the call can return before the query processing is done.
-     *
+     * <p>
+     * Two types of tables are supported: Metric tables and the device information table.
+     * </p>
+     * <p>
+     * The device information table is named device_info and contains the following columns:
+     * sdkVersion, model, product, hardware, device, osBuild, fingerprint, brand, manufacturer, and
+     * board. These columns correspond to {@link Build.VERSION.SDK_INT}, {@link Build.MODEL},
+     * {@link Build.PRODUCT}, {@link Build.HARDWARE}, {@link Build.DEVICE}, {@link Build.ID},
+     * {@link Build.FINGERPRINT}, {@link Build.BRAND}, {@link Build.MANUFACTURER},
+     * {@link Build.BOARD} respectively.
+     * </p>
+     * <p>
+     * The metric tables are named metric_METRIC_ID where METRIC_ID is the metric id that is part
+     * of the wire encoded config passed to {@link #addConfig(long, byte[])}. If the metric id is
+     * negative, then the '-' character is replaced with 'n' in the table name. Each metric table
+     * contains the 3 columns followed by n columns of the following form: atomId,
+     * elapsedTimestampNs, wallTimestampNs, field_1, field_2, field_3 ... field_n. These
+     * columns correspond to to the id of the atom from frameworks/proto_logging/stats/atoms.proto,
+     * time when the atom is recorded, and the data fields within each atom.
+     * </p>
      * @param configKey The configKey passed by the package that added
      *                        the config being queried in StatsManager#addConfig
      * @param configPackage The package that added the config being queried in

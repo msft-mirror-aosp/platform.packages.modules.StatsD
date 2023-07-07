@@ -22,7 +22,6 @@
 #include <aidl/android/os/IPullAtomResultReceiver.h>
 #include <aidl/android/os/StatsSubscriptionCallbackReason.h>
 #include <gmock/gmock.h>
-#include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "src/StatsLogProcessor.h"
@@ -52,7 +51,6 @@ using ::aidl::android::os::IPullAtomResultReceiver;
 using ::aidl::android::os::StatsSubscriptionCallbackReason;
 using android::util::ProtoReader;
 using google::protobuf::RepeatedPtrField;
-using google::protobuf::util::MessageDifferencer;
 using Status = ::ndk::ScopedAStatus;
 using PackageInfoSnapshot = UidMapping_PackageInfoSnapshot;
 using PackageInfo = UidMapping_PackageInfoSnapshot_PackageInfo;
@@ -88,6 +86,12 @@ public:
     MOCK_METHOD(std::set<int32_t>, getAppUid, (const string& package), (const));
 };
 
+class BasicMockLogEventFilter : public LogEventFilter {
+public:
+    MOCK_METHOD(void, setFilteringEnabled, (bool isEnabled), (override));
+    MOCK_METHOD(void, setAtomIds, (AtomIdSet tagIds, ConsumerId consumer), (override));
+};
+
 class MockPendingIntentRef : public aidl::android::os::BnPendingIntentRef {
 public:
     MOCK_METHOD1(sendDataBroadcast, Status(int64_t lastReportTimeNs));
@@ -98,6 +102,8 @@ public:
                         int64_t subscriptionRuleId, const vector<string>& cookies,
                         const StatsDimensionsValueParcel& dimensionsValueParcel));
 };
+
+typedef StrictMock<BasicMockLogEventFilter> MockLogEventFilter;
 
 class MockStatsQueryCallback : public BnStatsQueryCallback {
 public:
@@ -119,9 +125,10 @@ class StatsServiceConfigTest : public ::testing::Test {
 protected:
     shared_ptr<StatsService> service;
     const int kConfigKey = 789130123;  // Randomly chosen
-    const int kCallingUid = 0;         // Randomly chosen
+    const int kCallingUid = 10100;     // Randomly chosen
+
     void SetUp() override {
-        service = SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr);
+        service = createStatsService();
         // Removing config file from data/misc/stats-service and data/misc/stats-data if present
         ConfigKey configKey(kCallingUid, kConfigKey);
         service->removeConfiguration(kConfigKey, kCallingUid);
@@ -139,7 +146,12 @@ protected:
                                           ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
     }
 
-    void sendConfig(const StatsdConfig& config);
+    virtual shared_ptr<StatsService> createStatsService() {
+        return SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
+                                                 /* LogEventFilter */ nullptr);
+    }
+
+    bool sendConfig(const StatsdConfig& config);
 
     ConfigMetricsReport getReports(sp<StatsLogProcessor> processor, int64_t timestamp,
                                    bool include_current = false);
@@ -529,6 +541,9 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
 std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
 std::unique_ptr<LogEvent> CreateNonRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
 
+std::unique_ptr<LogEvent> CreatePhoneSignalStrengthChangedEvent(
+        int64_t timestampNs, ::telephony::SignalStrengthEnum state);
+
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         uint64_t timestampNs, const vector<int>& attributionUids,
         const vector<string>& attributionTags, const int intField, const long longField,
@@ -539,12 +554,19 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         const bool* repeatedBoolField, const size_t repeatedBoolFieldLength,
         const vector<int>& repeatedEnumField);
 
+void createStatsEvent(AStatsEvent* statsEvent, uint8_t typeId, uint32_t atomId);
+
+void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId);
+
 // Create a statsd log event processor upon the start time in seconds, config and key.
-sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const int64_t currentTimeNs,
-                                              const StatsdConfig& config, const ConfigKey& key,
-                                              const shared_ptr<IPullAtomCallback>& puller = nullptr,
-                                              const int32_t atomTag = 0 /*for puller only*/,
-                                              const sp<UidMap> = new UidMap());
+sp<StatsLogProcessor> CreateStatsLogProcessor(
+        const int64_t timeBaseNs, const int64_t currentTimeNs, const StatsdConfig& config,
+        const ConfigKey& key, const shared_ptr<IPullAtomCallback>& puller = nullptr,
+        const int32_t atomTag = 0 /*for puller only*/, const sp<UidMap> = new UidMap(),
+        const shared_ptr<LogEventFilter>& logEventFilter = nullptr);
+
+LogEventFilter::AtomIdSet CreateAtomIdSetDefault();
+LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config);
 
 // Util function to sort the log events by timestamp.
 void sortLogEventsByTimestamp(std::vector<std::unique_ptr<LogEvent>> *events);
@@ -763,6 +785,9 @@ void writeBootFlag(const std::string& flagName, const std::string& flagValue);
 
 PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap);
 
+ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
+                                      const string& versionString, const string& package);
+
 PackageInfo buildPackageInfo(const std::string& name, const int32_t uid, const int64_t version,
                              const std::string& versionString,
                              const std::optional<std::string> installer,
@@ -775,28 +800,6 @@ std::vector<PackageInfo> buildPackageInfos(
         const std::vector<std::string>& installers,
         const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<bool>& deleted,
         const std::vector<uint32_t>& installerIndices, const bool hashStrings);
-
-// Checks equality on explicitly set values.
-MATCHER_P(ProtoEq, otherArg, "") {
-    return MessageDifferencer::Equals(arg, otherArg);
-}
-
-// Checks equality on explicitly and implicitly set values.
-// Implicitly set values comes from fields with a default value specifier.
-MATCHER_P(ProtoEquiv, otherArg, "") {
-    return MessageDifferencer::Equivalent(arg, otherArg);
-}
-
-// Checks equality on explicitly set values where args are in a 2-tuple.
-MATCHER(ProtoEq, "") {
-    return MessageDifferencer::Equals(std::get<0>(arg), std::get<1>(arg));
-}
-
-// Checks equality on explicitly and implicitly set values where args are in a 2-tuple.
-// Implicitly set values comes from fields with a default value specifier.
-MATCHER(ProtoEquiv, "") {
-    return MessageDifferencer::Equivalent(std::get<0>(arg), std::get<1>(arg));
-}
 
 template <typename T>
 std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {

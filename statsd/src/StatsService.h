@@ -56,11 +56,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
-constexpr const char* kIncludeCertificateHash = "include_certificate_hash";
-
 class StatsService : public BnStatsd {
 public:
-    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue);
+    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
+                 const std::shared_ptr<LogEventFilter>& logEventFilter,
+                 int initEventDelaySecs = kStatsdInitDelaySecs);
     virtual ~StatsService();
 
     /** The anomaly alarm registered with AlarmManager won't be updated by less than this. */
@@ -255,6 +255,8 @@ public:
     virtual Status flushSubscription(
             const shared_ptr<IStatsSubscriptionCallback>& callback) override;
 
+    const static int kStatsdInitDelaySecs = 90;
+
 private:
     /**
      * Load system properties at init.
@@ -401,6 +403,11 @@ private:
      */
     void initShellSubscriber();
 
+    /*
+     * Notify StatsLogProcessor of boot completed
+     */
+    void onStatsdInitCompleted();
+
     /**
      * Tracks the uid <--> package name mapping.
      */
@@ -443,6 +450,7 @@ private:
      */
     mutable mutex mShellSubscriberMutex;
     shared_ptr<LogEventQueue> mEventQueue;
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";
@@ -451,7 +459,10 @@ private:
 
     ScopedAIBinder_DeathRecipient mStatsCompanionServiceDeathRecipient;
 
+    const int mInitEventDelaySecs;
+
     friend class StatsServiceConfigTest;
+    friend class StatsServiceStatsdInitTest;
     friend class RestrictedConfigE2ETest;
 
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
@@ -474,12 +485,16 @@ private:
     FRIEND_TEST(PartialBucketE2eTest, TestCountMetricNoSplitByDefault);
     FRIEND_TEST(RestrictedConfigE2ETest, NonRestrictedConfigGetReport);
     FRIEND_TEST(RestrictedConfigE2ETest, RestrictedConfigNoReport);
+    FRIEND_TEST(RestrictedConfigE2ETest,
+                TestSendRestrictedMetricsChangedBroadcastMultipleMatchedConfigs);
     FRIEND_TEST(ConfigUpdateE2eTest, TestAnomalyDurationMetric);
 
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
+
+    FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
 };
 
 }  // namespace statsd

@@ -24,6 +24,7 @@
 
 using android::base::unique_fd;
 using android::util::ProtoOutputStream;
+using Status = ::ndk::ScopedAStatus;
 
 namespace android {
 namespace os {
@@ -39,7 +40,7 @@ struct ReadConfigResult {
 
 // Read and parse single config. There should only one config in the input.
 static optional<ReadConfigResult> readConfig(const vector<uint8_t>& configBytes,
-                                             int64_t startTimeMs) {
+                                             int64_t startTimeMs, int64_t minPullIntervalMs) {
     // Parse the config.
     ShellSubscription config;
     if (!config.ParseFromArray(configBytes.data(), configBytes.size())) {
@@ -64,8 +65,8 @@ static optional<ReadConfigResult> readConfig(const vector<uint8_t>& configBytes,
             }
         }
 
-        result.pullInfo.emplace_back(pulled.matcher(), startTimeMs, pulled.freq_millis(), packages,
-                                     uids);
+        const int64_t pullIntervalMs = max(pulled.freq_millis(), minPullIntervalMs);
+        result.pullInfo.emplace_back(pulled.matcher(), startTimeMs, pullIntervalMs, packages, uids);
         ALOGD("ShellSubscriberClient: adding matcher for pulled atom %d",
               pulled.matcher().atom_id());
     }
@@ -124,7 +125,8 @@ unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
         return nullptr;
     }
 
-    const optional<ReadConfigResult> readConfigResult = readConfig(buffer, startTimeSec * 1000);
+    const optional<ReadConfigResult> readConfigResult =
+            readConfig(buffer, startTimeSec * 1000, /* minPullIntervalMs */ 0);
     if (!readConfigResult.has_value()) {
         return nullptr;
     }
@@ -151,7 +153,8 @@ unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
     }
 
     const optional<ReadConfigResult> readConfigResult =
-            readConfig(subscriptionConfig, startTimeSec * 1000);
+            readConfig(subscriptionConfig, startTimeSec * 1000,
+                       ShellSubscriberClient::kMinCallbackPullIntervalMs);
     if (!readConfigResult.has_value()) {
         return nullptr;
     }
@@ -174,7 +177,7 @@ bool ShellSubscriberClient::writeEventToProtoIfMatched(const LogEvent& event,
     event.ToProto(mProtoOut);
     mProtoOut.end(atomToken);
 
-    const int64_t timestampNs = event.GetElapsedTimestampNs();
+    const int64_t timestampNs = truncateTimestampIfNecessary(event);
     mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
                             FIELD_ID_SHELL_DATA__ELAPSED_TIMESTAMP_NANOS,
                     static_cast<long long>(timestampNs));
@@ -205,9 +208,9 @@ void ShellSubscriberClient::flushProtoIfNeeded() {
 }
 
 int64_t ShellSubscriberClient::pullIfNeeded(int64_t nowSecs, int64_t nowMillis, int64_t nowNanos) {
-    int64_t sleepTimeMs = INT64_MAX;
+    int64_t sleepTimeMs = 24 * 60 * 60 * 1000;  // 24 hours.
     for (PullInfo& pullInfo : mPulledInfo) {
-        if (pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mIntervalMs < nowMillis) {
+        if (pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mIntervalMs <= nowMillis) {
             vector<int32_t> uids;
             getUidsForPullAtom(&uids, pullInfo);
 
@@ -221,9 +224,11 @@ int64_t ShellSubscriberClient::pullIfNeeded(int64_t nowSecs, int64_t nowMillis, 
         }
 
         // Determine how long to sleep before doing more work.
-        int64_t nextPullTime = pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mIntervalMs;
-        int64_t timeBeforePull = nextPullTime - nowMillis;  // guaranteed to be non-negative
-        sleepTimeMs = min(sleepTimeMs, timeBeforePull);
+        const int64_t nextPullTimeMs = pullInfo.mPrevPullElapsedRealtimeMs + pullInfo.mIntervalMs;
+
+        const int64_t timeBeforePullMs =
+                nextPullTimeMs - nowMillis;  // guaranteed to be non-negative
+        sleepTimeMs = min(sleepTimeMs, timeBeforePullMs);
     }
     return sleepTimeMs;
 }
@@ -259,8 +264,16 @@ int64_t ShellSubscriberClient::pullAndSendHeartbeatsIfNeeded(int64_t nowSecs, in
             triggerCallback(StatsSubscriptionCallbackReason::STATSD_INITIATED);
         }
 
-        // Schedule callback kMsBetweenCallbacks after mLastWrite.
-        sleepTimeMs = min(sleepTimeMs, mLastWriteMs + kMsBetweenCallbacks - nowMillis);
+        // Cache should be flushed kMsBetweenCallbacks after mLastWrite.
+        const int64_t timeToCallbackMs = mLastWriteMs + kMsBetweenCallbacks - nowMillis;
+
+        // For callback subscriptions, ensure minimum sleep time is at least
+        // kMinCallbackSleepIntervalMs. Even if there is less than kMinCallbackSleepIntervalMs left
+        // before next pull time, sleep for at least kMinCallbackSleepIntervalMs. This has the
+        // effect of multiple pulled atoms that have a pull within kMinCallbackSleepIntervalMs from
+        // now to have their pulls batched together, mitigating frequent wakeups of the puller
+        // thread.
+        sleepTimeMs = max(kMinCallbackSleepIntervalMs, min(sleepTimeMs, timeToCallbackMs));
     }
     return sleepTimeMs;
 }
@@ -321,7 +334,12 @@ void ShellSubscriberClient::triggerCallback(StatsSubscriptionCallbackReason reas
     // Invoke Binder callback with cached event data.
     vector<uint8_t> payloadBytes;
     mProtoOut.serializeToVector(&payloadBytes);
-    mCallback->onSubscriptionData(reason, payloadBytes);
+    const Status status = mCallback->onSubscriptionData(reason, payloadBytes);
+    if (status.getStatus() == STATUS_DEAD_OBJECT &&
+        status.getExceptionCode() == EX_TRANSACTION_FAILED) {
+        mClientAlive = false;
+        return;
+    }
 
     mLastWriteMs = getElapsedRealtimeMillis();
     clearCache();
@@ -333,6 +351,12 @@ void ShellSubscriberClient::flush() {
 
 void ShellSubscriberClient::onUnsubscribe() {
     triggerCallback(StatsSubscriptionCallbackReason::SUBSCRIPTION_ENDED);
+}
+
+void ShellSubscriberClient::addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const {
+    for (const auto& matcher : mPushedMatchers) {
+        allAtomIds.insert(matcher.atom_id());
+    }
 }
 
 }  // namespace statsd

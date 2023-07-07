@@ -666,7 +666,8 @@ public class TestDrive {
 
     private static String dumpAtom(AtomsProto.Atom atom,
             Descriptors.Descriptor externalDescriptor) {
-        if (atom.getPushedCase().getNumber() != 0 || atom.getPulledCase().getNumber() != 0) {
+        if (atom.getPushedCase().getNumber() != 0 || atom.getPulledCase().getNumber() != 0 ||
+                externalDescriptor == null) {
             return atom.toString();
         } else {
             try {
