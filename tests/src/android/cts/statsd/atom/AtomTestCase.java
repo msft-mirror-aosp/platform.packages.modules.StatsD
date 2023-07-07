@@ -304,14 +304,16 @@ public class AtomTestCase extends BaseTestCase {
     protected void uploadConfig(StatsdConfig config) throws Exception {
         LogUtil.CLog.d("Uploading the following config:\n" + config.toString());
         File configFile = File.createTempFile("statsdconfig", ".config");
-        configFile.deleteOnExit();
-        Files.write(config.toByteArray(), configFile);
-        String remotePath = "/data/local/tmp/" + configFile.getName();
-        getDevice().pushFile(configFile, remotePath);
-        getDevice().executeShellCommand(
-                String.join(" ", "cat", remotePath, "|", UPDATE_CONFIG_CMD,
-                        String.valueOf(SHELL_UID), String.valueOf(CONFIG_ID)));
-        getDevice().executeShellCommand("rm " + remotePath);
+        try {
+            Files.write(config.toByteArray(), configFile);
+            String remotePath = "/data/local/tmp/" + configFile.getName();
+            getDevice().pushFile(configFile, remotePath);
+            getDevice().executeShellCommand(String.join(" ", "cat", remotePath, "|",
+                    UPDATE_CONFIG_CMD, String.valueOf(SHELL_UID), String.valueOf(CONFIG_ID)));
+            getDevice().executeShellCommand("rm " + remotePath);
+        } finally {
+            configFile.delete();
+        }
     }
 
     protected void removeConfig(long configId) throws Exception {
