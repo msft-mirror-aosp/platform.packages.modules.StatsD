@@ -14,6 +14,7 @@
 
 #include "statsd_test_util.h"
 
+#include "gtest_matchers.h"
 #include "src/stats_log.pb.h"
 
 namespace android {
@@ -160,7 +161,7 @@ TEST_P(StatsdTestUtil_PackageInfo_HashStrings, TestBuildPackageInfosEmptyOptiona
             appName, uid, version, versionString, /* installer */ nullopt, /* certHash */ {},
             /* deleted */ false, hashStrings, /* installerIndex */ nullopt);
 
-    EXPECT_THAT(packageInfos, Pointwise(ProtoEq(), {packageInfo}));
+    EXPECT_THAT(packageInfos, Pointwise(EqPackageInfo(), {packageInfo}));
 }
 
 TEST_P(StatsdTestUtil_PackageInfo_HashStrings, TestBuildPackageInfosNonEmptyOptionalParams) {
@@ -173,7 +174,7 @@ TEST_P(StatsdTestUtil_PackageInfo_HashStrings, TestBuildPackageInfosNonEmptyOpti
             buildPackageInfo(appName, uid, version, versionString, installer, /* certHash */ {'a'},
                              /* deleted */ false, hashStrings, /* installerIndex */ 3);
 
-    EXPECT_THAT(packageInfos, Pointwise(ProtoEq(), {packageInfo}));
+    EXPECT_THAT(packageInfos, Pointwise(EqPackageInfo(), {packageInfo}));
 }
 
 #else

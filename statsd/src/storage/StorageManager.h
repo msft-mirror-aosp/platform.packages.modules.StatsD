@@ -162,6 +162,11 @@ public:
 
     static void sortFiles(vector<FileInfo>* fileNames);
 
+    static void enforceDbGuardrails(const char* path, const int64_t wallClockSec,
+                                    const int64_t maxBytes);
+
+    static bool hasFile(const char* file);
+
 private:
     /**
      * Prints disk usage statistics about a directory related to statsd.
