@@ -24,7 +24,6 @@
 #include "HashableDimensionKey.h"
 #include "MetricProducer.h"
 #include "anomaly/AnomalyTracker.h"
-#include "condition/ConditionTimer.h"
 #include "condition/ConditionTracker.h"
 #include "external/PullDataReceiver.h"
 #include "external/StatsPullerManager.h"
@@ -43,6 +42,7 @@ struct PastBucket {
     int64_t mBucketEndNs;
     std::vector<int> aggIndex;
     std::vector<AggregatedValue> aggregates;
+    std::vector<int> sampleSizes;
 
     /**
      * If the metric has no condition, then this field is just wasted.
@@ -117,10 +117,14 @@ public:
     virtual ~ValueMetricProducer();
 
     // Process data pulled on bucket boundary.
-    virtual void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data, bool pullSuccess,
-                              int64_t originalPullTimeNs) override {
+    virtual void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& data,
+                              PullResult pullResult, int64_t originalPullTimeNs) override {
     }
 
+    // Determine if metric needs to pull
+    virtual bool isPullNeeded() const override {
+        return false;
+    }
 
     // ValueMetric needs special logic if it's a pulled atom.
     void onStatsdInitCompleted(const int64_t& eventTimeNs) override;
@@ -185,7 +189,7 @@ protected:
     // Internal interface to handle sliced condition change.
     void onSlicedConditionMayChangeLocked(bool overallCondition, const int64_t eventTime) override;
 
-    void dumpStatesLocked(FILE* out, bool verbose) const override;
+    void dumpStatesLocked(int out, bool verbose) const override;
 
     virtual std::string aggregatedValueToString(const AggregatedValue& aggregate) const = 0;
 
@@ -211,7 +215,7 @@ protected:
     // causes the bucket to be invalidated will not notify StatsdStats.
     void skipCurrentBucket(const int64_t dropTimeNs, const BucketDropReason reason);
 
-    bool onConfigUpdatedLocked(
+    optional<InvalidConfigReason> onConfigUpdatedLocked(
             const StatsdConfig& config, const int configIndex, const int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -338,6 +342,7 @@ protected:
 
     virtual void writePastBucketAggregateToProto(const int aggIndex,
                                                  const AggregatedValue& aggregate,
+                                                 const int sampleSize,
                                                  ProtoOutputStream* const protoOutput) const = 0;
 
     static const size_t kBucketSize = sizeof(PastBucket<AggregatedValue>{});
@@ -349,8 +354,6 @@ protected:
     // This is to track whether or not the bucket is skipped for any of the reasons listed in
     // BucketDropReason, many of which make the bucket potentially invalid.
     bool mCurrentBucketIsSkipped;
-
-    ConditionTimer mConditionTimer;
 
     /** Stores condition correction threshold from the ValueMetric configuration */
     optional<int64_t> mConditionCorrectionThresholdNs;
