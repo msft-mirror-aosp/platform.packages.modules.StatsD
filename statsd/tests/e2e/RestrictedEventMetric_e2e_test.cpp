@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -30,6 +31,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::modules::sdklevel::IsAtLeastU;
 using base::StringPrintf;
 
 #ifdef __ANDROID__
@@ -64,9 +66,9 @@ protected:
 
 private:
     void SetUp() override {
-        FlagProvider::getInstance().overrideFuncs(&isAtLeastSFuncTrue);
-        FlagProvider::getInstance().overrideFlag(RESTRICTED_METRICS_FLAG, FLAG_TRUE,
-                                                 /*isBootFlag=*/true);
+        if (!IsAtLeastU()) {
+            GTEST_SKIP();
+        }
 
         mockStatsQueryCallback = SharedRefBase::make<StrictMock<MockStatsQueryCallback>>();
         EXPECT_CALL(*mockStatsQueryCallback, sendResults(_, _, _, _))
@@ -109,14 +111,14 @@ private:
         configAddedTimeNs = baseTimeNs + 1 * NS_PER_SEC;  // 0:01
 
         uidMap = new UidMap();
-        uidMap->updateApp(configAddedTimeNs, String16(delegate_package_name.c_str()),
+        uidMap->updateApp(configAddedTimeNs, delegate_package_name,
                           /*uid=*/delegate_uid, /*versionCode=*/1,
-                          /*versionString=*/String16("v2"),
-                          /*installer=*/String16(""), /*certificateHash=*/{});
-        uidMap->updateApp(configAddedTimeNs + 1, String16(config_package_name.c_str()),
+                          /*versionString=*/"v2",
+                          /*installer=*/"", /*certificateHash=*/{});
+        uidMap->updateApp(configAddedTimeNs + 1, config_package_name,
                           /*uid=*/config_app_uid, /*versionCode=*/1,
-                          /*versionString=*/String16("v2"),
-                          /*installer=*/String16(""), /*certificateHash=*/{});
+                          /*versionString=*/"v2",
+                          /*installer=*/"", /*certificateHash=*/{});
 
         processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, configKey,
                                             /*puller=*/nullptr, /*atomTag=*/0, uidMap);
@@ -369,14 +371,14 @@ TEST_F(RestrictedEventMetricE2eTest, TestNewMetricSchemaAcrossReboot) {
 }
 
 TEST_F(RestrictedEventMetricE2eTest, TestOneEventMultipleUids) {
-    uidMap->updateApp(configAddedTimeNs, String16(delegate_package_name.c_str()),
+    uidMap->updateApp(configAddedTimeNs, delegate_package_name,
                       /*uid=*/delegate_uid + 1, /*versionCode=*/1,
-                      /*versionString=*/String16("v2"),
-                      /*installer=*/String16(""), /*certificateHash=*/{});
-    uidMap->updateApp(configAddedTimeNs + 1, String16(config_package_name.c_str()),
+                      /*versionString=*/"v2",
+                      /*installer=*/"", /*certificateHash=*/{});
+    uidMap->updateApp(configAddedTimeNs + 1, config_package_name,
                       /*uid=*/config_app_uid + 1, /*versionCode=*/1,
-                      /*versionString=*/String16("v2"),
-                      /*installer=*/String16(""), /*certificateHash=*/{});
+                      /*versionString=*/"v2",
+                      /*installer=*/"", /*certificateHash=*/{});
 
     std::vector<std::unique_ptr<LogEvent>> events;
 
@@ -433,14 +435,14 @@ TEST_F(RestrictedEventMetricE2eTest, TestTooManyConfigsAmbiguousQuery) {
     ConfigKey key2(config_app_uid + 1, configId);
     processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, key2, config);
 
-    uidMap->updateApp(configAddedTimeNs, String16(delegate_package_name.c_str()),
+    uidMap->updateApp(configAddedTimeNs, delegate_package_name,
                       /*uid=*/delegate_uid + 1, /*versionCode=*/1,
-                      /*versionString=*/String16("v2"),
-                      /*installer=*/String16(""), /*certificateHash=*/{});
-    uidMap->updateApp(configAddedTimeNs + 1, String16(config_package_name.c_str()),
+                      /*versionString=*/"v2",
+                      /*installer=*/"", /*certificateHash=*/{});
+    uidMap->updateApp(configAddedTimeNs + 1, config_package_name.c_str(),
                       /*uid=*/config_app_uid + 1, /*versionCode=*/1,
-                      /*versionString=*/String16("v2"),
-                      /*installer=*/String16(""), /*certificateHash=*/{});
+                      /*versionString=*/"v2",
+                      /*installer=*/"", /*certificateHash=*/{});
 
     std::vector<std::unique_ptr<LogEvent>> events;
 
@@ -531,19 +533,6 @@ TEST_F(RestrictedEventMetricE2eTest, TestInvalidQuery) {
                         /*callingUid=*/delegate_uid);
 
     EXPECT_THAT(error, StartsWith("failed to query db"));
-}
-
-TEST_F(RestrictedEventMetricE2eTest, TestFlagDisabled) {
-    processor->mIsRestrictedMetricsEnabled = false;
-
-    std::stringstream query;
-    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
-    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
-                        /*policyConfig=*/{}, mockStatsQueryCallback,
-                        /*configKey=*/configId, /*configPackage=*/config_package_name,
-                        /*callingUid=*/delegate_uid);
-
-    EXPECT_EQ(error, "Restricted metrics are not enabled");
 }
 
 TEST_F(RestrictedEventMetricE2eTest, TestEnforceTtlRemovesOldEvents) {
@@ -725,10 +714,10 @@ TEST_F(RestrictedEventMetricE2eTest, TestModularConfigUpdateChangeRestrictedDele
     // Update the existing config with a new restricted delegate
     int32_t newDelegateUid = delegate_uid + 1;
     config.set_restricted_metrics_delegate_package_name("new.delegate.package");
-    uidMap->updateApp(configAddedTimeNs, String16("new.delegate.package"),
+    uidMap->updateApp(configAddedTimeNs, "new.delegate.package",
                       /*uid=*/newDelegateUid, /*versionCode=*/1,
-                      /*versionString=*/String16("v2"),
-                      /*installer=*/String16(""), /*certificateHash=*/{});
+                      /*versionString=*/"v2",
+                      /*installer=*/"", /*certificateHash=*/{});
     processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config);
 
     std::stringstream query;
@@ -944,7 +933,6 @@ TEST_F(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails) {
     EXPECT_THAT(columnTypesResult,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
 
-    processor->mIsRestrictedMetricsEnabled = false;
     processor->enforceDbGuardrailsIfNecessaryLocked(oneMonthLater, dbEnforcementTimeNs);
 
     EXPECT_FALSE(StorageManager::hasFile(
@@ -980,7 +968,6 @@ TEST_F(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeG
     EXPECT_THAT(columnTypesResult,
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
 
-    processor->mIsRestrictedMetricsEnabled = false;
     processor->enforceDbGuardrailsIfNecessaryLocked(oneMonthLater, originalEventElapsedTime);
 
     EXPECT_TRUE(StorageManager::hasFile(

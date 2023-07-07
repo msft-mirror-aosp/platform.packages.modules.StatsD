@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "frameworks/proto_logging/stats/atoms.pb.h"
+#include "gtest_matchers.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/shell/shell_data.pb.h"
 #include "stats_event.h"
@@ -152,7 +153,8 @@ void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
                   sp<MockStatsPullerManager> pullerManager,
                   const vector<std::shared_ptr<LogEvent>>& pushedEvents,
                   const vector<ShellData>& expectedData, int numClients) {
-    sp<ShellSubscriber> shellManager = new ShellSubscriber(uidMap, pullerManager);
+    sp<ShellSubscriber> shellManager =
+            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
 
     size_t bufferSize = config.ByteSize();
     vector<uint8_t> buffer(bufferSize);
@@ -187,7 +189,7 @@ void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
             actualData.push_back(readData(fds_datas[i][0]));
         }
 
-        EXPECT_THAT(expectedData, UnorderedPointwise(ProtoEq(), actualData));
+        EXPECT_THAT(expectedData, UnorderedPointwise(EqShellData(), actualData));
     }
 
     // Not closing fds_datas[i][0] because this causes writes within ShellSubscriberClient to hang
@@ -230,7 +232,8 @@ protected:
     ShellSubscriberCallbackTest()
         : uidMap(new NaggyMock<MockUidMap>()),
           pullerManager(new StrictMock<MockStatsPullerManager>()),
-          shellSubscriber(uidMap, pullerManager),
+          mockLogEventFilter(std::make_shared<MockLogEventFilter>()),
+          shellSubscriber(uidMap, pullerManager, mockLogEventFilter),
           callback(SharedRefBase::make<StrictMock<MockStatsSubscriptionCallback>>()),
           reason(nullopt) {
     }
@@ -248,8 +251,15 @@ protected:
         configBytes = protoToBytes(config);
     }
 
+    void TearDown() override {
+        // Expect empty call from the shellSubscriber destructor
+        LogEventFilter::AtomIdSet tagIds;
+        EXPECT_CALL(*mockLogEventFilter, setAtomIds(tagIds, &shellSubscriber)).Times(1);
+    }
+
     sp<MockUidMap> uidMap;
     sp<MockStatsPullerManager> pullerManager;
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter;
     ShellSubscriber shellSubscriber;
     std::shared_ptr<MockStatsSubscriptionCallback> callback;
     vector<uint8_t> configBytes;
@@ -281,14 +291,37 @@ protected:
     unique_ptr<ShellSubscriberClient> shellSubscriberClient;
 };
 
+LogEventFilter::AtomIdSet CreateAtomIdSetFromShellSubscriptionBytes(const vector<uint8_t>& bytes) {
+    LogEventFilter::AtomIdSet result;
+
+    ShellSubscription config;
+    config.ParseFromArray(bytes.data(), bytes.size());
+
+    for (int i = 0; i < config.pushed_size(); i++) {
+        const auto& pushed = config.pushed(i);
+        EXPECT_TRUE(pushed.has_atom_id());
+        result.insert(pushed.atom_id());
+    }
+
+    return result;
+}
+
 }  // namespace
 
 TEST_F(ShellSubscriberCallbackTest, testAddSubscription) {
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     EXPECT_TRUE(shellSubscriber.startNewSubscription(configBytes, callback));
 }
 
 TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
     const size_t maxSubs = ShellSubscriber::getMaxSubscriptions();
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(maxSubs);
     vector<bool> results(maxSubs, false);
     for (int i = 0; i < maxSubs; i++) {
         results[i] = shellSubscriber.startNewSubscription(configBytes, callback);
@@ -304,7 +337,10 @@ TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
 TEST_F(ShellSubscriberCallbackTest, testPushedEventsAreCached) {
     // Expect callback to not be invoked
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     // Log an event that does NOT invoke the callack.
@@ -315,7 +351,10 @@ TEST_F(ShellSubscriberCallbackTest, testPushedEventsAreCached) {
 TEST_F(ShellSubscriberCallbackTest, testOverflowCacheIsFlushed) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
@@ -342,13 +381,16 @@ TEST_F(ShellSubscriberCallbackTest, testOverflowCacheIsFlushed) {
     expectedShellData.add_elapsed_timestamp_nanos(1000);
     expectedShellData.add_elapsed_timestamp_nanos(1100);
 
-    EXPECT_THAT(actualShellData, ProtoEq(expectedShellData));
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
 }
 
 TEST_F(ShellSubscriberCallbackTest, testFlushTrigger) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
@@ -367,13 +409,16 @@ TEST_F(ShellSubscriberCallbackTest, testFlushTrigger) {
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
     expectedShellData.add_elapsed_timestamp_nanos(1000);
 
-    EXPECT_THAT(actualShellData, ProtoEq(expectedShellData));
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
 }
 
 TEST_F(ShellSubscriberCallbackTest, testFlushTriggerEmptyCache) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     shellSubscriber.flushSubscription(callback);
@@ -386,12 +431,21 @@ TEST_F(ShellSubscriberCallbackTest, testFlushTriggerEmptyCache) {
 
     ShellData expectedShellData;
 
-    EXPECT_THAT(actualShellData, ProtoEq(expectedShellData));
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
 }
 
 TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    Expectation newSubcriptionEvent =
+            EXPECT_CALL(*mockLogEventFilter,
+                        setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes),
+                                   &shellSubscriber))
+                    .Times(1);
+    LogEventFilter::AtomIdSet idSetEmpty;
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(idSetEmpty, &shellSubscriber))
+            .Times(1)
+            .After(newSubcriptionEvent);
 
     shellSubscriber.startNewSubscription(configBytes, callback);
 
@@ -411,7 +465,7 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
     expectedShellData.add_elapsed_timestamp_nanos(1000);
 
-    EXPECT_THAT(actualShellData, ProtoEq(expectedShellData));
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
 
     // This event is ignored as the subscription has ended.
     shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
@@ -424,6 +478,15 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
 TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    Expectation newSubcriptionEvent =
+            EXPECT_CALL(*mockLogEventFilter,
+                        setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes),
+                                   &shellSubscriber))
+                    .Times(1);
+    LogEventFilter::AtomIdSet idSetEmpty;
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(idSetEmpty, &shellSubscriber))
+            .Times(1)
+            .After(newSubcriptionEvent);
 
     shellSubscriber.startNewSubscription(configBytes, callback);
 
@@ -437,13 +500,16 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
 
     ShellData expectedShellData;
 
-    EXPECT_THAT(actualShellData, ProtoEq(expectedShellData));
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
 }
 
 TEST_F(ShellSubscriberCallbackTest, testTruncateTimestampAtom) {
     // Expect callback to be invoked once.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
-
+    EXPECT_CALL(
+            *mockLogEventFilter,
+            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
+            .Times(1);
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     shellSubscriber.onLogEvent(*CreatePhoneSignalStrengthChangedEvent(
@@ -461,7 +527,7 @@ TEST_F(ShellSubscriberCallbackTest, testTruncateTimestampAtom) {
             ::android::telephony::SignalStrengthEnum::SIGNAL_STRENGTH_GOOD);
     expectedShellData.add_elapsed_timestamp_nanos(NS_PER_SEC * 5 * 60);
 
-    EXPECT_THAT(actualShellData, ProtoEq(expectedShellData));
+    EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
 }
 
 TEST_F(ShellSubscriberCallbackPulledTest, testPullIfNeededBeforeInterval) {
@@ -483,8 +549,8 @@ TEST_F(ShellSubscriberCallbackPulledTest, testPullAtInterval) {
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
 
     // This pull should NOT trigger a cache flush.
-    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 3, /* nowMillis= */ 3000,
-                                                         /* nowNanos= */ 3'000'000'000);
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 61, /* nowMillis= */ 61'000,
+                                                         /* nowNanos= */ 61'000'000'000);
 }
 
 TEST_F(ShellSubscriberCallbackPulledTest, testCachedPullIsFlushed) {
@@ -492,8 +558,8 @@ TEST_F(ShellSubscriberCallbackPulledTest, testCachedPullIsFlushed) {
     EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(1));
 
     // This pull should NOT trigger a cache flush.
-    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 3, /* nowMillis= */ 3000,
-                                                         /* nowNanos= */ 3'000'000'000);
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 61, /* nowMillis= */ 61'000,
+                                                         /* nowNanos= */ 61'000'000'000);
 
     // Expect callback to be invoked once flush is requested.
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
@@ -507,7 +573,7 @@ TEST_F(ShellSubscriberCallbackPulledTest, testCachedPullIsFlushed) {
     ShellData actualShellData;
     ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
 
-    EXPECT_THAT(actualShellData, ProtoEq(getExpectedPulledData()));
+    EXPECT_THAT(actualShellData, EqShellData(getExpectedPulledData()));
 }
 
 TEST_F(ShellSubscriberCallbackPulledTest, testPullAtCacheTimeout) {
@@ -518,8 +584,8 @@ TEST_F(ShellSubscriberCallbackPulledTest, testPullAtCacheTimeout) {
     EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
 
     // This pull should trigger a cache flush.
-    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 4, /* nowMillis= */ 4000,
-                                                         /* nowNanos= */ 4'000'000'000);
+    shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(/* nowSecs= */ 70, /* nowMillis= */ 70'000,
+                                                         /* nowNanos= */ 70'000'000'000);
 
     EXPECT_THAT(reason, Eq(StatsSubscriptionCallbackReason::STATSD_INITIATED));
 
@@ -527,7 +593,29 @@ TEST_F(ShellSubscriberCallbackPulledTest, testPullAtCacheTimeout) {
     ShellData actualShellData;
     ASSERT_TRUE(actualShellData.ParseFromArray(payload.data(), payload.size()));
 
-    EXPECT_THAT(actualShellData, ProtoEq(getExpectedPulledData()));
+    EXPECT_THAT(actualShellData, EqShellData(getExpectedPulledData()));
+}
+
+TEST_F(ShellSubscriberCallbackPulledTest, testPullFrequencyTooShort) {
+    // Pull should NOT happen.
+    EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(0));
+
+    // This should not trigger a pull even though the timestamp passed in matches the pull interval
+    // specified in the config.
+    const int64_t sleepTimeMs =
+            shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(2, 2000, 2'000'000'000);
+}
+
+TEST_F(ShellSubscriberCallbackPulledTest, testMinSleep) {
+    // Pull should NOT happen.
+    EXPECT_CALL(*pullerManager, Pull(_, A<const vector<int32_t>&>(), _, _)).Times(Exactly(0));
+
+    const int64_t sleepTimeMs =
+            shellSubscriberClient->pullAndSendHeartbeatsIfNeeded(59, 59'000, 59'000'000'000);
+
+    // Even though there is only 1000 ms left until the next pull, the sleep time returned is
+    // kMinCallbackSleepIntervalMs.
+    EXPECT_THAT(sleepTimeMs, Eq(ShellSubscriberClient::kMinCallbackSleepIntervalMs));
 }
 
 TEST(ShellSubscriberTest, testPushedSubscription) {
@@ -627,7 +715,8 @@ TEST(ShellSubscriberTest, testBothSubscriptions) {
 TEST(ShellSubscriberTest, testMaxSizeGuard) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
-    sp<ShellSubscriber> shellManager = new ShellSubscriber(uidMap, pullerManager);
+    sp<ShellSubscriber> shellManager =
+            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
 
     // set up 2 pipes for read/write config and data
     int fds_config[2];
@@ -650,7 +739,8 @@ TEST(ShellSubscriberTest, testMaxSizeGuard) {
 TEST(ShellSubscriberTest, testMaxSubscriptionsGuard) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
-    sp<ShellSubscriber> shellManager = new ShellSubscriber(uidMap, pullerManager);
+    sp<ShellSubscriber> shellManager =
+            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
 
     // create a simple config to get screen events
     ShellSubscription config;
@@ -699,7 +789,8 @@ TEST(ShellSubscriberTest, testMaxSubscriptionsGuard) {
 TEST(ShellSubscriberTest, testDifferentConfigs) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
-    sp<ShellSubscriber> shellManager = new ShellSubscriber(uidMap, pullerManager);
+    sp<ShellSubscriber> shellManager =
+            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
 
     // number of different configs
     int numConfigs = 2;
@@ -749,14 +840,14 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
     expected1.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_ON);
     expected1.add_elapsed_timestamp_nanos(pushedList[0]->GetElapsedTimestampNs());
-    EXPECT_THAT(expected1, ProtoEq(actual1));
+    EXPECT_THAT(expected1, EqShellData(actual1));
 
     ShellData actual2 = readData(fds_datas[0][0]);
     ShellData expected2;
     expected2.add_atom()->mutable_screen_state_changed()->set_state(
             ::android::view::DisplayStateEnum::DISPLAY_STATE_OFF);
     expected2.add_elapsed_timestamp_nanos(pushedList[1]->GetElapsedTimestampNs());
-    EXPECT_THAT(expected2, ProtoEq(actual2));
+    EXPECT_THAT(expected2, EqShellData(actual2));
 
     // Validate Config 2, repeating the process
     ShellData actual3 = readData(fds_datas[1][0]);
@@ -764,14 +855,14 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
     expected3.add_atom()->mutable_plugged_state_changed()->set_state(
             BatteryPluggedStateEnum::BATTERY_PLUGGED_USB);
     expected3.add_elapsed_timestamp_nanos(pushedList[2]->GetElapsedTimestampNs());
-    EXPECT_THAT(expected3, ProtoEq(actual3));
+    EXPECT_THAT(expected3, EqShellData(actual3));
 
     ShellData actual4 = readData(fds_datas[1][0]);
     ShellData expected4;
     expected4.add_atom()->mutable_plugged_state_changed()->set_state(
             BatteryPluggedStateEnum::BATTERY_PLUGGED_NONE);
     expected4.add_elapsed_timestamp_nanos(pushedList[3]->GetElapsedTimestampNs());
-    EXPECT_THAT(expected4, ProtoEq(actual4));
+    EXPECT_THAT(expected4, EqShellData(actual4));
 
     // Not closing fds_datas[i][0] because this causes writes within ShellSubscriberClient to hang
 }

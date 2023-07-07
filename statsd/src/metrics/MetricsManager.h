@@ -89,7 +89,7 @@ public:
         return mShouldPersistHistory;
     }
 
-    void dumpStates(FILE* out, bool verbose);
+    void dumpStates(int out, bool verbose);
 
     inline bool isInTtl(const int64_t timestampNs) const {
         return mTtlNs <= 0 || timestampNs < mTtlEndNs;
@@ -182,6 +182,9 @@ public:
 
     // Slow, should not be called in a hotpath.
     vector<int64_t> getAllMetricIds() const;
+
+    // Adds all atom ids referenced by matchers in the MetricsManager's config
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
 
 private:
     // For test only.
@@ -380,6 +383,7 @@ private:
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
     FRIEND_TEST(MetricsManagerTest, TestOnMetricRemoveCalled);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
+    FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
     FRIEND_TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead);

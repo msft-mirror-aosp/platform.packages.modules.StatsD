@@ -33,11 +33,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
-void StatsServiceConfigTest::sendConfig(const StatsdConfig& config) {
+bool StatsServiceConfigTest::sendConfig(const StatsdConfig& config) {
     string str;
     config.SerializeToString(&str);
     std::vector<uint8_t> configAsVec(str.begin(), str.end());
-    service->addConfiguration(kConfigKey, configAsVec, kCallingUid);
+    return service->addConfiguration(kConfigKey, configAsVec, kCallingUid).isOk();
 }
 
 ConfigMetricsReport StatsServiceConfigTest::getReports(sp<StatsLogProcessor> processor,
@@ -49,7 +49,7 @@ ConfigMetricsReport StatsServiceConfigTest::getReports(sp<StatsLogProcessor> pro
     ConfigMetricsReportList reports;
     reports.ParseFromArray(output.data(), output.size());
     EXPECT_EQ(1, reports.reports_size());
-    return reports.reports(kCallingUid);
+    return reports.reports(0);
 }
 
 StatsLogReport outputStreamToProto(ProtoOutputStream* proto) {
@@ -1399,7 +1399,8 @@ std::unique_ptr<LogEvent> CreatePhoneSignalStrengthChangedEvent(
 sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const int64_t currentTimeNs,
                                               const StatsdConfig& config, const ConfigKey& key,
                                               const shared_ptr<IPullAtomCallback>& puller,
-                                              const int32_t atomTag, const sp<UidMap> uidMap) {
+                                              const int32_t atomTag, const sp<UidMap> uidMap,
+                                              const shared_ptr<LogEventFilter>& logEventFilter) {
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     if (puller != nullptr) {
         pullerManager->RegisterPullAtomCallback(/*uid=*/0, atomTag, NS_PER_SEC, NS_PER_SEC * 10, {},
@@ -1417,9 +1418,39 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const in
             uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, timeBaseNs,
             [](const ConfigKey&) { return true; },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {});
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, logEventFilter);
+
     processor->OnConfigUpdated(currentTimeNs, key, config);
     return processor;
+}
+
+LogEventFilter::AtomIdSet CreateAtomIdSetDefault() {
+    LogEventFilter::AtomIdSet resultList(std::move(StatsLogProcessor::getDefaultAtomIdSet()));
+    StateManager::getInstance().addAllAtomIds(resultList);
+    return resultList;
+}
+
+LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config) {
+    LogEventFilter::AtomIdSet resultList(std::move(StatsLogProcessor::getDefaultAtomIdSet()));
+
+    // Parse the config for atom ids. A combination atom matcher is a combination of (in the end)
+    // simple atom matchers. So by adding all the atoms from the simple atom matchers
+    // function adds all of the atoms.
+    for (int i = 0; i < config.atom_matcher_size(); i++) {
+        const AtomMatcher& matcher = config.atom_matcher(i);
+        if (matcher.has_simple_atom_matcher()) {
+            EXPECT_TRUE(matcher.simple_atom_matcher().has_atom_id());
+            resultList.insert(matcher.simple_atom_matcher().atom_id());
+        }
+    }
+
+    for (int i = 0; i < config.state_size(); i++) {
+        const State& state = config.state(i);
+        EXPECT_TRUE(state.has_atom_id());
+        resultList.insert(state.atom_id());
+    }
+
+    return resultList;
 }
 
 void sortLogEventsByTimestamp(std::vector<std::unique_ptr<LogEvent>> *events) {
@@ -2126,6 +2157,16 @@ vector<PackageInfo> buildPackageInfos(
     return packageInfos;
 }
 
+ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
+                                      const string& versionString, const string& package) {
+    ApplicationInfo info;
+    info.set_uid(uid);
+    info.set_version(version);
+    info.set_version_string(versionString);
+    info.set_package_name(package);
+    return info;
+}
+
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {
     vector<uint8_t> statsBuffer;
     StatsdStats::getInstance().dumpStats(&statsBuffer, false /*reset stats*/);
@@ -2143,6 +2184,46 @@ StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {
         }
     }
     return pulledAtomStats;
+}
+
+void createStatsEvent(AStatsEvent* statsEvent, uint8_t typeId, uint32_t atomId) {
+    AStatsEvent_setAtomId(statsEvent, atomId);
+    fillStatsEventWithSampleValue(statsEvent, typeId);
+}
+
+void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId) {
+    int int32Array[2] = {3, 6};
+    uint32_t uids[] = {1001, 1002};
+    const char* tags[] = {"tag1", "tag2"};
+
+    switch (typeId) {
+        case INT32_TYPE:
+            AStatsEvent_writeInt32(statsEvent, 10);
+            break;
+        case INT64_TYPE:
+            AStatsEvent_writeInt64(statsEvent, 1000L);
+            break;
+        case STRING_TYPE:
+            AStatsEvent_writeString(statsEvent, "test");
+            break;
+        case LIST_TYPE:
+            AStatsEvent_writeInt32Array(statsEvent, int32Array, 2);
+            break;
+        case FLOAT_TYPE:
+            AStatsEvent_writeFloat(statsEvent, 1.3f);
+            break;
+        case BOOL_TYPE:
+            AStatsEvent_writeBool(statsEvent, 1);
+            break;
+        case BYTE_ARRAY_TYPE:
+            AStatsEvent_writeByteArray(statsEvent, (uint8_t*)"test", strlen("test"));
+            break;
+        case ATTRIBUTION_CHAIN_TYPE:
+            AStatsEvent_writeAttributionChain(statsEvent, uids, tags, 2);
+            break;
+        default:
+            break;
+    }
 }
 
 }  // namespace statsd
