@@ -111,7 +111,7 @@ private:
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
 
-    void dumpStatesLocked(FILE* out, bool verbose) const override;
+    void dumpStatesLocked(int out, bool verbose) const override;
 
     void dropDataLocked(const int64_t dropTimeNs) override;
 

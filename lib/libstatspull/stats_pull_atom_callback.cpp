@@ -47,7 +47,7 @@ AStatsEvent* AStatsEventList_addStatsEvent(AStatsEventList* pull_data) {
 }
 
 constexpr int64_t DEFAULT_COOL_DOWN_MILLIS = 1000LL;  // 1 second.
-constexpr int64_t DEFAULT_TIMEOUT_MILLIS = 2000LL;    // 2 seconds.
+constexpr int64_t DEFAULT_TIMEOUT_MILLIS = 1500LL;    // 1.5 seconds.
 
 struct AStatsManager_PullAtomMetadata {
     int64_t cool_down_millis;
