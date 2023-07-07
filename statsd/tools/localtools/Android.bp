@@ -7,6 +7,7 @@ java_binary_host {
     manifest: "localdrive_manifest.txt",
     srcs: [
         "src/com/android/statsd/shelltools/localdrive/*.java",
+        "src/com/android/statsd/shelltools/CustomExtensionRegistry.java",
         "src/com/android/statsd/shelltools/Utils.java",
     ],
     static_libs: [
@@ -19,6 +20,7 @@ java_library_host {
     name: "statsd_testdrive_lib",
     srcs: [
         "src/com/android/statsd/shelltools/testdrive/*.java",
+        "src/com/android/statsd/shelltools/CustomExtensionRegistry.java",
         "src/com/android/statsd/shelltools/Utils.java",
     ],
     static_libs: [

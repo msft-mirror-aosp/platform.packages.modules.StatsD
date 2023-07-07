@@ -16,13 +16,15 @@
 
 #pragma once
 
+#include <aidl/android/os/IStatsSubscriptionCallback.h>
+
 #include <condition_variable>
 #include <mutex>
 #include <thread>
 
 #include "external/StatsPullerManager.h"
 #include "packages/UidMap.h"
-#include "src/shell/ShellSubscriberClient.h"
+#include "shell/ShellSubscriberClient.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/statsd_config.pb.h"
 
@@ -54,14 +56,26 @@ namespace statsd {
  */
 class ShellSubscriber : public virtual RefBase {
 public:
-    ShellSubscriber(sp<UidMap> uidMap, sp<StatsPullerManager> pullerMgr)
-        : mUidMap(uidMap), mPullerMgr(pullerMgr){};
+    ShellSubscriber(sp<UidMap> uidMap, sp<StatsPullerManager> pullerMgr,
+                    const std::shared_ptr<LogEventFilter>& logEventFilter)
+        : mUidMap(uidMap), mPullerMgr(pullerMgr), mLogEventFilter(logEventFilter){};
 
     ~ShellSubscriber();
 
+    // Create new ShellSubscriberClient with file descriptors to manage a new subscription.
     bool startNewSubscription(int inFd, int outFd, int64_t timeoutSec);
 
+    // Create new ShellSubscriberClient with Binder callback to manage a new subscription.
+    bool startNewSubscription(
+            const vector<uint8_t>& subscriptionConfig,
+            const shared_ptr<aidl::android::os::IStatsSubscriptionCallback>& callback);
+
     void onLogEvent(const LogEvent& event);
+
+    void flushSubscription(
+            const shared_ptr<aidl::android::os::IStatsSubscriptionCallback>& callback);
+
+    void unsubscribe(const shared_ptr<aidl::android::os::IStatsSubscriptionCallback>& callback);
 
     static size_t getMaxSizeKb() {
         return ShellSubscriberClient::getMaxSizeKb();
@@ -72,11 +86,18 @@ public:
     }
 
 private:
+    bool startNewSubscriptionLocked(unique_ptr<ShellSubscriberClient> client);
+
     void pullAndSendHeartbeats();
+
+    /* Tells LogEventFilter about atom ids to parse */
+    void updateLogEventFilterLocked() const;
 
     sp<UidMap> mUidMap;
 
     sp<StatsPullerManager> mPullerMgr;
+
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     // Protects mClientSet, mThreadAlive, and ShellSubscriberClient
     mutable std::mutex mMutex;
