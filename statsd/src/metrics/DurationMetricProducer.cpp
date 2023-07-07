@@ -634,16 +634,16 @@ void DurationMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs
     mHasHitGuardrail = false;
 }
 
-void DurationMetricProducer::dumpStatesLocked(FILE* out, bool verbose) const {
+void DurationMetricProducer::dumpStatesLocked(int out, bool verbose) const {
     if (mCurrentSlicedDurationTrackerMap.size() == 0) {
         return;
     }
 
-    fprintf(out, "DurationMetric %lld dimension size %lu\n", (long long)mMetricId,
+    dprintf(out, "DurationMetric %lld dimension size %lu\n", (long long)mMetricId,
             (unsigned long)mCurrentSlicedDurationTrackerMap.size());
     if (verbose) {
         for (const auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-            fprintf(out, "\t(what)%s\n", whatIt.first.toString().c_str());
+            dprintf(out, "\t(what)%s\n", whatIt.first.toString().c_str());
             whatIt.second->dumpStates(out, verbose);
         }
     }

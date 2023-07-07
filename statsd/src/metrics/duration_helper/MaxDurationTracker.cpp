@@ -316,9 +316,9 @@ int64_t MaxDurationTracker::predictAnomalyTimestampNs(const AnomalyTracker& anom
     return std::max(anomalyTimeNs, refractoryEndNs);
 }
 
-void MaxDurationTracker::dumpStates(FILE* out, bool verbose) const {
-    fprintf(out, "\t\t sub-durations %lu\n", (unsigned long)mInfos.size());
-    fprintf(out, "\t\t current duration %lld\n", (long long)mDuration);
+void MaxDurationTracker::dumpStates(int out, bool verbose) const {
+    dprintf(out, "\t\t sub-durations %lu\n", (unsigned long)mInfos.size());
+    dprintf(out, "\t\t current duration %lld\n", (long long)mDuration);
 }
 
 int64_t MaxDurationTracker::getCurrentStateKeyDuration() const {
