@@ -16,31 +16,15 @@
 
 #include "ShardOffsetProvider.h"
 
-#include <errno.h>
-#include <sys/random.h>
-#include <unistd.h>
-
-#include <chrono>
-
 namespace android {
 namespace os {
 namespace statsd {
 
-ShardOffsetProvider::ShardOffsetProvider() {
-    unsigned int seed = 0;
-    // getrandom() reads bytes from urandom source into buf. If getrandom()
-    // is unable to read from urandom source, then it returns -1 and we set
-    // our seed to be time(nullptr) as a fallback.
-    if (TEMP_FAILURE_RETRY(
-                getrandom(static_cast<void*>(&seed), sizeof(unsigned int), GRND_NONBLOCK)) < 0) {
-        seed = time(nullptr);
-    }
-    srand(seed);
-    mShardOffset = rand();
+ShardOffsetProvider::ShardOffsetProvider(const uint32_t shardOffset) : mShardOffset(shardOffset) {
 }
 
 ShardOffsetProvider& ShardOffsetProvider::getInstance() {
-    static ShardOffsetProvider sShardOffsetProvider;
+    static ShardOffsetProvider sShardOffsetProvider(rand());
     return sShardOffsetProvider;
 }
 
