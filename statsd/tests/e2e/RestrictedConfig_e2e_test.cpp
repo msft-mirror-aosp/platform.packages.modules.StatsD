@@ -113,11 +113,10 @@ protected:
                 }));
 
         int64_t startTimeNs = getElapsedRealtimeNs();
-        service->mUidMap->updateMap(
-                startTimeNs, {delegateUid, kCallingUid},
-                /*versionCode=*/{1, 1}, /*versionString=*/{String16("v2"), String16("v2")},
-                {String16(delegatePackageName.c_str()), String16(configPackageName.c_str())},
-                /*installer=*/{String16(), String16()}, /*certificateHash=*/{{}, {}});
+        UidData uidData;
+        *uidData.add_app_info() = createApplicationInfo(delegateUid, 1, "v2", delegatePackageName);
+        *uidData.add_app_info() = createApplicationInfo(kCallingUid, 1, "v2", configPackageName);
+        service->mUidMap->updateMap(startTimeNs, uidData);
     }
     void TearDown() override {
         if (!IsAtLeastU()) {

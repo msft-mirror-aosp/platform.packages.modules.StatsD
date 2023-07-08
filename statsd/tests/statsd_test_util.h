@@ -126,9 +126,9 @@ protected:
     shared_ptr<StatsService> service;
     const int kConfigKey = 789130123;  // Randomly chosen
     const int kCallingUid = 10100;     // Randomly chosen
+
     void SetUp() override {
-        service = SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
-                                                    /* LogEventFilter */ nullptr);
+        service = createStatsService();
         // Removing config file from data/misc/stats-service and data/misc/stats-data if present
         ConfigKey configKey(kCallingUid, kConfigKey);
         service->removeConfiguration(kConfigKey, kCallingUid);
@@ -146,7 +146,12 @@ protected:
                                           ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
     }
 
-    void sendConfig(const StatsdConfig& config);
+    virtual shared_ptr<StatsService> createStatsService() {
+        return SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
+                                                 /* LogEventFilter */ nullptr);
+    }
+
+    bool sendConfig(const StatsdConfig& config);
 
     ConfigMetricsReport getReports(sp<StatsLogProcessor> processor, int64_t timestamp,
                                    bool include_current = false);
@@ -779,6 +784,9 @@ void writeFlag(const std::string& flagName, const std::string& flagValue);
 void writeBootFlag(const std::string& flagName, const std::string& flagValue);
 
 PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap);
+
+ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
+                                      const string& versionString, const string& package);
 
 PackageInfo buildPackageInfo(const std::string& name, const int32_t uid, const int64_t version,
                              const std::string& versionString,

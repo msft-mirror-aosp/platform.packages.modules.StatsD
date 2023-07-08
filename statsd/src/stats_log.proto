@@ -664,6 +664,7 @@ message StatsdStatsReport {
       optional int64 query_latency_ns = 9;
     }
     repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;
+    optional uint32 shard_offset = 21;
 }
 
 message AlertTriggerDetails {

@@ -33,11 +33,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
-void StatsServiceConfigTest::sendConfig(const StatsdConfig& config) {
+bool StatsServiceConfigTest::sendConfig(const StatsdConfig& config) {
     string str;
     config.SerializeToString(&str);
     std::vector<uint8_t> configAsVec(str.begin(), str.end());
-    service->addConfiguration(kConfigKey, configAsVec, kCallingUid);
+    return service->addConfiguration(kConfigKey, configAsVec, kCallingUid).isOk();
 }
 
 ConfigMetricsReport StatsServiceConfigTest::getReports(sp<StatsLogProcessor> processor,
@@ -2155,6 +2155,16 @@ vector<PackageInfo> buildPackageInfos(
                                                    deleted[i], hashStrings, installerIndex));
     }
     return packageInfos;
+}
+
+ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
+                                      const string& versionString, const string& package) {
+    ApplicationInfo info;
+    info.set_uid(uid);
+    info.set_version(version);
+    info.set_version_string(versionString);
+    info.set_package_name(package);
+    return info;
 }
 
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {

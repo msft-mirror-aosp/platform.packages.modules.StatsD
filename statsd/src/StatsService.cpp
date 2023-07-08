@@ -30,6 +30,7 @@
 #include <statslog_statsd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/random.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <utils/String16.h>
@@ -125,7 +126,8 @@ Status checkSid(const char* expectedSid) {
     }
 
 StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
-                           const std::shared_ptr<LogEventFilter>& logEventFilter)
+                           const std::shared_ptr<LogEventFilter>& logEventFilter,
+                           int initEventDelaySecs)
     : mUidMap(uidMap),
       mAnomalyAlarmMonitor(new AlarmMonitor(
               MIN_DIFF_TO_UPDATE_REGISTERED_ALARM_SECS,
@@ -154,9 +156,10 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
       mEventQueue(std::move(queue)),
       mLogEventFilter(logEventFilter),
       mBootCompleteTrigger({kBootCompleteTag, kUidMapReceivedTag, kAllPullersRegisteredTag},
-                           [this]() { mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs()); }),
+                           [this]() { onStatsdInitCompleted(); }),
       mStatsCompanionServiceDeathRecipient(
-              AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)) {
+              AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)),
+      mInitEventDelaySecs(initEventDelaySecs) {
     mPullerManager = new StatsPullerManager();
     StatsPuller::SetUidMap(mUidMap);
     mConfigManager = new ConfigManager();
@@ -227,6 +230,8 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
 
     init_system_properties();
 
+    init_seed_random();
+
     if (mEventQueue != nullptr) {
         std::thread pushedEventThread([this] { readLogs(); });
         pushedEventThread.detach();
@@ -259,6 +264,18 @@ void StatsService::init_system_properties() {
     if (buildType != NULL) {
         __system_property_read_callback(buildType, init_build_type_callback, this);
     }
+}
+
+void StatsService::init_seed_random() {
+    unsigned int seed = 0;
+    // getrandom() reads bytes from urandom source into buf. If getrandom()
+    // is unable to read from urandom source, then it returns -1 and we set
+    // out seed to be time(nullptr) as a fallback.
+    if (TEMP_FAILURE_RETRY(
+                getrandom(static_cast<void*>(&seed), sizeof(unsigned int), GRND_NONBLOCK)) < 0) {
+        seed = time(nullptr);
+    }
+    srand(seed);
 }
 
 void StatsService::init_build_type_callback(void* cookie, const char* /*name*/, const char* value,
@@ -973,47 +990,14 @@ bool StatsService::getUidFromString(const char* s, int32_t& uid) {
 
 Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
     ENFORCE_UID(AID_SYSTEM);
-    // Read stream into buffer.
-    string buffer;
-    if (!android::base::ReadFdToString(fd.get(), &buffer)) {
-        return exception(EX_ILLEGAL_ARGUMENT, "Failed to read all data from the pipe.");
-    }
 
-    // Parse buffer.
+    // Parse fd into proto.
     UidData uidData;
-    if (!uidData.ParseFromString(buffer)) {
+    if (!uidData.ParseFromFileDescriptor(fd.get())) {
         return exception(EX_ILLEGAL_ARGUMENT, "Error parsing proto stream for UidData.");
     }
 
-    vector<String16> versionStrings;
-    vector<String16> installers;
-    vector<String16> packageNames;
-    vector<int32_t> uids;
-    vector<int64_t> versions;
-    vector<vector<uint8_t>> certificateHashes;
-
-    const auto numEntries = uidData.app_info_size();
-    versionStrings.reserve(numEntries);
-    installers.reserve(numEntries);
-    packageNames.reserve(numEntries);
-    uids.reserve(numEntries);
-    versions.reserve(numEntries);
-    certificateHashes.reserve(numEntries);
-
-    for (const auto& appInfo: uidData.app_info()) {
-        packageNames.emplace_back(String16(appInfo.package_name().c_str()));
-        uids.push_back(appInfo.uid());
-        versions.push_back(appInfo.version());
-        versionStrings.emplace_back(String16(appInfo.version_string().c_str()));
-        installers.emplace_back(String16(appInfo.installer().c_str()));
-
-        const string& certHash = appInfo.certificate_hash();
-        certificateHashes.emplace_back(certHash.begin(), certHash.end());
-    }
-
-    mUidMap->updateMap(getElapsedRealtimeNs(), uids, versions, versionStrings, packageNames,
-                       installers, certificateHashes);
-
+    mUidMap->updateMap(getElapsedRealtimeNs(), uidData);
     mBootCompleteTrigger.markComplete(kUidMapReceivedTag);
     VLOG("StatsService::informAllUidData UidData proto parsed successfully.");
     return Status::ok();
@@ -1025,12 +1009,9 @@ Status StatsService::informOnePackage(const string& app, int32_t uid, int64_t ve
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackage was called");
-    String16 utf16App = String16(app.c_str());
-    String16 utf16VersionString = String16(versionString.c_str());
-    String16 utf16Installer = String16(installer.c_str());
 
-    mUidMap->updateApp(getElapsedRealtimeNs(), utf16App, uid, version, utf16VersionString,
-                       utf16Installer, certificateHash);
+    mUidMap->updateApp(getElapsedRealtimeNs(), app, uid, version, versionString, installer,
+                       certificateHash);
     return Status::ok();
 }
 
@@ -1038,8 +1019,7 @@ Status StatsService::informOnePackageRemoved(const string& app, int32_t uid) {
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackageRemoved was called");
-    String16 utf16App = String16(app.c_str());
-    mUidMap->removeApp(getElapsedRealtimeNs(), utf16App, uid);
+    mUidMap->removeApp(getElapsedRealtimeNs(), app, uid);
     mConfigManager->RemoveConfigs(uid);
     return Status::ok();
 }
@@ -1129,6 +1109,21 @@ Status StatsService::bootCompleted() {
     VLOG("StatsService::bootCompleted was called");
     mBootCompleteTrigger.markComplete(kBootCompleteTag);
     return Status::ok();
+}
+
+void StatsService::onStatsdInitCompleted() {
+    if (mInitEventDelaySecs > 0) {
+        // The hard-coded delay is determined based on perfetto traces evaluation
+        // for statsd during the boot.
+        // The delay is required to properly process event storm which often has place
+        // after device boot.
+        // This function is called from a dedicated thread without holding locks, so sleeping is ok.
+        // See MultiConditionTrigger::markComplete() executorThread for details
+        // For more details see http://b/277958338
+        std::this_thread::sleep_for(std::chrono::seconds(mInitEventDelaySecs));
+    }
+
+    mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs());
 }
 
 void StatsService::Startup() {

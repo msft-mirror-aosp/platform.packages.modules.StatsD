@@ -19,9 +19,11 @@
 #include "StatsdStats.h"
 
 #include <android/util/ProtoOutputStream.h>
+
 #include "../stats_log_util.h"
 #include "statslog_statsd.h"
 #include "storage/StorageManager.h"
+#include "utils/ShardOffsetProvider.h"
 
 namespace android {
 namespace os {
@@ -35,6 +37,7 @@ using android::util::FIELD_TYPE_INT32;
 using android::util::FIELD_TYPE_INT64;
 using android::util::FIELD_TYPE_MESSAGE;
 using android::util::FIELD_TYPE_STRING;
+using android::util::FIELD_TYPE_UINT32;
 using android::util::ProtoOutputStream;
 using std::lock_guard;
 using std::shared_ptr;
@@ -54,6 +57,7 @@ const int FIELD_ID_LOGGER_ERROR_STATS = 16;
 const int FIELD_ID_OVERFLOW = 18;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS = 20;
+const int FIELD_ID_SHARD_OFFSET = 21;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -936,6 +940,22 @@ void StatsdStats::dumpStats(int out) const {
                     (long long)*dropBytesPtr);
         }
 
+        for (const auto& stats : configStats->restricted_metric_stats) {
+            dprintf(out, "Restricted MetricId %lld: ", (long long)stats.first);
+            dprintf(out, "Insert error %lld, ", (long long)stats.second.insertError);
+            dprintf(out, "Table creation error %lld, ", (long long)stats.second.tableCreationError);
+            dprintf(out, "Table deletion error %lld ", (long long)stats.second.tableDeletionError);
+            dprintf(out, "Category changed count %lld\n ",
+                    (long long)stats.second.categoryChangedCount);
+            string flushLatencies = "Flush Latencies: ";
+            for (const int64_t latencyNs : stats.second.flushLatencyNs) {
+                flushLatencies.append(to_string(latencyNs).append(","));
+            }
+            flushLatencies.pop_back();
+            flushLatencies.push_back('\n');
+            dprintf(out, "%s", flushLatencies.c_str());
+        }
+
         for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
             dprintf(out, "\tflush latency time ns: %lld\n", (long long)flushLatency);
         }
@@ -1031,6 +1051,10 @@ void StatsdStats::dumpStats(int out) const {
 
         for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
             dprintf(out, "flush latency time ns: %lld\n", (long long)flushLatency);
+        }
+
+        for (const int64_t dbSize : configStats->total_db_sizes) {
+            dprintf(out, "\tdb size: %lld\n", (long long)dbSize);
         }
     }
     dprintf(out, "********Disk Usage stats***********\n");
@@ -1149,6 +1173,8 @@ void StatsdStats::dumpStats(int out) const {
             }
         }
     }
+    dprintf(out, "********Shard Offset Provider stats***********\n");
+    dprintf(out, "Shard Offset: %u\n", ShardOffsetProvider::getInstance().getShardOffset());
 }
 
 void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* proto) {
@@ -1490,6 +1516,9 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
         }
         proto.end(token);
     }
+
+    proto.write(FIELD_TYPE_UINT32 | FIELD_ID_SHARD_OFFSET,
+                static_cast<long>(ShardOffsetProvider::getInstance().getShardOffset()));
 
     output->clear();
     size_t bufferSize = proto.size();

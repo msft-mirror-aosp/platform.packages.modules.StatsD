@@ -418,15 +418,15 @@ vector<int32_t> MetricsManager::getPullAtomUids(int32_t atomId) {
     return uids;
 }
 
-void MetricsManager::dumpStates(FILE* out, bool verbose) {
-    fprintf(out, "ConfigKey %s, allowed source:", mConfigKey.ToString().c_str());
+void MetricsManager::dumpStates(int out, bool verbose) {
+    dprintf(out, "ConfigKey %s, allowed source:", mConfigKey.ToString().c_str());
     {
         std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
         for (const auto& source : mAllowedLogSources) {
-            fprintf(out, "%d ", source);
+            dprintf(out, "%d ", source);
         }
     }
-    fprintf(out, "\n");
+    dprintf(out, "\n");
     for (const auto& producer : mAllMetricProducers) {
         producer->dumpStates(out, verbose);
     }

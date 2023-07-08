@@ -89,7 +89,7 @@ public:
         return mShouldPersistHistory;
     }
 
-    void dumpStates(FILE* out, bool verbose);
+    void dumpStates(int out, bool verbose);
 
     inline bool isInTtl(const int64_t timestampNs) const {
         return mTtlNs <= 0 || timestampNs < mTtlEndNs;
