@@ -39,7 +39,7 @@ public:
     static ShardOffsetProvider& getInstance();
 
 private:
-    ShardOffsetProvider();
+    ShardOffsetProvider(const uint32_t shardOffset);
 
     // Only used for testing.
     void setShardOffset(const uint32_t shardOffset) {
