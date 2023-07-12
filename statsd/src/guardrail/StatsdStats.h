@@ -493,17 +493,17 @@ public:
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
      * should have been sent, but instead was skipped due to hitting the guardrail.
      */
-     void noteActivationBroadcastGuardrailHit(const int uid);
+    void noteActivationBroadcastGuardrailHit(const int uid);
 
-     /**
-      * Reports that an atom is erroneous or cannot be parsed successfully by
-      * statsd. An atom tag of 0 indicates that the client did not supply the
-      * atom id within the encoding.
-      *
-      * For pushed atoms only, this call should be preceded by a call to
-      * noteAtomLogged.
-      */
-     void noteAtomError(int atomTag, bool pull=false);
+    /**
+     * Reports that an atom is erroneous or cannot be parsed successfully by
+     * statsd. An atom tag of 0 indicates that the client did not supply the
+     * atom id within the encoding.
+     *
+     * For pushed atoms only, this call should be preceded by a call to
+     * noteAtomLogged.
+     */
+    void noteAtomError(int atomTag, bool pull = false);
 
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
@@ -532,9 +532,10 @@ public:
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
         int64_t pullTimeoutElapsedMillis;
-        PullTimeoutMetadata(int64_t uptimeMillis, int64_t elapsedMillis) :
-            pullTimeoutUptimeMillis(uptimeMillis),
-            pullTimeoutElapsedMillis(elapsedMillis) {/* do nothing */}
+        PullTimeoutMetadata(int64_t uptimeMillis, int64_t elapsedMillis)
+            : pullTimeoutUptimeMillis(uptimeMillis),
+              pullTimeoutElapsedMillis(elapsedMillis) { /* do nothing */
+        }
     } PullTimeoutMetadata;
 
     typedef struct {
