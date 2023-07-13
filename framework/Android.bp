@@ -112,6 +112,7 @@ cc_library_shared {
         "-Werror",
         "-Wextra",
         "-Wno-unused-parameter",
+        "-Wthread-safety",
     ],
     apex_available: [
         "com.android.os.statsd",
