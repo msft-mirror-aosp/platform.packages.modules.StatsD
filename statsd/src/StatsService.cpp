@@ -1227,9 +1227,14 @@ Status StatsService::setBroadcastSubscriber(int64_t configId,
                                             int64_t subscriberId,
                                             const shared_ptr<IPendingIntentRef>& pir,
                                             const int32_t callingUid) {
+    VLOG("StatsService::setBroadcastSubscriber called.");
     ENFORCE_UID(AID_SYSTEM);
 
-    VLOG("StatsService::setBroadcastSubscriber called.");
+    if (pir == nullptr) {
+        return exception(EX_NULL_POINTER,
+                         "setBroadcastSubscriber provided with null PendingIntentRef");
+    }
+
     ConfigKey configKey(callingUid, configId);
     SubscriberReporter::getInstance()
             .setBroadcastSubscriber(configKey, subscriberId, pir);
