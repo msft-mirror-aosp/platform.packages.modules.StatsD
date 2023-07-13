@@ -106,6 +106,8 @@ public:
                            const int32_t callingUid,
                            vector<uint8_t>* output) override;
 
+    virtual Status getDataFd(int64_t key, const int32_t callingUid,
+                             const ScopedFileDescriptor& fd) override;
 
     /**
      * Binder call for clients to get metadata across all configs in statsd.
@@ -363,6 +365,11 @@ private:
      * Print all stats logs received to logcat.
      */
     status_t cmd_print_logs(int outFd, const Vector<String8>& args);
+
+    /**
+     * Implementation for request data for the configuration key.
+     */
+    void getDataChecked(int64_t key, const int32_t callingUid, vector<uint8_t>* output);
 
     /**
      * Writes the value of args[uidArgIndex] into uid.
