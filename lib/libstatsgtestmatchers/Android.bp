@@ -45,6 +45,7 @@ cc_test_library {
     cflags: [
         "-Wall",
         "-Werror",
+        "-Wthread-safety",
     ],
     visibility: [
         "//packages/modules/StatsD/lib/libstatspull",
