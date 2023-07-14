@@ -1335,11 +1335,8 @@ Status StatsService::getRegisteredExperimentIds(std::vector<int64_t>* experiment
 Status StatsService::updateProperties(const vector<PropertyParcel>& properties) {
     ENFORCE_UID(AID_SYSTEM);
 
-    for (const auto& [property, value] : properties) {
-        if (property == kIncludeCertificateHash) {
-            mUidMap->setIncludeCertificateHash(value == "true");
-        }
-    }
+    // TODO(b/281765292): Forward statsd_java properties received here to FlagProvider.
+
     return Status::ok();
 }
 
