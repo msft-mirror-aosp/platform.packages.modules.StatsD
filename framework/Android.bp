@@ -60,6 +60,7 @@ java_sdk_library {
 
     libs: [
         "androidx.annotation_annotation",
+        "framework-configinfrastructure",
     ],
 
     static_libs: [
@@ -123,6 +124,7 @@ cc_library_shared {
         "-Werror",
         "-Wextra",
         "-Wno-unused-parameter",
+        "-Wthread-safety",
     ],
     apex_available: [
         "com.android.os.statsd",
