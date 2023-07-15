@@ -23,6 +23,7 @@ cc_defaults {
 
     cflags: [
         "-Wno-deprecated-declarations",
+        "-Wthread-safety",
     ],
 
     srcs: [
