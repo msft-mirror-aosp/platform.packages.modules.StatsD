@@ -115,8 +115,7 @@ protected:
     const int kConfigKey = 789130123;  // Randomly chosen
     const int kCallingUid = 0;         // Randomly chosen
     void SetUp() override {
-        service = SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
-                                                    /* LogEventFilter */ nullptr);
+        service = createStatsService();
         // Removing config file from data/misc/stats-service and data/misc/stats-data if present
         ConfigKey configKey(kCallingUid, kConfigKey);
         service->removeConfiguration(kConfigKey, kCallingUid);
@@ -134,7 +133,12 @@ protected:
                                           ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
     }
 
-    void sendConfig(const StatsdConfig& config);
+    virtual shared_ptr<StatsService> createStatsService() {
+        return SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
+                                                 /* LogEventFilter */ nullptr);
+    }
+
+    bool sendConfig(const StatsdConfig& config);
 
     ConfigMetricsReport getReports(sp<StatsLogProcessor> processor, int64_t timestamp,
                                    bool include_current = false);
