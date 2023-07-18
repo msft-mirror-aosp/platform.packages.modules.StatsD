@@ -27,6 +27,7 @@
 #include "external/StatsPullerManager.h"
 #include "logd/LogEvent.h"
 #include "packages/UidMap.h"
+#include "socket/LogEventFilter.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/statsd_config.pb.h"
 
@@ -98,6 +99,9 @@ public:
 
     // Minimum sleep for the pull thread for callback subscriptions.
     static constexpr int64_t kMinCallbackSleepIntervalMs = 2000;  // 2 seconds.
+
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const;
+
 private:
     int64_t pullIfNeeded(int64_t nowSecs, int64_t nowMillis, int64_t nowNanos);
 

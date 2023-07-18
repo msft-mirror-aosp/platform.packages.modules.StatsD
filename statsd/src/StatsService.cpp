@@ -119,7 +119,8 @@ Status checkSid(const char* expectedSid) {
         }                                \
     }
 
-StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue)
+StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
+                           const std::shared_ptr<LogEventFilter>& logEventFilter)
     : mUidMap(uidMap),
       mAnomalyAlarmMonitor(new AlarmMonitor(
               MIN_DIFF_TO_UPDATE_REGISTERED_ALARM_SECS,
@@ -146,6 +147,7 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                   }
               })),
       mEventQueue(std::move(queue)),
+      mLogEventFilter(logEventFilter),
       mBootCompleteTrigger({kBootCompleteTag, kUidMapReceivedTag, kAllPullersRegisteredTag},
                            [this]() { mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs()); }),
       mStatsCompanionServiceDeathRecipient(
@@ -191,7 +193,8 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                 }
                 VLOG("StatsService::active configs broadcast failed for uid %d", uid);
                 return false;
-            });
+            },
+            logEventFilter);
 
     mUidMap->setListener(mProcessor);
     mConfigManager->AddListener(mProcessor);
@@ -1381,7 +1384,6 @@ Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,
     initShellSubscriber();
 
     mShellSubscriber->startNewSubscription(subscriptionConfig, callback);
-
     return Status::ok();
 }
 
@@ -1406,7 +1408,7 @@ Status StatsService::flushSubscription(const shared_ptr<IStatsSubscriptionCallba
 void StatsService::initShellSubscriber() {
     std::lock_guard<std::mutex> lock(mShellSubscriberMutex);
     if (mShellSubscriber == nullptr) {
-        mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager);
+        mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager, mLogEventFilter);
     }
 }
 

@@ -108,7 +108,7 @@ TEST(UidMapTest, TestIsolatedUID) {
     StatsLogProcessor p(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; });
+            [](const int&, const vector<int64_t>&) { return true; }, nullptr);
 
     std::unique_ptr<LogEvent> addEvent = CreateIsolatedUidChangedEvent(
             1 /*timestamp*/, 100 /*hostUid*/, 101 /*isolatedUid*/, 1 /*is_create*/);
@@ -124,8 +124,8 @@ TEST(UidMapTest, TestIsolatedUID) {
 
 TEST(UidMapTest, TestUpdateMap) {
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
     sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                          kCertificateHashes);
 
@@ -156,8 +156,8 @@ TEST(UidMapTest, TestUpdateMap) {
 
 TEST(UidMapTest, TestUpdateMapMultiple) {
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
     sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                          kCertificateHashes);
 
@@ -200,8 +200,8 @@ TEST(UidMapTest, TestUpdateMapMultiple) {
 
 TEST(UidMapTest, TestRemoveApp) {
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
     sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                          kCertificateHashes);
 
@@ -257,8 +257,8 @@ TEST(UidMapTest, TestRemoveApp) {
 
 TEST(UidMapTest, TestUpdateApp) {
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr);
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
     sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                          kCertificateHashes);
 
@@ -571,7 +571,8 @@ protected:
     UidMapTestAppendUidMap()
         : config1(1, StringToId("config1")),
           uidMap(new UidMap()),
-          service(SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr)) {
+          service(SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr,
+                                                    /* LogEventFilter */ nullptr)) {
     }
 
     void SetUp() override {
