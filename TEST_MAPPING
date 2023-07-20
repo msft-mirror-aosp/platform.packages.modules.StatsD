@@ -15,6 +15,9 @@
       "name" : "LibStatsPullTests"
     },
     {
+      "name" : "StatsdTestUtilsTest"
+    },
+    {
       "name" : "libkll_test"
     },
     {
@@ -33,6 +36,9 @@
     },
     {
       "name" : "FrameworkStatsdHostTest"
+    },
+    {
+      "name" : "StatsdTestUtilsTest"
     },
     {
       "name" : "LibStatsPullTests"
