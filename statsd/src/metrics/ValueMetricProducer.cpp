@@ -589,18 +589,18 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::updateCurrentSlicedBucketC
 }
 
 template <typename AggregatedValue, typename DimExtras>
-void ValueMetricProducer<AggregatedValue, DimExtras>::dumpStatesLocked(FILE* out,
+void ValueMetricProducer<AggregatedValue, DimExtras>::dumpStatesLocked(int out,
                                                                        bool verbose) const {
     if (mCurrentSlicedBucket.size() == 0) {
         return;
     }
 
-    fprintf(out, "ValueMetricProducer %lld dimension size %lu\n", (long long)mMetricId,
+    dprintf(out, "ValueMetricProducer %lld dimension size %lu\n", (long long)mMetricId,
             (unsigned long)mCurrentSlicedBucket.size());
     if (verbose) {
         for (const auto& [metricDimensionKey, currentBucket] : mCurrentSlicedBucket) {
             for (const Interval& interval : currentBucket.intervals) {
-                fprintf(out, "\t(what)%s\t(states)%s  (aggregate)%s\n",
+                dprintf(out, "\t(what)%s\t(states)%s  (aggregate)%s\n",
                         metricDimensionKey.getDimensionKeyInWhat().toString().c_str(),
                         metricDimensionKey.getStateValuesKey().toString().c_str(),
                         aggregatedValueToString(interval.aggregate).c_str());

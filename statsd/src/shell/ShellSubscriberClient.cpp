@@ -175,7 +175,7 @@ bool ShellSubscriberClient::writeEventToProtoIfMatched(const LogEvent& event,
     event.ToProto(mProtoOut);
     mProtoOut.end(atomToken);
 
-    const int64_t timestampNs = event.GetElapsedTimestampNs();
+    const int64_t timestampNs = truncateTimestampIfNecessary(event);
     mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
                             FIELD_ID_SHELL_DATA__ELAPSED_TIMESTAMP_NANOS,
                     static_cast<long long>(timestampNs));

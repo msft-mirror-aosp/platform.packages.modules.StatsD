@@ -91,7 +91,7 @@ private:
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
 
-    void dumpStatesLocked(FILE* out, bool verbose) const override{};
+    void dumpStatesLocked(int out, bool verbose) const override{};
 
     // Maps the field/value pairs of an atom to a list of timestamps used to deduplicate atoms.
     std::unordered_map<AtomDimensionKey, std::vector<int64_t>> mAggregatedAtoms;
