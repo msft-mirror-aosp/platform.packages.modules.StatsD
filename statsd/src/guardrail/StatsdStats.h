@@ -532,6 +532,16 @@ public:
      */
     static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(const int atomId = -1);
 
+    /**
+     * Returns true if there is recorded event queue overflow
+     */
+    bool hasEventQueueOverflow() const;
+
+    /**
+     * Returns true if there is recorded socket loss
+     */
+    bool hasSocketLoss() const;
+
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
         int64_t pullTimeoutElapsedMillis;
