@@ -37,6 +37,12 @@ enum BucketDropReason {
     NO_DATA = 9;
 };
 
+enum DataCorruptedReason {
+    DATA_CORRUPTED_UNKNOWN = 0;
+    DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW = 1;
+    DATA_CORRUPTED_SOCKET_LOSS = 2;
+};
+
 enum DumpReportReason {
     DEVICE_SHUTDOWN = 1;
     CONFIG_UPDATED = 2;
