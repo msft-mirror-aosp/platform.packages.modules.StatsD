@@ -202,6 +202,9 @@ private:
     // Tracks when we last checked the bytes consumed for each config key.
     std::unordered_map<ConfigKey, int64_t> mLastByteSizeTimes;
 
+    // Tracks the number of times a config with a specified config key has been dumped.
+    std::unordered_map<ConfigKey, int32_t> mDumpReportNumbers;
+
     // Tracks when we last checked the ttl for restricted metrics.
     int64_t mLastTtlTime;
 
