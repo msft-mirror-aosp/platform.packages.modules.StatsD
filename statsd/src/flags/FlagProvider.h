@@ -16,15 +16,15 @@
 
 #pragma once
 
-#include <unordered_map>
-#include <vector>
-
 #include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest_prod.h>
 #include <server_configurable_flags/get_flags.h>
 
+#include <functional>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace android {
 namespace os {
