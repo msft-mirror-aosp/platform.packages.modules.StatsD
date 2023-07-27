@@ -334,6 +334,8 @@ message StatsLogReport {
 
   optional bool is_active = 14;
 
+  optional bool dimension_guardrail_hit = 17;
+
   // Do not use.
   reserved 13, 15;
 }
