@@ -22,7 +22,7 @@ option java_package = "com.android.os";
 option java_outer_classname = "StatsLog";
 
 import "frameworks/proto_logging/stats/atoms.proto";
-import "packages/modules/StatsD/statsd/src/guardrail/invalid_config_reason_enum.proto";
+import "packages/modules/StatsD/statsd/src/guardrail/stats_log_enums.proto";
 
 message DimensionsValue {
   optional int32 field = 1;
@@ -250,24 +250,6 @@ message StatsLogReport {
   // Deprecated.
   reserved 2, 3;
 
-  // Keep this in sync with BucketDropReason enum in MetricProducer.h.
-  enum BucketDropReason {
-      // For ValueMetric, a bucket is dropped during a dump report request iff
-      // current bucket should be included, a pull is needed (pulled metric and
-      // condition is true), and we are under fast time constraints.
-      DUMP_REPORT_REQUESTED = 1;
-      EVENT_IN_WRONG_BUCKET = 2;
-      CONDITION_UNKNOWN = 3;
-      PULL_FAILED = 4;
-      PULL_DELAYED = 5;
-      DIMENSION_GUARDRAIL_REACHED = 6;
-      MULTIPLE_BUCKETS_SKIPPED = 7;
-      // Not an invalid bucket case, but the bucket is dropped.
-      BUCKET_TOO_SMALL = 8;
-      // Not an invalid bucket case, but the bucket is skipped.
-      NO_DATA = 9;
-  };
-
   message DropEvent {
       optional BucketDropReason drop_reason = 1;
 
@@ -412,16 +394,6 @@ message ConfigMetricsReport {
   }
   repeated Annotation annotation = 7;
 
-  enum DumpReportReason {
-      DEVICE_SHUTDOWN = 1;
-      CONFIG_UPDATED = 2;
-      CONFIG_REMOVED = 3;
-      GET_DATA_CALLED = 4;
-      ADB_DUMP = 5;
-      CONFIG_RESET = 6;
-      STATSCOMPANION_DIED = 7;
-      TERMINATION_SIGNAL_RECEIVED = 8;
-  }
   optional DumpReportReason dump_report_reason = 8;
 
   repeated string strings = 9;

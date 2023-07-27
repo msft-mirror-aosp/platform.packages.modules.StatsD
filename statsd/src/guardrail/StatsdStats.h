@@ -17,7 +17,7 @@
 
 #include <gtest/gtest_prod.h>
 #include <log/log_time.h>
-#include <src/guardrail/invalid_config_reason_enum.pb.h>
+#include <src/guardrail/stats_log_enums.pb.h>
 
 #include <list>
 #include <mutex>
