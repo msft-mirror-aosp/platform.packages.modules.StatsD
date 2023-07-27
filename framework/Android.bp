@@ -58,6 +58,10 @@ java_sdk_library {
         ":framework-statsd-sources",
     ],
 
+    libs: [
+        "framework-configinfrastructure",
+    ],
+
     static_libs: [
          "modules-utils-build",
     ],
