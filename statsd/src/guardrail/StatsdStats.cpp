@@ -664,6 +664,15 @@ void StatsdStats::noteAtomError(int atomTag, bool pull) {
     }
 }
 
+bool StatsdStats::hasHitDimensionGuardrail(int64_t metricId) const {
+    lock_guard<std::mutex> lock(mLock);
+    auto atomMetricStatsIter = mAtomMetricStats.find(metricId);
+    if (atomMetricStatsIter != mAtomMetricStats.end()) {
+        return atomMetricStatsIter->second.hardDimensionLimitReached > 0;
+    }
+    return false;
+}
+
 void StatsdStats::noteQueryRestrictedMetricSucceed(const int64_t configId,
                                                    const string& configPackage,
                                                    const std::optional<int32_t> configUid,

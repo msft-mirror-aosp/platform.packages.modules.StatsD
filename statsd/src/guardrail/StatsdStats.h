@@ -633,6 +633,11 @@ public:
     void dumpStats(int outFd) const;
 
     /**
+     * Returns true if dimension guardrail has been hit since boot for given metric.
+     */
+    bool hasHitDimensionGuardrail(int64_t metricId) const;
+
+    /**
      * Return soft and hard atom key dimension size limits as an std::pair.
      */
     static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(const int atomId = -1);
@@ -867,6 +872,7 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
     FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
+    FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
