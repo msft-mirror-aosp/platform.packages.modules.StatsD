@@ -900,6 +900,25 @@ TEST(StatsdStatsTest, TestShardOffsetProvider) {
     EXPECT_EQ(report.shard_offset(), 15);
 }
 
+TEST(StatsdStatsTest, TestHasHitDimensionGuardrail) {
+    StatsdStats stats;
+    int metricId1 = 1;
+    int metricId2 = 2;
+    int metricId3 = 3;
+
+    stats.noteBucketCount(metricId2);
+    stats.noteHardDimensionLimitReached(metricId3);
+
+    // No AtomMetricStats.
+    EXPECT_FALSE(stats.hasHitDimensionGuardrail(metricId1));
+
+    // Has AtomMetricStats but hasn't hit dimension guardrail.
+    EXPECT_FALSE(stats.hasHitDimensionGuardrail(metricId2));
+
+    // Has hit dimension guardrail.
+    EXPECT_TRUE(stats.hasHitDimensionGuardrail(metricId3));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
