@@ -58,8 +58,8 @@ cc_library_shared {
         "statsd-aidl-ndk",
     ],
     static_libs: [
+        "libbase",
         "libstatspull_private",
         "libstatssocket_private",
-        "libcutils",
     ],
 }
