@@ -202,7 +202,10 @@ public:
 
     // Max memory allowed for storing metrics per configuration. If this limit is exceeded, statsd
     // drops the metrics data in memory.
-    static const size_t kMaxMetricsBytesPerConfig = 2 * 1024 * 1024;
+    static const size_t kDefaultMaxMetricsBytesPerConfig = 2 * 1024 * 1024;
+
+    // Hard limit for custom memory allowed for storing metrics per configuration.
+    static const size_t kHardMaxMetricsBytesPerConfig = 20 * 1024 * 1024;
 
     // Soft memory limit per configuration. Once this limit is exceeded, we begin notifying the
     // data subscriber that it's time to call getData.
