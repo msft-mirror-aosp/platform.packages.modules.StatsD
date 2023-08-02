@@ -490,14 +490,15 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     stats.noteConfigReceived(configKeyWithoutError, 2, 3, 4, 5, {}, nullopt);
     stats.noteDbCorrupted(key);
     stats.noteDbCorrupted(key);
+    stats.noteDbSizeExceeded(key);
+    stats.noteDbStatFailed(key);
+    stats.noteDbConfigInvalid(key);
+    stats.noteDbTooOld(key);
+    stats.noteDbDeletionConfigRemoved(key);
+    stats.noteDbDeletionConfigUpdated(key);
     stats.noteRestrictedConfigDbSize(key, 999, 111);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.config_stats().size());
     ASSERT_EQ(0, report.config_stats(0).restricted_metric_stats().size());
     ASSERT_EQ(1, report.config_stats(1).restricted_metric_stats().size());
@@ -517,6 +518,12 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     EXPECT_TRUE(report.config_stats(1).device_info_table_creation_failed());
     EXPECT_EQ(metricId, report.config_stats(1).restricted_metric_stats(0).restricted_metric_id());
     EXPECT_EQ(2, report.config_stats(1).restricted_db_corrupted_count());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_stat_failed());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_size_exceeded_limit());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_invalid());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_too_old());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_removed());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_updated());
 }
 
 TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
@@ -536,12 +543,7 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
                                           callingUid, InvalidQueryReason(AMBIGUOUS_CONFIG_KEY),
                                           "error_message");
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(3, report.restricted_metric_query_stats().size());
     EXPECT_EQ(configKey.GetId(), report.restricted_metric_query_stats(0).config_id());
     EXPECT_EQ(configKey.GetUid(), report.restricted_metric_query_stats(0).config_uid());

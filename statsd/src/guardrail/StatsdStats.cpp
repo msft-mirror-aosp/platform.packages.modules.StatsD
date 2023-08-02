@@ -125,6 +125,12 @@ const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY = 28;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_TIME_SEC = 29;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_BYTES = 30;
 const int FIELD_ID_CONFIG_STATS_DUMP_REPORT_NUMBER = 31;
+const int FIELD_ID_DB_DELETION_STAT_FAILED = 32;
+const int FIELD_ID_DB_DELETION_SIZE_EXCEEDED_LIMIT = 33;
+const int FIELD_ID_DB_DELETION_CONFIG_INVALID = 34;
+const int FIELD_ID_DB_DELETION_TOO_OLD = 35;
+const int FIELD_ID_DB_DELETION_CONFIG_REMOVED = 36;
+const int FIELD_ID_DB_DELETION_CONFIG_UPDATED = 37;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -423,6 +429,66 @@ void StatsdStats::noteDbCorrupted(const ConfigKey& key) {
         return;
     }
     it->second->db_corrupted_count++;
+}
+
+void StatsdStats::noteDbSizeExceeded(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_size_exceeded_limit++;
+}
+
+void StatsdStats::noteDbStatFailed(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_stat_failed++;
+}
+
+void StatsdStats::noteDbConfigInvalid(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_config_invalid++;
+}
+
+void StatsdStats::noteDbTooOld(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_too_old++;
+}
+
+void StatsdStats::noteDbDeletionConfigRemoved(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_config_removed++;
+}
+
+void StatsdStats::noteDbDeletionConfigUpdated(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_config_updated++;
 }
 
 void StatsdStats::noteUidMapDropped(int deltas) {
@@ -960,6 +1026,12 @@ void StatsdStats::resetInternalLocked() {
         config.second->total_flush_latency_ns.clear();
         config.second->total_db_size_timestamps.clear();
         config.second->total_db_sizes.clear();
+        config.second->db_deletion_size_exceeded_limit = 0;
+        config.second->db_deletion_stat_failed = 0;
+        config.second->db_deletion_config_invalid = 0;
+        config.second->db_deletion_too_old = 0;
+        config.second->db_deletion_config_removed = 0;
+        config.second->db_deletion_config_updated = 0;
     }
     for (auto& pullStats : mPulledAtomStats) {
         pullStats.second.totalPull = 0;
@@ -1030,6 +1102,13 @@ int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
     }
 }
 
+bool StatsdStats::hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const {
+    return configStats->device_info_table_creation_failed || configStats->db_corrupted_count ||
+           configStats->db_deletion_size_exceeded_limit || configStats->db_deletion_stat_failed ||
+           configStats->db_deletion_config_invalid || configStats->db_deletion_too_old ||
+           configStats->db_deletion_config_removed || configStats->db_deletion_config_updated;
+}
+
 bool StatsdStats::hasEventQueueOverflow() const {
     lock_guard<std::mutex> lock(mLock);
     return mOverflowCount != 0;
@@ -1051,14 +1130,24 @@ void StatsdStats::dumpStats(int out) const {
     for (const auto& configStats : mIceBox) {
         dprintf(out,
                 "Config {%d_%lld}: creation=%d, deletion=%d, reset=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d, device_info_table_creation_failed=%d, "
-                "db_corrupted_count=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->reset_time_sec,
                 configStats->metric_count, configStats->condition_count, configStats->matcher_count,
-                configStats->alert_count, configStats->is_valid,
-                configStats->device_info_table_creation_failed, configStats->db_corrupted_count);
-
+                configStats->alert_count, configStats->is_valid);
+        if (hasRestrictedConfigErrors(configStats)) {
+            dprintf(out,
+                    ", device_info_table_creation_failed=%d, db_corrupted_count=%d, "
+                    "db_size_exceeded=%d, db_stat_failed=%d, "
+                    "db_config_invalid=%d, db_too_old=%d, db_deletion_config_removed=%d, "
+                    "db_deletion_config_updated=%d",
+                    configStats->device_info_table_creation_failed, configStats->db_corrupted_count,
+                    configStats->db_deletion_size_exceeded_limit,
+                    configStats->db_deletion_stat_failed, configStats->db_deletion_config_invalid,
+                    configStats->db_deletion_too_old, configStats->db_deletion_config_removed,
+                    configStats->db_deletion_config_updated);
+        }
+        dprintf(out, "\n");
         if (!configStats->is_valid) {
             dprintf(out, "\tinvalid config reason: %s\n",
                     InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
@@ -1113,14 +1202,24 @@ void StatsdStats::dumpStats(int out) const {
         auto& configStats = pair.second;
         dprintf(out,
                 "Config {%d-%lld}: creation=%d, deletion=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d, device_info_table_creation_failed=%d, "
-                "db_corrupted_count=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->metric_count,
                 configStats->condition_count, configStats->matcher_count, configStats->alert_count,
-                configStats->is_valid, configStats->device_info_table_creation_failed,
-                configStats->db_corrupted_count);
-
+                configStats->is_valid);
+        if (hasRestrictedConfigErrors(configStats)) {
+            dprintf(out,
+                    ", device_info_table_creation_failed=%d, db_corrupted_count=%d, "
+                    "db_size_exceeded=%d, db_stat_failed=%d, "
+                    "db_config_invalid=%d, db_too_old=%d, db_deletion_config_removed=%d, "
+                    "db_deletion_config_updated=%d",
+                    configStats->device_info_table_creation_failed, configStats->db_corrupted_count,
+                    configStats->db_deletion_size_exceeded_limit,
+                    configStats->db_deletion_stat_failed, configStats->db_deletion_config_invalid,
+                    configStats->db_deletion_too_old, configStats->db_deletion_config_removed,
+                    configStats->db_deletion_config_updated);
+        }
+        dprintf(out, "\n");
         if (!configStats->is_valid) {
             dprintf(out, "\tinvalid config reason: %s\n",
                     InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
@@ -1525,10 +1624,23 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
                 (long long)pair.second.categoryChangedCount, proto);
         proto->end(token);
     }
-    proto->write(FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED,
-                 configStats.device_info_table_creation_failed);
-    proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT,
-                 configStats.db_corrupted_count);
+    writeNonZeroStatToStream(
+            FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED,
+            configStats.device_info_table_creation_failed, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT,
+                             configStats.db_corrupted_count, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_STAT_FAILED,
+                             configStats.db_deletion_size_exceeded_limit, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_SIZE_EXCEEDED_LIMIT,
+                             configStats.db_deletion_size_exceeded_limit, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_CONFIG_INVALID,
+                             configStats.db_deletion_config_invalid, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_TOO_OLD,
+                             configStats.db_deletion_too_old, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_CONFIG_REMOVED,
+                             configStats.db_deletion_config_removed, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_CONFIG_UPDATED,
+                             configStats.db_deletion_config_updated, proto);
     for (int64_t latency : configStats.total_flush_latency_ns) {
         proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY |
                              FIELD_COUNT_REPEATED,

@@ -491,6 +491,12 @@ message StatsdStatsReport {
         repeated int64 restricted_db_size_time_sec = 29;
         repeated int64 restricted_db_size_bytes = 30;
         repeated int32 dump_report_number = 31;
+        optional int32 db_deletion_stat_failed = 32;
+        optional int32 db_deletion_size_exceeded_limit = 33;
+        optional int32 db_deletion_config_invalid = 34;
+        optional int32 db_deletion_too_old = 35;
+        optional int32 db_deletion_config_removed = 36;
+        optional int32 db_deletion_config_updated = 37;
     }
 
     repeated ConfigStats config_stats = 3;
