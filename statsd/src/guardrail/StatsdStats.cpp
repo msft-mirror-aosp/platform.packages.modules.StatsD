@@ -58,6 +58,7 @@ const int FIELD_ID_OVERFLOW = 18;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS = 20;
 const int FIELD_ID_SHARD_OFFSET = 21;
+const int FIELD_ID_STATSD_STATS_ID = 22;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -121,6 +122,7 @@ const int FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT = 27;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY = 28;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_TIME_SEC = 29;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_BYTES = 30;
+const int FIELD_ID_CONFIG_STATS_DUMP_REPORT_NUMBER = 31;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -162,7 +164,7 @@ const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySiz
         {util::CPU_TIME_PER_UID_FREQ, {6000, 10000}},
 };
 
-StatsdStats::StatsdStats() {
+StatsdStats::StatsdStats() : mStatsdStatsId(rand()) {
     mPushedAtomStats.resize(kMaxPushedAtomId + 1);
     mStartTimeSec = getWallClockSec();
 }
@@ -344,22 +346,24 @@ void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes,
     it->second->data_drop_bytes.push_back(totalBytes);
 }
 
-void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes) {
-    noteMetricsReportSent(key, num_bytes, getWallClockSec());
+void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                                        const int32_t reportNumber) {
+    noteMetricsReportSent(key, numBytes, getWallClockSec(), reportNumber);
 }
 
-void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes,
-                                        int32_t timeSec) {
+void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                                        int32_t timeSec, const int32_t reportNumber) {
     lock_guard<std::mutex> lock(mLock);
     auto it = mConfigStats.find(key);
     if (it == mConfigStats.end()) {
         ALOGE("Config key %s not found!", key.ToString().c_str());
         return;
     }
+
     if (it->second->dump_report_stats.size() == kMaxTimestampCount) {
         it->second->dump_report_stats.pop_front();
     }
-    it->second->dump_report_stats.push_back(std::make_pair(timeSec, num_bytes));
+    it->second->dump_report_stats.emplace_back(timeSec, numBytes, reportNumber);
 }
 
 void StatsdStats::noteDeviceInfoTableCreationFailed(const ConfigKey& key) {
@@ -1010,9 +1014,10 @@ void StatsdStats::dumpStats(int out) const {
         }
 
         for (const auto& dump : configStats->dump_report_stats) {
-            dprintf(out, "\tdump report time: %s(%lld) bytes: %lld\n",
-                    buildTimeString(dump.first).c_str(), (long long)dump.first,
-                    (long long)dump.second);
+            dprintf(out, "\tdump report time: %s(%lld) bytes: %d reportNumber: %d\n",
+                    buildTimeString(dump.mDumpReportTimeSec).c_str(),
+                    (long long)dump.mDumpReportTimeSec, dump.mDumpReportSizeBytes,
+                    dump.mDumpReportNumber);
         }
 
         for (const auto& stats : pair.second->matcher_stats) {
@@ -1173,6 +1178,8 @@ void StatsdStats::dumpStats(int out) const {
             }
         }
     }
+    dprintf(out, "********Statsd Stats Id***********\n");
+    dprintf(out, "Statsd Stats Id %d\n", mStatsdStatsId);
     dprintf(out, "********Shard Offset Provider stats***********\n");
     dprintf(out, "Shard Offset: %u\n", ShardOffsetProvider::getInstance().getShardOffset());
 }
@@ -1262,15 +1269,21 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
     }
 
     for (const auto& dump : configStats.dump_report_stats) {
-        proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_TIME |
-                     FIELD_COUNT_REPEATED,
-                     dump.first);
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_TIME | FIELD_COUNT_REPEATED,
+                dump.mDumpReportTimeSec);
     }
 
     for (const auto& dump : configStats.dump_report_stats) {
-        proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_BYTES |
-                     FIELD_COUNT_REPEATED,
-                     (long long)dump.second);
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_BYTES | FIELD_COUNT_REPEATED,
+                (long long)dump.mDumpReportSizeBytes);
+    }
+
+    for (const auto& dump : configStats.dump_report_stats) {
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_NUMBER | FIELD_COUNT_REPEATED,
+                dump.mDumpReportNumber);
     }
 
     for (const auto& annotation : configStats.annotations) {
@@ -1519,6 +1532,8 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
 
     proto.write(FIELD_TYPE_UINT32 | FIELD_ID_SHARD_OFFSET,
                 static_cast<long>(ShardOffsetProvider::getInstance().getShardOffset()));
+
+    proto.write(FIELD_TYPE_INT32 | FIELD_ID_STATSD_STATS_ID, mStatsdStatsId);
 
     output->clear();
     size_t bufferSize = proto.size();
