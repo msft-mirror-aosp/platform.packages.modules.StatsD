@@ -436,6 +436,10 @@ message ConfigMetricsReportList {
 
   repeated ConfigMetricsReport reports = 2;
 
+  optional int32 report_number = 3;
+
+  optional int32 statsd_stats_id = 4;
+
   reserved 10 to 13, 101;
 }
 
@@ -510,6 +514,7 @@ message StatsdStatsReport {
         repeated int64 restricted_flush_latency = 28;
         repeated int64 restricted_db_size_time_sec = 29;
         repeated int64 restricted_db_size_bytes = 30;
+        repeated int32 dump_report_number = 31;
     }
 
     repeated ConfigStats config_stats = 3;
@@ -665,6 +670,7 @@ message StatsdStatsReport {
     }
     repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;
     optional uint32 shard_offset = 21;
+    optional int32 statsd_stats_id = 22;
 }
 
 message AlertTriggerDetails {

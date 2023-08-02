@@ -230,15 +230,16 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
 
     init_system_properties();
 
-    init_seed_random();
-
     if (mEventQueue != nullptr) {
-        std::thread pushedEventThread([this] { readLogs(); });
-        pushedEventThread.detach();
+        mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
     }
 }
 
 StatsService::~StatsService() {
+    if (mEventQueue != nullptr) {
+        stopReadingLogs();
+        mLogsReaderThread->join();
+    }
 }
 
 /* Runs on a dedicated thread to process pushed events. */
@@ -247,6 +248,13 @@ void StatsService::readLogs() {
     while (1) {
         // Block until an event is available.
         auto event = mEventQueue->waitPop();
+
+        // Below flag will be set when statsd is exiting and log event will be pushed to break
+        // out of waitPop.
+        if (mIsStopRequested) {
+            break;
+        }
+
         // Pass it to StatsLogProcess to all configs/metrics
         // At this point, the LogEventQueue is not blocked, so that the socketListener
         // can read events from the socket and write to buffer to avoid data drop.
@@ -264,18 +272,6 @@ void StatsService::init_system_properties() {
     if (buildType != NULL) {
         __system_property_read_callback(buildType, init_build_type_callback, this);
     }
-}
-
-void StatsService::init_seed_random() {
-    unsigned int seed = 0;
-    // getrandom() reads bytes from urandom source into buf. If getrandom()
-    // is unable to read from urandom source, then it returns -1 and we set
-    // out seed to be time(nullptr) as a fallback.
-    if (TEMP_FAILURE_RETRY(
-                getrandom(static_cast<void*>(&seed), sizeof(unsigned int), GRND_NONBLOCK)) < 0) {
-        seed = time(nullptr);
-    }
-    srand(seed);
 }
 
 void StatsService::init_build_type_callback(void* cookie, const char* /*name*/, const char* value,
@@ -1157,7 +1153,38 @@ void StatsService::OnLogEvent(LogEvent* event) {
 
 Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
+    getDataChecked(key, callingUid, output);
+    return Status::ok();
+}
 
+Status StatsService::getDataFd(int64_t key, const int32_t callingUid,
+                               const ScopedFileDescriptor& fd) {
+    ENFORCE_UID(AID_SYSTEM);
+    vector<uint8_t> reportData;
+    getDataChecked(key, callingUid, &reportData);
+
+    if (reportData.size() >= std::numeric_limits<int32_t>::max()) {
+        ALOGE("Report size is infeasible big and can not be returned");
+        return exception(EX_ILLEGAL_STATE, "Report size is infeasible big.");
+    }
+
+    const uint32_t bytesToWrite = static_cast<uint32_t>(reportData.size());
+    VLOG("StatsService::getDataFd report size %d", bytesToWrite);
+
+    // write 4 bytes of report size for correct buffer allocation
+    const uint32_t bytesToWriteBE = htonl(bytesToWrite);
+    if (!android::base::WriteFully(fd.get(), &bytesToWriteBE, sizeof(uint32_t))) {
+        return exception(EX_ILLEGAL_STATE, "Failed to write report data size to file descriptor");
+    }
+    if (!android::base::WriteFully(fd.get(), reportData.data(), reportData.size())) {
+        return exception(EX_ILLEGAL_STATE, "Failed to write report data to file descriptor");
+    }
+
+    VLOG("StatsService::getDataFd written");
+    return Status::ok();
+}
+
+void StatsService::getDataChecked(int64_t key, const int32_t callingUid, vector<uint8_t>* output) {
     VLOG("StatsService::getData with Uid %i", callingUid);
     ConfigKey configKey(callingUid, key);
     // The dump latency does not matter here since we do not include the current bucket, we do not
@@ -1165,7 +1192,6 @@ Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8
     mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(), getWallClockNs(),
                              false /* include_current_bucket*/, true /* erase_data */,
                              GET_DATA_CALLED, FAST, output);
-    return Status::ok();
 }
 
 Status StatsService::getMetadata(vector<uint8_t>* output) {
@@ -1254,9 +1280,14 @@ Status StatsService::setBroadcastSubscriber(int64_t configId,
                                             int64_t subscriberId,
                                             const shared_ptr<IPendingIntentRef>& pir,
                                             const int32_t callingUid) {
+    VLOG("StatsService::setBroadcastSubscriber called.");
     ENFORCE_UID(AID_SYSTEM);
 
-    VLOG("StatsService::setBroadcastSubscriber called.");
+    if (pir == nullptr) {
+        return exception(EX_NULL_POINTER,
+                         "setBroadcastSubscriber provided with null PendingIntentRef");
+    }
+
     ConfigKey configKey(callingUid, configId);
     SubscriberReporter::getInstance()
             .setBroadcastSubscriber(configKey, subscriberId, pir);
@@ -1478,6 +1509,15 @@ void StatsService::initShellSubscriber() {
     if (mShellSubscriber == nullptr) {
         mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager, mLogEventFilter);
     }
+}
+
+void StatsService::stopReadingLogs() {
+    mIsStopRequested = true;
+    // Push this event so that readLogs will process and break out of the loop
+    // after the stop is requested.
+    int64_t timeStamp;
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    mEventQueue->push(std::move(logEvent), &timeStamp);
 }
 
 }  // namespace statsd
