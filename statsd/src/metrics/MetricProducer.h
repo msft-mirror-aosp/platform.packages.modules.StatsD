@@ -600,7 +600,7 @@ protected:
     // Buckets that were invalidated and had their data dropped.
     std::vector<SkippedBucket> mSkippedBuckets;
 
-    // If hard dimension guardrail is hit, do not spam logcat
+    // If hard dimension guardrail is hit, do not spam logcat. This is a per bucket tracker.
     bool mHasHitGuardrail;
 
     // Matchers for sampled fields. Currently only one sampled dimension is supported.

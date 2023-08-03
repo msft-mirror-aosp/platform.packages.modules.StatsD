@@ -106,6 +106,8 @@ public:
                            const int32_t callingUid,
                            vector<uint8_t>* output) override;
 
+    virtual Status getDataFd(int64_t key, const int32_t callingUid,
+                             const ScopedFileDescriptor& fd) override;
 
     /**
      * Binder call for clients to get metadata across all configs in statsd.
@@ -264,11 +266,6 @@ private:
     void init_system_properties();
 
     /**
-     * Initiates srand for randomness.
-     */
-    static void init_seed_random();
-
-    /**
      * Helper for loading system properties.
      */
     static void init_build_type_callback(void* cookie, const char* name, const char* value,
@@ -365,6 +362,11 @@ private:
     status_t cmd_print_logs(int outFd, const Vector<String8>& args);
 
     /**
+     * Implementation for request data for the configuration key.
+     */
+    void getDataChecked(int64_t key, const int32_t callingUid, vector<uint8_t>* output);
+
+    /**
      * Writes the value of args[uidArgIndex] into uid.
      * Returns whether the uid is reasonable (type uid_t) and whether
      * 1. it is equal to the calling uid, or
@@ -414,6 +416,13 @@ private:
     void onStatsdInitCompleted();
 
     /**
+     *  This method is used to stop log reader thread.
+     */
+    void stopReadingLogs();
+
+    std::atomic<bool> mIsStopRequested = false;
+
+    /**
      * Tracks the uid <--> package name mapping.
      */
     const sp<UidMap> mUidMap;
@@ -456,6 +465,8 @@ private:
     mutable mutex mShellSubscriberMutex;
     shared_ptr<LogEventQueue> mEventQueue;
     std::shared_ptr<LogEventFilter> mLogEventFilter;
+
+    std::unique_ptr<std::thread> mLogsReaderThread;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";

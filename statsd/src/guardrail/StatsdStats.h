@@ -73,6 +73,17 @@ typedef struct {
     int64_t categoryChangedCount = 0;
 } RestrictedMetricStats;
 
+struct DumpReportStats {
+    DumpReportStats(int32_t dumpReportSec, int32_t dumpReportSize, int32_t reportNumber)
+        : mDumpReportTimeSec(dumpReportSec),
+          mDumpReportSizeBytes(dumpReportSize),
+          mDumpReportNumber(reportNumber) {
+    }
+    int32_t mDumpReportTimeSec = 0;
+    int32_t mDumpReportSizeBytes = 0;
+    int32_t mDumpReportNumber = 0;
+};
+
 struct ConfigStats {
     int32_t uid;
     int64_t id;
@@ -101,7 +112,8 @@ struct ConfigStats {
     std::list<int32_t> data_drop_time_sec;
     // Number of bytes dropped at corresponding time.
     std::list<int64_t> data_drop_bytes;
-    std::list<std::pair<int32_t, int64_t>> dump_report_stats;
+
+    std::list<DumpReportStats> dump_report_stats;
 
     // Stores how many times a matcher have been matched. The map size is capped by kMaxConfigCount.
     std::map<const int64_t, int> matcher_stats;
@@ -316,7 +328,8 @@ public:
      *
      * The report may be requested via StatsManager API, or through adb cmd.
      */
-    void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes);
+    void noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                               const int32_t reportNumber);
 
     /**
      * Report failure in creating the device info metadata table for restricted configs.
@@ -633,9 +646,22 @@ public:
     void dumpStats(int outFd) const;
 
     /**
+     * Returns true if dimension guardrail has been hit since boot for given metric.
+     */
+    bool hasHitDimensionGuardrail(int64_t metricId) const;
+
+    /**
      * Return soft and hard atom key dimension size limits as an std::pair.
      */
     static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(const int atomId = -1);
+
+    /**
+     * Return the unique identifier for the statsd stats report. This id is
+     * reset on boot.
+     */
+    inline int32_t getStatsdStatsId() const {
+        return mStatsdStatsId;
+    }
 
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
@@ -690,6 +716,11 @@ private:
     mutable std::mutex mLock;
 
     int32_t mStartTimeSec;
+
+    // Random id set using rand() during the initialization. Used to uniquely
+    // identify a session. This is more reliable than mStartTimeSec due to the
+    // unreliable nature of wall clock times.
+    const int32_t mStatsdStatsId;
 
     // Track the number of dropped entries used by the uid map.
     UidMapStats mUidMapStats;
@@ -825,7 +856,8 @@ private:
 
     void noteDataDropped(const ConfigKey& key, const size_t totalBytes, int32_t timeSec);
 
-    void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes, int32_t timeSec);
+    void noteMetricsReportSent(const ConfigKey& key, const size_t numBytes, int32_t timeSec,
+                               const int32_t reportNumber);
 
     void noteBroadcastSent(const ConfigKey& key, int32_t timeSec);
 
@@ -867,6 +899,7 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
     FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
+    FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
