@@ -257,6 +257,42 @@ TEST_F(EventMetricE2eTest, TestMatchRepeatedFieldPositionFirst) {
     EXPECT_THAT(atom.repeated_enum_field(), ElementsAreArray(enumArrayMatch));
 }
 
+TEST_F(EventMetricE2eTest, TestDumpReportIncrementsReportNumber) {
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
+
+    AtomMatcher testAtomReportedStateFirstOnAtomMatcher =
+            CreateTestAtomRepeatedStateFirstOnAtomMatcher();
+    *config.add_atom_matcher() = testAtomReportedStateFirstOnAtomMatcher;
+
+    EventMetric testAtomReportedEventMetric = createEventMetric(
+            "EventTestAtomReported", testAtomReportedStateFirstOnAtomMatcher.id(), nullopt);
+    *config.add_event_metric() = testAtomReportedEventMetric;
+
+    ConfigKey key(123, 987);
+    uint64_t configUpdateTime = 10000000000;  // 0:10
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configUpdateTime, configUpdateTime, config, key);
+
+    uint64_t dumpTimeNs = configUpdateTime + 100 * NS_PER_SEC;
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(reports.reports_size(), 1);
+
+    EXPECT_EQ(reports.report_number(), 1);
+    EXPECT_EQ(reports.statsd_stats_id(), StatsdStats::getInstance().getStatsdStatsId());
+
+    buffer.clear();
+    processor->onDumpReport(key, dumpTimeNs + 100, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(reports.reports_size(), 1);
+
+    EXPECT_EQ(reports.report_number(), 2);
+    EXPECT_EQ(reports.statsd_stats_id(), StatsdStats::getInstance().getStatsdStatsId());
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif
