@@ -234,9 +234,9 @@ TEST(StatsdStatsTest, TestSubStats) {
     stats.noteDataDropped(key, 123);
 
     // dump report -> 3
-    stats.noteMetricsReportSent(key, 0);
-    stats.noteMetricsReportSent(key, 0);
-    stats.noteMetricsReportSent(key, 0);
+    stats.noteMetricsReportSent(key, 0, 1);
+    stats.noteMetricsReportSent(key, 0, 2);
+    stats.noteMetricsReportSent(key, 0, 3);
 
     // activation_time_sec -> 2
     stats.noteActiveStatusChanged(key, true);
@@ -258,6 +258,10 @@ TEST(StatsdStatsTest, TestSubStats) {
     EXPECT_EQ(123, configReport.data_drop_bytes(0));
     ASSERT_EQ(3, configReport.dump_report_time_sec_size());
     ASSERT_EQ(3, configReport.dump_report_data_size_size());
+    ASSERT_EQ(3, configReport.dump_report_number_size());
+    EXPECT_EQ(1, configReport.dump_report_number(0));
+    EXPECT_EQ(2, configReport.dump_report_number(1));
+    EXPECT_EQ(3, configReport.dump_report_number(2));
     ASSERT_EQ(2, configReport.activation_time_sec_size());
     ASSERT_EQ(1, configReport.deactivation_time_sec_size());
     ASSERT_EQ(1, configReport.annotation_size());
@@ -597,7 +601,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
     for (int i = 0; i < StatsdStats::kMaxTimestampCount; i++) {
         stats.noteDataDropped(key, timestamps[i]);
         stats.noteBroadcastSent(key, timestamps[i]);
-        stats.noteMetricsReportSent(key, 0, timestamps[i]);
+        stats.noteMetricsReportSent(key, 0, timestamps[i], i + 1);
         stats.noteActiveStatusChanged(key, true, timestamps[i]);
         stats.noteActiveStatusChanged(key, false, timestamps[i]);
     }
@@ -607,7 +611,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
     // now it should trigger removing oldest timestamp
     stats.noteDataDropped(key, 123, 10000);
     stats.noteBroadcastSent(key, 10000);
-    stats.noteMetricsReportSent(key, 0, 10000);
+    stats.noteMetricsReportSent(key, 0, 10000, 21);
     stats.noteActiveStatusChanged(key, true, 10000);
     stats.noteActiveStatusChanged(key, false, 10000);
 
@@ -624,7 +628,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
     // the oldest timestamp is the second timestamp in history
     EXPECT_EQ(1, configStats->broadcast_sent_time_sec.front());
     EXPECT_EQ(1, configStats->data_drop_bytes.front());
-    EXPECT_EQ(1, configStats->dump_report_stats.front().first);
+    EXPECT_EQ(1, configStats->dump_report_stats.front().mDumpReportTimeSec);
     EXPECT_EQ(1, configStats->activation_time_sec.front());
     EXPECT_EQ(1, configStats->deactivation_time_sec.front());
 
@@ -632,7 +636,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
     EXPECT_EQ(newTimestamp, configStats->broadcast_sent_time_sec.back());
     EXPECT_EQ(newTimestamp, configStats->data_drop_time_sec.back());
     EXPECT_EQ(123, configStats->data_drop_bytes.back());
-    EXPECT_EQ(newTimestamp, configStats->dump_report_stats.back().first);
+    EXPECT_EQ(newTimestamp, configStats->dump_report_stats.back().mDumpReportTimeSec);
     EXPECT_EQ(newTimestamp, configStats->activation_time_sec.back());
     EXPECT_EQ(newTimestamp, configStats->deactivation_time_sec.back());
 }
@@ -898,6 +902,25 @@ TEST(StatsdStatsTest, TestShardOffsetProvider) {
     StatsdStatsReport report;
     EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
     EXPECT_EQ(report.shard_offset(), 15);
+}
+
+TEST(StatsdStatsTest, TestHasHitDimensionGuardrail) {
+    StatsdStats stats;
+    int metricId1 = 1;
+    int metricId2 = 2;
+    int metricId3 = 3;
+
+    stats.noteBucketCount(metricId2);
+    stats.noteHardDimensionLimitReached(metricId3);
+
+    // No AtomMetricStats.
+    EXPECT_FALSE(stats.hasHitDimensionGuardrail(metricId1));
+
+    // Has AtomMetricStats but hasn't hit dimension guardrail.
+    EXPECT_FALSE(stats.hasHitDimensionGuardrail(metricId2));
+
+    // Has hit dimension guardrail.
+    EXPECT_TRUE(stats.hasHitDimensionGuardrail(metricId3));
 }
 
 }  // namespace statsd
