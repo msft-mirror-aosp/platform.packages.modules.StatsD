@@ -27,6 +27,7 @@
 #include "external/StatsPullerManager.h"
 #include "logd/LogEvent.h"
 #include "packages/UidMap.h"
+#include "socket/LogEventFilter.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/statsd_config.pb.h"
 
@@ -93,6 +94,14 @@ public:
         return kMaxSizeKb;
     }
 
+    // Minimum pull interval for callback subscriptions.
+    static constexpr int64_t kMinCallbackPullIntervalMs = 60'000;  // 60 seconds.
+
+    // Minimum sleep for the pull thread for callback subscriptions.
+    static constexpr int64_t kMinCallbackSleepIntervalMs = 2000;  // 2 seconds.
+
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const;
+
 private:
     int64_t pullIfNeeded(int64_t nowSecs, int64_t nowMillis, int64_t nowNanos);
 
@@ -150,7 +159,7 @@ private:
 
     static constexpr size_t kMaxCacheSizeBytes = 2 * 1024;  // 2 KB
 
-    static constexpr int64_t kMsBetweenCallbacks = 4000;
+    static constexpr int64_t kMsBetweenCallbacks = 70'000;  // 70 seconds.
 };
 
 }  // namespace statsd

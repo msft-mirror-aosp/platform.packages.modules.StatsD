@@ -119,7 +119,9 @@ Status checkSid(const char* expectedSid) {
         }                                \
     }
 
-StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue)
+StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
+                           const std::shared_ptr<LogEventFilter>& logEventFilter,
+                           int initEventDelaySecs)
     : mUidMap(uidMap),
       mAnomalyAlarmMonitor(new AlarmMonitor(
               MIN_DIFF_TO_UPDATE_REGISTERED_ALARM_SECS,
@@ -146,10 +148,12 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                   }
               })),
       mEventQueue(std::move(queue)),
+      mLogEventFilter(logEventFilter),
       mBootCompleteTrigger({kBootCompleteTag, kUidMapReceivedTag, kAllPullersRegisteredTag},
-                           [this]() { mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs()); }),
+                           [this]() { onStatsdInitCompleted(); }),
       mStatsCompanionServiceDeathRecipient(
-              AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)) {
+              AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)),
+      mInitEventDelaySecs(initEventDelaySecs) {
     mPullerManager = new StatsPullerManager();
     StatsPuller::SetUidMap(mUidMap);
     mConfigManager = new ConfigManager();
@@ -191,7 +195,8 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                 }
                 VLOG("StatsService::active configs broadcast failed for uid %d", uid);
                 return false;
-            });
+            },
+            logEventFilter);
 
     mUidMap->setListener(mProcessor);
     mConfigManager->AddListener(mProcessor);
@@ -1102,6 +1107,21 @@ Status StatsService::bootCompleted() {
     return Status::ok();
 }
 
+void StatsService::onStatsdInitCompleted() {
+    if (mInitEventDelaySecs > 0) {
+        // The hard-coded delay is determined based on perfetto traces evaluation
+        // for statsd during the boot.
+        // The delay is required to properly process event storm which often has place
+        // after device boot.
+        // This function is called from a dedicated thread without holding locks, so sleeping is ok.
+        // See MultiConditionTrigger::markComplete() executorThread for details
+        // For more details see http://b/277958338
+        std::this_thread::sleep_for(std::chrono::seconds(mInitEventDelaySecs));
+    }
+
+    mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs());
+}
+
 void StatsService::Startup() {
     mConfigManager->Startup();
     mProcessor->LoadActiveConfigsFromDisk();
@@ -1130,7 +1150,38 @@ void StatsService::OnLogEvent(LogEvent* event) {
 
 Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
+    getDataChecked(key, callingUid, output);
+    return Status::ok();
+}
 
+Status StatsService::getDataFd(int64_t key, const int32_t callingUid,
+                               const ScopedFileDescriptor& fd) {
+    ENFORCE_UID(AID_SYSTEM);
+    vector<uint8_t> reportData;
+    getDataChecked(key, callingUid, &reportData);
+
+    if (reportData.size() >= std::numeric_limits<int32_t>::max()) {
+        ALOGE("Report size is infeasible big and can not be returned");
+        return exception(EX_ILLEGAL_STATE, "Report size is infeasible big.");
+    }
+
+    const uint32_t bytesToWrite = static_cast<uint32_t>(reportData.size());
+    VLOG("StatsService::getDataFd report size %d", bytesToWrite);
+
+    // write 4 bytes of report size for correct buffer allocation
+    const uint32_t bytesToWriteBE = htonl(bytesToWrite);
+    if (!android::base::WriteFully(fd.get(), &bytesToWriteBE, sizeof(uint32_t))) {
+        return exception(EX_ILLEGAL_STATE, "Failed to write report data size to file descriptor");
+    }
+    if (!android::base::WriteFully(fd.get(), reportData.data(), reportData.size())) {
+        return exception(EX_ILLEGAL_STATE, "Failed to write report data to file descriptor");
+    }
+
+    VLOG("StatsService::getDataFd written");
+    return Status::ok();
+}
+
+void StatsService::getDataChecked(int64_t key, const int32_t callingUid, vector<uint8_t>* output) {
     VLOG("StatsService::getData with Uid %i", callingUid);
     ConfigKey configKey(callingUid, key);
     // The dump latency does not matter here since we do not include the current bucket, we do not
@@ -1138,7 +1189,6 @@ Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8
     mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(), getWallClockNs(),
                              false /* include_current_bucket*/, true /* erase_data */,
                              GET_DATA_CALLED, FAST, output);
-    return Status::ok();
 }
 
 Status StatsService::getMetadata(vector<uint8_t>* output) {
@@ -1227,9 +1277,14 @@ Status StatsService::setBroadcastSubscriber(int64_t configId,
                                             int64_t subscriberId,
                                             const shared_ptr<IPendingIntentRef>& pir,
                                             const int32_t callingUid) {
+    VLOG("StatsService::setBroadcastSubscriber called.");
     ENFORCE_UID(AID_SYSTEM);
 
-    VLOG("StatsService::setBroadcastSubscriber called.");
+    if (pir == nullptr) {
+        return exception(EX_NULL_POINTER,
+                         "setBroadcastSubscriber provided with null PendingIntentRef");
+    }
+
     ConfigKey configKey(callingUid, configId);
     SubscriberReporter::getInstance()
             .setBroadcastSubscriber(configKey, subscriberId, pir);
@@ -1330,11 +1385,8 @@ Status StatsService::getRegisteredExperimentIds(std::vector<int64_t>* experiment
 Status StatsService::updateProperties(const vector<PropertyParcel>& properties) {
     ENFORCE_UID(AID_SYSTEM);
 
-    for (const auto& [property, value] : properties) {
-        if (property == kIncludeCertificateHash) {
-            mUidMap->setIncludeCertificateHash(value == "true");
-        }
-    }
+    // TODO(b/281765292): Forward statsd_java properties received here to FlagProvider.
+
     return Status::ok();
 }
 
@@ -1379,7 +1431,6 @@ Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,
     initShellSubscriber();
 
     mShellSubscriber->startNewSubscription(subscriptionConfig, callback);
-
     return Status::ok();
 }
 
@@ -1404,7 +1455,7 @@ Status StatsService::flushSubscription(const shared_ptr<IStatsSubscriptionCallba
 void StatsService::initShellSubscriber() {
     std::lock_guard<std::mutex> lock(mShellSubscriberMutex);
     if (mShellSubscriber == nullptr) {
-        mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager);
+        mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager, mLogEventFilter);
     }
 }
 

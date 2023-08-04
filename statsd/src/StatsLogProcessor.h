@@ -21,6 +21,7 @@
 #include "logd/LogEvent.h"
 #include "metrics/MetricsManager.h"
 #include "packages/UidMap.h"
+#include "socket/LogEventFilter.h"
 #include "external/StatsPullerManager.h"
 
 #include "src/statsd_config.pb.h"
@@ -36,13 +37,14 @@ namespace statsd {
 
 class StatsLogProcessor : public ConfigListener, public virtual PackageInfoListener {
 public:
-    StatsLogProcessor(const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
-                      const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                      const sp<AlarmMonitor>& subscriberTriggerAlarmMonitor,
-                      const int64_t timeBaseNs,
-                      const std::function<bool(const ConfigKey&)>& sendBroadcast,
-                      const std::function<bool(const int&,
-                                               const vector<int64_t>&)>& sendActivationBroadcast);
+    StatsLogProcessor(
+            const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
+            const sp<AlarmMonitor>& anomalyAlarmMonitor,
+            const sp<AlarmMonitor>& subscriberTriggerAlarmMonitor, const int64_t timeBaseNs,
+            const std::function<bool(const ConfigKey&)>& sendBroadcast,
+            const std::function<bool(const int&, const vector<int64_t>&)>& sendActivationBroadcast,
+            const std::shared_ptr<LogEventFilter>& logEventFilter);
+
     virtual ~StatsLogProcessor();
 
     void OnLogEvent(LogEvent* event);
@@ -142,6 +144,12 @@ public:
     inline void setPrintLogs(bool enabled) {
         std::lock_guard<std::mutex> lock(mMetricsMutex);
         mPrintAllLogs = enabled;
+
+        if (mLogEventFilter) {
+            // Turning on print logs turns off pushed event filtering to enforce
+            // complete log event buffer parsing
+            mLogEventFilter->setFilteringEnabled(!enabled);
+        }
     }
 
     // Add a specific config key to the possible configs to dump ASAP.
@@ -150,6 +158,9 @@ public:
     void setAnomalyAlarm(const int64_t timeMillis);
 
     void cancelAnomalyAlarm();
+
+    /* Returns pre-defined list of atoms to parse by LogEventFilter */
+    static LogEventFilter::AtomIdSet getDefaultAtomIdSet();
 
 private:
     // For testing only.
@@ -188,6 +199,8 @@ private:
     sp<AlarmMonitor> mAnomalyAlarmMonitor;
 
     sp<AlarmMonitor> mPeriodicAlarmMonitor;
+
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     void OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs);
 
@@ -268,6 +281,9 @@ private:
             const int64_t& timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
+    /* Tells LogEventFilter about atom ids to parse */
+    void updateLogEventFilterLocked() const;
+
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
     std::function<bool(const ConfigKey& key)> mSendBroadcast;
@@ -310,7 +326,11 @@ private:
     FRIEND_TEST(StatsLogProcessorTest,
             TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
-
+    FRIEND_TEST(StatsLogProcessorTest, LogEventFilterOnSetPrintLogs);
+    FRIEND_TEST(StatsLogProcessorTest, TestUidMapHasSnapshot);
+    FRIEND_TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap);
+    FRIEND_TEST(StatsLogProcessorTest, TestReportIncludesSubConfig);
+    FRIEND_TEST(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration1);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration2);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration3);
@@ -389,6 +409,8 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
 
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
+
+    FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
 };
 
 }  // namespace statsd

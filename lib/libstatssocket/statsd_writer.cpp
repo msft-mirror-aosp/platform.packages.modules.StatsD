@@ -15,6 +15,7 @@
  */
 #include "statsd_writer.h"
 
+#include <android-base/threads.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -35,9 +36,6 @@
 
 // Compatibility shims for glibc-2.17 in the Android tree.
 #ifndef __BIONIC__
-
-// gettid() is not present in unistd.h for glibc-2.17.
-extern pid_t gettid();
 
 // TEMP_FAILURE_RETRY is not present in unistd.h for glibc-2.17.
 #ifndef TEMP_FAILURE_RETRY
@@ -125,7 +123,7 @@ static int statsdOpen() {
                     case -ECONNREFUSED:
                     case -ENOENT:
                         i = atomic_exchange(&statsdLoggerWrite.sock, ret);
-                    /* FALLTHRU */
+                        break;
                     default:
                         break;
                 }
@@ -212,7 +210,7 @@ static int statsdWrite(struct timespec* ts, struct iovec* vec, size_t nr) {
      *  };
      */
 
-    header.tid = gettid();
+    header.tid = android::base::GetThreadId();
     header.realtime.tv_sec = ts->tv_sec;
     header.realtime.tv_nsec = ts->tv_nsec;
 
@@ -296,7 +294,7 @@ static int statsdWrite(struct timespec* ts, struct iovec* vec, size_t nr) {
             if (ret < 0) {
                 ret = -errno;
             }
-        /* FALLTHRU */
+            break;
         default:
             break;
     }

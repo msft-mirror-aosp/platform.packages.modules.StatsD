@@ -161,6 +161,10 @@ public:
     void loadMetadata(const metadata::StatsMetadata& metadata,
                       int64_t currentWallClockTimeNs,
                       int64_t systemElapsedTimeNs);
+
+    // Adds all atom ids referenced by matchers in the MetricsManager's config
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
+
 private:
     // For test only.
     inline int64_t getTtlEndNs() const { return mTtlEndNs; }

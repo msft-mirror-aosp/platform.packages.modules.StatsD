@@ -23,6 +23,7 @@ cc_defaults {
 
     cflags: [
         "-Wno-deprecated-declarations",
+        "-Wthread-safety",
     ],
 
     srcs: [
@@ -370,6 +371,7 @@ cc_test {
         "tests/state/StateTracker_test.cpp",
         "tests/statsd_test_util.cpp",
         "tests/statsd_test_util_test.cpp",
+        "tests/SocketListener_test.cpp",
         "tests/StatsLogProcessor_test.cpp",
         "tests/StatsService_test.cpp",
         "tests/storage/StorageManager_test.cpp",

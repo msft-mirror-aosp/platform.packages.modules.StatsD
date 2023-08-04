@@ -16,15 +16,15 @@
 
 #pragma once
 
-#include <unordered_map>
-#include <vector>
-
 #include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest_prod.h>
 #include <server_configurable_flags/get_flags.h>
 
+#include <functional>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace android {
 namespace os {
@@ -36,6 +36,9 @@ using IsAtLeastSFunc = std::function<bool()>;
 
 const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
+
+const std::string OPTIMIZATION_SOCKET_PARSING_FLAG = "optimization_socket_parsing";
+const std::string STATSD_INIT_COMPLETED_NO_DELAY_FLAG = "statsd_init_completed_no_delay";
 
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
