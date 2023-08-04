@@ -331,6 +331,8 @@ private:
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
 
+    void writeDataCorruptedReasons(ProtoOutputStream& proto);
+
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
     std::function<bool(const ConfigKey& key)> mSendBroadcast;
