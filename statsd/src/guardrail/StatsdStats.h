@@ -17,7 +17,7 @@
 
 #include <gtest/gtest_prod.h>
 #include <log/log_time.h>
-#include <src/guardrail/invalid_config_reason_enum.pb.h>
+#include <src/guardrail/stats_log_enums.pb.h>
 
 #include <list>
 #include <mutex>
@@ -50,19 +50,6 @@ struct InvalidConfigReason {
                (this->alarmId == other.alarmId) && (this->subscriptionId == other.subscriptionId) &&
                (this->matcherIds == other.matcherIds) && (this->conditionIds == other.conditionIds);
     }
-};
-
-// Keep this in sync with InvalidQueryReason enum in stats_log.proto
-enum InvalidQueryReason {
-    UNKNOWN_REASON = 0,
-    FLAG_DISABLED = 1,
-    UNSUPPORTED_SQLITE_VERSION = 2,
-    AMBIGUOUS_CONFIG_KEY = 3,
-    CONFIG_KEY_NOT_FOUND = 4,
-    CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5,
-    QUERY_FAILURE = 6,
-    INCONSISTENT_ROW_SIZE = 7,
-    NULL_CALLBACK = 8
 };
 
 typedef struct {
@@ -202,7 +189,10 @@ public:
 
     // Max memory allowed for storing metrics per configuration. If this limit is exceeded, statsd
     // drops the metrics data in memory.
-    static const size_t kMaxMetricsBytesPerConfig = 2 * 1024 * 1024;
+    static const size_t kDefaultMaxMetricsBytesPerConfig = 2 * 1024 * 1024;
+
+    // Hard limit for custom memory allowed for storing metrics per configuration.
+    static const size_t kHardMaxMetricsBytesPerConfig = 20 * 1024 * 1024;
 
     // Soft memory limit per configuration. Once this limit is exceeded, we begin notifying the
     // data subscriber that it's time to call getData.
@@ -662,6 +652,16 @@ public:
     inline int32_t getStatsdStatsId() const {
         return mStatsdStatsId;
     }
+
+    /**
+     * Returns true if there is recorded event queue overflow
+     */
+    bool hasEventQueueOverflow() const;
+
+    /**
+     * Returns true if there is recorded socket loss
+     */
+    bool hasSocketLoss() const;
 
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
