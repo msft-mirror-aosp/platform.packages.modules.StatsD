@@ -399,6 +399,8 @@ message ConfigMetricsReport {
   optional DumpReportReason dump_report_reason = 8;
 
   repeated string strings = 9;
+
+  repeated DataCorruptedReason data_corrupted_reason = 10;
 }
 
 message ConfigMetricsReportList {
