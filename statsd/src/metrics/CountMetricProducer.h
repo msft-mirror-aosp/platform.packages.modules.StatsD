@@ -132,6 +132,9 @@ private:
 
     bool countPassesThreshold(const int64_t& count);
 
+    // Tracks if the dimension guardrail has been hit in the current report.
+    bool mDimensionGuardrailHit;
+
     FRIEND_TEST(CountMetricProducerTest, TestNonDimensionalEvents);
     FRIEND_TEST(CountMetricProducerTest, TestEventsWithNonSlicedCondition);
     FRIEND_TEST(CountMetricProducerTest, TestEventsWithSlicedCondition);
