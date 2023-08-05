@@ -53,6 +53,7 @@ bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
                       (long long)mTrackerId, newKey.toString().c_str());
                 mHasHitGuardrail = true;
             }
+            StatsdStats::getInstance().noteHardDimensionLimitReached(mTrackerId);
             return true;
         }
     }

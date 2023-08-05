@@ -202,6 +202,9 @@ private:
     // Tracks when we last checked the bytes consumed for each config key.
     std::unordered_map<ConfigKey, int64_t> mLastByteSizeTimes;
 
+    // Tracks the number of times a config with a specified config key has been dumped.
+    std::unordered_map<ConfigKey, int32_t> mDumpReportNumbers;
+
     // Tracks when we last checked the ttl for restricted metrics.
     int64_t mLastTtlTime;
 
@@ -327,6 +330,8 @@ private:
 
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
+
+    void writeDataCorruptedReasons(ProtoOutputStream& proto);
 
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
