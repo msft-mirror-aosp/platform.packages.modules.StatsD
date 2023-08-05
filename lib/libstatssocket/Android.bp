@@ -27,7 +27,7 @@ cc_defaults {
         "stats_buffer_writer.c",
         "stats_event.c",
         "stats_socket.c",
-        "statsd_writer.c",
+        "statsd_writer.cpp",
     ],
     export_include_dirs: ["include"],
     header_libs: ["liblog_headers"],
@@ -35,6 +35,9 @@ cc_defaults {
         "-Wall",
         "-Werror",
         "-Wthread-safety",
+    ],
+    static_libs: [
+        "libbase",
     ],
 }
 
@@ -107,6 +110,7 @@ cc_test {
         "-Wthread-safety",
     ],
     static_libs: [
+        "libbase",
         "libgmock",
         "libstatssocket_private",
     ],
