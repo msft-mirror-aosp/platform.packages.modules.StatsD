@@ -2274,10 +2274,12 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenGuardRailHi
             NumericValueMetricProducerTestHelper::createValueProducerWithCondition(
                     pullerManager, metric, ConditionState::kFalse);
 
+    ASSERT_EQ(false, StatsdStats::getInstance().hasHitDimensionGuardrail(metricId));
     valueProducer->onConditionChanged(true, bucketStartTimeNs + 2);
     EXPECT_EQ(true, valueProducer->mCurrentBucketIsSkipped);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(0UL, valueProducer->mSkippedBuckets.size());
+    ASSERT_EQ(true, StatsdStats::getInstance().hasHitDimensionGuardrail(metricId));
 
     // Bucket 2 start.
     vector<shared_ptr<LogEvent>> allData;
@@ -2293,8 +2295,10 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenGuardRailHi
     std::set<string> strSet;
     valueProducer->onDumpReport(bucket2StartTimeNs + 10000, false /* include recent buckets */,
                                 true, FAST /* dumpLatency */, &strSet, &output);
+    ASSERT_EQ(true, StatsdStats::getInstance().hasHitDimensionGuardrail(metricId));
 
     StatsLogReport report = outputStreamToProto(&output);
+    EXPECT_TRUE(report.dimension_guardrail_hit());
     EXPECT_TRUE(report.has_value_metrics());
     ASSERT_EQ(0, report.value_metrics().data_size());
     ASSERT_EQ(1, report.value_metrics().skipped_size());
