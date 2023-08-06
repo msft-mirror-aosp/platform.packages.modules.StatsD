@@ -266,11 +266,6 @@ private:
     void init_system_properties();
 
     /**
-     * Initiates srand for randomness.
-     */
-    static void init_seed_random();
-
-    /**
      * Helper for loading system properties.
      */
     static void init_build_type_callback(void* cookie, const char* name, const char* value,
@@ -421,6 +416,13 @@ private:
     void onStatsdInitCompleted();
 
     /**
+     *  This method is used to stop log reader thread.
+     */
+    void stopReadingLogs();
+
+    std::atomic<bool> mIsStopRequested = false;
+
+    /**
      * Tracks the uid <--> package name mapping.
      */
     const sp<UidMap> mUidMap;
@@ -463,6 +465,8 @@ private:
     mutable mutex mShellSubscriberMutex;
     shared_ptr<LogEventQueue> mEventQueue;
     std::shared_ptr<LogEventFilter> mLogEventFilter;
+
+    std::unique_ptr<std::thread> mLogsReaderThread;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";
