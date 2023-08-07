@@ -53,6 +53,7 @@ const int FIELD_ID_TIME_BASE = 9;
 const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
+const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 
 // for CountMetricDataWrapper
 const int FIELD_ID_DATA = 1;
@@ -78,7 +79,8 @@ CountMetricProducer::CountMetricProducer(
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap, getAppUpgradeBucketSplit(metric)) {
+                     stateGroupMap, getAppUpgradeBucketSplit(metric)),
+      mDimensionGuardrailHit(false) {
     if (metric.has_bucket()) {
         mBucketSizeNs =
                 TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), metric.bucket()) * 1000000;
@@ -213,22 +215,27 @@ void CountMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
 
 void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                              const bool include_current_partial_bucket,
-                                             const bool erase_data,
-                                             const DumpLatency dumpLatency,
-                                             std::set<string> *str_set,
+                                             const bool erase_data, const DumpLatency dumpLatency,
+                                             std::set<string>* str_set,
                                              ProtoOutputStream* protoOutput) {
     if (include_current_partial_bucket) {
         flushLocked(dumpTimeNs);
     } else {
         flushIfNeededLocked(dumpTimeNs);
     }
+
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
-
 
     if (mPastBuckets.empty()) {
         return;
     }
+
+    if (mDimensionGuardrailHit) {
+        protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT,
+                           mDimensionGuardrailHit);
+    }
+
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
 
@@ -303,6 +310,7 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 
     if (erase_data) {
         mPastBuckets.clear();
+        mDimensionGuardrailHit = false;
     }
 }
 
@@ -340,6 +348,7 @@ bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
                       newKey.toString().c_str());
                 mHasHitGuardrail = true;
             }
+            mDimensionGuardrailHit = true;
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }

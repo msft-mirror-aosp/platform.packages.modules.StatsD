@@ -21,6 +21,7 @@
 #include <android/util/ProtoOutputStream.h>
 
 #include "../stats_log_util.h"
+#include "shell/ShellSubscriber.h"
 #include "statslog_statsd.h"
 #include "storage/StorageManager.h"
 #include "utils/ShardOffsetProvider.h"
@@ -58,6 +59,8 @@ const int FIELD_ID_OVERFLOW = 18;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS = 20;
 const int FIELD_ID_SHARD_OFFSET = 21;
+const int FIELD_ID_STATSD_STATS_ID = 22;
+const int FIELD_ID_SUBSCRIPTION_STATS = 23;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -121,6 +124,7 @@ const int FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT = 27;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY = 28;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_TIME_SEC = 29;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_BYTES = 30;
+const int FIELD_ID_CONFIG_STATS_DUMP_REPORT_NUMBER = 31;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -156,13 +160,23 @@ const int FIELD_ID_RESTRICTED_STATS_TABLE_DELETION_ERROR = 4;
 const int FIELD_ID_RESTRICTED_STATS_FLUSH_LATENCY = 5;
 const int FIELD_ID_RESTRICTED_STATS_CATEGORY_CHANGED_COUNT = 6;
 
+const int FIELD_ID_SUBSCRIPTION_STATS_PER_SUBSCRIPTION_STATS = 1;
+const int FIELD_ID_SUBSCRIPTION_STATS_PULL_THREAD_WAKEUP_COUNT = 2;
+
+const int FIELD_ID_PER_SUBSCRIPTION_STATS_ID = 1;
+const int FIELD_ID_PER_SUBSCRIPTION_STATS_PUSHED_ATOM_COUNT = 2;
+const int FIELD_ID_PER_SUBSCRIPTION_STATS_PULLED_ATOM_COUNT = 3;
+const int FIELD_ID_PER_SUBSCRIPTION_STATS_START_TIME = 4;
+const int FIELD_ID_PER_SUBSCRIPTION_STATS_END_TIME = 5;
+const int FIELD_ID_PER_SUBSCRIPTION_STATS_FLUSH_COUNT = 6;
+
 const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySizeLimitMap = {
         {util::BINDER_CALLS, {6000, 10000}},
         {util::LOOPER_STATS, {1500, 2500}},
         {util::CPU_TIME_PER_UID_FREQ, {6000, 10000}},
 };
 
-StatsdStats::StatsdStats() {
+StatsdStats::StatsdStats() : mStatsdStatsId(rand()) {
     mPushedAtomStats.resize(kMaxPushedAtomId + 1);
     mStartTimeSec = getWallClockSec();
 }
@@ -344,22 +358,24 @@ void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes,
     it->second->data_drop_bytes.push_back(totalBytes);
 }
 
-void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes) {
-    noteMetricsReportSent(key, num_bytes, getWallClockSec());
+void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                                        const int32_t reportNumber) {
+    noteMetricsReportSent(key, numBytes, getWallClockSec(), reportNumber);
 }
 
-void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes,
-                                        int32_t timeSec) {
+void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                                        int32_t timeSec, const int32_t reportNumber) {
     lock_guard<std::mutex> lock(mLock);
     auto it = mConfigStats.find(key);
     if (it == mConfigStats.end()) {
         ALOGE("Config key %s not found!", key.ToString().c_str());
         return;
     }
+
     if (it->second->dump_report_stats.size() == kMaxTimestampCount) {
         it->second->dump_report_stats.pop_front();
     }
-    it->second->dump_report_stats.push_back(std::make_pair(timeSec, num_bytes));
+    it->second->dump_report_stats.emplace_back(timeSec, numBytes, reportNumber);
 }
 
 void StatsdStats::noteDeviceInfoTableCreationFailed(const ConfigKey& key) {
@@ -664,6 +680,15 @@ void StatsdStats::noteAtomError(int atomTag, bool pull) {
     }
 }
 
+bool StatsdStats::hasHitDimensionGuardrail(int64_t metricId) const {
+    lock_guard<std::mutex> lock(mLock);
+    auto atomMetricStatsIter = mAtomMetricStats.find(metricId);
+    if (atomMetricStatsIter != mAtomMetricStats.end()) {
+        return atomMetricStatsIter->second.hardDimensionLimitReached > 0;
+    }
+    return false;
+}
+
 void StatsdStats::noteQueryRestrictedMetricSucceed(const int64_t configId,
                                                    const string& configPackage,
                                                    const std::optional<int32_t> configUid,
@@ -795,6 +820,74 @@ void StatsdStats::noteRestrictedMetricCategoryChanged(const ConfigKey& configKey
     it->second->restricted_metric_stats[metricId].categoryChangedCount++;
 }
 
+void StatsdStats::noteSubscriptionStarted(int subId, int32_t pushedAtomCount,
+                                          int32_t pulledAtomCount) {
+    lock_guard<std::mutex> lock(mLock);
+
+    // If we're already keeping track of max # subscriptions, remove the earliest added
+    // SubscriptionStats for which the corresponding subscription has ended.
+    if (mSubscriptionStats.size() >= ShellSubscriber::getMaxSubscriptions()) {
+        for (auto it = mSubscriptionStats.begin();;) {
+            if (it == mSubscriptionStats.end()) {
+                // Didn't find any ended subscriptions; don't track new subscription.
+                // We should not really enter this block since ShellSubscriber will refuse more than
+                // ShellSubscriber::kMaxSubscriptions active subscriptions to be added. So for
+                // (kMaxSubscriptions + 1)th subscription being added, ShellSubscriber should reject
+                // it and noteSubscriptionStarted should not be called for it.
+                return;
+            } else if (it->second.end_time_sec > 0) {
+                // Remove the first ended subscription.
+                mSubscriptionStats.erase(it);
+                break;
+            } else {
+                it++;
+            }
+        }
+    }
+
+    const int32_t nowTimeSec = getWallClockSec();
+
+    SubscriptionStats& subscriptionStats = mSubscriptionStats[subId];
+    subscriptionStats.pushed_atom_count = pushedAtomCount;
+    subscriptionStats.pulled_atom_count = pulledAtomCount;
+    subscriptionStats.start_time_sec = nowTimeSec;
+}
+
+void StatsdStats::noteSubscriptionEnded(int subId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mSubscriptionStats.find(subId);
+    if (it == mSubscriptionStats.end()) {
+        // We should not enter here since noteSubscriptionStarted should be called first and that
+        // should successfully add an entry in mSubscriptionStats. See the comment in
+        // noteSubscriptionStarted.
+        return;
+    }
+    const int32_t nowTimeSec = getWallClockSec();
+    it->second.end_time_sec = nowTimeSec;
+}
+
+void StatsdStats::noteSubscriptionFlushed(int subId) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mSubscriptionStats.find(subId);
+    if (it == mSubscriptionStats.end()) {
+        // We should not enter here since noteSubscriptionStarted should be called first and that
+        // should successfully add an entry in mSubscriptionStats. See the comment in
+        // noteSubscriptionStarted.
+        return;
+    }
+    it->second.flush_count++;
+}
+
+void StatsdStats::noteSubscriptionAtomPulled(int atomId) {
+    lock_guard<std::mutex> lock(mLock);
+    mPulledAtomStats[atomId].subscriptionPullCount++;
+}
+
+void StatsdStats::noteSubscriptionPullThreadWakeup() {
+    lock_guard<std::mutex> lock(mLock);
+    mSubscriptionPullThreadWakeupCount++;
+}
+
 StatsdStats::AtomMetricStats& StatsdStats::getAtomMetricStats(int64_t metricId) {
     auto atomMetricStatsIter = mAtomMetricStats.find(metricId);
     if (atomMetricStatsIter != mAtomMetricStats.end()) {
@@ -862,12 +955,25 @@ void StatsdStats::resetInternalLocked() {
         pullStats.second.atomErrorCount = 0;
         pullStats.second.binderCallFailCount = 0;
         pullStats.second.pullTimeoutMetadata.clear();
+        pullStats.second.subscriptionPullCount = 0;
     }
     mAtomMetricStats.clear();
     mActivationBroadcastGuardrailStats.clear();
     mPushedAtomErrorStats.clear();
     mPushedAtomDropsStats.clear();
     mRestrictedMetricQueryStats.clear();
+    mSubscriptionPullThreadWakeupCount = 0;
+
+    for (auto it = mSubscriptionStats.begin(); it != mSubscriptionStats.end();) {
+        if (it->second.end_time_sec > 0) {
+            // Remove finished subscriptions
+            it = mSubscriptionStats.erase(it);
+        } else {
+            // Reset dynamic properties of active subscriptions.
+            it->second.flush_count = 0;
+            ++it;
+        }
+    }
 }
 
 string buildTimeString(int64_t timeSec) {
@@ -894,6 +1000,16 @@ int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
     } else {
         return 0;
     }
+}
+
+bool StatsdStats::hasEventQueueOverflow() const {
+    lock_guard<std::mutex> lock(mLock);
+    return mOverflowCount != 0;
+}
+
+bool StatsdStats::hasSocketLoss() const {
+    lock_guard<std::mutex> lock(mLock);
+    return !mLogLossStats.empty();
 }
 
 void StatsdStats::dumpStats(int out) const {
@@ -1010,9 +1126,10 @@ void StatsdStats::dumpStats(int out) const {
         }
 
         for (const auto& dump : configStats->dump_report_stats) {
-            dprintf(out, "\tdump report time: %s(%lld) bytes: %lld\n",
-                    buildTimeString(dump.first).c_str(), (long long)dump.first,
-                    (long long)dump.second);
+            dprintf(out, "\tdump report time: %s(%lld) bytes: %d reportNumber: %d\n",
+                    buildTimeString(dump.mDumpReportTimeSec).c_str(),
+                    (long long)dump.mDumpReportTimeSec, dump.mDumpReportSizeBytes,
+                    dump.mDumpReportNumber);
         }
 
         for (const auto& stats : pair.second->matcher_stats) {
@@ -1086,7 +1203,7 @@ void StatsdStats::dumpStats(int out) const {
                 "  (pull timeout)%ld, (pull exceed max delay)%ld"
                 "  (no uid provider count)%ld, (no puller found count)%ld\n"
                 "  (registered count) %ld, (unregistered count) %ld"
-                "  (atom error count) %d\n",
+                "  (atom error count) %d, (subscription pull count) %d\n",
                 (int)pair.first, (long)pair.second.totalPull, (long)pair.second.totalPullFromCache,
                 (long)pair.second.pullFailed, (long)pair.second.minPullIntervalSec,
                 (long long)pair.second.avgPullTimeNs, (long long)pair.second.maxPullTimeNs,
@@ -1094,7 +1211,7 @@ void StatsdStats::dumpStats(int out) const {
                 pair.second.dataError, pair.second.pullTimeout, pair.second.pullExceedMaxDelay,
                 pair.second.pullUidProviderNotFound, pair.second.pullerNotFound,
                 pair.second.registeredCount, pair.second.unregisteredCount,
-                pair.second.atomErrorCount);
+                pair.second.atomErrorCount, pair.second.subscriptionPullCount);
         if (pair.second.pullTimeoutMetadata.size() > 0) {
             string uptimeMillis = "(pull timeout system uptime millis) ";
             string pullTimeoutMillis = "(pull timeout elapsed time millis) ";
@@ -1152,6 +1269,15 @@ void StatsdStats::dumpStats(int out) const {
         dprintf(out, "\n");
     }
 
+    dprintf(out, "********Atom Subscription stats***********\n");
+    dprintf(out, "Pull thread wakeup count: %d\n", mSubscriptionPullThreadWakeupCount);
+    for (const auto& [id, subStats] : mSubscriptionStats) {
+        dprintf(out,
+                "Subscription %d: pushed_atom_count=%d, pulled_atom_count=%d, flush_count=%d\n", id,
+                subStats.pushed_atom_count, subStats.pulled_atom_count, subStats.flush_count);
+        dprintf(out, "\n");
+    }
+
     if (mRestrictedMetricQueryStats.size() > 0) {
         dprintf(out, "********Restricted Metric Query stats***********\n");
         for (const auto& stat : mRestrictedMetricQueryStats) {
@@ -1173,6 +1299,8 @@ void StatsdStats::dumpStats(int out) const {
             }
         }
     }
+    dprintf(out, "********Statsd Stats Id***********\n");
+    dprintf(out, "Statsd Stats Id %d\n", mStatsdStatsId);
     dprintf(out, "********Shard Offset Provider stats***********\n");
     dprintf(out, "Shard Offset: %u\n", ShardOffsetProvider::getInstance().getShardOffset());
 }
@@ -1262,15 +1390,21 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
     }
 
     for (const auto& dump : configStats.dump_report_stats) {
-        proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_TIME |
-                     FIELD_COUNT_REPEATED,
-                     dump.first);
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_TIME | FIELD_COUNT_REPEATED,
+                dump.mDumpReportTimeSec);
     }
 
     for (const auto& dump : configStats.dump_report_stats) {
-        proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_BYTES |
-                     FIELD_COUNT_REPEATED,
-                     (long long)dump.second);
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_BYTES | FIELD_COUNT_REPEATED,
+                (long long)dump.mDumpReportSizeBytes);
+    }
+
+    for (const auto& dump : configStats.dump_report_stats) {
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_NUMBER | FIELD_COUNT_REPEATED,
+                dump.mDumpReportNumber);
     }
 
     for (const auto& annotation : configStats.annotations) {
@@ -1520,24 +1654,41 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
     proto.write(FIELD_TYPE_UINT32 | FIELD_ID_SHARD_OFFSET,
                 static_cast<long>(ShardOffsetProvider::getInstance().getShardOffset()));
 
-    output->clear();
-    size_t bufferSize = proto.size();
-    output->resize(bufferSize);
+    proto.write(FIELD_TYPE_INT32 | FIELD_ID_STATSD_STATS_ID, mStatsdStatsId);
 
-    size_t pos = 0;
-    sp<android::util::ProtoReader> reader = proto.data();
-    while (reader->readBuffer() != NULL) {
-        size_t toRead = reader->currentToRead();
-        std::memcpy(&((*output)[pos]), reader->readBuffer(), toRead);
-        pos += toRead;
-        reader->move(toRead);
+    // Write subscription stats
+    const uint64_t token = proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SUBSCRIPTION_STATS);
+    for (const auto& [id, subStats] : mSubscriptionStats) {
+        const uint64_t token = proto.start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
+                                           FIELD_ID_SUBSCRIPTION_STATS_PER_SUBSCRIPTION_STATS);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_PER_SUBSCRIPTION_STATS_ID, id);
+        writeNonZeroStatToStream(
+                FIELD_TYPE_INT32 | FIELD_ID_PER_SUBSCRIPTION_STATS_PUSHED_ATOM_COUNT,
+                subStats.pushed_atom_count, &proto);
+        writeNonZeroStatToStream(
+                FIELD_TYPE_INT32 | FIELD_ID_PER_SUBSCRIPTION_STATS_PULLED_ATOM_COUNT,
+                subStats.pulled_atom_count, &proto);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_PER_SUBSCRIPTION_STATS_START_TIME,
+                    subStats.start_time_sec);
+        writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_PER_SUBSCRIPTION_STATS_END_TIME,
+                                 subStats.end_time_sec, &proto);
+        writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_PER_SUBSCRIPTION_STATS_FLUSH_COUNT,
+                                 subStats.flush_count, &proto);
+        proto.end(token);
     }
+    writeNonZeroStatToStream(
+            FIELD_TYPE_INT32 | FIELD_ID_SUBSCRIPTION_STATS_PULL_THREAD_WAKEUP_COUNT,
+            mSubscriptionPullThreadWakeupCount, &proto);
+    proto.end(token);
+
+    output->clear();
+    proto.serializeToVector(output);
 
     if (reset) {
         resetInternalLocked();
     }
 
-    VLOG("reset=%d, returned proto size %lu", reset, (unsigned long)bufferSize);
+    VLOG("reset=%d, returned proto size %lu", reset, (unsigned long)output->size());
 }
 
 std::pair<size_t, size_t> StatsdStats::getAtomDimensionKeySizeLimits(const int atomId) {
