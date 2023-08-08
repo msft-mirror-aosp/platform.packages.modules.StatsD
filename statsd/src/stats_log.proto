@@ -545,6 +545,7 @@ message StatsdStatsReport {
           optional int64 pull_timeout_elapsed_millis = 2;
         }
         repeated PullTimeoutMetadata pull_atom_metadata = 22;
+        optional int32 subscription_pull_count = 23;
     }
     repeated PulledAtomStats pulled_atom_stats = 10;
 
@@ -634,6 +635,21 @@ message StatsdStatsReport {
     repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;
     optional uint32 shard_offset = 21;
     optional int32 statsd_stats_id = 22;
+
+    message SubscriptionStats {
+      message PerSubscriptionStats {
+        optional int32 id = 1;
+        optional int32 pushed_atom_count = 2;
+        optional int32 pulled_atom_count = 3;
+        optional int32 start_time_sec = 4;
+        optional int32 end_time_sec = 5;
+        optional int32 flush_count = 6;
+      }
+        repeated PerSubscriptionStats per_subscription_stats = 1;
+        optional int32 pull_thread_wakeup_count = 2;
+    }
+
+    optional SubscriptionStats subscription_stats = 23;
 }
 
 message AlertTriggerDetails {
