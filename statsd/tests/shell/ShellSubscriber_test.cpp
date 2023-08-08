@@ -24,8 +24,10 @@
 
 #include "frameworks/proto_logging/stats/atoms.pb.h"
 #include "gtest_matchers.h"
+#include "src/guardrail/StatsdStats.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/shell/shell_data.pb.h"
+#include "src/stats_log.pb.h"
 #include "stats_event.h"
 #include "statslog_statsdtest.h"
 #include "tests/metrics/metrics_test_helper.h"
@@ -44,10 +46,14 @@ using android::os::statsd::util::TEST_ATOM_REPORTED;
 using std::vector;
 using testing::_;
 using testing::A;
+using testing::AtMost;
 using testing::ByMove;
 using testing::DoAll;
+using testing::InSequence;
 using testing::Invoke;
+using testing::MockFunction;
 using testing::NaggyMock;
+using testing::NiceMock;
 using testing::Return;
 using testing::SaveArg;
 using testing::SetArgPointee;
@@ -242,19 +248,29 @@ protected:
         // Save callback arguments when it is invoked.
         ON_CALL(*callback, onSubscriptionData(_, _))
                 .WillByDefault(DoAll(SaveArg<0>(&reason), SaveArg<1>(&payload),
-                                     Return(ByMove(Status::ok()))));
+                                     [] { return Status::ok(); }));
 
         ShellSubscription config;
         config.add_pushed()->set_atom_id(TEST_ATOM_REPORTED);
         config.add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
         config.add_pushed()->set_atom_id(PHONE_SIGNAL_STRENGTH_CHANGED);
         configBytes = protoToBytes(config);
+
+        StatsdStats::getInstance().reset();
+
+        // Expect empty call from the shellSubscriber destructor
+        // and may be one additional call during unsubscribe if subscription was active.
+        // Putting this here because newer EXPECT_CALL takes precedence over an older one.
+        LogEventFilter::AtomIdSet tagIds;
+        EXPECT_CALL(*mockLogEventFilter, setAtomIds(tagIds, &shellSubscriber)).Times(AtMost(2));
+
+        // Catch callback invocation from uninsteresting unsubscribe call.
+        EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(AtMost(1));
     }
 
     void TearDown() override {
-        // Expect empty call from the shellSubscriber destructor
-        LogEventFilter::AtomIdSet tagIds;
-        EXPECT_CALL(*mockLogEventFilter, setAtomIds(tagIds, &shellSubscriber)).Times(1);
+        shellSubscriber.unsubscribe(callback);
+        StatsdStats::getInstance().reset();
     }
 
     sp<MockUidMap> uidMap;
@@ -308,23 +324,54 @@ LogEventFilter::AtomIdSet CreateAtomIdSetFromShellSubscriptionBytes(const vector
 
 }  // namespace
 
+TEST_F(ShellSubscriberCallbackTest, testShellSubscriberDestructor) {
+    LogEventFilter::AtomIdSet tagIds;
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(tagIds, &shellSubscriber)).Times(1);
+}
+
 TEST_F(ShellSubscriberCallbackTest, testAddSubscription) {
     EXPECT_CALL(
             *mockLogEventFilter,
             setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
             .Times(1);
-    EXPECT_TRUE(shellSubscriber.startNewSubscription(configBytes, callback));
+
+    ASSERT_TRUE(shellSubscriber.startNewSubscription(configBytes, callback));
+
+    auto subscriptionStats = getStatsdStatsReport().subscription_stats();
+
+    EXPECT_EQ(subscriptionStats.pull_thread_wakeup_count(), 0);
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    auto perSubscriptionStats = subscriptionStats.per_subscription_stats(0);
+    EXPECT_EQ(perSubscriptionStats.pushed_atom_count(), 3);
+    EXPECT_FALSE(perSubscriptionStats.has_pulled_atom_count());
+    EXPECT_GT(perSubscriptionStats.start_time_sec(), 0);
+    EXPECT_EQ(perSubscriptionStats.end_time_sec(), 0);
+    EXPECT_EQ(perSubscriptionStats.flush_count(), 0);
 }
 
 TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
     const size_t maxSubs = ShellSubscriber::getMaxSubscriptions();
+    // setAtomIds called with tagIds during subscribe and unsubscribe until the 2nd last
+    // subscription is removed
     EXPECT_CALL(
             *mockLogEventFilter,
             setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
-            .Times(maxSubs);
+            .Times(maxSubs * 2 - 1);
+
+    // setAtomIds called with empty tagIds during last unsubscribe.
+    LogEventFilter::AtomIdSet tagIds;
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(tagIds, &shellSubscriber))
+            .Times(1)
+            .RetiresOnSaturation();
+
     vector<bool> results(maxSubs, false);
+
+    std::shared_ptr<MockStatsSubscriptionCallback> callbacks[maxSubs];
     for (int i = 0; i < maxSubs; i++) {
-        results[i] = shellSubscriber.startNewSubscription(configBytes, callback);
+        callbacks[i] = SharedRefBase::make<NiceMock<MockStatsSubscriptionCallback>>();
+        ON_CALL(*(callbacks[i]), onSubscriptionData(_, _))
+                .WillByDefault(Return(ByMove(Status::ok())));
+        results[i] = shellSubscriber.startNewSubscription(configBytes, callbacks[i]);
     }
 
     // First maxSubs subscriptions should succeed.
@@ -332,25 +379,40 @@ TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
 
     // Subsequent startNewSubscription should fail.
     EXPECT_FALSE(shellSubscriber.startNewSubscription(configBytes, callback));
+
+    for (int i = 0; i < maxSubs; i++) {
+        shellSubscriber.unsubscribe(callbacks[i]);
+    }
 }
 
 TEST_F(ShellSubscriberCallbackTest, testPushedEventsAreCached) {
-    // Expect callback to not be invoked
-    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
-    EXPECT_CALL(
-            *mockLogEventFilter,
-            setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
-            .Times(1);
+    MockFunction<void(string checkPointName)> check;
+    {
+        // Use InSequence and MockFunction to make onSubscriptionData called 0 times work as
+        // expected by only limiting the scope to until the end of the test body and ignore the
+        // onSubscriptionData EXPECT_CALL in the tearDown().
+        InSequence s;
+
+        // Expect callback to not be invoked until test body has finished executing.
+        EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(0));
+        EXPECT_CALL(*mockLogEventFilter,
+                    setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes),
+                               &shellSubscriber))
+                .Times(1);
+        EXPECT_CALL(check, Call(""));
+    }
     shellSubscriber.startNewSubscription(configBytes, callback);
 
     // Log an event that does NOT invoke the callack.
     shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
             1000 /*timestamp*/, ::android::view::DisplayStateEnum::DISPLAY_STATE_ON));
+
+    check.Call("");
 }
 
 TEST_F(ShellSubscriberCallbackTest, testOverflowCacheIsFlushed) {
     // Expect callback to be invoked once.
-    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1)).RetiresOnSaturation();
     EXPECT_CALL(
             *mockLogEventFilter,
             setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
@@ -382,11 +444,16 @@ TEST_F(ShellSubscriberCallbackTest, testOverflowCacheIsFlushed) {
     expectedShellData.add_elapsed_timestamp_nanos(1100);
 
     EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
+
+    auto subscriptionStats = getStatsdStatsReport().subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    auto perSubscriptionStats = subscriptionStats.per_subscription_stats(0);
+    EXPECT_EQ(perSubscriptionStats.flush_count(), 1);
 }
 
 TEST_F(ShellSubscriberCallbackTest, testFlushTrigger) {
     // Expect callback to be invoked once.
-    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1)).RetiresOnSaturation();
     EXPECT_CALL(
             *mockLogEventFilter,
             setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
@@ -410,11 +477,16 @@ TEST_F(ShellSubscriberCallbackTest, testFlushTrigger) {
     expectedShellData.add_elapsed_timestamp_nanos(1000);
 
     EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
+
+    auto subscriptionStats = getStatsdStatsReport().subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    auto perSubscriptionStats = subscriptionStats.per_subscription_stats(0);
+    EXPECT_EQ(perSubscriptionStats.flush_count(), 1);
 }
 
 TEST_F(ShellSubscriberCallbackTest, testFlushTriggerEmptyCache) {
     // Expect callback to be invoked once.
-    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1)).RetiresOnSaturation();
     EXPECT_CALL(
             *mockLogEventFilter,
             setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
@@ -432,6 +504,11 @@ TEST_F(ShellSubscriberCallbackTest, testFlushTriggerEmptyCache) {
     ShellData expectedShellData;
 
     EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
+
+    auto subscriptionStats = getStatsdStatsReport().subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    auto perSubscriptionStats = subscriptionStats.per_subscription_stats(0);
+    ASSERT_EQ(perSubscriptionStats.flush_count(), 1);
 }
 
 TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
@@ -442,10 +519,13 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
                         setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes),
                                    &shellSubscriber))
                     .Times(1);
+
+    // setAtomIds called with no atoms on unsubscribe.
     LogEventFilter::AtomIdSet idSetEmpty;
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(idSetEmpty, &shellSubscriber))
             .Times(1)
-            .After(newSubcriptionEvent);
+            .After(newSubcriptionEvent)
+            .RetiresOnSaturation();
 
     shellSubscriber.startNewSubscription(configBytes, callback);
 
@@ -467,17 +547,26 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribe) {
 
     EXPECT_THAT(actualShellData, EqShellData(expectedShellData));
 
+    auto subscriptionStats = getStatsdStatsReport().subscription_stats();
+    ASSERT_THAT(subscriptionStats.per_subscription_stats_size(), Eq(1));
+    EXPECT_THAT(subscriptionStats.per_subscription_stats(0).end_time_sec(), Gt(0));
+
     // This event is ignored as the subscription has ended.
     shellSubscriber.onLogEvent(*CreateScreenStateChangedEvent(
             1000 /*timestamp*/, ::android::view::DisplayStateEnum::DISPLAY_STATE_ON));
 
     // This should be a no-op as we've already unsubscribed.
     shellSubscriber.unsubscribe(callback);
+
+    auto subscriptionStats2 = getStatsdStatsReport().subscription_stats();
+    ASSERT_THAT(subscriptionStats2.per_subscription_stats_size(), Eq(1));
+    EXPECT_THAT(subscriptionStats2.per_subscription_stats(0).end_time_sec(),
+                Eq(subscriptionStats.per_subscription_stats(0).end_time_sec()));
 }
 
 TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
     // Expect callback to be invoked once.
-    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1)).RetiresOnSaturation();
     Expectation newSubcriptionEvent =
             EXPECT_CALL(*mockLogEventFilter,
                         setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes),
@@ -486,7 +575,8 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
     LogEventFilter::AtomIdSet idSetEmpty;
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(idSetEmpty, &shellSubscriber))
             .Times(1)
-            .After(newSubcriptionEvent);
+            .After(newSubcriptionEvent)
+            .RetiresOnSaturation();
 
     shellSubscriber.startNewSubscription(configBytes, callback);
 
@@ -505,7 +595,7 @@ TEST_F(ShellSubscriberCallbackTest, testUnsubscribeEmptyCache) {
 
 TEST_F(ShellSubscriberCallbackTest, testTruncateTimestampAtom) {
     // Expect callback to be invoked once.
-    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1));
+    EXPECT_CALL(*callback, onSubscriptionData(_, _)).Times(Exactly(1)).RetiresOnSaturation();
     EXPECT_CALL(
             *mockLogEventFilter,
             setAtomIds(CreateAtomIdSetFromShellSubscriptionBytes(configBytes), &shellSubscriber))
