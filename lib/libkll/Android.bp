@@ -43,6 +43,7 @@ cc_library {
         "-Wall",
         "-Werror",
         "-Wextra",
+        "-Wthread-safety",
     ],
     export_include_dirs: ["include"],
     apex_available: [
@@ -78,5 +79,6 @@ cc_test {
         "-Wall",
         "-Werror",
         "-Wextra",
+        "-Wthread-safety",
     ],
 }
