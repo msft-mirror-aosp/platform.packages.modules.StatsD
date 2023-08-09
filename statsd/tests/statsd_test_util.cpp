@@ -2134,16 +2134,8 @@ vector<PackageInfo> buildPackageInfos(
 }
 
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {
-    vector<uint8_t> statsBuffer;
-    StatsdStats::getInstance().dumpStats(&statsBuffer, false /*reset stats*/);
-    StatsdStatsReport statsReport;
+    StatsdStatsReport statsReport = getStatsdStatsReport();
     StatsdStatsReport_PulledAtomStats pulledAtomStats;
-    if (!statsReport.ParseFromArray(&statsBuffer[0], statsBuffer.size())) {
-        return pulledAtomStats;
-    }
-    if (statsReport.pulled_atom_stats_size() == 0) {
-        return pulledAtomStats;
-    }
     for (size_t i = 0; i < statsReport.pulled_atom_stats_size(); i++) {
         if (statsReport.pulled_atom_stats(i).atom_id() == atom_id) {
             return statsReport.pulled_atom_stats(i);
@@ -2190,6 +2182,19 @@ void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId) {
         default:
             break;
     }
+}
+
+StatsdStatsReport getStatsdStatsReport(bool resetStats) {
+    StatsdStats& stats = StatsdStats::getInstance();
+    return getStatsdStatsReport(stats, resetStats);
+}
+
+StatsdStatsReport getStatsdStatsReport(StatsdStats& stats, bool resetStats) {
+    vector<uint8_t> statsBuffer;
+    stats.dumpStats(&statsBuffer, resetStats);
+    StatsdStatsReport statsReport;
+    EXPECT_TRUE(statsReport.ParseFromArray(statsBuffer.data(), statsBuffer.size()));
+    return statsReport;
 }
 
 }  // namespace statsd
