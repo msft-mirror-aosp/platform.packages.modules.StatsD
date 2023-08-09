@@ -165,6 +165,11 @@ public:
     // Adds all atom ids referenced by matchers in the MetricsManager's config
     void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
 
+    // Gets the memory limit for the MetricsManager's config
+    inline size_t getMaxMetricsBytes() const {
+        return mMaxMetricsBytes;
+    }
+
 private:
     // For test only.
     inline int64_t getTtlEndNs() const { return mTtlEndNs; }
@@ -320,6 +325,12 @@ private:
 
     // Hashes of the States used in this config, keyed by the state id, used in config updates.
     std::map<int64_t, uint64_t> mStateProtoHashes;
+
+    // Only called on config creation/update. Sets the memory limit in bytes for storing metrics.
+    void setMaxMetricsBytesFromConfig(const StatsdConfig& config);
+
+    // The memory limit in bytes for storing metrics
+    size_t mMaxMetricsBytes;
 
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensions);
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
