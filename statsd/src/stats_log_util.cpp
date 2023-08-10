@@ -84,6 +84,7 @@ const int FIELD_ID_PULLER_NOT_FOUND = 21;
 const int FIELD_ID_PULL_TIMEOUT_METADATA = 22;
 const int FIELD_ID_PULL_TIMEOUT_METADATA_UPTIME_MILLIS = 1;
 const int FIELD_ID_PULL_TIMEOUT_METADATA_ELAPSED_MILLIS = 2;
+const int FIELD_ID_SUBSCRIPTION_PULL_COUNT = 23;
 
 // for AtomMetricStats proto
 const int FIELD_ID_ATOM_METRIC_STATS = 17;
@@ -516,6 +517,8 @@ void writePullerStatsToStream(const std::pair<int, StatsdStats::PulledAtomStats>
                            pullTimeoutMetadata.pullTimeoutElapsedMillis);
         protoOutput->end(timeoutMetadataToken);
     }
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_SUBSCRIPTION_PULL_COUNT,
+                             pair.second.subscriptionPullCount, protoOutput);
     protoOutput->end(token);
 }
 
