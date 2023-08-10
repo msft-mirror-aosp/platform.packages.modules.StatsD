@@ -802,7 +802,7 @@ void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
     size_t totalBytes = metricsManager.byteSize();
     mLastByteSizeTimes[key] = elapsedRealtimeNs;
     bool requestDump = false;
-    if (totalBytes > StatsdStats::kMaxMetricsBytesPerConfig) {
+    if (totalBytes > metricsManager.getMaxMetricsBytes()) {
         // Too late. We need to start clearing data.
         metricsManager.dropData(elapsedRealtimeNs);
         StatsdStats::getInstance().noteDataDropped(key, totalBytes);
