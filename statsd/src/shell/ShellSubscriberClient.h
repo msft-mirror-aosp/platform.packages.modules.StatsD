@@ -64,7 +64,7 @@ public:
             const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerMgr);
 
     // Should only be called by the create() factory.
-    explicit ShellSubscriberClient(int out,
+    explicit ShellSubscriberClient(int id, int out,
                                    const std::shared_ptr<IStatsSubscriptionCallback>& callback,
                                    const std::vector<SimpleAtomMatcher>& pushedMatchers,
                                    const std::vector<PullInfo>& pulledInfo, int64_t timeoutSec,
@@ -123,6 +123,9 @@ private:
     void triggerCallback(StatsSubscriptionCallbackReason reason);
 
     const int32_t DEFAULT_PULL_UID = AID_SYSTEM;
+
+    // Unique ID for this subscription for  StatsdStats.
+    const int mId;
 
     const sp<UidMap> mUidMap;
 
