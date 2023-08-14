@@ -39,18 +39,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-// Keep this in sync with DumpReportReason enum in stats_log.proto
-enum DumpReportReason {
-    DEVICE_SHUTDOWN = 1,
-    CONFIG_UPDATED = 2,
-    CONFIG_REMOVED = 3,
-    GET_DATA_CALLED = 4,
-    ADB_DUMP = 5,
-    CONFIG_RESET = 6,
-    STATSCOMPANION_DIED = 7,
-    TERMINATION_SIGNAL_RECEIVED = 8
-};
-
 // If the metric has no activation requirement, it will be active once the metric producer is
 // created.
 // If the metric needs to be activated by atoms, the metric producer will start
@@ -71,24 +59,6 @@ enum DumpLatency {
     // In other cases, it is fine for a dump to take more than a few milliseconds, e.g. config
     // updates.
     NO_TIME_CONSTRAINTS = 2
-};
-
-// Keep this in sync with BucketDropReason enum in stats_log.proto
-enum BucketDropReason {
-    // For ValueMetric, a bucket is dropped during a dump report request iff
-    // current bucket should be included, a pull is needed (pulled metric and
-    // condition is true), and we are under fast time constraints.
-    DUMP_REPORT_REQUESTED = 1,
-    EVENT_IN_WRONG_BUCKET = 2,
-    CONDITION_UNKNOWN = 3,
-    PULL_FAILED = 4,
-    PULL_DELAYED = 5,
-    DIMENSION_GUARDRAIL_REACHED = 6,
-    MULTIPLE_BUCKETS_SKIPPED = 7,
-    // Not an invalid bucket case, but the bucket is dropped.
-    BUCKET_TOO_SMALL = 8,
-    // Not an invalid bucket case, but the bucket is skipped.
-    NO_DATA = 9
 };
 
 enum MetricType {
