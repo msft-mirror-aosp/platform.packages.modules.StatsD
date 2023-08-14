@@ -17,7 +17,7 @@
 
 #include <gtest/gtest_prod.h>
 #include <log/log_time.h>
-#include <src/guardrail/invalid_config_reason_enum.pb.h>
+#include <src/guardrail/stats_log_enums.pb.h>
 
 #include <list>
 #include <mutex>
@@ -575,6 +575,16 @@ public:
      * Return soft and hard atom key dimension size limits as an std::pair.
      */
     static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(const int atomId = -1);
+
+    /**
+     * Returns true if there is recorded event queue overflow
+     */
+    bool hasEventQueueOverflow() const;
+
+    /**
+     * Returns true if there is recorded socket loss
+     */
+    bool hasSocketLoss() const;
 
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
