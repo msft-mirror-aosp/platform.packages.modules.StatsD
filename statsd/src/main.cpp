@@ -148,7 +148,11 @@ int main(int /*argc*/, char** /*argv*/) {
             }
             gSocketListener->stopListener();
             gStatsService->Terminate();
-            exit(1);
+            // return the signal handler to its default disposition, then raise the signal again
+            signal(SIGTERM, SIG_DFL);
+            // this is a sync call which leads to immediate process termination and
+            // no destructors are called, semantically similar to call exit(1) here
+            raise(SIGTERM);
         }
     }).detach();
 
