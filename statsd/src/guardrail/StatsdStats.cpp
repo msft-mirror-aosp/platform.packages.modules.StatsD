@@ -816,6 +816,16 @@ int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
     }
 }
 
+bool StatsdStats::hasEventQueueOverflow() const {
+    lock_guard<std::mutex> lock(mLock);
+    return mOverflowCount != 0;
+}
+
+bool StatsdStats::hasSocketLoss() const {
+    lock_guard<std::mutex> lock(mLock);
+    return !mLogLossStats.empty();
+}
+
 void StatsdStats::dumpStats(int out) const {
     lock_guard<std::mutex> lock(mLock);
     time_t t = mStartTimeSec;
