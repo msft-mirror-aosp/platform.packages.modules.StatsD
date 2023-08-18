@@ -843,13 +843,19 @@ void StorageManager::enforceDbGuardrails(const char* path, const int64_t currWal
         struct stat fileInfo;
         const ConfigKey key = parseDbName(name);
         if (stat(fullPathName.c_str(), &fileInfo) != 0) {
+            StatsdStats::getInstance().noteDbStatFailed(key);
             // Remove file if stat fails.
             remove(fullPathName.c_str());
             continue;
         }
         StatsdStats::getInstance().noteRestrictedConfigDbSize(key, currWallClockSec,
                                                               fileInfo.st_size);
-        if (fileInfo.st_mtime <= deleteThresholdSec || fileInfo.st_size >= maxBytes) {
+        if (fileInfo.st_mtime <= deleteThresholdSec) {
+            StatsdStats::getInstance().noteDbTooOld(key);
+            remove(fullPathName.c_str());
+        }
+        if (fileInfo.st_size >= maxBytes) {
+            StatsdStats::getInstance().noteDbSizeExceeded(key);
             remove(fullPathName.c_str());
         }
         if (hasFile(dbutils::getDbName(key).c_str())) {
