@@ -562,6 +562,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
             modularUpdate = false;
         }
         if (!modularUpdate && it->second->hasRestrictedMetricsDelegate()) {
+            StatsdStats::getInstance().noteDbDeletionConfigUpdated(key);
             // Always delete the old db if restricted metrics config is not a
             // modular update.
             dbutils::deleteDb(key);
@@ -620,6 +621,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         if (IsAtLeastU() && it != mMetricsManagers.end() &&
             it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+            StatsdStats::getInstance().noteDbConfigInvalid(key);
             dbutils::deleteDb(key);
         }
         mMetricsManagers.erase(key);
@@ -851,6 +853,7 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
         WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
                               NO_TIME_CONSTRAINTS);
         if (IsAtLeastU() && it->second->hasRestrictedMetricsDelegate()) {
+            StatsdStats::getInstance().noteDbDeletionConfigRemoved(key);
             dbutils::deleteDb(key);
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
         }
