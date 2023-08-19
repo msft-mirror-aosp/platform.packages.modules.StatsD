@@ -174,9 +174,10 @@ TEST(StatsLogProcessorTest, TestUidMapHasSnapshot) {
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -215,9 +216,10 @@ TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -375,9 +377,10 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();

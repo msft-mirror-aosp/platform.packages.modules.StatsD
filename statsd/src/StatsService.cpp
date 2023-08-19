@@ -949,47 +949,14 @@ bool StatsService::getUidFromString(const char* s, int32_t& uid) {
 
 Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
     ENFORCE_UID(AID_SYSTEM);
-    // Read stream into buffer.
-    string buffer;
-    if (!android::base::ReadFdToString(fd.get(), &buffer)) {
-        return exception(EX_ILLEGAL_ARGUMENT, "Failed to read all data from the pipe.");
-    }
 
-    // Parse buffer.
+    // Parse fd into proto.
     UidData uidData;
-    if (!uidData.ParseFromString(buffer)) {
+    if (!uidData.ParseFromFileDescriptor(fd.get())) {
         return exception(EX_ILLEGAL_ARGUMENT, "Error parsing proto stream for UidData.");
     }
 
-    vector<String16> versionStrings;
-    vector<String16> installers;
-    vector<String16> packageNames;
-    vector<int32_t> uids;
-    vector<int64_t> versions;
-    vector<vector<uint8_t>> certificateHashes;
-
-    const auto numEntries = uidData.app_info_size();
-    versionStrings.reserve(numEntries);
-    installers.reserve(numEntries);
-    packageNames.reserve(numEntries);
-    uids.reserve(numEntries);
-    versions.reserve(numEntries);
-    certificateHashes.reserve(numEntries);
-
-    for (const auto& appInfo: uidData.app_info()) {
-        packageNames.emplace_back(String16(appInfo.package_name().c_str()));
-        uids.push_back(appInfo.uid());
-        versions.push_back(appInfo.version());
-        versionStrings.emplace_back(String16(appInfo.version_string().c_str()));
-        installers.emplace_back(String16(appInfo.installer().c_str()));
-
-        const string& certHash = appInfo.certificate_hash();
-        certificateHashes.emplace_back(certHash.begin(), certHash.end());
-    }
-
-    mUidMap->updateMap(getElapsedRealtimeNs(), uids, versions, versionStrings, packageNames,
-                       installers, certificateHashes);
-
+    mUidMap->updateMap(getElapsedRealtimeNs(), uidData);
     mBootCompleteTrigger.markComplete(kUidMapReceivedTag);
     VLOG("StatsService::informAllUidData UidData proto parsed successfully.");
     return Status::ok();
@@ -1001,12 +968,9 @@ Status StatsService::informOnePackage(const string& app, int32_t uid, int64_t ve
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackage was called");
-    String16 utf16App = String16(app.c_str());
-    String16 utf16VersionString = String16(versionString.c_str());
-    String16 utf16Installer = String16(installer.c_str());
 
-    mUidMap->updateApp(getElapsedRealtimeNs(), utf16App, uid, version, utf16VersionString,
-                       utf16Installer, certificateHash);
+    mUidMap->updateApp(getElapsedRealtimeNs(), app, uid, version, versionString, installer,
+                       certificateHash);
     return Status::ok();
 }
 
@@ -1014,8 +978,7 @@ Status StatsService::informOnePackageRemoved(const string& app, int32_t uid) {
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackageRemoved was called");
-    String16 utf16App = String16(app.c_str());
-    mUidMap->removeApp(getElapsedRealtimeNs(), utf16App, uid);
+    mUidMap->removeApp(getElapsedRealtimeNs(), app, uid);
     mConfigManager->RemoveConfigs(uid);
     return Status::ok();
 }
