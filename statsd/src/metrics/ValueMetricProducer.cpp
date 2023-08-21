@@ -511,11 +511,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onActiveStateChangedLocked
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onConditionChangedLocked(
         const bool condition, const int64_t eventTimeNs) {
-    const bool eventLate = isEventLateLocked(eventTimeNs);
-
-    const ConditionState newCondition = eventLate   ? ConditionState::kUnknown
-                                        : condition ? ConditionState::kTrue
-                                                    : ConditionState::kFalse;
+    const ConditionState newCondition = condition ? ConditionState::kTrue : ConditionState::kFalse;
     const ConditionState oldCondition = mCondition;
 
     if (!mIsActive) {
@@ -524,7 +520,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onConditionChangedLocked(
     }
 
     // If the event arrived late, mark the bucket as invalid and skip the event.
-    if (eventLate) {
+    if (isEventLateLocked(eventTimeNs)) {
         VLOG("Skip event due to late arrival: %lld vs %lld", (long long)eventTimeNs,
              (long long)mCurrentBucketStartTimeNs);
         StatsdStats::getInstance().noteLateLogEventSkipped(mMetricId);
