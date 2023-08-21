@@ -460,6 +460,12 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     stats.noteConfigReceived(configKeyWithoutError, 2, 3, 4, 5, {}, nullopt);
     stats.noteDbCorrupted(key);
     stats.noteDbCorrupted(key);
+    stats.noteDbSizeExceeded(key);
+    stats.noteDbStatFailed(key);
+    stats.noteDbConfigInvalid(key);
+    stats.noteDbTooOld(key);
+    stats.noteDbDeletionConfigRemoved(key);
+    stats.noteDbDeletionConfigUpdated(key);
     stats.noteRestrictedConfigDbSize(key, 999, 111);
 
     StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
@@ -482,6 +488,12 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     EXPECT_TRUE(report.config_stats(1).device_info_table_creation_failed());
     EXPECT_EQ(metricId, report.config_stats(1).restricted_metric_stats(0).restricted_metric_id());
     EXPECT_EQ(2, report.config_stats(1).restricted_db_corrupted_count());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_stat_failed());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_size_exceeded_limit());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_invalid());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_too_old());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_removed());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_updated());
 }
 
 TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
