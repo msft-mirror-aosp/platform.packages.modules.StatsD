@@ -14,11 +14,14 @@
 
 #include "src/logd/LogEvent.h"
 
+#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
+#include "flags/FlagProvider.h"
 #include "frameworks/proto_logging/stats/atoms.pb.h"
 #include "frameworks/proto_logging/stats/enums/stats/launcher/launcher.pb.h"
 #include "log/log_event_list.h"
+#include "stats_annotations.h"
 #include "stats_event.h"
 #include "statsd_test_util.h"
 
@@ -28,6 +31,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using android::modules::sdklevel::IsAtLeastU;
 using std::string;
 using std::vector;
 using ::util::ProtoOutputStream;
@@ -70,6 +74,50 @@ bool createFieldWithIntAnnotationLogEvent(LogEvent* logEvent, uint8_t typeId, ui
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     createStatsEvent(statsEvent, typeId, /*atomId=*/100);
     AStatsEvent_addInt32Annotation(statsEvent, annotationId, annotationValue);
+    AStatsEvent_build(statsEvent);
+
+    size_t size;
+    const uint8_t* buf = AStatsEvent_getBuffer(statsEvent, &size);
+    if (doHeaderPrefetch) {
+        // Testing LogEvent header prefetch logic
+        const LogEvent::BodyBufferInfo bodyInfo = logEvent->parseHeader(buf, size);
+        logEvent->parseBody(bodyInfo);
+    } else {
+        logEvent->parseBuffer(buf, size);
+    }
+    AStatsEvent_release(statsEvent);
+
+    return logEvent->isValid();
+}
+
+bool createAtomLevelIntAnnotationLogEvent(LogEvent* logEvent, uint8_t typeId, uint8_t annotationId,
+                                          int annotationValue, bool doHeaderPrefetch) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, /*atomId=*/100);
+    AStatsEvent_addInt32Annotation(statsEvent, annotationId, annotationValue);
+    fillStatsEventWithSampleValue(statsEvent, typeId);
+    AStatsEvent_build(statsEvent);
+
+    size_t size;
+    const uint8_t* buf = AStatsEvent_getBuffer(statsEvent, &size);
+    if (doHeaderPrefetch) {
+        // Testing LogEvent header prefetch logic
+        const LogEvent::BodyBufferInfo bodyInfo = logEvent->parseHeader(buf, size);
+        logEvent->parseBody(bodyInfo);
+    } else {
+        logEvent->parseBuffer(buf, size);
+    }
+    AStatsEvent_release(statsEvent);
+
+    return logEvent->isValid();
+}
+
+bool createAtomLevelBoolAnnotationLogEvent(LogEvent* logEvent, uint8_t typeId, uint8_t annotationId,
+                                           bool annotationValue, bool doHeaderPrefetch) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, /*atomId=*/100);
+    AStatsEvent_addBoolAnnotation(statsEvent, annotationId, annotationValue);
+    fillStatsEventWithSampleValue(statsEvent, typeId);
     AStatsEvent_build(statsEvent);
 
     size_t size;
@@ -657,8 +705,8 @@ TEST_P(LogEventTest, TestEmptyArray) {
 
 TEST_P(LogEventTest, TestAnnotationIdIsUid) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
-    EXPECT_TRUE(createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE, ANNOTATION_ID_IS_UID,
-                                                      true,
+    EXPECT_TRUE(createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE,
+                                                      ASTATSLOG_ANNOTATION_ID_IS_UID, true,
                                                       /*doHeaderPrefetch=*/GetParam()));
 
     ASSERT_EQ(event.getNumUidFields(), 1);
@@ -682,7 +730,7 @@ TEST_P(LogEventTest, TestAnnotationIdIsUid_RepeatedIntAndOtherFields) {
     AStatsEvent_setAtomId(statsEvent, 100);
     AStatsEvent_writeInt32(statsEvent, 5);
     AStatsEvent_writeInt32Array(statsEvent, int32Array, numElements);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeStringArray(statsEvent, cStringArray, numElements);
     AStatsEvent_build(statsEvent);
 
@@ -708,7 +756,7 @@ TEST_P(LogEventTest, TestAnnotationIdIsUid_RepeatedIntOneEntry) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, 100);
     AStatsEvent_writeInt32Array(statsEvent, int32Array, numElements);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_build(statsEvent);
 
     size_t size;
@@ -728,7 +776,7 @@ TEST_P(LogEventTest, TestAnnotationIdIsUid_EmptyIntArray) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, 100);
     AStatsEvent_writeInt32Array(statsEvent, int32Array, /*numElements*/ 0);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeInt32(statsEvent, 5);
     AStatsEvent_build(statsEvent);
 
@@ -748,7 +796,7 @@ TEST_P(LogEventTest, TestAnnotationIdIsUid_BadRepeatedInt64) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, /*atomId=*/100);
     AStatsEvent_writeInt64Array(statsEvent, int64Array, /*numElements*/ 2);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_build(statsEvent);
 
     size_t size;
@@ -772,7 +820,7 @@ TEST_P(LogEventTest, TestAnnotationIdIsUid_BadRepeatedString) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, /*atomId=*/100);
     AStatsEvent_writeStringArray(statsEvent, cStringArray, /*numElements*/ 2);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_build(statsEvent);
 
     size_t size;
@@ -790,21 +838,22 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestAnnotationIdIsUid) {
 
     if (std::get<0>(GetParam()) != INT32_TYPE && std::get<0>(GetParam()) != LIST_TYPE) {
         EXPECT_FALSE(createFieldWithBoolAnnotationLogEvent(
-                &event, std::get<0>(GetParam()), ANNOTATION_ID_IS_UID, true,
+                &event, std::get<0>(GetParam()), ASTATSLOG_ANNOTATION_ID_IS_UID, true,
                 /*doHeaderPrefetch=*/std::get<1>(GetParam())));
     }
 }
 
 TEST_P(LogEventTest, TestAnnotationIdIsUid_NotIntAnnotation) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
-    EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(&event, INT32_TYPE, ANNOTATION_ID_IS_UID, 10,
+    EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(&event, INT32_TYPE,
+                                                      ASTATSLOG_ANNOTATION_ID_IS_UID, 10,
                                                       /*doHeaderPrefetch=*/GetParam()));
 }
 
 TEST_P(LogEventTest, TestAnnotationIdStateNested) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_TRUE(createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE,
-                                                      ANNOTATION_ID_STATE_NESTED, true,
+                                                      ASTATSLOG_ANNOTATION_ID_STATE_NESTED, true,
                                                       /*doHeaderPrefetch=*/GetParam()));
 
     const vector<FieldValue>& values = event.getValues();
@@ -817,7 +866,7 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestAnnotationIdStateNested) {
 
     if (std::get<0>(GetParam()) != INT32_TYPE) {
         EXPECT_FALSE(createFieldWithBoolAnnotationLogEvent(
-                &event, std::get<0>(GetParam()), ANNOTATION_ID_STATE_NESTED, true,
+                &event, std::get<0>(GetParam()), ASTATSLOG_ANNOTATION_ID_STATE_NESTED, true,
                 /*doHeaderPrefetch=*/std::get<1>(GetParam())));
     }
 }
@@ -825,14 +874,14 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestAnnotationIdStateNested) {
 TEST_P(LogEventTest, TestAnnotationIdStateNested_NotIntAnnotation) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(&event, INT32_TYPE,
-                                                      ANNOTATION_ID_STATE_NESTED, 10,
+                                                      ASTATSLOG_ANNOTATION_ID_STATE_NESTED, 10,
                                                       /*doHeaderPrefetch=*/GetParam()));
 }
 
 TEST_P(LogEventTest, TestPrimaryFieldAnnotation) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_TRUE(createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE,
-                                                      ANNOTATION_ID_PRIMARY_FIELD, true,
+                                                      ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true,
                                                       /*doHeaderPrefetch=*/GetParam()));
 
     const vector<FieldValue>& values = event.getValues();
@@ -845,7 +894,7 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestPrimaryFieldAnnotation) {
 
     if (std::get<0>(GetParam()) == LIST_TYPE || std::get<0>(GetParam()) == ATTRIBUTION_CHAIN_TYPE) {
         EXPECT_FALSE(createFieldWithBoolAnnotationLogEvent(
-                &event, std::get<0>(GetParam()), ANNOTATION_ID_PRIMARY_FIELD, true,
+                &event, std::get<0>(GetParam()), ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, true,
                 /*doHeaderPrefetch=*/std::get<1>(GetParam())));
     }
 }
@@ -853,14 +902,14 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestPrimaryFieldAnnotation) {
 TEST_P(LogEventTest, TestPrimaryFieldAnnotation_NotIntAnnotation) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(&event, INT32_TYPE,
-                                                      ANNOTATION_ID_PRIMARY_FIELD, 10,
+                                                      ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD, 10,
                                                       /*doHeaderPrefetch=*/GetParam()));
 }
 
 TEST_P(LogEventTest, TestExclusiveStateAnnotation) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_TRUE(createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE,
-                                                      ANNOTATION_ID_EXCLUSIVE_STATE, true,
+                                                      ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true,
                                                       /*doHeaderPrefetch=*/GetParam()));
 
     const vector<FieldValue>& values = event.getValues();
@@ -873,7 +922,7 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestExclusiveStateAnnotation) {
 
     if (std::get<0>(GetParam()) != INT32_TYPE) {
         EXPECT_FALSE(createFieldWithBoolAnnotationLogEvent(
-                &event, std::get<0>(GetParam()), ANNOTATION_ID_EXCLUSIVE_STATE, true,
+                &event, std::get<0>(GetParam()), ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true,
                 /*doHeaderPrefetch=*/std::get<1>(GetParam())));
     }
 }
@@ -881,7 +930,7 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestExclusiveStateAnnotation) {
 TEST_P(LogEventTest, TestExclusiveStateAnnotation_NotIntAnnotation) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(&event, INT32_TYPE,
-                                                      ANNOTATION_ID_EXCLUSIVE_STATE, 10,
+                                                      ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, 10,
                                                       /*doHeaderPrefetch=*/GetParam()));
 }
 
@@ -901,7 +950,8 @@ TEST_P(LogEventTest, TestPrimaryFieldFirstUidAnnotation) {
         AStatsEvent_writeInt32(statsEvent, 10);
     }
     AStatsEvent_writeAttributionChain(statsEvent, uids, tags, 2);
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID,
+                                  true);
     AStatsEvent_build(statsEvent);
 
     // Construct LogEvent
@@ -922,28 +972,64 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestPrimaryFieldFirstUidAnnotation) 
 
     if (std::get<0>(GetParam()) != ATTRIBUTION_CHAIN_TYPE) {
         EXPECT_FALSE(createFieldWithBoolAnnotationLogEvent(
-                &event, std::get<0>(GetParam()), ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true,
+                &event, std::get<0>(GetParam()), ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID,
+                true,
                 /*doHeaderPrefetch=*/std::get<1>(GetParam())));
     }
 }
 
 TEST_P(LogEventTest, TestPrimaryFieldFirstUidAnnotation_NotIntAnnotation) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
-    EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(&event, ATTRIBUTION_CHAIN_TYPE,
-                                                      ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, 10,
-                                                      /*doHeaderPrefetch=*/GetParam()));
+    EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(
+            &event, ATTRIBUTION_CHAIN_TYPE, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, 10,
+            /*doHeaderPrefetch=*/GetParam()));
 }
 
 TEST_P(LogEventTest, TestResetStateAnnotation) {
     int32_t resetState = 10;
     LogEvent event(/*uid=*/0, /*pid=*/0);
-    EXPECT_TRUE(createFieldWithIntAnnotationLogEvent(&event, INT32_TYPE,
-                                                     ANNOTATION_ID_TRIGGER_STATE_RESET, resetState,
-                                                     /*doHeaderPrefetch=*/GetParam()));
+    EXPECT_TRUE(createFieldWithIntAnnotationLogEvent(
+            &event, INT32_TYPE, ASTATSLOG_ANNOTATION_ID_TRIGGER_STATE_RESET, resetState,
+            /*doHeaderPrefetch=*/GetParam()));
 
     const vector<FieldValue>& values = event.getValues();
     ASSERT_EQ(values.size(), 1);
     EXPECT_EQ(event.getResetState(), resetState);
+}
+
+TEST_P(LogEventTest, TestRestrictionCategoryAnnotation) {
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
+    int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    EXPECT_TRUE(createAtomLevelIntAnnotationLogEvent(
+            &event, INT32_TYPE, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY, restrictionCategory,
+            /*doHeaderPrefetch=*/GetParam()));
+
+    ASSERT_EQ(event.getRestrictionCategory(), restrictionCategory);
+}
+
+TEST_P(LogEventTest, TestInvalidRestrictionCategoryAnnotation) {
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
+    int32_t restrictionCategory = 619;  // unknown category
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    EXPECT_FALSE(createAtomLevelIntAnnotationLogEvent(
+            &event, INT32_TYPE, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY, restrictionCategory,
+            /*doHeaderPrefetch=*/GetParam()));
+}
+
+TEST_P(LogEventTest, TestRestrictionCategoryAnnotationBelowUDevice) {
+    if (IsAtLeastU()) {
+        GTEST_SKIP();
+    }
+    int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    EXPECT_FALSE(createAtomLevelIntAnnotationLogEvent(
+            &event, INT32_TYPE, ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY, restrictionCategory,
+            /*doHeaderPrefetch=*/GetParam()));
 }
 
 TEST_P(LogEventTestBadAnnotationFieldTypes, TestResetStateAnnotation) {
@@ -952,16 +1038,17 @@ TEST_P(LogEventTestBadAnnotationFieldTypes, TestResetStateAnnotation) {
 
     if (std::get<0>(GetParam()) != INT32_TYPE) {
         EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(
-                &event, std::get<0>(GetParam()), ANNOTATION_ID_TRIGGER_STATE_RESET, resetState,
+                &event, std::get<0>(GetParam()), ASTATSLOG_ANNOTATION_ID_TRIGGER_STATE_RESET,
+                resetState,
                 /*doHeaderPrefetch=*/std::get<1>(GetParam())));
     }
 }
 
 TEST_P(LogEventTest, TestResetStateAnnotation_NotBoolAnnotation) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
-    EXPECT_FALSE(createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE,
-                                                       ANNOTATION_ID_TRIGGER_STATE_RESET, true,
-                                                       /*doHeaderPrefetch=*/GetParam()));
+    EXPECT_FALSE(createFieldWithBoolAnnotationLogEvent(
+            &event, INT32_TYPE, ASTATSLOG_ANNOTATION_ID_TRIGGER_STATE_RESET, true,
+            /*doHeaderPrefetch=*/GetParam()));
 }
 
 TEST_P(LogEventTest, TestUidAnnotationWithInt8MaxValues) {
@@ -977,7 +1064,7 @@ TEST_P(LogEventTest, TestUidAnnotationWithInt8MaxValues) {
     AStatsEvent_writeInt32Array(event, int32Array, numElements);
     AStatsEvent_writeInt32(event, 10);
     AStatsEvent_writeInt32(event, 11);
-    AStatsEvent_addBoolAnnotation(event, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(event, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_build(event);
 
     size_t size;
@@ -997,7 +1084,7 @@ TEST_P(LogEventTest, TestEmptyAttributionChainWithPrimaryFieldFirstUidAnnotation
 
     AStatsEvent_writeInt32(event, 10);
     AStatsEvent_writeAttributionChain(event, uids, tags, 0);
-    AStatsEvent_addBoolAnnotation(event, ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
+    AStatsEvent_addBoolAnnotation(event, ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID, true);
 
     AStatsEvent_build(event);
 
@@ -1008,6 +1095,103 @@ TEST_P(LogEventTest, TestEmptyAttributionChainWithPrimaryFieldFirstUidAnnotation
     EXPECT_FALSE(ParseBuffer(logEvent, buf, size));
 
     AStatsEvent_release(event);
+}
+
+// Setup for parameterized tests.
+class LogEvent_FieldRestrictionTest : public testing::TestWithParam<std::tuple<int, bool>> {
+public:
+    static std::string ToString(testing::TestParamInfo<std::tuple<int, bool>> info) {
+        const std::string boolName = std::get<1>(info.param) ? "_prefetchTrue" : "_prefetchFalse";
+
+        switch (std::get<0>(info.param)) {
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO:
+                return "PeripheralDeviceInfo" + boolName;
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE:
+                return "AppUsage" + boolName;
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY:
+                return "AppActivity" + boolName;
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT:
+                return "HealthConnect" + boolName;
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY:
+                return "Accessibility" + boolName;
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH:
+                return "SystemSearch" + boolName;
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
+                return "UserEngagement" + boolName;
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
+                return "AmbientSensing" + boolName;
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
+                return "DemographicClassification" + boolName;
+            default:
+                return "Unknown" + boolName;
+        }
+    }
+    void TearDown() override {
+        FlagProvider::getInstance().resetOverrides();
+    }
+};
+
+// TODO(b/222539899): Add BOOL_TYPE value once parseAnnotations is updated to check specific
+// typeIds. BOOL_TYPE should be a bad field type for is_uid, nested, and reset state annotations.
+INSTANTIATE_TEST_SUITE_P(
+        LogEvent_FieldRestrictionTest, LogEvent_FieldRestrictionTest,
+        testing::Combine(
+                testing::Values(
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING,
+                        ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION),
+                testing::Bool()),
+        LogEvent_FieldRestrictionTest::ToString);
+
+TEST_P(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation) {
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    EXPECT_TRUE(
+            createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE, std::get<0>(GetParam()), true,
+                                                  /*doHeaderPrefetch=*/std::get<1>(GetParam())));
+    // Some basic checks to make sure the event is parsed correctly.
+    EXPECT_EQ(event.GetTagId(), 100);
+    ASSERT_EQ(event.getValues().size(), 1);
+    EXPECT_EQ(event.getValues()[0].mValue.getType(), Type::INT);
+}
+
+TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType) {
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    EXPECT_FALSE(createFieldWithIntAnnotationLogEvent(
+            &event, STRING_TYPE, std::get<0>(GetParam()),
+            /*random int*/ 15, /*doHeaderPrefetch=*/std::get<1>(GetParam())));
+}
+
+TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel) {
+    if (!IsAtLeastU()) {
+        GTEST_SKIP();
+    }
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    EXPECT_FALSE(createAtomLevelBoolAnnotationLogEvent(
+            &event, STRING_TYPE, std::get<0>(GetParam()), true,
+            /*doHeaderPrefetch=*/std::get<1>(GetParam())));
+}
+
+TEST_P(LogEvent_FieldRestrictionTest, TestRestrictionCategoryAnnotationBelowUDevice) {
+    if (IsAtLeastU()) {
+        GTEST_SKIP();
+    }
+    int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    EXPECT_FALSE(
+            createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE, std::get<0>(GetParam()), true,
+                                                  /*doHeaderPrefetch=*/std::get<1>(GetParam())));
 }
 
 }  // namespace statsd

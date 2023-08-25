@@ -46,6 +46,7 @@ using Status = ::ndk::ScopedAStatus;
 using aidl::android::os::BnStatsd;
 using aidl::android::os::IPendingIntentRef;
 using aidl::android::os::IPullAtomCallback;
+using aidl::android::os::IStatsQueryCallback;
 using aidl::android::os::IStatsSubscriptionCallback;
 using aidl::android::util::PropertyParcel;
 using ::ndk::ScopedAIBinder_DeathRecipient;
@@ -210,6 +211,33 @@ public:
      * Binder call to update properties in statsd_java namespace.
      */
     virtual Status updateProperties(const vector<PropertyParcel>& properties);
+
+    /**
+     * Binder call to let clients register the restricted metrics changed operation for the given
+     * config and calling uid.
+     */
+    virtual Status setRestrictedMetricsChangedOperation(const int64_t configKey,
+                                                        const string& configPackage,
+                                                        const shared_ptr<IPendingIntentRef>& pir,
+                                                        const int32_t callingUid,
+                                                        vector<int64_t>* output);
+
+    /**
+     * Binder call to remove the restricted metrics changed operation for the specified config
+     * and calling uid.
+     */
+    virtual Status removeRestrictedMetricsChangedOperation(const int64_t configKey,
+                                                           const string& configPackage,
+                                                           const int32_t callingUid);
+
+    /**
+     * Binder call to query data in statsd sql store.
+     */
+    virtual Status querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                            const optional<vector<uint8_t>>& policyConfig,
+                            const shared_ptr<IStatsQueryCallback>& callback,
+                            const int64_t configKey, const string& configPackage,
+                            const int32_t callingUid);
 
     /**
      * Binder call to add a subscription.
@@ -442,6 +470,7 @@ private:
 
     friend class StatsServiceConfigTest;
     friend class StatsServiceStatsdInitTest;
+    friend class RestrictedConfigE2ETest;
 
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
     FRIEND_TEST(StatsServiceTest, TestAddConfig_simple);
@@ -461,7 +490,10 @@ private:
     FRIEND_TEST(PartialBucketE2eTest, TestGaugeMetricWithoutMinPartialBucket);
     FRIEND_TEST(PartialBucketE2eTest, TestGaugeMetricWithMinPartialBucket);
     FRIEND_TEST(PartialBucketE2eTest, TestCountMetricNoSplitByDefault);
-
+    FRIEND_TEST(RestrictedConfigE2ETest, NonRestrictedConfigGetReport);
+    FRIEND_TEST(RestrictedConfigE2ETest, RestrictedConfigNoReport);
+    FRIEND_TEST(RestrictedConfigE2ETest,
+                TestSendRestrictedMetricsChangedBroadcastMultipleMatchedConfigs);
     FRIEND_TEST(ConfigUpdateE2eTest, TestAnomalyDurationMetric);
 
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);

@@ -267,7 +267,7 @@ TEST(MetricActivationE2eTest, TestCountMetric) {
                                               activeConfigs.end());
                 return true;
             },
-            mockLogEventFilter);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
@@ -485,7 +485,7 @@ TEST(MetricActivationE2eTest, TestCountMetricWithOneDeactivation) {
                                               activeConfigs.end());
                 return true;
             },
-            mockLogEventFilter);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
@@ -813,7 +813,7 @@ TEST(MetricActivationE2eTest, TestCountMetricWithTwoDeactivations) {
                                               activeConfigs.end());
                 return true;
             },
-            mockLogEventFilter);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
@@ -1153,7 +1153,7 @@ TEST(MetricActivationE2eTest, TestCountMetricWithSameDeactivation) {
                                               activeConfigs.end());
                 return true;
             },
-            mockLogEventFilter);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);
@@ -1357,7 +1357,7 @@ TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations) {
                                               activeConfigs.end());
                 return true;
             },
-            mockLogEventFilter);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &processor)).Times(1);

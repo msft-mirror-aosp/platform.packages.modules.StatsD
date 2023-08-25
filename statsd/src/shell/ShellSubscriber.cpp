@@ -130,6 +130,10 @@ void ShellSubscriber::onLogEvent(const LogEvent& event) {
     if (event.isParsedHeaderOnly()) {
         return;
     }
+    // Skip RestrictedLogEvents
+    if (event.isRestricted()) {
+        return;
+    }
     std::unique_lock<std::mutex> lock(mMutex);
     for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end();) {
         (*clientIt)->onLogEvent(event);
