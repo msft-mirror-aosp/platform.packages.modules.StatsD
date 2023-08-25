@@ -63,6 +63,8 @@ const int FIELD_ID_REPORTS = 2;
 // for ConfigKey
 const int FIELD_ID_UID = 1;
 const int FIELD_ID_ID = 2;
+const int FIELD_ID_REPORT_NUMBER = 3;
+const int FIELD_ID_STATSD_STATS_ID = 4;
 // for ConfigMetricsReport
 // const int FIELD_ID_METRICS = 1; // written in MetricsManager.cpp
 const int FIELD_ID_UID_MAP = 2;
@@ -72,6 +74,7 @@ const int FIELD_ID_LAST_REPORT_WALL_CLOCK_NANOS = 5;
 const int FIELD_ID_CURRENT_REPORT_WALL_CLOCK_NANOS = 6;
 const int FIELD_ID_DUMP_REPORT_REASON = 8;
 const int FIELD_ID_STRINGS = 9;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 10;
 
 // for ActiveConfigList
 const int FIELD_ID_ACTIVE_CONFIG_LIST_CONFIG = 1;
@@ -559,6 +562,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
             modularUpdate = false;
         }
         if (!modularUpdate && it->second->hasRestrictedMetricsDelegate()) {
+            StatsdStats::getInstance().noteDbDeletionConfigUpdated(key);
             // Always delete the old db if restricted metrics config is not a
             // modular update.
             dbutils::deleteDb(key);
@@ -617,6 +621,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         if (IsAtLeastU() && it != mMetricsManagers.end() &&
             it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+            StatsdStats::getInstance().noteDbConfigInvalid(key);
             dbutils::deleteDb(key);
         }
         mMetricsManagers.erase(key);
@@ -693,6 +698,18 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
     } else {
         ALOGW("Config source %s does not exist", key.ToString().c_str());
     }
+
+    if (erase_data) {
+        ++mDumpReportNumbers[key];
+    }
+    proto->write(FIELD_TYPE_INT32 | FIELD_ID_REPORT_NUMBER, mDumpReportNumbers[key]);
+
+    proto->write(FIELD_TYPE_INT32 | FIELD_ID_STATSD_STATS_ID,
+                 StatsdStats::getInstance().getStatsdStatsId());
+    if (erase_data) {
+        StatsdStats::getInstance().noteMetricsReportSent(key, proto->size(),
+                                                         mDumpReportNumbers[key]);
+    }
 }
 
 /*
@@ -711,8 +728,6 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
         flushProtoToBuffer(proto, outData);
         VLOG("output data size %zu", outData->size());
     }
-
-    StatsdStats::getInstance().noteMetricsReportSent(key, proto.size());
 }
 
 /*
@@ -785,6 +800,9 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
         tempProto.write(FIELD_TYPE_STRING | FIELD_COUNT_REPEATED | FIELD_ID_STRINGS, str);
     }
 
+    // Data corrupted reason
+    writeDataCorruptedReasons(tempProto);
+
     flushProtoToBuffer(tempProto, buffer);
 
     // save buffer to disk if needed
@@ -835,6 +853,7 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
         WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
                               NO_TIME_CONSTRAINTS);
         if (IsAtLeastU() && it->second->hasRestrictedMetricsDelegate()) {
+            StatsdStats::getInstance().noteDbDeletionConfigRemoved(key);
             dbutils::deleteDb(key);
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
         }
@@ -844,6 +863,8 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     StatsdStats::getInstance().noteConfigRemoved(key);
 
     mLastBroadcastTimes.erase(key);
+    mLastByteSizeTimes.erase(key);
+    mDumpReportNumbers.erase(key);
 
     int uid = key.GetUid();
     bool lastConfigForUid = true;
@@ -1095,7 +1116,7 @@ void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
                                            ? StatsdStats::kBytesPerRestrictedConfigTriggerFlush
                                            : StatsdStats::kBytesPerConfigTriggerGetData;
     bool requestDump = false;
-    if (totalBytes > StatsdStats::kMaxMetricsBytesPerConfig) {
+    if (totalBytes > metricsManager.getMaxMetricsBytes()) {
         // Too late. We need to start clearing data.
         metricsManager.dropData(elapsedRealtimeNs);
         StatsdStats::getInstance().noteDataDropped(key, totalBytes);
@@ -1483,6 +1504,17 @@ void StatsLogProcessor::updateLogEventFilterLocked() const {
     StateManager::getInstance().addAllAtomIds(allAtomIds);
     VLOG("StatsLogProcessor: Updating allAtomIds done. Total atoms %d", (int)allAtomIds.size());
     mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
+}
+
+void StatsLogProcessor::writeDataCorruptedReasons(ProtoOutputStream& proto) {
+    if (StatsdStats::getInstance().hasEventQueueOverflow()) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | FIELD_ID_DATA_CORRUPTED_REASON,
+                    DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    }
+    if (StatsdStats::getInstance().hasSocketLoss()) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | FIELD_ID_DATA_CORRUPTED_REASON,
+                    DATA_CORRUPTED_SOCKET_LOSS);
+    }
 }
 
 }  // namespace statsd
