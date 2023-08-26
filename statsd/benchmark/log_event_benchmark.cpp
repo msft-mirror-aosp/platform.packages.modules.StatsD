@@ -52,12 +52,12 @@ static size_t createStatsEventLarge(uint8_t* msg) {
 }
 
 static size_t createStatsEventExtraLarge(uint8_t* msg) {
-    return createStatsEvent(msg, 40);
+    return createStatsEvent(msg, 20);
 }
 
 static void BM_LogEventCreation(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEvent(msg);
+    const size_t size = createStatsEvent(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/ 1000, /*pid=*/ 1001);
         benchmark::DoNotOptimize(event.parseBuffer(msg, size));
@@ -67,7 +67,7 @@ BENCHMARK(BM_LogEventCreation);
 
 static void BM_LogEventCreationWithPrefetch(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEvent(msg);
+    const size_t size = createStatsEvent(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -82,7 +82,7 @@ BENCHMARK(BM_LogEventCreationWithPrefetch);
 
 static void BM_LogEventCreationWithPrefetchOnly(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEvent(msg);
+    const size_t size = createStatsEvent(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -94,7 +94,7 @@ BENCHMARK(BM_LogEventCreationWithPrefetchOnly);
 
 static void BM_LogEventCreationMedium(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventMedium(msg);
+    const size_t size = createStatsEventMedium(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -105,7 +105,7 @@ BENCHMARK(BM_LogEventCreationMedium);
 
 static void BM_LogEventCreationMediumWithPrefetch(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventMedium(msg);
+    const size_t size = createStatsEventMedium(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -120,7 +120,7 @@ BENCHMARK(BM_LogEventCreationMediumWithPrefetch);
 
 static void BM_LogEventCreationMediumWithPrefetchOnly(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventMedium(msg);
+    const size_t size = createStatsEventMedium(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -132,7 +132,7 @@ BENCHMARK(BM_LogEventCreationMediumWithPrefetchOnly);
 
 static void BM_LogEventCreationLarge(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventLarge(msg);
+    const size_t size = createStatsEventLarge(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -143,7 +143,7 @@ BENCHMARK(BM_LogEventCreationLarge);
 
 static void BM_LogEventCreationLargeWithPrefetch(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventLarge(msg);
+    const size_t size = createStatsEventLarge(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -158,7 +158,7 @@ BENCHMARK(BM_LogEventCreationLargeWithPrefetch);
 
 static void BM_LogEventCreationLargeWithPrefetchOnly(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventLarge(msg);
+    const size_t size = createStatsEventLarge(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -170,7 +170,7 @@ BENCHMARK(BM_LogEventCreationLargeWithPrefetchOnly);
 
 static void BM_LogEventCreationExtraLarge(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventExtraLarge(msg);
+    const size_t size = createStatsEventExtraLarge(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -181,7 +181,7 @@ BENCHMARK(BM_LogEventCreationExtraLarge);
 
 static void BM_LogEventCreationExtraLargeWithPrefetch(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventExtraLarge(msg);
+    const size_t size = createStatsEventExtraLarge(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
@@ -196,7 +196,7 @@ BENCHMARK(BM_LogEventCreationExtraLargeWithPrefetch);
 
 static void BM_LogEventCreationExtraLargeWithPrefetchOnly(benchmark::State& state) {
     uint8_t msg[LOGGER_ENTRY_MAX_PAYLOAD];
-    size_t size = createStatsEventExtraLarge(msg);
+    const size_t size = createStatsEventExtraLarge(msg);
     while (state.KeepRunning()) {
         LogEvent event(/*uid=*/1000, /*pid=*/1001);
 
