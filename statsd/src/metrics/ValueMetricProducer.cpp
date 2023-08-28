@@ -53,6 +53,7 @@ const int FIELD_ID_TIME_BASE = 9;
 const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
+const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 // for *MetricDataWrapper
 const int FIELD_ID_DATA = 1;
 const int FIELD_ID_SKIPPED = 2;
@@ -319,9 +320,12 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
-
     if (mPastBuckets.empty() && mSkippedBuckets.empty()) {
         return;
+    }
+
+    if (StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId)) {
+        protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT, true);
     }
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
@@ -507,11 +511,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onActiveStateChangedLocked
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onConditionChangedLocked(
         const bool condition, const int64_t eventTimeNs) {
-    const bool eventLate = isEventLateLocked(eventTimeNs);
-
-    const ConditionState newCondition = eventLate   ? ConditionState::kUnknown
-                                        : condition ? ConditionState::kTrue
-                                                    : ConditionState::kFalse;
+    const ConditionState newCondition = condition ? ConditionState::kTrue : ConditionState::kFalse;
     const ConditionState oldCondition = mCondition;
 
     if (!mIsActive) {
@@ -520,7 +520,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onConditionChangedLocked(
     }
 
     // If the event arrived late, mark the bucket as invalid and skip the event.
-    if (eventLate) {
+    if (isEventLateLocked(eventTimeNs)) {
         VLOG("Skip event due to late arrival: %lld vs %lld", (long long)eventTimeNs,
              (long long)mCurrentBucketStartTimeNs);
         StatsdStats::getInstance().noteLateLogEventSkipped(mMetricId);
