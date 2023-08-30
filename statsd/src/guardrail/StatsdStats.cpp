@@ -1620,10 +1620,6 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
     proto.write(FIELD_TYPE_UINT32 | FIELD_ID_SHARD_OFFSET,
                 static_cast<long>(ShardOffsetProvider::getInstance().getShardOffset()));
 
-    output->clear();
-    size_t bufferSize = proto.size();
-    output->resize(bufferSize);
-
     // Write subscription stats
     const uint64_t token = proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SUBSCRIPTION_STATS);
     for (const auto& [id, subStats] : mSubscriptionStats) {
