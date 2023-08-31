@@ -84,6 +84,12 @@ struct ConfigStats {
     bool is_valid;
     bool device_info_table_creation_failed = false;
     int32_t db_corrupted_count = 0;
+    int32_t db_deletion_stat_failed = 0;
+    int32_t db_deletion_size_exceeded_limit = 0;
+    int32_t db_deletion_config_invalid = 0;
+    int32_t db_deletion_too_old = 0;
+    int32_t db_deletion_config_removed = 0;
+    int32_t db_deletion_config_updated = 0;
 
     // Stores reasons for why config is valid or not
     std::optional<InvalidConfigReason> reason;
@@ -145,6 +151,14 @@ struct UidMapStats {
     int32_t bytes_used = 0;
     int32_t dropped_changes = 0;
     int32_t deleted_apps = 0;
+};
+
+struct SubscriptionStats {
+    int32_t pushed_atom_count = 0;
+    int32_t pulled_atom_count = 0;
+    int32_t start_time_sec = 0;
+    int32_t end_time_sec = 0;
+    int32_t flush_count = 0;
 };
 
 // Keeps track of stats of statsd.
@@ -330,6 +344,36 @@ public:
      * Report db corruption for restricted configs.
      */
     void noteDbCorrupted(const ConfigKey& key);
+
+    /**
+     * Report db exceeded the size limit for restricted configs.
+     */
+    void noteDbSizeExceeded(const ConfigKey& key);
+
+    /**
+     * Report db size check with stat for restricted configs failed.
+     */
+    void noteDbStatFailed(const ConfigKey& key);
+
+    /**
+     * Report restricted config is invalid.
+     */
+    void noteDbConfigInvalid(const ConfigKey& key);
+
+    /**
+     * Report db is too old for restricted configs.
+     */
+    void noteDbTooOld(const ConfigKey& key);
+
+    /**
+     * Report db was deleted due to config removal.
+     */
+    void noteDbDeletionConfigRemoved(const ConfigKey& key);
+
+    /**
+     * Report db was deleted due to config update.
+     */
+    void noteDbDeletionConfigUpdated(const ConfigKey& key);
 
     /**
      * Report the size of output tuple of a condition.
@@ -617,6 +661,34 @@ public:
                                     const int64_t dbSize);
 
     /**
+     * Report a new subscription has started and report the static stats about the subscription
+     * config.
+     *
+     * The static stats include: the count of pushed atoms and pulled atoms.
+     */
+    void noteSubscriptionStarted(int subId, int32_t pushedAtomCount, int32_t pulledAtomCount);
+
+    /**
+     * Report an existing subscription has ended.
+     */
+    void noteSubscriptionEnded(int subId);
+
+    /**
+     * Report an existing subscription was flushed.
+     */
+    void noteSubscriptionFlushed(int subId);
+
+    /**
+     * Report an atom was pulled for a subscription.
+     */
+    void noteSubscriptionAtomPulled(int atomId);
+
+    /**
+     * Report subscriber pull thread wakeup.
+     */
+    void noteSubscriptionPullThreadWakeup();
+
+    /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
      * metrics, matchers, and atoms. The active configs will be kept and StatsdStats will continue
      * to collect stats after reset() has been called.
@@ -694,6 +766,7 @@ public:
         int32_t atomErrorCount = 0;
         long binderCallFailCount = 0;
         std::list<PullTimeoutMetadata> pullTimeoutMetadata;
+        int32_t subscriptionPullCount = 0;
     } PulledAtomStats;
 
     typedef struct {
@@ -837,6 +910,12 @@ private:
                                                const InvalidQueryReason reason,
                                                const string& error);
 
+    int32_t mSubscriptionPullThreadWakeupCount = 0;
+
+    // Maps Subscription ID to the corresponding SubscriptionStats struct object.
+    // Size of this map is capped by ShellSubscriber::kMaxSubscriptions.
+    std::map<int32_t, SubscriptionStats> mSubscriptionStats;
+
     // Stores the number of times statsd modified the anomaly alarm registered with
     // StatsCompanionService.
     int mAnomalyAlarmRegisteredStats = 0;
@@ -871,6 +950,8 @@ private:
 
     int getPushedAtomDropsLocked(int atomId) const;
 
+    bool hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const;
+
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
      * will live as long as `this`.
@@ -900,6 +981,13 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
     FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
     FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStarted);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionFlushed);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionEnded);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionAtomPulled);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
