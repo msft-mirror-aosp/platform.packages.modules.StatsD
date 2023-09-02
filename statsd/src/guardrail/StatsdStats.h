@@ -84,6 +84,12 @@ struct ConfigStats {
     bool is_valid;
     bool device_info_table_creation_failed = false;
     int32_t db_corrupted_count = 0;
+    int32_t db_deletion_stat_failed = 0;
+    int32_t db_deletion_size_exceeded_limit = 0;
+    int32_t db_deletion_config_invalid = 0;
+    int32_t db_deletion_too_old = 0;
+    int32_t db_deletion_config_removed = 0;
+    int32_t db_deletion_config_updated = 0;
 
     // Stores reasons for why config is valid or not
     std::optional<InvalidConfigReason> reason;
@@ -338,6 +344,36 @@ public:
      * Report db corruption for restricted configs.
      */
     void noteDbCorrupted(const ConfigKey& key);
+
+    /**
+     * Report db exceeded the size limit for restricted configs.
+     */
+    void noteDbSizeExceeded(const ConfigKey& key);
+
+    /**
+     * Report db size check with stat for restricted configs failed.
+     */
+    void noteDbStatFailed(const ConfigKey& key);
+
+    /**
+     * Report restricted config is invalid.
+     */
+    void noteDbConfigInvalid(const ConfigKey& key);
+
+    /**
+     * Report db is too old for restricted configs.
+     */
+    void noteDbTooOld(const ConfigKey& key);
+
+    /**
+     * Report db was deleted due to config removal.
+     */
+    void noteDbDeletionConfigRemoved(const ConfigKey& key);
+
+    /**
+     * Report db was deleted due to config update.
+     */
+    void noteDbDeletionConfigUpdated(const ConfigKey& key);
 
     /**
      * Report the size of output tuple of a condition.
@@ -913,6 +949,8 @@ private:
     int getPushedAtomErrorsLocked(int atomId) const;
 
     int getPushedAtomDropsLocked(int atomId) const;
+
+    bool hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const;
 
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
