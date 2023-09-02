@@ -808,6 +808,10 @@ std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
     return result;
 }
 
+StatsdStatsReport getStatsdStatsReport(bool resetStats = false);
+
+StatsdStatsReport getStatsdStatsReport(StatsdStats& stats, bool resetStats = false);
+
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int atom_id);
 
 template <typename P>
