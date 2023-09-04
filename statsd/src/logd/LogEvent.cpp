@@ -543,6 +543,11 @@ bool LogEvent::parseBody(const BodyBufferInfo& bodyInfo) {
     int32_t pos[] = {1, 1, 1};
     bool last[] = {false, false, false};
 
+    // While this number is not guaranteed to be correct due to repeated fields and
+    // attribution chains, it still positively affects performance and reduces the number
+    // of vector buffer reallocations.
+    mValues.reserve(bodyInfo.numElements);
+
     for (pos[0] = 1; pos[0] <= bodyInfo.numElements && mValid; pos[0]++) {
         last[0] = (pos[0] == bodyInfo.numElements);
 
