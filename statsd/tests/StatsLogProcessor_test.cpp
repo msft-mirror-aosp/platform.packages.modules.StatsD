@@ -124,8 +124,8 @@ TEST(StatsLogProcessorTest, TestRateLimitBroadcast) {
     ConfigKey key(100, 12345);
     EXPECT_CALL(mockMetricsManager, byteSize())
             .Times(1)
-            .WillRepeatedly(::testing::Return(int(
-                    StatsdStats::kMaxMetricsBytesPerConfig * .95)));
+            .WillRepeatedly(
+                    ::testing::Return(int(StatsdStats::kDefaultMaxMetricsBytesPerConfig * .95)));
 
     // Expect only one broadcast despite always returning a size that should trigger broadcast.
     p.flushIfNecessaryLocked(key, mockMetricsManager);
@@ -158,7 +158,8 @@ TEST(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
     ConfigKey key(100, 12345);
     EXPECT_CALL(mockMetricsManager, byteSize())
             .Times(1)
-            .WillRepeatedly(::testing::Return(int(StatsdStats::kMaxMetricsBytesPerConfig * 1.2)));
+            .WillRepeatedly(
+                    ::testing::Return(int(StatsdStats::kDefaultMaxMetricsBytesPerConfig * 1.2)));
 
     EXPECT_CALL(mockMetricsManager, dropData(_)).Times(1);
 
@@ -2149,6 +2150,26 @@ TEST(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimesta
     EXPECT_EQ(output.reports_size(), 1);
     EXPECT_EQ(output.reports(0).current_report_elapsed_nanos(), dumpTime3Ns);
     EXPECT_EQ(output.reports(0).last_report_elapsed_nanos(), dumpTime1Ns);
+}
+
+TEST(StatsLogProcessorTest, TestDataCorruptedEnum) {
+    ConfigKey cfgKey;
+    StatsdConfig config = MakeConfig(true);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(1, 1, config, cfgKey);
+
+    StatsdStats::getInstance().noteEventQueueOverflow(/*oldestEventTimestampNs=*/0, /*atomId=*/100,
+                                                      /*isSkipped=*/false);
+    StatsdStats::getInstance().noteLogLost(/*wallClockTimeSec=*/0, /*count=*/1, /*lastError=*/0,
+                                           /*lastTag=*/0, /*uid=*/0, /*pid=*/0);
+    vector<uint8_t> bytes;
+    ConfigMetricsReportList output;
+    processor->onDumpReport(cfgKey, 3, true, true, ADB_DUMP, FAST, &bytes);
+
+    output.ParseFromArray(bytes.data(), bytes.size());
+    ASSERT_EQ(output.reports_size(), 1);
+    ASSERT_EQ(output.reports(0).data_corrupted_reason().size(), 2);
+    EXPECT_EQ(output.reports(0).data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    EXPECT_EQ(output.reports(0).data_corrupted_reason(1), DATA_CORRUPTED_SOCKET_LOSS);
 }
 
 class StatsLogProcessorTestRestricted : public Test {

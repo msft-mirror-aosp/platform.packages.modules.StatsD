@@ -37,7 +37,6 @@ import com.android.os.AtomsProto.AppBreadcrumbReported;
 import com.android.os.AtomsProto.Atom;
 import com.android.os.AtomsProto.SystemElapsedRealtime;
 import com.android.os.StatsLog.StatsLogReport;
-import com.android.os.StatsLog.StatsLogReport.BucketDropReason;
 import com.android.os.StatsLog.ValueBucketInfo;
 import com.android.os.StatsLog.ValueMetricData;
 
