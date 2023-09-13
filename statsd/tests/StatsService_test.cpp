@@ -31,7 +31,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 using ::ndk::SharedRefBase;
 
