@@ -21,7 +21,6 @@
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
-#include <android-modules-utils/sdk_level.h>
 #include <android/binder_ibinder_platform.h>
 #include <cutils/multiuser.h>
 #include <private/android_filesystem_config.h>
@@ -47,7 +46,6 @@
 using namespace android;
 
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
 
@@ -1422,7 +1420,7 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId
                                                           const int32_t callingUid,
                                                           vector<int64_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("setRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
@@ -1439,7 +1437,7 @@ Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t confi
                                                              const string& configPackage,
                                                              const int32_t callingUid) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("removeRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
