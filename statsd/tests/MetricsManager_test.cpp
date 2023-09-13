@@ -35,7 +35,6 @@
 
 using namespace testing;
 using android::sp;
-using android::modules::sdklevel::IsAtLeastS;
 using android::os::statsd::Predicate;
 using std::map;
 using std::set;
