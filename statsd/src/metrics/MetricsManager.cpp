@@ -18,7 +18,6 @@
 
 #include "MetricsManager.h"
 
-#include <android-modules-utils/sdk_level.h>
 #include <private/android_filesystem_config.h>
 
 #include "CountMetricProducer.h"
@@ -35,8 +34,6 @@
 #include "stats_util.h"
 #include "statslog_statsd.h"
 #include "utils/DbUtils.h"
-
-using android::modules::sdklevel::IsAtLeastU;
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_INT32;
@@ -81,7 +78,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
       mShouldPersistHistory(config.persist_locally()) {
-    if (!IsAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
+    if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return;
@@ -131,7 +128,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
                                   const int64_t currentTimeNs,
                                   const sp<AlarmMonitor>& anomalyAlarmMonitor,
                                   const sp<AlarmMonitor>& periodicAlarmMonitor) {
-    if (!IsAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
+    if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return false;
