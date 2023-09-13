@@ -15,7 +15,6 @@
 #include "StatsLogProcessor.h"
 
 #include <android-base/stringprintf.h>
-#include <android-modules-utils/sdk_level.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
@@ -43,7 +42,6 @@ namespace os {
 namespace statsd {
 
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 
 using ::testing::Expectation;
@@ -2176,12 +2174,12 @@ class StatsLogProcessorTestRestricted : public Test {
 protected:
     const ConfigKey mConfigKey = ConfigKey(1, 12345);
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
     }
     void TearDown() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         FlagProvider::getInstance().resetOverrides();
