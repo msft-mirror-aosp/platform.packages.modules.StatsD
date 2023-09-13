@@ -35,8 +35,6 @@
 
 using namespace testing;
 using android::sp;
-using android::modules::sdklevel::IsAtLeastS;
-using android::modules::sdklevel::IsAtLeastU;
 using android::os::statsd::Predicate;
 using std::map;
 using std::set;
@@ -298,7 +296,7 @@ protected:
     }
 
     bool shouldSkipTest() const {
-        return !IsAtLeastS();
+        return !isAtLeastS();
     }
 
     string skipReason() const {
@@ -384,7 +382,7 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
     MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
                                   pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
 
-    if (IsAtLeastU()) {
+    if (isAtLeastU()) {
         EXPECT_TRUE(metricsManager.isConfigValid());
     } else {
         EXPECT_EQ(metricsManager.mInvalidConfigReason,
@@ -410,7 +408,7 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate) {
     metricsManager.updateConfig(config, timeBaseSec, timeBaseSec, anomalyAlarmMonitor,
                                 periodicAlarmMonitor);
 
-    if (IsAtLeastU()) {
+    if (isAtLeastU()) {
         EXPECT_TRUE(metricsManager.isConfigValid());
     } else {
         EXPECT_EQ(metricsManager.mInvalidConfigReason,
