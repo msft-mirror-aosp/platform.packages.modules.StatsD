@@ -46,6 +46,7 @@ cc_test_library {
         "-Wall",
         "-Werror",
         "-Wthread-safety",
+        "-Wdeprecated-declarations",
     ],
     visibility: [
         "//packages/modules/StatsD/lib/libstatspull",
