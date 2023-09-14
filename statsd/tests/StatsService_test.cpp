@@ -69,7 +69,7 @@ public:
 TEST(StatsServiceTest, TestAddConfig_simple) {
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     const int kConfigKey = 12345;
     const int kCallingUid = 123;
     StatsdConfig config;
@@ -88,7 +88,7 @@ TEST(StatsServiceTest, TestAddConfig_simple) {
 TEST(StatsServiceTest, TestAddConfig_empty) {
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     string serialized = "";
     const int kConfigKey = 12345;
     const int kCallingUid = 123;
@@ -104,7 +104,7 @@ TEST(StatsServiceTest, TestAddConfig_empty) {
 TEST(StatsServiceTest, TestAddConfig_invalid) {
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     string serialized = "Invalid config!";
 
     EXPECT_FALSE(
@@ -123,7 +123,7 @@ TEST(StatsServiceTest, TestGetUidFromArgs) {
 
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     service->mEngBuild = true;
 
     // "-1"
@@ -163,7 +163,7 @@ protected:
 
     shared_ptr<StatsService> createStatsService() override {
         return SharedRefBase::make<StatsService>(new UidMap(), /*queue=*/nullptr,
-                                                 /*LogEventFilter=*/nullptr,
+                                                 std::make_shared<LogEventFilter>(),
                                                  /*initEventDelaySecs=*/kInitDelaySec);
     }
 };
