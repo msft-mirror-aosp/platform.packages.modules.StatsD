@@ -1474,9 +1474,6 @@ LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
 
 void StatsLogProcessor::updateLogEventFilterLocked() const {
     VLOG("StatsLogProcessor: Updating allAtomIds");
-    if (!mLogEventFilter) {
-        return;
-    }
     LogEventFilter::AtomIdSet allAtomIds = getDefaultAtomIdSet();
     for (const auto& metricsManager : mMetricsManagers) {
         metricsManager.second->addAllAtomIds(allAtomIds);
