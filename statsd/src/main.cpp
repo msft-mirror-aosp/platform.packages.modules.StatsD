@@ -88,9 +88,8 @@ int main(int /*argc*/, char** /*argv*/) {
     ABinderProcess_startThreadPool();
 
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags({OPTIMIZATION_SOCKET_PARSING_FLAG,
-                                               STATSD_INIT_COMPLETED_NO_DELAY_FLAG,
-                                               INCREASE_EVENT_QUEUE_50000_FLAG});
+    FlagProvider::getInstance().initBootFlags(
+            {STATSD_INIT_COMPLETED_NO_DELAY_FLAG, INCREASE_EVENT_QUEUE_50000_FLAG});
 
     std::shared_ptr<LogEventQueue> eventQueue = std::make_shared<LogEventQueue>(
             FlagProvider::getInstance().getBootFlagBool(INCREASE_EVENT_QUEUE_50000_FLAG, FLAG_FALSE)
@@ -99,10 +98,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
-    const bool logsFilteringEnabled = FlagProvider::getInstance().getBootFlagBool(
-            OPTIMIZATION_SOCKET_PARSING_FLAG, FLAG_FALSE);
-    std::shared_ptr<LogEventFilter> logEventFilter =
-            logsFilteringEnabled ? std::make_shared<LogEventFilter>() : nullptr;
+    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
 
     const int initEventDelay = FlagProvider::getInstance().getBootFlagBool(
                                        STATSD_INIT_COMPLETED_NO_DELAY_FLAG, FLAG_FALSE)
