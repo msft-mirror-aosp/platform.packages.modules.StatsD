@@ -78,15 +78,11 @@ int main(int /*argc*/, char** /*argv*/) {
             std::make_shared<LogEventQueue>(8000 /*buffer limit. Buffer is NOT pre-allocated*/);
 
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags(
-            {OPTIMIZATION_SOCKET_PARSING_FLAG, STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
+    FlagProvider::getInstance().initBootFlags({STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
-    const bool logsFilteringEnabled = FlagProvider::getInstance().getBootFlagBool(
-            OPTIMIZATION_SOCKET_PARSING_FLAG, FLAG_FALSE);
-    std::shared_ptr<LogEventFilter> logEventFilter =
-            logsFilteringEnabled ? std::make_shared<LogEventFilter>() : nullptr;
+    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
 
     const int initEventDelay = FlagProvider::getInstance().getBootFlagBool(
                                        STATSD_INIT_COMPLETED_NO_DELAY_FLAG, FLAG_FALSE)
