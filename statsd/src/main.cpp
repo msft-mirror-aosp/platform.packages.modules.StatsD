@@ -87,11 +87,14 @@ int main(int /*argc*/, char** /*argv*/) {
     ABinderProcess_setThreadPoolMaxThreadCount(9);
     ABinderProcess_startThreadPool();
 
-    std::shared_ptr<LogEventQueue> eventQueue =
-            std::make_shared<LogEventQueue>(8000 /*buffer limit. Buffer is NOT pre-allocated*/);
-
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags({STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
+    FlagProvider::getInstance().initBootFlags(
+            {STATSD_INIT_COMPLETED_NO_DELAY_FLAG, INCREASE_EVENT_QUEUE_50000_FLAG});
+
+    std::shared_ptr<LogEventQueue> eventQueue = std::make_shared<LogEventQueue>(
+            FlagProvider::getInstance().getBootFlagBool(INCREASE_EVENT_QUEUE_50000_FLAG, FLAG_FALSE)
+                    ? 50000
+                    : 8000 /*buffer limit. Buffer is NOT pre-allocated*/);
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
