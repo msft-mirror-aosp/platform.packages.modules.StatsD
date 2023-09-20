@@ -874,7 +874,8 @@ status_t StatsService::cmd_log_binary_push(int out, const Vector<String8>& args)
     dprintf(out, "Logging BinaryPushStateChanged\n");
     vector<uint8_t> experimentIdBytes;
     writeExperimentIdsToProto(experimentIds, &experimentIdBytes);
-    LogEvent event(trainName, trainVersion, args[3], args[4], args[5], state, experimentIdBytes, 0);
+    LogEvent event(trainName, trainVersion, args[3].c_str(), args[4].c_str(), args[5].c_str(),
+                   state, experimentIdBytes, 0);
     mProcessor->OnLogEvent(&event);
     return NO_ERROR;
 }
