@@ -160,7 +160,7 @@ void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
                   const vector<std::shared_ptr<LogEvent>>& pushedEvents,
                   const vector<ShellData>& expectedData, int numClients) {
     sp<ShellSubscriber> shellManager =
-            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
+            new ShellSubscriber(uidMap, pullerManager, std::make_shared<LogEventFilter>());
 
     size_t bufferSize = config.ByteSize();
     vector<uint8_t> buffer(bufferSize);
@@ -806,7 +806,7 @@ TEST(ShellSubscriberTest, testMaxSizeGuard) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
     sp<ShellSubscriber> shellManager =
-            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
+            new ShellSubscriber(uidMap, pullerManager, std::make_shared<LogEventFilter>());
 
     // set up 2 pipes for read/write config and data
     int fds_config[2];
@@ -830,7 +830,7 @@ TEST(ShellSubscriberTest, testMaxSubscriptionsGuard) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
     sp<ShellSubscriber> shellManager =
-            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
+            new ShellSubscriber(uidMap, pullerManager, std::make_shared<LogEventFilter>());
 
     // create a simple config to get screen events
     ShellSubscription config;
@@ -880,7 +880,7 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
     sp<ShellSubscriber> shellManager =
-            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
+            new ShellSubscriber(uidMap, pullerManager, std::make_shared<LogEventFilter>());
 
     // number of different configs
     int numConfigs = 2;

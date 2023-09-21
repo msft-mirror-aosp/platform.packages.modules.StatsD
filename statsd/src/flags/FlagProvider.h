@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest_prod.h>
 #include <server_configurable_flags/get_flags.h>
 
@@ -25,6 +24,8 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include "stats_util.h"
 
 namespace android {
 namespace os {
@@ -37,7 +38,6 @@ using IsAtLeastSFunc = std::function<bool()>;
 const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
-const std::string OPTIMIZATION_SOCKET_PARSING_FLAG = "optimization_socket_parsing";
 const std::string STATSD_INIT_COMPLETED_NO_DELAY_FLAG = "statsd_init_completed_no_delay";
 const std::string INCREASE_EVENT_QUEUE_50000_FLAG = "increase_event_queue_50000";
 
@@ -67,15 +67,13 @@ private:
     FlagProvider();
 
     // TODO(b/194347008): Remove the GetServerConfigurableFlag override.
-    void overrideFuncs(
-            const IsAtLeastSFunc& isAtLeastSFunc = &android::modules::sdklevel::IsAtLeastS,
-            const GetServerFlagFunc& getServerFlagFunc =
-                    &server_configurable_flags::GetServerConfigurableFlag);
+    void overrideFuncs(const IsAtLeastSFunc& isAtLeastSFunc = &isAtLeastS,
+                       const GetServerFlagFunc& getServerFlagFunc =
+                               &server_configurable_flags::GetServerConfigurableFlag);
 
-    void overrideFuncsLocked(
-            const IsAtLeastSFunc& isAtLeastSFunc = &android::modules::sdklevel::IsAtLeastS,
-            const GetServerFlagFunc& getServerFlagFunc =
-                    &server_configurable_flags::GetServerConfigurableFlag);
+    void overrideFuncsLocked(const IsAtLeastSFunc& isAtLeastSFunc = &isAtLeastS,
+                             const GetServerFlagFunc& getServerFlagFunc =
+                                     &server_configurable_flags::GetServerConfigurableFlag);
 
     inline void resetOverrides() {
         std::lock_guard<std::mutex> lock(mFlagsMutex);
