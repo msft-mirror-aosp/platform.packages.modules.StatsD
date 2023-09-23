@@ -21,7 +21,6 @@
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
-#include <android-modules-utils/sdk_level.h>
 #include <android/binder_ibinder_platform.h>
 #include <cutils/multiuser.h>
 #include <private/android_filesystem_config.h>
@@ -48,7 +47,6 @@
 using namespace android;
 
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
 
@@ -887,7 +885,8 @@ status_t StatsService::cmd_log_binary_push(int out, const Vector<String8>& args)
     dprintf(out, "Logging BinaryPushStateChanged\n");
     vector<uint8_t> experimentIdBytes;
     writeExperimentIdsToProto(experimentIds, &experimentIdBytes);
-    LogEvent event(trainName, trainVersion, args[3], args[4], args[5], state, experimentIdBytes, 0);
+    LogEvent event(trainName, trainVersion, args[3].c_str(), args[4].c_str(), args[5].c_str(),
+                   state, experimentIdBytes, 0);
     mProcessor->OnLogEvent(&event);
     return NO_ERROR;
 }
@@ -1433,7 +1432,7 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId
                                                           const int32_t callingUid,
                                                           vector<int64_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("setRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
@@ -1450,7 +1449,7 @@ Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t confi
                                                              const string& configPackage,
                                                              const int32_t callingUid) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("removeRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
