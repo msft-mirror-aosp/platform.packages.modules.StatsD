@@ -55,10 +55,8 @@ private:
 
     friend class SocketParseMessageTest;
 
-    FRIEND_TEST(SocketParseMessageTestNoFiltering, TestProcessMessageNoFiltering);
-    FRIEND_TEST(SocketParseMessageTestNoFiltering,
-                TestProcessMessageNoFilteringWithEmptySetExplicitSet);
-    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterEmptySet);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessage);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageEmptySetExplicitSet);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterCompleteSet);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterPartialSet);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterToggle);

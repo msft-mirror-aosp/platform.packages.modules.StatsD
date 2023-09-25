@@ -135,7 +135,7 @@ void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
                                          const std::shared_ptr<LogEventFilter>& filter) {
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
 
-    if (filter && filter->getFilteringEnabled()) {
+    if (filter->getFilteringEnabled()) {
         const LogEvent::BodyBufferInfo bodyInfo = logEvent->parseHeader(msg, len);
         if (filter->isAtomInUse(logEvent->GetTagId())) {
             logEvent->parseBody(bodyInfo);
