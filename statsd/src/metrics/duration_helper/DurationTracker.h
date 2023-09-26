@@ -56,6 +56,8 @@ struct DurationBucket {
     int64_t mBucketEndNs;
     int64_t mDuration;
     int64_t mConditionTrueNs;
+
+    DurationBucket() : mBucketStartNs(0), mBucketEndNs(0), mDuration(0), mConditionTrueNs(0){};
 };
 
 struct DurationValues {
@@ -65,6 +67,8 @@ struct DurationValues {
     // Sum of past partial bucket durations in current full bucket.
     // Used for anomaly detection.
     int64_t mDurationFullBucket;
+
+    DurationValues() : mDuration(0), mDurationFullBucket(0){};
 };
 
 class DurationTracker {
@@ -82,7 +86,6 @@ public:
           mBucketSizeNs(bucketSizeNs),
           mNested(nesting),
           mCurrentBucketStartTimeNs(currentBucketStartNs),
-          mDuration(0),
           mCurrentBucketNum(currentBucketNum),
           mStartTimeNs(startTimeNs),
           mConditionSliced(conditionSliced),
@@ -137,6 +140,8 @@ public:
     // Replace old value with new value for the given state atom.
     virtual void updateCurrentStateKey(const int32_t atomId, const FieldValue& newState) = 0;
 
+    virtual bool hasAccumulatedDuration() const = 0;
+
     void addAnomalyTracker(sp<AnomalyTracker>& anomalyTracker, const UpdateStatus& updateStatus,
                            const int64_t updateTimeNs) {
         mAnomalyTrackers.push_back(anomalyTracker);
@@ -148,14 +153,14 @@ public:
         if (updateStatus == UpdateStatus::UPDATE_NEW ||
             updateStatus == UpdateStatus::UPDATE_PRESERVE) {
             const int64_t alarmTimeNs = predictAnomalyTimestampNs(*anomalyTracker, updateTimeNs);
-            if (alarmTimeNs <= updateTimeNs || hasAccumulatingDuration()) {
+            if (alarmTimeNs <= updateTimeNs || hasStartedDuration()) {
                 anomalyTracker->startAlarm(mEventKey, std::max(alarmTimeNs, updateTimeNs));
             }
         }
     }
 
 protected:
-    virtual bool hasAccumulatingDuration() = 0;
+    virtual bool hasStartedDuration() const = 0;
 
     int64_t getCurrentBucketEndTimeNs() const {
         return mStartTimeNs + (mCurrentBucketNum + 1) * mBucketSizeNs;
@@ -253,8 +258,6 @@ protected:
     const bool mNested;
 
     int64_t mCurrentBucketStartTimeNs;
-
-    int64_t mDuration;  // current recorded duration result (for partial bucket)
 
     // Recorded duration results for each state key in the current partial bucket.
     std::unordered_map<HashableDimensionKey, DurationValues> mStateKeyDurationMap;

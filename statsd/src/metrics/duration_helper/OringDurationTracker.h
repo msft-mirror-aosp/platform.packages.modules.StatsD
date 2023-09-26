@@ -65,9 +65,11 @@ public:
 
     void updateCurrentStateKey(const int32_t atomId, const FieldValue& newState);
 
+    bool hasAccumulatedDuration() const override;
+
 protected:
     // Returns true if at least one of the mInfos is started.
-    bool hasAccumulatingDuration() override;
+    bool hasStartedDuration() const override;
 
 private:
     // We don't need to keep track of individual durations. The information that's needed is:
@@ -90,6 +92,8 @@ private:
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionExpiredAlarm);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionFiredAlarm);
     FRIEND_TEST(OringDurationTrackerTest, TestUploadThreshold);
+    FRIEND_TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenBucketFull);
+    FRIEND_TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenNoTrackers);
 };
 
 }  // namespace statsd
