@@ -603,6 +603,82 @@ TEST(OringDurationTrackerTest, TestUploadThreshold) {
     EXPECT_EQ(thresholdDurationNs + 1, buckets[eventKey][0].mDuration);
 }
 
+TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenBucketFull) {
+    const MetricDimensionKey eventKey = getMockedMetricDimensionKey(TagId, 0, "event");
+
+    const HashableDimensionKey kEventKey1 = getMockedDimensionKey(TagId, 2, "maps");
+
+    Alert alert = createAlert("Alert_1", /*metric_id=*/1, /*num_buckets*/ 2,
+                              /*trigger_sum=*/40 * NS_PER_SEC);
+
+    unordered_map<MetricDimensionKey, vector<DurationBucket>> buckets;
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+
+    int64_t bucketSizeNs = 30 * 1000 * 1000 * 1000LL;
+    int64_t bucketStartTimeNs = 10 * NS_PER_SEC;
+    int64_t bucketEndTimeNs = bucketStartTimeNs + bucketSizeNs;
+    int64_t bucketNum = 0;
+    int64_t eventStartTimeNs = bucketStartTimeNs + NS_PER_SEC + 1;
+
+    sp<AlarmMonitor> alarmMonitor;
+    sp<DurationAnomalyTracker> anomalyTracker =
+            new DurationAnomalyTracker(alert, kConfigKey, alarmMonitor);
+    OringDurationTracker tracker(kConfigKey, metricId, eventKey, wizard, 1, true /*nesting*/,
+                                 bucketStartTimeNs, bucketNum, bucketStartTimeNs, bucketSizeNs,
+                                 false, false, {anomalyTracker});
+
+    tracker.noteStart(kEventKey1, true, eventStartTimeNs, ConditionKey());
+    tracker.noteStop(kEventKey1, bucketStartTimeNs + 50, false);
+    EXPECT_TRUE(tracker.hasAccumulatedDuration());
+
+    tracker.noteStart(kEventKey1, true, bucketStartTimeNs + 100, ConditionKey());
+    EXPECT_FALSE(tracker.mStarted.empty());
+    tracker.onConditionChanged(false, bucketStartTimeNs + 150);
+    EXPECT_TRUE(tracker.mStarted.empty());
+    EXPECT_FALSE(tracker.mPaused.empty());
+    EXPECT_FALSE(tracker.mStateKeyDurationMap.empty());
+    EXPECT_TRUE(tracker.hasAccumulatedDuration());
+
+    // Since this is a full bucket, flush.
+    tracker.flushIfNeeded(bucketEndTimeNs + 1, emptyThreshold, &buckets);
+    EXPECT_TRUE(tracker.mStateKeyDurationMap.empty());
+    EXPECT_TRUE(tracker.hasAccumulatedDuration());
+
+    tracker.noteStop(kEventKey1, bucketStartTimeNs + bucketSizeNs + 200, false);
+    EXPECT_FALSE(tracker.hasAccumulatedDuration());
+}
+
+TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenNoTrackers) {
+    const MetricDimensionKey eventKey = getMockedMetricDimensionKey(TagId, 0, "event");
+
+    const HashableDimensionKey kEventKey1 = getMockedDimensionKey(TagId, 2, "maps");
+    Alert alert = createAlert("Alert_1", /*metric_id=*/1, /*num_buckets*/ 2,
+                              /*trigger_sum=*/40 * NS_PER_SEC);
+
+    unordered_map<MetricDimensionKey, vector<DurationBucket>> buckets;
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+
+    int64_t bucketStartTimeNs = 10 * NS_PER_SEC;
+    int64_t bucketEndTimeNs = bucketStartTimeNs + bucketSizeNs;
+    int64_t bucketNum = 0;
+    int64_t eventStartTimeNs = bucketStartTimeNs + NS_PER_SEC + 1;
+
+    sp<AlarmMonitor> alarmMonitor;
+    // Duration tracker does not have an anomalyTracker
+    OringDurationTracker tracker(kConfigKey, metricId, eventKey, wizard, 1, true /*nesting*/,
+                                 bucketStartTimeNs, bucketNum, bucketStartTimeNs, bucketSizeNs,
+                                 false, false, {});
+
+    tracker.noteStart(kEventKey1, true, eventStartTimeNs, ConditionKey());
+    tracker.noteStop(kEventKey1, eventStartTimeNs + 10, false);
+    tracker.flushCurrentBucket(eventStartTimeNs + 20, emptyThreshold, 0, &buckets);
+
+    EXPECT_TRUE(tracker.mStarted.empty());
+    // During flush, we will clear the map since there are no anomaly trackers.
+    EXPECT_TRUE(tracker.mStateKeyDurationMap.empty());
+    EXPECT_FALSE(tracker.hasAccumulatedDuration());
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
