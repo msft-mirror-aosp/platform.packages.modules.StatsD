@@ -451,6 +451,40 @@ TEST(MaxDurationTrackerTest, TestUploadThreshold) {
     EXPECT_EQ(thresholdDurationNs + 1, buckets[eventKey][0].mDuration);
 }
 
+TEST(MaxDurationTrackerTest, TestNoAccumulatingDuration) {
+    const MetricDimensionKey eventKey = getMockedMetricDimensionKey(TagId, 0, "1");
+    const HashableDimensionKey key1 = getMockedDimensionKey(TagId, 1, "1");
+    const HashableDimensionKey key2 = getMockedDimensionKey(TagId, 1, "2");
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+
+    unordered_map<MetricDimensionKey, vector<DurationBucket>> buckets;
+
+    int64_t bucketSizeNs = 30 * 1000 * 1000 * 1000LL;
+    int64_t bucketStartTimeNs = 10000000000;
+    int64_t bucketEndTimeNs = bucketStartTimeNs + bucketSizeNs;
+    int64_t bucketNum = 0;
+
+    int64_t metricId = 1;
+    MaxDurationTracker tracker(kConfigKey, metricId, eventKey, wizard, -1, false, bucketStartTimeNs,
+                               bucketNum, bucketStartTimeNs, bucketSizeNs, false, false, {});
+
+    tracker.noteStart(key1, true, bucketStartTimeNs + 1, ConditionKey());
+    tracker.noteStop(key1, bucketStartTimeNs + 50, false);
+    EXPECT_TRUE(tracker.hasAccumulatedDuration());
+    EXPECT_FALSE(tracker.hasStartedDuration());
+
+    tracker.noteStart(key1, true, bucketStartTimeNs + 100, ConditionKey());
+    EXPECT_TRUE(tracker.hasStartedDuration());
+    tracker.noteConditionChanged(key1, false, bucketStartTimeNs + 150);
+    EXPECT_TRUE(tracker.hasAccumulatedDuration());
+    EXPECT_FALSE(tracker.hasStartedDuration());
+
+    tracker.noteStop(key1, bucketStartTimeNs + 200, true);
+    tracker.flushIfNeeded(bucketEndTimeNs + 1, emptyThreshold, &buckets);
+    EXPECT_FALSE(tracker.hasAccumulatedDuration());
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

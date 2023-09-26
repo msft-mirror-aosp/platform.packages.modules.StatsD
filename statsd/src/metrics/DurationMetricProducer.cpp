@@ -729,8 +729,15 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
 
     // Handles Stopall events.
     if ((int)matcherIndex == mStopAllIndex) {
-        for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-            whatIt.second->noteStopAll(eventTimeNs);
+        for (auto whatIt = mCurrentSlicedDurationTrackerMap.begin();
+             whatIt != mCurrentSlicedDurationTrackerMap.end();) {
+            whatIt->second->noteStopAll(eventTimeNs);
+            if (!whatIt->second->hasAccumulatedDuration()) {
+                VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                whatIt = mCurrentSlicedDurationTrackerMap.erase(whatIt);
+            } else {
+                whatIt++;
+            }
         }
         return;
     }
@@ -784,6 +791,10 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
             auto whatIt = mCurrentSlicedDurationTrackerMap.find(dimensionInWhat);
             if (whatIt != mCurrentSlicedDurationTrackerMap.end()) {
                 whatIt->second->noteStop(dimensionInWhat, eventTimeNs, false);
+                if (!whatIt->second->hasAccumulatedDuration()) {
+                    VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                    mCurrentSlicedDurationTrackerMap.erase(whatIt);
+                }
             }
             return;
         }
@@ -796,6 +807,10 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
         auto whatIt = mCurrentSlicedDurationTrackerMap.find(dimensionInWhat);
         if (whatIt != mCurrentSlicedDurationTrackerMap.end()) {
             whatIt->second->noteStop(internalDimensionKey, eventTimeNs, false);
+            if (!whatIt->second->hasAccumulatedDuration()) {
+                VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                mCurrentSlicedDurationTrackerMap.erase(whatIt);
+            }
         }
         return;
     }
