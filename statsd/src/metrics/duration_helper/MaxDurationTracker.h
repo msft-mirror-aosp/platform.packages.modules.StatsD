@@ -66,12 +66,16 @@ public:
 
     void updateCurrentStateKey(const int32_t atomId, const FieldValue& newState);
 
+    bool hasAccumulatedDuration() const override;
+
 protected:
     // Returns true if at least one of the mInfos is started.
-    bool hasAccumulatingDuration() override;
+    bool hasStartedDuration() const override;
 
 private:
     std::unordered_map<HashableDimensionKey, DurationInfo> mInfos;
+
+    int64_t mDuration;  // current recorded duration result (for partial bucket)
 
     void noteConditionChanged(const HashableDimensionKey& key, bool conditionMet,
                               const int64_t timestamp);
@@ -86,6 +90,7 @@ private:
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyDetection);
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp);
     FRIEND_TEST(MaxDurationTrackerTest, TestUploadThreshold);
+    FRIEND_TEST(MaxDurationTrackerTest, TestNoAccumulatingDuration);
 };
 
 }  // namespace statsd
