@@ -864,7 +864,8 @@ void StatsdStats::dumpStats(int out) const {
         auto dropBytesPtr = configStats->data_drop_bytes.begin();
         for (int i = 0; i < (int)configStats->data_drop_time_sec.size();
              i++, dropTimePtr++, dropBytesPtr++) {
-            dprintf(out, "\tdata drop time: %d with size %lld", *dropTimePtr,
+            dprintf(out, "\tdata drop time: %s(%lld) with %lld bytes\n",
+                    buildTimeString(*dropTimePtr).c_str(), (long long)*dropTimePtr,
                     (long long)*dropBytesPtr);
         }
     }
