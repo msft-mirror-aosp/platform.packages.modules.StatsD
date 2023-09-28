@@ -169,6 +169,7 @@ bool OringDurationTracker::flushCurrentBucket(
     // store durations for each stateKey, so we need to flush the bucket by creating a
     // DurationBucket for each stateKey.
     for (auto& durationIt : mStateKeyDurationMap) {
+        durationIt.second.mDurationFullBucket += durationIt.second.mDuration;
         if (durationPassesThreshold(uploadThreshold, durationIt.second.mDuration)) {
             DurationBucket current_info;
             current_info.mBucketStartNs = mCurrentBucketStartTimeNs;
@@ -177,11 +178,10 @@ bool OringDurationTracker::flushCurrentBucket(
             current_info.mConditionTrueNs = globalConditionTrueNs;
             (*output)[MetricDimensionKey(mEventKey.getDimensionKeyInWhat(), durationIt.first)]
                     .push_back(current_info);
-
-            durationIt.second.mDurationFullBucket += durationIt.second.mDuration;
             VLOG("  duration: %lld", (long long)current_info.mDuration);
         } else {
-            VLOG("  duration: %lld does not pass set threshold", (long long)mDuration);
+            VLOG("  duration: %lld does not pass set threshold",
+                 (long long)durationIt.second.mDuration);
         }
 
         if (isFullBucket) {
@@ -189,9 +189,12 @@ bool OringDurationTracker::flushCurrentBucket(
             addPastBucketToAnomalyTrackers(
                     MetricDimensionKey(mEventKey.getDimensionKeyInWhat(), durationIt.first),
                     getCurrentStateKeyFullBucketDuration(), mCurrentBucketNum);
-            durationIt.second.mDurationFullBucket = 0;
         }
         durationIt.second.mDuration = 0;
+    }
+    // Full bucket is only needed when we have anomaly trackers.
+    if (isFullBucket || mAnomalyTrackers.empty()) {
+        mStateKeyDurationMap.clear();
     }
 
     if (mStarted.size() > 0) {
@@ -359,9 +362,14 @@ void OringDurationTracker::onStateChanged(const int64_t timestamp, const int32_t
     updateCurrentStateKey(atomId, newState);
 }
 
-bool OringDurationTracker::hasAccumulatingDuration() {
+bool OringDurationTracker::hasAccumulatedDuration() const {
+    return !mStarted.empty() || !mPaused.empty() || !mStateKeyDurationMap.empty();
+}
+
+bool OringDurationTracker::hasStartedDuration() const {
     return !mStarted.empty();
 }
+
 int64_t OringDurationTracker::predictAnomalyTimestampNs(const AnomalyTracker& anomalyTracker,
                                                         const int64_t eventTimestampNs) const {
     // The anomaly threshold.
