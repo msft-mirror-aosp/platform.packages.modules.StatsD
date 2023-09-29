@@ -271,6 +271,10 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
 }
 
 void MetricsManager::setMaxMetricsBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_max_metrics_memory_kb()) {
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+        return;
+    }
     if (config.max_metrics_memory_kb() <= 0 ||
         static_cast<size_t>(config.max_metrics_memory_kb() * 1024) >
                 StatsdStats::kHardMaxMetricsBytesPerConfig) {
