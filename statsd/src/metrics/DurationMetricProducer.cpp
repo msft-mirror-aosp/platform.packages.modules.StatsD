@@ -52,6 +52,7 @@ const int FIELD_ID_TIME_BASE = 9;
 const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
+const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 // for DurationMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 // for DurationMetricData
@@ -502,23 +503,25 @@ void DurationMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     mPastBuckets.clear();
 }
 
-void DurationMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
-                                                const bool include_current_partial_bucket,
-                                                const bool erase_data,
-                                                const DumpLatency dumpLatency,
-                                                std::set<string> *str_set,
-                                                ProtoOutputStream* protoOutput) {
+void DurationMetricProducer::onDumpReportLocked(
+        const int64_t dumpTimeNs, const bool include_current_partial_bucket, const bool erase_data,
+        const DumpLatency dumpLatency, std::set<string>* str_set, ProtoOutputStream* protoOutput) {
     if (include_current_partial_bucket) {
         flushLocked(dumpTimeNs);
     } else {
         flushIfNeededLocked(dumpTimeNs);
     }
+
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
 
     if (mPastBuckets.empty()) {
         VLOG(" Duration metric, empty return");
         return;
+    }
+
+    if (StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId)) {
+        protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT, true);
     }
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
@@ -726,8 +729,15 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
 
     // Handles Stopall events.
     if ((int)matcherIndex == mStopAllIndex) {
-        for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-            whatIt.second->noteStopAll(eventTimeNs);
+        for (auto whatIt = mCurrentSlicedDurationTrackerMap.begin();
+             whatIt != mCurrentSlicedDurationTrackerMap.end();) {
+            whatIt->second->noteStopAll(eventTimeNs);
+            if (!whatIt->second->hasAccumulatedDuration()) {
+                VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                whatIt = mCurrentSlicedDurationTrackerMap.erase(whatIt);
+            } else {
+                whatIt++;
+            }
         }
         return;
     }
@@ -781,6 +791,10 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
             auto whatIt = mCurrentSlicedDurationTrackerMap.find(dimensionInWhat);
             if (whatIt != mCurrentSlicedDurationTrackerMap.end()) {
                 whatIt->second->noteStop(dimensionInWhat, eventTimeNs, false);
+                if (!whatIt->second->hasAccumulatedDuration()) {
+                    VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                    mCurrentSlicedDurationTrackerMap.erase(whatIt);
+                }
             }
             return;
         }
@@ -793,6 +807,10 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
         auto whatIt = mCurrentSlicedDurationTrackerMap.find(dimensionInWhat);
         if (whatIt != mCurrentSlicedDurationTrackerMap.end()) {
             whatIt->second->noteStop(internalDimensionKey, eventTimeNs, false);
+            if (!whatIt->second->hasAccumulatedDuration()) {
+                VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                mCurrentSlicedDurationTrackerMap.erase(whatIt);
+            }
         }
         return;
     }

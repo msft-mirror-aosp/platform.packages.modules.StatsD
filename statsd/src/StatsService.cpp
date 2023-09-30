@@ -21,7 +21,6 @@
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
-#include <android-modules-utils/sdk_level.h>
 #include <android/binder_ibinder_platform.h>
 #include <cutils/multiuser.h>
 #include <private/android_filesystem_config.h>
@@ -48,7 +47,6 @@
 using namespace android;
 
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
 
@@ -230,15 +228,16 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
 
     init_system_properties();
 
-    init_seed_random();
-
     if (mEventQueue != nullptr) {
-        std::thread pushedEventThread([this] { readLogs(); });
-        pushedEventThread.detach();
+        mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
     }
 }
 
 StatsService::~StatsService() {
+    if (mEventQueue != nullptr) {
+        stopReadingLogs();
+        mLogsReaderThread->join();
+    }
 }
 
 /* Runs on a dedicated thread to process pushed events. */
@@ -247,6 +246,13 @@ void StatsService::readLogs() {
     while (1) {
         // Block until an event is available.
         auto event = mEventQueue->waitPop();
+
+        // Below flag will be set when statsd is exiting and log event will be pushed to break
+        // out of waitPop.
+        if (mIsStopRequested) {
+            break;
+        }
+
         // Pass it to StatsLogProcess to all configs/metrics
         // At this point, the LogEventQueue is not blocked, so that the socketListener
         // can read events from the socket and write to buffer to avoid data drop.
@@ -264,18 +270,6 @@ void StatsService::init_system_properties() {
     if (buildType != NULL) {
         __system_property_read_callback(buildType, init_build_type_callback, this);
     }
-}
-
-void StatsService::init_seed_random() {
-    unsigned int seed = 0;
-    // getrandom() reads bytes from urandom source into buf. If getrandom()
-    // is unable to read from urandom source, then it returns -1 and we set
-    // out seed to be time(nullptr) as a fallback.
-    if (TEMP_FAILURE_RETRY(
-                getrandom(static_cast<void*>(&seed), sizeof(unsigned int), GRND_NONBLOCK)) < 0) {
-        seed = time(nullptr);
-    }
-    srand(seed);
 }
 
 void StatsService::init_build_type_callback(void* cookie, const char* /*name*/, const char* value,
@@ -891,7 +885,8 @@ status_t StatsService::cmd_log_binary_push(int out, const Vector<String8>& args)
     dprintf(out, "Logging BinaryPushStateChanged\n");
     vector<uint8_t> experimentIdBytes;
     writeExperimentIdsToProto(experimentIds, &experimentIdBytes);
-    LogEvent event(trainName, trainVersion, args[3], args[4], args[5], state, experimentIdBytes, 0);
+    LogEvent event(trainName, trainVersion, args[3].c_str(), args[4].c_str(), args[5].c_str(),
+                   state, experimentIdBytes, 0);
     mProcessor->OnLogEvent(&event);
     return NO_ERROR;
 }
@@ -1437,7 +1432,7 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId
                                                           const int32_t callingUid,
                                                           vector<int64_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("setRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
@@ -1454,7 +1449,7 @@ Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t confi
                                                              const string& configPackage,
                                                              const int32_t callingUid) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("removeRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
@@ -1513,6 +1508,15 @@ void StatsService::initShellSubscriber() {
     if (mShellSubscriber == nullptr) {
         mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager, mLogEventFilter);
     }
+}
+
+void StatsService::stopReadingLogs() {
+    mIsStopRequested = true;
+    // Push this event so that readLogs will process and break out of the loop
+    // after the stop is requested.
+    int64_t timeStamp;
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    mEventQueue->push(std::move(logEvent), &timeStamp);
 }
 
 }  // namespace statsd

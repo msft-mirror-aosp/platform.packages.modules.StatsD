@@ -18,7 +18,6 @@
 
 #include "MetricsManager.h"
 
-#include <android-modules-utils/sdk_level.h>
 #include <private/android_filesystem_config.h>
 
 #include "CountMetricProducer.h"
@@ -35,8 +34,6 @@
 #include "stats_util.h"
 #include "statslog_statsd.h"
 #include "utils/DbUtils.h"
-
-using android::modules::sdklevel::IsAtLeastU;
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_INT32;
@@ -81,7 +78,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
       mShouldPersistHistory(config.persist_locally()) {
-    if (!IsAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
+    if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return;
@@ -105,6 +102,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
     mInstallerInReport = config.installer_in_metric_report();
 
     createAllLogSourcesFromConfig(config);
+    setMaxMetricsBytesFromConfig(config);
     mPullerManager->RegisterPullUidProvider(mConfigKey, this);
 
     // Store the sub-configs used.
@@ -130,7 +128,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
                                   const int64_t currentTimeNs,
                                   const sp<AlarmMonitor>& anomalyAlarmMonitor,
                                   const sp<AlarmMonitor>& periodicAlarmMonitor) {
-    if (!IsAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
+    if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return false;
@@ -204,6 +202,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mPullAtomUids.clear();
     mPullAtomPackages.clear();
     createAllLogSourcesFromConfig(config);
+    setMaxMetricsBytesFromConfig(config);
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
@@ -268,6 +267,21 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
                 InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_SOURCES_IN_PULL_PACKAGES);
     } else {
         initPullAtomSources();
+    }
+}
+
+void MetricsManager::setMaxMetricsBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_max_metrics_memory_kb()) {
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+        return;
+    }
+    if (config.max_metrics_memory_kb() <= 0 ||
+        static_cast<size_t>(config.max_metrics_memory_kb() * 1024) >
+                StatsdStats::kHardMaxMetricsBytesPerConfig) {
+        ALOGW("Memory limit must be between 0KB and 20MB. Setting to default value (2MB).");
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+    } else {
+        mMaxMetricsBytes = config.max_metrics_memory_kb() * 1024;
     }
 }
 

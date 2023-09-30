@@ -359,7 +359,7 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(const long timeBaseSec, const Stat
             timeBaseSec * NS_PER_SEC, [](const ConfigKey&) { return true; },
             [](const int&, const vector<int64_t>&) { return true; },
             [](const ConfigKey&, const string&, const vector<int64_t>&) {},
-            /*logEventFilter=*/nullptr);
+            std::make_shared<LogEventFilter>());
     processor->OnConfigUpdated(timeBaseSec * NS_PER_SEC, key, config);
     return processor;
 }
