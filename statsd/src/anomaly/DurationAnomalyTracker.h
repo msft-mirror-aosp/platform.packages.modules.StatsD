@@ -69,6 +69,8 @@ protected:
     FRIEND_TEST(OringDurationTrackerTest, TestPredictAnomalyTimestamp);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionExpiredAlarm);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionFiredAlarm);
+    FRIEND_TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenBucketFull);
+    FRIEND_TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenNoTrackers);
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyDetection);
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp);
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp_UpdatedOnStop);
