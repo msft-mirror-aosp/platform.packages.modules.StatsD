@@ -188,6 +188,7 @@ private:
     FRIEND_TEST(DurationMetricTrackerTest, TestFirstBucket);
 
     FRIEND_TEST(DurationMetricProducerTest, TestSumDurationAppUpgradeSplitDisabled);
+    FRIEND_TEST(DurationMetricProducerTest, TestClearCurrentSlicedTrackerMapWhenStop);
     FRIEND_TEST(DurationMetricProducerTest_PartialBucket, TestSumDuration);
     FRIEND_TEST(DurationMetricProducerTest_PartialBucket,
                 TestSumDurationWithSplitInFollowingBucket);

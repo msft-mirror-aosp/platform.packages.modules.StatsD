@@ -131,6 +131,14 @@ interface IStatsManagerService {
     oneway void registerPullAtomCallback(int atomTag, long coolDownMillis, long timeoutMillis,
             in int[] additiveFields, IPullAtomCallback pullerCallback);
 
-    /** Tell StatsManagerService to unregister the pulller for the given atom tag from statsd. */
+    /** Tell StatsManagerService to unregister the puller for the given atom tag from statsd. */
     oneway void unregisterPullAtomCallback(int atomTag);
+
+    /**
+     * Same as #getData(in long key, in String packageName), but the data is stored in a file
+     * descriptor.
+     *
+     * Requires Manifest.permission.DUMP and Manifest.permission.PACKAGE_USAGE_STATS.
+     */
+    oneway void getDataFd(long key, in String packageName, in ParcelFileDescriptor fd);
 }

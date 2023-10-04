@@ -591,6 +591,8 @@ message StatsdConfig {
 
   optional uint32 package_certificate_hash_size_bytes = 26;
 
+  optional int32 max_metrics_memory_kb = 28;
+
   // Do not use.
   reserved 1000, 1001;
 }

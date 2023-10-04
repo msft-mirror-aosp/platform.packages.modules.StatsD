@@ -18,7 +18,10 @@
 
 #include <vector>
 
+#include "gtest_matchers.h"
 #include "src/metrics/parsing_utils/metrics_manager_util.h"
+#include "src/shell/ShellSubscriber.h"
+#include "src/stats_log.pb.h"
 #include "statslog_statsdtest.h"
 #include "tests/statsd_test_util.h"
 
@@ -28,6 +31,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using PerSubscriptionStats = StatsdStatsReport_SubscriptionStats_PerSubscriptionStats;
 using std::vector;
 
 TEST(StatsdStatsTest, TestValidConfigAdd) {
@@ -39,12 +43,8 @@ TEST(StatsdStatsTest, TestValidConfigAdd) {
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              nullopt /*valid config*/);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false /*reset stats*/);
 
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     EXPECT_EQ(0, configReport.uid());
@@ -78,12 +78,8 @@ TEST(StatsdStatsTest, TestInvalidConfigAdd) {
     invalidConfigReason->conditionIds.push_back(10);
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              invalidConfigReason /*bad config*/);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
 
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     // The invalid config should be put into icebox with a deletion time.
@@ -122,12 +118,8 @@ TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId) {
     invalidConfigReason->conditionIds.push_back(7);
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              invalidConfigReason /*bad config*/);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
 
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     // The invalid config should be put into icebox with a deletion time.
@@ -158,12 +150,8 @@ TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId) {
             InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_NOT_IN_PREV_CONFIG, 1);
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              invalidConfigReason /*bad config*/);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
 
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     // The invalid config should be put into icebox with a deletion time.
@@ -189,19 +177,15 @@ TEST(StatsdStatsTest, TestConfigRemove) {
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              nullopt);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     EXPECT_FALSE(configReport.has_deletion_time_sec());
 
     stats.noteConfigRemoved(key);
-    stats.dumpStats(&output, false);
-    good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+
+    report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport2 = report.config_stats(0);
     EXPECT_TRUE(configReport2.has_deletion_time_sec());
@@ -245,11 +229,7 @@ TEST(StatsdStatsTest, TestSubStats) {
     // deactivation_time_sec -> 1
     stats.noteActiveStatusChanged(key, false);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, true);  // Dump and reset stats
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ true);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     ASSERT_EQ(2, configReport.broadcast_sent_time_sec_size());
@@ -301,9 +281,7 @@ TEST(StatsdStatsTest, TestSubStats) {
     stats.noteAnomalyDeclared(key, StringToId("alert99"));
 
     // now the config stats should only contain the stats about the new event.
-    stats.dumpStats(&output, false);
-    good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport2 = report.config_stats(0);
     ASSERT_EQ(1, configReport2.matcher_stats_size());
@@ -327,18 +305,13 @@ TEST(StatsdStatsTest, TestAtomLog) {
     StatsdStats stats;
     time_t now = time(nullptr);
     // old event, we get it from the stats buffer. should be ignored.
-    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, 1000);
+    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, 1000, false);
 
-    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 1);
-    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 2);
-    stats.noteAtomLogged(util::APP_CRASH_OCCURRED, now + 3);
+    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 1, false);
+    stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 2, false);
+    stats.noteAtomLogged(util::APP_CRASH_OCCURRED, now + 3, false);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.atom_stats_size());
     bool sensorAtomGood = false;
     bool dropboxAtomGood = false;
@@ -351,6 +324,7 @@ TEST(StatsdStatsTest, TestAtomLog) {
             dropboxAtomGood = true;
         }
         EXPECT_FALSE(atomStats.has_dropped_count());
+        EXPECT_FALSE(atomStats.has_skip_count());
     }
 
     EXPECT_TRUE(dropboxAtomGood);
@@ -363,16 +337,11 @@ TEST(StatsdStatsTest, TestNonPlatformAtomLog) {
     int newAtom1 = StatsdStats::kMaxPushedAtomId + 1;
     int newAtom2 = StatsdStats::kMaxPushedAtomId + 2;
 
-    stats.noteAtomLogged(newAtom1, now + 1);
-    stats.noteAtomLogged(newAtom1, now + 2);
-    stats.noteAtomLogged(newAtom2, now + 3);
+    stats.noteAtomLogged(newAtom1, now + 1, false);
+    stats.noteAtomLogged(newAtom1, now + 2, false);
+    stats.noteAtomLogged(newAtom2, now + 3, false);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.atom_stats_size());
     bool newAtom1Good = false;
     bool newAtom2Good = false;
@@ -385,6 +354,7 @@ TEST(StatsdStatsTest, TestNonPlatformAtomLog) {
             newAtom2Good = true;
         }
         EXPECT_FALSE(atomStats.has_dropped_count());
+        EXPECT_FALSE(atomStats.has_skip_count());
     }
 
     EXPECT_TRUE(newAtom1Good);
@@ -416,12 +386,7 @@ TEST(StatsdStatsTest, TestPullAtomStats) {
     stats.notePullTimeout(util::DISK_SPACE, 3000L, 6000L);
     stats.notePullTimeout(util::DISK_SPACE, 4000L, 7000L);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.pulled_atom_stats_size());
 
     EXPECT_EQ(util::DISK_SPACE, report.pulled_atom_stats(0).atom_id());
@@ -458,12 +423,7 @@ TEST(StatsdStatsTest, TestAtomMetricsStats) {
 
     stats.noteBucketBoundaryDelayNs(10000000001LL, 1L);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.atom_metric_stats().size());
 
     auto atomStats = report.atom_metric_stats(0);
@@ -484,12 +444,7 @@ TEST(StatsdStatsTest, TestAnomalyMonitor) {
     stats.noteRegisteredAnomalyAlarmChanged();
     stats.noteRegisteredAnomalyAlarmChanged();
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     EXPECT_EQ(2, report.anomaly_alarm_stats().alarms_registered());
 }
 
@@ -552,17 +507,14 @@ TEST(StatsdStatsTest, TestSystemServerCrash) {
         timestamps.push_back(i);
         stats.noteSystemServerRestart(timestamps[i]);
     }
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     const int maxCount = StatsdStats::kMaxSystemServerRestarts;
     ASSERT_EQ(maxCount, (int)report.system_restart_sec_size());
 
     stats.noteSystemServerRestart(StatsdStats::kMaxSystemServerRestarts + 1);
-    output.clear();
-    stats.dumpStats(&output, false);
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+
+    report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(maxCount, (int)report.system_restart_sec_size());
     EXPECT_EQ(StatsdStats::kMaxSystemServerRestarts + 1, report.system_restart_sec(maxCount - 1));
 }
@@ -579,11 +531,7 @@ TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit) {
         stats.noteActivationBroadcastGuardrailHit(uid2, i);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.activation_guardrail_stats_size());
     bool uid1Good = false;
     bool uid2Good = false;
@@ -619,16 +567,13 @@ TEST(StatsdStatsTest, TestAtomErrorStats) {
         // We must call noteAtomLogged as well because only those pushed atoms
         // that have been logged will have stats printed about them in the
         // proto.
-        stats.noteAtomLogged(pushAtomTag, /*timeSec=*/0);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec=*/0, false);
         stats.noteAtomError(pushAtomTag, /*pull=*/false);
 
         stats.noteAtomError(pullAtomTag, /*pull=*/true);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
 
     // Check error count = numErrors for push atom
     ASSERT_EQ(1, report.atom_stats_size());
@@ -636,6 +581,7 @@ TEST(StatsdStatsTest, TestAtomErrorStats) {
     EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
     EXPECT_EQ(numErrors, pushedAtomStats.error_count());
     EXPECT_FALSE(pushedAtomStats.has_dropped_count());
+    EXPECT_FALSE(pushedAtomStats.has_skip_count());
 
     // Check error count = numErrors for pull atom
     ASSERT_EQ(1, report.pulled_atom_stats_size());
@@ -651,18 +597,14 @@ TEST(StatsdStatsTest, TestAtomDroppedStats) {
     const int nonPlatformPushAtomTag = StatsdStats::kMaxPushedAtomId + 100;
 
     const int numDropped = 10;
-
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, true);
-    ASSERT_EQ(0, stats.mPushedAtomDropsStats.size());
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ true);
 
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    ASSERT_EQ(0, stats.mPushedAtomDropsStats.size());
 
     // Check dropped_count = numDropped for push atoms
     ASSERT_EQ(2, report.atom_stats_size());
@@ -672,15 +614,17 @@ TEST(StatsdStatsTest, TestAtomDroppedStats) {
     EXPECT_EQ(numDropped, pushedAtomStats.count());
     EXPECT_EQ(numDropped, pushedAtomStats.dropped_count());
     EXPECT_FALSE(pushedAtomStats.has_error_count());
+    EXPECT_FALSE(pushedAtomStats.has_skip_count());
 
     const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
     EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
     EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.count());
     EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.dropped_count());
     EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_skip_count());
 }
 
-TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats) {
+TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats) {
     StatsdStats stats;
 
     const int pushAtomTag = 100;
@@ -688,20 +632,17 @@ TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats) {
 
     const int numLogged = 10;
     for (int i = 0; i < numLogged; i++) {
-        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0);
-        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, false);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, false);
     }
 
     const int numDropped = 10;
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
 
     // Check dropped_count = numDropped for push atoms
     ASSERT_EQ(2, report.atom_stats_size());
@@ -711,23 +652,224 @@ TEST(StatsdStatsTest, TestAtomDroppedAndLoggedStats) {
     EXPECT_EQ(numLogged + numDropped, pushedAtomStats.count());
     EXPECT_EQ(numDropped, pushedAtomStats.dropped_count());
     EXPECT_FALSE(pushedAtomStats.has_error_count());
+    EXPECT_FALSE(pushedAtomStats.has_skip_count());
 
     const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
     EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
     EXPECT_EQ(numLogged + numDropped, nonPlatformPushedAtomStats.count());
     EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.dropped_count());
     EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_skip_count());
+}
+
+TEST(StatsdStatsTest, TestAtomSkippedStats) {
+    StatsdStats stats;
+
+    const int pushAtomTag = 100;
+    const int nonPlatformPushAtomTag = StatsdStats::kMaxPushedAtomId + 100;
+    const int numSkipped = 10;
+
+    for (int i = 0; i < numSkipped; i++) {
+        stats.noteAtomLogged(pushAtomTag, /*timeSec=*/0, /*isSkipped*/ true);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec=*/0, /*isSkipped*/ true);
+    }
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    // Check skip_count = numSkipped for push atoms
+    ASSERT_EQ(2, report.atom_stats_size());
+
+    const auto& pushedAtomStats = report.atom_stats(0);
+    EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
+    EXPECT_EQ(numSkipped, pushedAtomStats.count());
+    EXPECT_EQ(numSkipped, pushedAtomStats.skip_count());
+    EXPECT_FALSE(pushedAtomStats.has_error_count());
+
+    const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
+    EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
+    EXPECT_EQ(numSkipped, nonPlatformPushedAtomStats.count());
+    EXPECT_EQ(numSkipped, nonPlatformPushedAtomStats.skip_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
+}
+
+TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats) {
+    StatsdStats stats;
+
+    const int pushAtomTag = 100;
+    const int nonPlatformPushAtomTag = StatsdStats::kMaxPushedAtomId + 100;
+
+    const int numLogged = 10;
+    for (int i = 0; i < numLogged; i++) {
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, false);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, false);
+    }
+
+    const int numDropped = 10;
+    for (int i = 0; i < numDropped; i++) {
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, true);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, true);
+    }
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    // Check dropped_count = numDropped for push atoms
+    ASSERT_EQ(2, report.atom_stats_size());
+
+    const auto& pushedAtomStats = report.atom_stats(0);
+    EXPECT_EQ(pushAtomTag, pushedAtomStats.tag());
+    EXPECT_EQ(numLogged + numDropped, pushedAtomStats.count());
+    EXPECT_EQ(numDropped, pushedAtomStats.dropped_count());
+    EXPECT_EQ(numDropped, pushedAtomStats.skip_count());
+    EXPECT_FALSE(pushedAtomStats.has_error_count());
+
+    const auto& nonPlatformPushedAtomStats = report.atom_stats(1);
+    EXPECT_EQ(nonPlatformPushAtomTag, nonPlatformPushedAtomStats.tag());
+    EXPECT_EQ(numLogged + numDropped, nonPlatformPushedAtomStats.count());
+    EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.dropped_count());
+    EXPECT_EQ(numDropped, nonPlatformPushedAtomStats.skip_count());
+    EXPECT_FALSE(nonPlatformPushedAtomStats.has_error_count());
 }
 
 TEST(StatsdStatsTest, TestShardOffsetProvider) {
     StatsdStats stats;
     ShardOffsetProvider::getInstance().setShardOffset(15);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
 
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     EXPECT_EQ(report.shard_offset(), 15);
+}
+
+TEST(StatsdStatsTest, TestHasHitDimensionGuardrail) {
+    StatsdStats stats;
+    int metricId1 = 1;
+    int metricId2 = 2;
+    int metricId3 = 3;
+
+    stats.noteBucketCount(metricId2);
+    stats.noteHardDimensionLimitReached(metricId3);
+
+    // No AtomMetricStats.
+    EXPECT_FALSE(stats.hasHitDimensionGuardrail(metricId1));
+
+    // Has AtomMetricStats but hasn't hit dimension guardrail.
+    EXPECT_FALSE(stats.hasHitDimensionGuardrail(metricId2));
+
+    // Has hit dimension guardrail.
+    EXPECT_TRUE(stats.hasHitDimensionGuardrail(metricId3));
+}
+
+TEST(StatsdStatsTest, TestSubscriptionStarted) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionStarted(/* id */ 1, /* pushedCount */ 3, /* pulledCount */ 1);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    EXPECT_EQ(subscriptionStats.pull_thread_wakeup_count(), 0);
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    auto perSubscriptionStats = subscriptionStats.per_subscription_stats(0);
+    EXPECT_EQ(perSubscriptionStats.pushed_atom_count(), 3);
+    EXPECT_EQ(perSubscriptionStats.pulled_atom_count(), 1);
+    EXPECT_GT(perSubscriptionStats.start_time_sec(), 0);
+    EXPECT_FALSE(perSubscriptionStats.has_end_time_sec());
+    EXPECT_EQ(perSubscriptionStats.flush_count(), 0);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionFlushed) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionStarted(/* id */ 1, /* pushedCount */ 3, /* pulledCount */ 1);
+    stats.noteSubscriptionFlushed(/* id */ 1);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    auto perSubscriptionStats = subscriptionStats.per_subscription_stats(0);
+    EXPECT_EQ(perSubscriptionStats.flush_count(), 1);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionEnded) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionStarted(/* id */ 1, /* pushedCount */ 3, /* pulledCount */ 1);
+    stats.noteSubscriptionEnded(/* id */ 1);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    EXPECT_GT(subscriptionStats.per_subscription_stats(0).end_time_sec(), 0);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionAtomPulled) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionAtomPulled(/* atomId */ 10'001);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    ASSERT_EQ(report.pulled_atom_stats_size(), 1);
+    auto pulledAtomStats = report.pulled_atom_stats(0);
+    EXPECT_EQ(pulledAtomStats.subscription_pull_count(), 1);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionPullThreadWakeup();
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    EXPECT_EQ(subscriptionStats.pull_thread_wakeup_count(), 1);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions) {
+    StatsdStats stats;
+
+    const int maxSubs = ShellSubscriber::getMaxSubscriptions();
+
+    // Start more than max # of allowed subscriptions.
+    // maxSub + 1th subscriptions should not have been added.
+    for (int id = 1; id <= maxSubs + 1; id++) {
+        stats.noteSubscriptionStarted(id, /* pushedCount */ 3, /* pulledCount */ 1);
+    }
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), maxSubs);
+    EXPECT_THAT(subscriptionStats.per_subscription_stats(),
+                Not(Contains(Property(&PerSubscriptionStats::id, Eq(maxSubs + 1)))));
+}
+
+TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription) {
+    StatsdStats stats;
+
+    const int maxSubs = ShellSubscriber::getMaxSubscriptions();
+
+    // Start max # of allowed subscriptions
+    for (int id = 1; id <= maxSubs; id++) {
+        stats.noteSubscriptionStarted(id, /* pushedCount */ 3, /* pulledCount */ 1);
+    }
+
+    // End subscription with id 5.
+    stats.noteSubscriptionEnded(/* id */ 5);
+
+    // Add one more subscription after we've added max # of subscriptions.
+    // Subscription wth id 5 should be removed and the new subscription added here should be
+    // accepted.
+    stats.noteSubscriptionStarted(maxSubs + 1, /* pushedCount */ 3, /* pulledCount */ 1);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), maxSubs);
+    EXPECT_THAT(subscriptionStats.per_subscription_stats(),
+                Not(Contains(Property(&PerSubscriptionStats::id, Eq(5)))));
+    EXPECT_THAT(subscriptionStats.per_subscription_stats(),
+                Contains(Property(&PerSubscriptionStats::id, Eq(maxSubs + 1))));
 }
 
 }  // namespace statsd

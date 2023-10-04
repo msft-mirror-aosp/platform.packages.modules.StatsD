@@ -20,7 +20,9 @@
 
 #include <android-base/file.h>
 #include <inttypes.h>
+#include <utils/Timers.h>
 
+#include "guardrail/StatsdStats.h"
 #include "stats_log_util.h"
 
 using aidl::android::os::IStatsSubscriptionCallback;
@@ -33,6 +35,7 @@ ShellSubscriber::~ShellSubscriber() {
     {
         std::unique_lock<std::mutex> lock(mMutex);
         mClientSet.clear();
+        updateLogEventFilterLocked();
     }
     mThreadSleepCV.notify_one();
     if (mThread.joinable()) {
@@ -74,6 +77,7 @@ bool ShellSubscriber::startNewSubscriptionLocked(unique_ptr<ShellSubscriberClien
 
     // Add new valid client to the client set
     mClientSet.insert(std::move(client));
+    updateLogEventFilterLocked();
 
     // Only spawn one thread to manage pulling atoms and sending
     // heartbeats.
@@ -93,10 +97,11 @@ void ShellSubscriber::pullAndSendHeartbeats() {
     VLOG("ShellSubscriber: helper thread starting");
     std::unique_lock<std::mutex> lock(mMutex);
     while (true) {
-        int64_t sleepTimeMs = INT_MAX;
-        int64_t nowSecs = getElapsedRealtimeSec();
-        int64_t nowMillis = getElapsedRealtimeMillis();
-        int64_t nowNanos = getElapsedRealtimeNs();
+        StatsdStats::getInstance().noteSubscriptionPullThreadWakeup();
+        int64_t sleepTimeMs = 24 * 60 * 60 * 1000;  // 24 hours.
+        const int64_t nowNanos = getElapsedRealtimeNs();
+        const int64_t nowMillis = nanoseconds_to_milliseconds(nowNanos);
+        const int64_t nowSecs = nanoseconds_to_seconds(nowNanos);
         for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end();) {
             int64_t subscriptionSleepMs =
                     (*clientIt)->pullAndSendHeartbeatsIfNeeded(nowSecs, nowMillis, nowNanos);
@@ -105,7 +110,9 @@ void ShellSubscriber::pullAndSendHeartbeats() {
                 ++clientIt;
             } else {
                 VLOG("ShellSubscriber: removing client!");
+                (*clientIt)->onUnsubscribe();
                 clientIt = mClientSet.erase(clientIt);
+                updateLogEventFilterLocked();
             }
         }
         if (mClientSet.empty()) {
@@ -119,6 +126,10 @@ void ShellSubscriber::pullAndSendHeartbeats() {
 }
 
 void ShellSubscriber::onLogEvent(const LogEvent& event) {
+    // Skip if event is skipped
+    if (event.isParsedHeaderOnly()) {
+        return;
+    }
     std::unique_lock<std::mutex> lock(mMutex);
     for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end();) {
         (*clientIt)->onLogEvent(event);
@@ -126,7 +137,10 @@ void ShellSubscriber::onLogEvent(const LogEvent& event) {
             ++clientIt;
         } else {
             VLOG("ShellSubscriber: removing client!");
+
+            (*clientIt)->onUnsubscribe();
             clientIt = mClientSet.erase(clientIt);
+            updateLogEventFilterLocked();
         }
     }
 }
@@ -143,10 +157,13 @@ void ShellSubscriber::flushSubscription(const shared_ptr<IStatsSubscriptionCallb
             } else {
                 VLOG("ShellSubscriber: removing client!");
 
+                (*clientIt)->onUnsubscribe();
+
                 // Erasing a value moves the iterator to the next value. The update expression also
                 // moves the iterator, skipping a value. This is fine because we do an early return
                 // before next iteration of the loop.
                 clientIt = mClientSet.erase(clientIt);
+                updateLogEventFilterLocked();
             }
             return;
         }
@@ -160,18 +177,31 @@ void ShellSubscriber::unsubscribe(const shared_ptr<IStatsSubscriptionCallback>& 
     // IStatsSubscriptionCallback to avoid this linear search.
     for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end(); ++clientIt) {
         if ((*clientIt)->hasCallback(callback)) {
-            if ((*clientIt)->isAlive()) {
-                (*clientIt)->onUnsubscribe();
-            }
             VLOG("ShellSubscriber: removing client!");
+
+            (*clientIt)->onUnsubscribe();
 
             // Erasing a value moves the iterator to the next value. The update expression also
             // moves the iterator, skipping a value. This is fine because we do an early return
             // before next iteration of the loop.
             clientIt = mClientSet.erase(clientIt);
+            updateLogEventFilterLocked();
             return;
         }
     }
+}
+
+void ShellSubscriber::updateLogEventFilterLocked() const {
+    VLOG("ShellSubscriber: Updating allAtomIds");
+    if (!mLogEventFilter) {
+        return;
+    }
+    LogEventFilter::AtomIdSet allAtomIds;
+    for (const auto& client : mClientSet) {
+        client->addAllAtomIds(allAtomIds);
+    }
+    VLOG("ShellSubscriber: Updating allAtomIds done. Total atoms %d", (int)allAtomIds.size());
+    mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
 }
 
 }  // namespace statsd

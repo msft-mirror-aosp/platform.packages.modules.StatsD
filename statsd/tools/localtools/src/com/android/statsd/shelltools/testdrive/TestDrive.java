@@ -95,6 +95,9 @@ public class TestDrive {
             "AID_NFC",
             "AID_SECURE_ELEMENT",
             "com.google.android.wearable.media.routing",
+            "com.google.android.healthconnect.controller",
+            "com.android.telephony.qns",
+            "com.android.car",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",

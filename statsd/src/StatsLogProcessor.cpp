@@ -68,6 +68,7 @@ const int FIELD_ID_LAST_REPORT_WALL_CLOCK_NANOS = 5;
 const int FIELD_ID_CURRENT_REPORT_WALL_CLOCK_NANOS = 6;
 const int FIELD_ID_DUMP_REPORT_REASON = 8;
 const int FIELD_ID_STRINGS = 9;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 10;
 
 // for ActiveConfigList
 const int FIELD_ID_ACTIVE_CONFIG_LIST_CONFIG = 1;
@@ -84,18 +85,17 @@ constexpr const char* kPermissionUsage = "android.permission.PACKAGE_USAGE_STATS
 // Cool down period for writing data to disk to avoid overwriting files.
 #define WRITE_DATA_COOL_DOWN_SEC 15
 
-StatsLogProcessor::StatsLogProcessor(const sp<UidMap>& uidMap,
-                                     const sp<StatsPullerManager>& pullerManager,
-                                     const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                                     const sp<AlarmMonitor>& periodicAlarmMonitor,
-                                     const int64_t timeBaseNs,
-                                     const std::function<bool(const ConfigKey&)>& sendBroadcast,
-                                     const std::function<bool(
-                                            const int&, const vector<int64_t>&)>& activateBroadcast)
+StatsLogProcessor::StatsLogProcessor(
+        const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
+        const sp<AlarmMonitor>& anomalyAlarmMonitor, const sp<AlarmMonitor>& periodicAlarmMonitor,
+        const int64_t timeBaseNs, const std::function<bool(const ConfigKey&)>& sendBroadcast,
+        const std::function<bool(const int&, const vector<int64_t>&)>& activateBroadcast,
+        const std::shared_ptr<LogEventFilter>& logEventFilter)
     : mUidMap(uidMap),
       mPullerManager(pullerManager),
       mAnomalyAlarmMonitor(anomalyAlarmMonitor),
       mPeriodicAlarmMonitor(periodicAlarmMonitor),
+      mLogEventFilter(logEventFilter),
       mSendBroadcast(sendBroadcast),
       mSendActivationBroadcast(activateBroadcast),
       mTimeBaseNs(timeBaseNs),
@@ -103,6 +103,8 @@ StatsLogProcessor::StatsLogProcessor(const sp<UidMap>& uidMap,
       mLastTimestampSeen(0) {
     mPullerManager->ForceClearPullerCache();
     StateManager::getInstance().updateLogSources(uidMap);
+    // It is safe called locked version at constructor - no concurrent access possible
+    updateLogEventFilterLocked();
 }
 
 StatsLogProcessor::~StatsLogProcessor() {
@@ -384,8 +386,9 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
 
     // Tell StatsdStats about new event
     const int64_t eventElapsedTimeNs = event->GetElapsedTimestampNs();
-    int atomId = event->GetTagId();
-    StatsdStats::getInstance().noteAtomLogged(atomId, eventElapsedTimeNs / NS_PER_SEC);
+    const int atomId = event->GetTagId();
+    StatsdStats::getInstance().noteAtomLogged(atomId, eventElapsedTimeNs / NS_PER_SEC,
+                                              event->isParsedHeaderOnly());
     if (!event->isValid()) {
         StatsdStats::getInstance().noteAtomError(atomId);
         return;
@@ -437,7 +440,7 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         informAnomalyAlarmFiredLocked(NanoToMillis(elapsedRealtimeNs));
     }
 
-    int64_t curTimeSec = getElapsedRealtimeSec();
+    const int64_t curTimeSec = getElapsedRealtimeSec();
     if (curTimeSec - mLastPullerCacheClearTimeSec > StatsdStats::kPullerCacheClearIntervalSec) {
         mPullerManager->ClearPullerCacheIfNecessary(curTimeSec * NS_PER_SEC);
         mLastPullerCacheClearTimeSec = curTimeSec;
@@ -559,6 +562,8 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         ALOGE("StatsdConfig NOT valid");
         mMetricsManagers.erase(key);
     }
+
+    updateLogEventFilterLocked();
 }
 
 size_t StatsLogProcessor::GetMetricsSize(const ConfigKey& key) const {
@@ -709,6 +714,9 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
         tempProto.write(FIELD_TYPE_STRING | FIELD_COUNT_REPEATED | FIELD_ID_STRINGS, str);
     }
 
+    // Data corrupted reason
+    writeDataCorruptedReasons(tempProto);
+
     flushProtoToBuffer(tempProto, buffer);
 
     // save buffer to disk if needed
@@ -780,6 +788,8 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     if (mMetricsManagers.empty()) {
         mPullerManager->ForceClearPullerCache();
     }
+
+    updateLogEventFilterLocked();
 }
 
 void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
@@ -796,7 +806,7 @@ void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
     size_t totalBytes = metricsManager.byteSize();
     mLastByteSizeTimes[key] = elapsedRealtimeNs;
     bool requestDump = false;
-    if (totalBytes > StatsdStats::kMaxMetricsBytesPerConfig) {
+    if (totalBytes > metricsManager.getMaxMetricsBytes()) {
         // Too late. We need to start clearing data.
         metricsManager.dropData(elapsedRealtimeNs);
         StatsdStats::getInstance().noteDataDropped(key, totalBytes);
@@ -1149,6 +1159,42 @@ void StatsLogProcessor::informAnomalyAlarmFiredLocked(const int64_t elapsedTimeM
         processFiredAnomalyAlarmsLocked(MillisToNano(elapsedTimeMillis), alarmSet);
     } else {
         ALOGW("Cannot find an periodic alarm that fired. Perhaps it was recently cancelled.");
+    }
+}
+
+LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
+    // populate hard-coded list of useful atoms
+    // we add also atoms which could be pushed by statsd itself to simplify the logic
+    // to handle metric configs update: APP_BREADCRUMB_REPORTED & ANOMALY_DETECTED
+    LogEventFilter::AtomIdSet allAtomIds{
+            util::BINARY_PUSH_STATE_CHANGED,  util::DAVEY_OCCURRED,
+            util::ISOLATED_UID_CHANGED,       util::APP_BREADCRUMB_REPORTED,
+            util::WATCHDOG_ROLLBACK_OCCURRED, util::ANOMALY_DETECTED};
+    return allAtomIds;
+}
+
+void StatsLogProcessor::updateLogEventFilterLocked() const {
+    VLOG("StatsLogProcessor: Updating allAtomIds");
+    if (!mLogEventFilter) {
+        return;
+    }
+    LogEventFilter::AtomIdSet allAtomIds = getDefaultAtomIdSet();
+    for (const auto& metricsManager : mMetricsManagers) {
+        metricsManager.second->addAllAtomIds(allAtomIds);
+    }
+    StateManager::getInstance().addAllAtomIds(allAtomIds);
+    VLOG("StatsLogProcessor: Updating allAtomIds done. Total atoms %d", (int)allAtomIds.size());
+    mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
+}
+
+void StatsLogProcessor::writeDataCorruptedReasons(ProtoOutputStream& proto) {
+    if (StatsdStats::getInstance().hasEventQueueOverflow()) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | FIELD_ID_DATA_CORRUPTED_REASON,
+                    DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    }
+    if (StatsdStats::getInstance().hasSocketLoss()) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | FIELD_ID_DATA_CORRUPTED_REASON,
+                    DATA_CORRUPTED_SOCKET_LOSS);
     }
 }
 

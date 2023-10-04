@@ -74,16 +74,23 @@ int main(int /*argc*/, char** /*argv*/) {
     ABinderProcess_setThreadPoolMaxThreadCount(9);
     ABinderProcess_startThreadPool();
 
-    std::shared_ptr<LogEventQueue> eventQueue =
-            std::make_shared<LogEventQueue>(8000 /*buffer limit. Buffer is NOT pre-allocated*/);
-
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags({});
+    FlagProvider::getInstance().initBootFlags({STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
+
+    std::shared_ptr<LogEventQueue> eventQueue =
+            std::make_shared<LogEventQueue>(50000); /*buffer limit. Buffer is NOT pre-allocated*/
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
+    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
+
+    const int initEventDelay = FlagProvider::getInstance().getBootFlagBool(
+                                       STATSD_INIT_COMPLETED_NO_DELAY_FLAG, FLAG_FALSE)
+                                       ? 0
+                                       : StatsService::kStatsdInitDelaySecs;
     // Create the service
-    gStatsService = SharedRefBase::make<StatsService>(uidMap, eventQueue);
+    gStatsService =
+            SharedRefBase::make<StatsService>(uidMap, eventQueue, logEventFilter, initEventDelay);
     auto binder = gStatsService->asBinder();
 
     // We want to be able to ask for the selinux context of callers:
@@ -103,7 +110,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     gStatsService->Startup();
 
-    gSocketListener = new StatsSocketListener(eventQueue);
+    gSocketListener = new StatsSocketListener(eventQueue, logEventFilter);
 
     ALOGI("Statsd starts to listen to socket.");
     // Backlog and /proc/sys/net/unix/max_dgram_qlen set to large value
@@ -123,7 +130,11 @@ int main(int /*argc*/, char** /*argv*/) {
             }
             gSocketListener->stopListener();
             gStatsService->Terminate();
-            exit(1);
+            // return the signal handler to its default disposition, then raise the signal again
+            signal(SIGTERM, SIG_DFL);
+            // this is a sync call which leads to immediate process termination and
+            // no destructors are called, semantically similar to call exit(1) here
+            raise(SIGTERM);
         }
     }).detach();
 

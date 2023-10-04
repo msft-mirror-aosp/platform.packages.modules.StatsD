@@ -55,11 +55,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
-constexpr const char* kIncludeCertificateHash = "include_certificate_hash";
-
 class StatsService : public BnStatsd {
 public:
-    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue);
+    StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
+                 const std::shared_ptr<LogEventFilter>& logEventFilter,
+                 int initEventDelaySecs = kStatsdInitDelaySecs);
     virtual ~StatsService();
 
     /** The anomaly alarm registered with AlarmManager won't be updated by less than this. */
@@ -105,6 +105,8 @@ public:
                            const int32_t callingUid,
                            vector<uint8_t>* output) override;
 
+    virtual Status getDataFd(int64_t key, const int32_t callingUid,
+                             const ScopedFileDescriptor& fd) override;
 
     /**
      * Binder call for clients to get metadata across all configs in statsd.
@@ -227,6 +229,8 @@ public:
     virtual Status flushSubscription(
             const shared_ptr<IStatsSubscriptionCallback>& callback) override;
 
+    const static int kStatsdInitDelaySecs = 90;
+
 private:
     /**
      * Load system properties at init.
@@ -330,6 +334,11 @@ private:
     status_t cmd_print_logs(int outFd, const Vector<String8>& args);
 
     /**
+     * Implementation for request data for the configuration key.
+     */
+    void getDataChecked(int64_t key, const int32_t callingUid, vector<uint8_t>* output);
+
+    /**
      * Writes the value of args[uidArgIndex] into uid.
      * Returns whether the uid is reasonable (type uid_t) and whether
      * 1. it is equal to the calling uid, or
@@ -373,6 +382,11 @@ private:
      */
     void initShellSubscriber();
 
+    /*
+     * Notify StatsLogProcessor of boot completed
+     */
+    void onStatsdInitCompleted();
+
     /**
      * Tracks the uid <--> package name mapping.
      */
@@ -415,6 +429,7 @@ private:
      */
     mutable mutex mShellSubscriberMutex;
     shared_ptr<LogEventQueue> mEventQueue;
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";
@@ -423,7 +438,10 @@ private:
 
     ScopedAIBinder_DeathRecipient mStatsCompanionServiceDeathRecipient;
 
+    const int mInitEventDelaySecs;
+
     friend class StatsServiceConfigTest;
+    friend class StatsServiceStatsdInitTest;
 
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
     FRIEND_TEST(StatsServiceTest, TestAddConfig_simple);
@@ -450,6 +468,8 @@ private:
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_multiple_buckets);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
+
+    FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
 };
 
 }  // namespace statsd

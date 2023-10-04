@@ -27,6 +27,7 @@
 #include "external/StatsPullerManager.h"
 #include "logd/LogEvent.h"
 #include "packages/UidMap.h"
+#include "socket/LogEventFilter.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/statsd_config.pb.h"
 
@@ -63,7 +64,7 @@ public:
             const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerMgr);
 
     // Should only be called by the create() factory.
-    explicit ShellSubscriberClient(int out,
+    explicit ShellSubscriberClient(int id, int out,
                                    const std::shared_ptr<IStatsSubscriptionCallback>& callback,
                                    const std::vector<SimpleAtomMatcher>& pushedMatchers,
                                    const std::vector<PullInfo>& pulledInfo, int64_t timeoutSec,
@@ -93,6 +94,14 @@ public:
         return kMaxSizeKb;
     }
 
+    // Minimum pull interval for callback subscriptions.
+    static constexpr int64_t kMinCallbackPullIntervalMs = 60'000;  // 60 seconds.
+
+    // Minimum sleep for the pull thread for callback subscriptions.
+    static constexpr int64_t kMinCallbackSleepIntervalMs = 2000;  // 2 seconds.
+
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const;
+
 private:
     int64_t pullIfNeeded(int64_t nowSecs, int64_t nowMillis, int64_t nowNanos);
 
@@ -115,6 +124,9 @@ private:
     void triggerCallback(StatsSubscriptionCallbackReason reason);
 
     const int32_t DEFAULT_PULL_UID = AID_SYSTEM;
+
+    // Unique ID for this subscription for  StatsdStats.
+    const int mId;
 
     const sp<UidMap> mUidMap;
 
@@ -150,7 +162,7 @@ private:
 
     static constexpr size_t kMaxCacheSizeBytes = 2 * 1024;  // 2 KB
 
-    static constexpr int64_t kMsBetweenCallbacks = 4000;
+    static constexpr int64_t kMsBetweenCallbacks = 70'000;  // 70 seconds.
 };
 
 }  // namespace statsd

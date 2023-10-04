@@ -48,6 +48,10 @@ public:
         mLogsFilteringEnabled = isEnabled;
     }
 
+    bool getFilteringEnabled() const {
+        return mLogsFilteringEnabled;
+    }
+
     /**
      * @brief Tests atom id with list of interesting atoms
      *        If Logs filtering is disabled - assume all atoms in use

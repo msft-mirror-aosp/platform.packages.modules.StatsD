@@ -23,6 +23,7 @@ cc_defaults {
 
     cflags: [
         "-Wno-deprecated-declarations",
+        "-Wthread-safety",
     ],
 
     srcs: [
@@ -83,7 +84,7 @@ cc_defaults {
         "src/statscompanion_util.cpp",
         "src/statsd_config.proto",
         "src/statsd_metadata.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
         "src/StatsLogProcessor.cpp",
         "src/StatsService.cpp",
         "src/storage/StorageManager.cpp",
@@ -370,6 +371,7 @@ cc_test {
         "tests/state/StateTracker_test.cpp",
         "tests/statsd_test_util.cpp",
         "tests/statsd_test_util_test.cpp",
+        "tests/SocketListener_test.cpp",
         "tests/StatsLogProcessor_test.cpp",
         "tests/StatsService_test.cpp",
         "tests/storage/StorageManager_test.cpp",
@@ -474,7 +476,7 @@ java_library {
         "src/shell/shell_data.proto",
         "src/stats_log.proto",
         "src/statsd_config.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
     ],
 
     static_libs: [
@@ -503,7 +505,7 @@ java_library {
         "src/shell/shell_data.proto",
         "src/stats_log.proto",
         "src/statsd_config.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
     ],
     static_libs: [
         "platformprotosnano",
@@ -525,7 +527,7 @@ filegroup {
     name: "libstats_log_protos",
     srcs: [
         "src/stats_log.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
     ],
 }
 
@@ -541,7 +543,7 @@ filegroup {
         "src/statsd_metadata.proto",
         "src/stats_log.proto",
         "src/uid_data.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
     ],
 }
 

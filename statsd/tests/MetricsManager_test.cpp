@@ -35,7 +35,6 @@
 
 using namespace testing;
 using android::sp;
-using android::modules::sdklevel::IsAtLeastS;
 using android::os::statsd::Predicate;
 using std::map;
 using std::set;
@@ -315,6 +314,73 @@ TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {
 
     EXPECT_EQ(0, StateManager::getInstance().getStateTrackersCount());
     EXPECT_FALSE(metricsManager.isConfigValid());
+}
+
+TEST(MetricsManagerTest, TestMaxMetricsMemoryKb) {
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+    size_t memoryLimitKb = 8 * 1024;
+
+    StatsdConfig config = buildGoodConfig();
+    config.add_allowed_log_source("AID_SYSTEM");
+    config.set_max_metrics_memory_kb(memoryLimitKb);
+
+    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    EXPECT_EQ(memoryLimitKb, metricsManager.getMaxMetricsBytes() / 1024);
+    EXPECT_TRUE(metricsManager.isConfigValid());
+}
+
+TEST(MetricsManagerTest, TestMaxMetricsMemoryKbOnConfigUpdate) {
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+    size_t memoryLimitKb = 8 * 1024;
+
+    StatsdConfig config = buildGoodConfig();
+    config.add_allowed_log_source("AID_SYSTEM");
+    config.set_max_metrics_memory_kb(memoryLimitKb);
+
+    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    EXPECT_EQ(memoryLimitKb, metricsManager.getMaxMetricsBytes() / 1024);
+    EXPECT_TRUE(metricsManager.isConfigValid());
+
+    // Update with new memory limit
+    size_t newMemoryLimitKb = 10 * 1024;
+    StatsdConfig newConfig;
+    newConfig.add_allowed_log_source("AID_SYSTEM");
+    newConfig.set_max_metrics_memory_kb(newMemoryLimitKb);
+
+    metricsManager.updateConfig(newConfig, timeBaseSec, timeBaseSec, anomalyAlarmMonitor,
+                                periodicAlarmMonitor);
+    EXPECT_EQ(newMemoryLimitKb, metricsManager.getMaxMetricsBytes() / 1024);
+    EXPECT_TRUE(metricsManager.isConfigValid());
+}
+
+TEST(MetricsManagerTest, TestMaxMetricsMemoryKbInvalid) {
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+    size_t memoryLimitKb = (StatsdStats::kHardMaxMetricsBytesPerConfig / 1024) + 1;
+    size_t defaultMemoryLimit = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+
+    StatsdConfig config = buildGoodConfig();
+    config.add_allowed_log_source("AID_SYSTEM");
+    config.set_max_metrics_memory_kb(memoryLimitKb);
+
+    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    // Since 20MB + 1B is invalid for the memory limit, we default back to 2MB
+    EXPECT_EQ(defaultMemoryLimit, metricsManager.getMaxMetricsBytes());
+    EXPECT_TRUE(metricsManager.isConfigValid());
 }
 
 }  // namespace statsd

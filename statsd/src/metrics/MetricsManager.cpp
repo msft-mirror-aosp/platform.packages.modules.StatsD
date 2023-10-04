@@ -94,6 +94,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
     mInstallerInReport = config.installer_in_metric_report();
 
     createAllLogSourcesFromConfig(config);
+    setMaxMetricsBytesFromConfig(config);
     mPullerManager->RegisterPullUidProvider(mConfigKey, this);
 
     // Store the sub-configs used.
@@ -183,6 +184,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mPullAtomUids.clear();
     mPullAtomPackages.clear();
     createAllLogSourcesFromConfig(config);
+    setMaxMetricsBytesFromConfig(config);
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
@@ -247,6 +249,21 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
                 InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_SOURCES_IN_PULL_PACKAGES);
     } else {
         initPullAtomSources();
+    }
+}
+
+void MetricsManager::setMaxMetricsBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_max_metrics_memory_kb()) {
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+        return;
+    }
+    if (config.max_metrics_memory_kb() <= 0 ||
+        static_cast<size_t>(config.max_metrics_memory_kb() * 1024) >
+                StatsdStats::kHardMaxMetricsBytesPerConfig) {
+        ALOGW("Memory limit must be between 0KB and 20MB. Setting to default value (2MB).");
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+    } else {
+        mMaxMetricsBytes = config.max_metrics_memory_kb() * 1024;
     }
 }
 
@@ -541,12 +558,13 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
         return;
     }
 
+    // TODO(b/212755214): this check could be done once on the StatsLogProcessor level
     if (!eventSanityCheck(event)) {
         return;
     }
 
-    int tagId = event.GetTagId();
-    int64_t eventTimeNs = event.GetElapsedTimestampNs();
+    const int tagId = event.GetTagId();
+    const int64_t eventTimeNs = event.GetElapsedTimestampNs();
 
     bool isActive = mIsAlwaysActive;
 
@@ -570,6 +588,15 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     if (matchersIt == mTagIdsToMatchersMap.end()) {
         // Not interesting...
+        return;
+    }
+
+    if (event.isParsedHeaderOnly()) {
+        // This should not happen if metric config is defined for certain atom id
+        const int64_t firstMatcherId =
+                mAllAtomMatchingTrackers[*matchersIt->second.begin()]->getId();
+        ALOGW("Atom %d is mistakenly skipped - there is a matcher %lld for it", tagId,
+              (long long)firstMatcherId);
         return;
     }
 
@@ -777,6 +804,12 @@ void MetricsManager::loadMetadata(const metadata::StatsMetadata& metadata,
         mAllAnomalyTrackers[it->second]->loadAlertMetadata(alertMetadata,
                                                            currentWallClockTimeNs,
                                                            systemElapsedTimeNs);
+    }
+}
+
+void MetricsManager::addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const {
+    for (const auto& [atomId, _] : mTagIdsToMatchersMap) {
+        allIds.insert(atomId);
     }
 }
 
