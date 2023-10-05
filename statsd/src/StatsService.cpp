@@ -18,27 +18,30 @@
 #include "Log.h"
 
 #include "StatsService.h"
-#include "stats_log_util.h"
-#include "android-base/stringprintf.h"
-#include "config/ConfigKey.h"
-#include "config/ConfigManager.h"
-#include "guardrail/StatsdStats.h"
-#include "storage/StorageManager.h"
-#include "subscriber/SubscriberReporter.h"
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
 #include <android/binder_ibinder_platform.h>
 #include <cutils/multiuser.h>
+#include <private/android_filesystem_config.h>
 #include <src/statsd_config.pb.h>
 #include <src/uid_data.pb.h>
-#include <private/android_filesystem_config.h>
 #include <statslog_statsd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <utils/String16.h>
+
+#include "android-base/stringprintf.h"
+#include "config/ConfigKey.h"
+#include "config/ConfigManager.h"
+#include "flags/FlagProvider.h"
+#include "guardrail/StatsdStats.h"
+#include "stats_log_util.h"
+#include "storage/StorageManager.h"
+#include "subscriber/SubscriberReporter.h"
+#include "utils/DbUtils.h"
 
 using namespace android;
 
@@ -195,6 +198,27 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                 }
                 VLOG("StatsService::active configs broadcast failed for uid %d", uid);
                 return false;
+            },
+            [this](const ConfigKey& key, const string& delegatePackage,
+                   const vector<int64_t>& restrictedMetrics) {
+                set<string> configPackages;
+                set<int32_t> delegateUids;
+                for (const auto& kv : UidMap::sAidToUidMapping) {
+                    if (kv.second == static_cast<uint32_t>(key.GetUid())) {
+                        configPackages.insert(kv.first);
+                    }
+                    if (kv.first == delegatePackage) {
+                        delegateUids.insert(kv.second);
+                    }
+                }
+                if (configPackages.empty()) {
+                    configPackages = mUidMap->getAppNamesFromUid(key.GetUid(), true);
+                }
+                if (delegateUids.empty()) {
+                    delegateUids = mUidMap->getAppUid(delegatePackage);
+                }
+                mConfigManager->SendRestrictedMetricsBroadcast(configPackages, key.GetId(),
+                                                               delegateUids, restrictedMetrics);
             },
             logEventFilter);
 
@@ -1088,8 +1112,11 @@ void StatsService::onStatsdInitCompleted() {
 
 void StatsService::Startup() {
     mConfigManager->Startup();
+    int64_t wallClockNs = getWallClockNs();
+    int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
     mProcessor->LoadActiveConfigsFromDisk();
-    mProcessor->LoadMetadataFromDisk(getWallClockNs(), getElapsedRealtimeNs());
+    mProcessor->LoadMetadataFromDisk(wallClockNs, elapsedRealtimeNs);
+    mProcessor->EnforceDataTtls(wallClockNs, elapsedRealtimeNs);
 }
 
 void StatsService::Terminate() {
@@ -1386,6 +1413,55 @@ void StatsService::statsCompanionServiceDiedImpl() {
     mAnomalyAlarmMonitor->setStatsCompanionService(nullptr);
     mPeriodicAlarmMonitor->setStatsCompanionService(nullptr);
     mPullerManager->SetStatsCompanionService(nullptr);
+}
+
+Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId,
+                                                          const string& configPackage,
+                                                          const shared_ptr<IPendingIntentRef>& pir,
+                                                          const int32_t callingUid,
+                                                          vector<int64_t>* output) {
+    ENFORCE_UID(AID_SYSTEM);
+    if (!isAtLeastU()) {
+        ALOGW("setRestrictedMetricsChangedOperation invoked on U- device");
+        return Status::ok();
+    }
+    mConfigManager->SetRestrictedMetricsChangedReceiver(configPackage, configId, callingUid, pir);
+    if (output != nullptr) {
+        mProcessor->fillRestrictedMetrics(configId, configPackage, callingUid, output);
+    } else {
+        ALOGW("StatsService::setRestrictedMetricsChangedOperation output was nullptr");
+    }
+    return Status::ok();
+}
+
+Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t configId,
+                                                             const string& configPackage,
+                                                             const int32_t callingUid) {
+    ENFORCE_UID(AID_SYSTEM);
+    if (!isAtLeastU()) {
+        ALOGW("removeRestrictedMetricsChangedOperation invoked on U- device");
+        return Status::ok();
+    }
+    mConfigManager->RemoveRestrictedMetricsChangedReceiver(configPackage, configId, callingUid);
+    return Status::ok();
+}
+
+Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                              const optional<vector<uint8_t>>& policyConfig,
+                              const shared_ptr<IStatsQueryCallback>& callback,
+                              const int64_t configKey, const string& configPackage,
+                              const int32_t callingUid) {
+    ENFORCE_UID(AID_SYSTEM);
+    if (callback == nullptr) {
+        ALOGW("querySql called with null callback.");
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configKey, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(NULL_CALLBACK));
+        return Status::ok();
+    }
+    mProcessor->querySql(sqlQuery, minSqlClientVersion, policyConfig, callback, configKey,
+                         configPackage, callingUid);
+    return Status::ok();
 }
 
 Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,

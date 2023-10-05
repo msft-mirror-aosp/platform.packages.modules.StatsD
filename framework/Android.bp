@@ -59,6 +59,7 @@ java_sdk_library {
     ],
 
     libs: [
+        "androidx.annotation_annotation",
         "framework-configinfrastructure",
     ],
 
