@@ -27,12 +27,42 @@
 
 #ifdef __ANDROID__
 
+namespace std {
+void PrintTo(const tuple<int, size_t>& atomIdDimensionLimitTuple, ostream* os) {
+    *os << get<0>(atomIdDimensionLimitTuple) << "_" << get<1>(atomIdDimensionLimitTuple);
+}
+}  // namespace std
+
 namespace android {
 namespace os {
 namespace statsd {
+namespace {
 
+using namespace testing;
 using PerSubscriptionStats = StatsdStatsReport_SubscriptionStats_PerSubscriptionStats;
+using std::tuple;
 using std::vector;
+
+class StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap
+    : public TestWithParam<tuple<int, size_t>> {};
+INSTANTIATE_TEST_SUITE_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap,
+                         StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap,
+                         Combine(Values(10022 /* BINDER_CALLS */, 10024 /* LOOPER_STATS */,
+                                        10010 /* CPU_TIME_PER_UID_FREQ */),
+                                 Values(-1, 0, 500, 800, 1000, 3000, 3300)),
+                         PrintToStringParamName());
+
+class StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap
+    : public StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap {};
+
+INSTANTIATE_TEST_SUITE_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap,
+                         StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap,
+                         Combine(Values(util::TEST_ATOM_REPORTED, util::SCREEN_STATE_CHANGED,
+                                        util::SUBSYSTEM_SLEEP_STATE),
+                                 Values(-1, 0, 500, 800, 1000, 3000, 3300)),
+                         PrintToStringParamName());
+
+}  // anonymous namespace
 
 TEST(StatsdStatsTest, TestValidConfigAdd) {
     StatsdStats stats;
@@ -960,6 +990,31 @@ TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription) {
                 Not(Contains(Property(&PerSubscriptionStats::id, Eq(5)))));
     EXPECT_THAT(subscriptionStats.per_subscription_stats(),
                 Contains(Property(&PerSubscriptionStats::id, Eq(maxSubs + 1))));
+}
+
+TEST(StatsdStatsTest, TestEnforceDimensionKeySizeLimit) {
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(-1),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(0),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(500),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(1000), 1000);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(3500),
+              StatsdStats::kDimensionKeySizeHardLimitMax);
+}
+
+TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap, TestGetAtomDimensionKeySizeLimits) {
+    const auto& [atomId, defaultHardLimit] = GetParam();
+    EXPECT_EQ(StatsdStats::getAtomDimensionKeySizeLimits(atomId, defaultHardLimit),
+              StatsdStats::kAtomDimensionKeySizeLimitMap.at(atomId));
+}
+
+TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap, TestGetAtomDimensionKeySizeLimits) {
+    const auto& [atomId, defaultHardLimit] = GetParam();
+    EXPECT_EQ(
+            StatsdStats::getAtomDimensionKeySizeLimits(atomId, defaultHardLimit),
+            (std::pair<size_t, size_t>(StatsdStats::kDimensionKeySizeSoftLimit, defaultHardLimit)));
 }
 
 }  // namespace statsd

@@ -165,6 +165,8 @@ public:
 
     const static int kDimensionKeySizeSoftLimit = 500;
     static constexpr int kDimensionKeySizeHardLimit = 800;
+    static constexpr int kDimensionKeySizeHardLimitMin = 800;
+    static constexpr int kDimensionKeySizeHardLimitMax = 3000;
 
     // Per atom dimension key size limit
     static const std::map<int, std::pair<size_t, size_t>> kAtomDimensionKeySizeLimitMap;
@@ -679,7 +681,12 @@ public:
     /**
      * Return soft and hard atom key dimension size limits as an std::pair.
      */
-    static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(const int atomId = -1);
+    static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(int atomId,
+                                                                   size_t defaultHardLimit);
+
+    inline static int clampDimensionKeySizeLimit(int dimLimit) {
+        return std::clamp(dimLimit, kDimensionKeySizeHardLimitMin, kDimensionKeySizeHardLimitMax);
+    }
 
     /**
      * Returns true if there is recorded event queue overflow
