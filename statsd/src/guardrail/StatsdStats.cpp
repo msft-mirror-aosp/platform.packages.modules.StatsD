@@ -1803,11 +1803,11 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
     VLOG("reset=%d, returned proto size %lu", reset, (unsigned long)output->size());
 }
 
-std::pair<size_t, size_t> StatsdStats::getAtomDimensionKeySizeLimits(const int atomId) {
+std::pair<size_t, size_t> StatsdStats::getAtomDimensionKeySizeLimits(int atomId,
+                                                                     size_t defaultHardLimit) {
     return kAtomDimensionKeySizeLimitMap.find(atomId) != kAtomDimensionKeySizeLimitMap.end()
                    ? kAtomDimensionKeySizeLimitMap.at(atomId)
-                   : std::make_pair<size_t, size_t>(kDimensionKeySizeSoftLimit,
-                                                    kDimensionKeySizeHardLimit);
+                   : std::pair<size_t, size_t>(kDimensionKeySizeSoftLimit, defaultHardLimit);
 }
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,

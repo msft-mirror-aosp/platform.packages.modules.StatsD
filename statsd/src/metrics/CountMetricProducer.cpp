@@ -80,7 +80,9 @@ CountMetricProducer::CountMetricProducer(
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
                      stateGroupMap, getAppUpgradeBucketSplit(metric)),
-      mDimensionGuardrailHit(false) {
+      mDimensionGuardrailHit(false),
+      mDimensionHardLimit(
+              StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket())) {
     if (metric.has_bucket()) {
         mBucketSizeNs =
                 TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), metric.bucket()) * 1000000;
@@ -175,6 +177,7 @@ optional<InvalidConfigReason> CountMetricProducer::onConfigUpdatedLocked(
             return invalidConfigReason;
         }
     }
+
     return nullopt;
 }
 
@@ -342,7 +345,7 @@ bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
         size_t newTupleCount = mCurrentSlicedCounter->size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-        if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+        if (newTupleCount > mDimensionHardLimit) {
             if (!mHasHitGuardrail) {
                 ALOGE("CountMetric %lld dropping data for dimension key %s", (long long)mMetricId,
                       newKey.toString().c_str());
