@@ -37,7 +37,8 @@ MaxDurationTracker::MaxDurationTracker(const ConfigKey& key, const int64_t& id,
     mDuration = 0;
 }
 
-bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
+bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey,
+                                      size_t dimensionHardLimit) {
     // ===========GuardRail==============
     if (mInfos.find(newKey) != mInfos.end()) {
         // if the key existed, we are good!
@@ -48,7 +49,7 @@ bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
         size_t newTupleCount = mInfos.size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-        if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+        if (newTupleCount > dimensionHardLimit) {
             if (!mHasHitGuardrail) {
                 ALOGE("MaxDurTracker %lld dropping data for dimension key %s",
                       (long long)mTrackerId, newKey.toString().c_str());
@@ -62,9 +63,10 @@ bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
 }
 
 void MaxDurationTracker::noteStart(const HashableDimensionKey& key, bool condition,
-                                   const int64_t eventTime, const ConditionKey& conditionKey) {
+                                   const int64_t eventTime, const ConditionKey& conditionKey,
+                                   size_t dimensionHardLimit) {
     // this will construct a new DurationInfo if this key didn't exist.
-    if (hitGuardRail(key)) {
+    if (hitGuardRail(key, dimensionHardLimit)) {
         return;
     }
 
