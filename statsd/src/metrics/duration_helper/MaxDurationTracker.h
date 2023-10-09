@@ -37,7 +37,7 @@ public:
     MaxDurationTracker(const MaxDurationTracker& tracker) = default;
 
     void noteStart(const HashableDimensionKey& key, bool condition, const int64_t eventTime,
-                   const ConditionKey& conditionKey) override;
+                   const ConditionKey& conditionKey, size_t dimensionHardLimit) override;
     void noteStop(const HashableDimensionKey& key, const int64_t eventTime,
                   const bool stopAll) override;
     void noteStopAll(const int64_t eventTime) override;
@@ -81,7 +81,7 @@ private:
                               const int64_t timestamp);
 
     // return true if we should not allow newKey to be tracked because we are above the threshold
-    bool hitGuardRail(const HashableDimensionKey& newKey);
+    bool hitGuardRail(const HashableDimensionKey& newKey, size_t dimensionHardLimit);
 
     FRIEND_TEST(MaxDurationTrackerTest, TestSimpleMaxDuration);
     FRIEND_TEST(MaxDurationTrackerTest, TestCrossBucketBoundary);
