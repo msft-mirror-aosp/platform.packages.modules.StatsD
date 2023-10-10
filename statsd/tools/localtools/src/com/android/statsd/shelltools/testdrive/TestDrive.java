@@ -30,6 +30,7 @@ import com.android.os.StatsLog;
 import com.android.os.StatsLog.ConfigMetricsReport;
 import com.android.os.StatsLog.ConfigMetricsReportList;
 import com.android.os.StatsLog.StatsLogReport;
+import com.android.os.telephony.qns.QnsExtensionAtoms;
 import com.android.statsd.shelltools.Utils;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -597,6 +598,21 @@ public class TestDrive {
                             PullAtomPackages.newBuilder()
                                     .setAtomId(Atom.LAUNCHER_LAYOUT_SNAPSHOT_FIELD_NUMBER)
                                     .addPackages("com.google.android.apps.nexuslauncher"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(QnsExtensionAtoms
+                                            .QNS_RAT_PREFERENCE_MISMATCH_INFO_FIELD_NUMBER)
+                                    .addPackages("com.android.telephony.qns"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(QnsExtensionAtoms
+                                            .QNS_HANDOVER_TIME_MILLIS_FIELD_NUMBER)
+                                    .addPackages("com.android.telephony.qns"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(QnsExtensionAtoms
+                                            .QNS_HANDOVER_PINGPONG_FIELD_NUMBER)
+                                    .addPackages("com.android.telephony.qns"))
                     .setHashStringsInMetricReport(false);
         }
     }

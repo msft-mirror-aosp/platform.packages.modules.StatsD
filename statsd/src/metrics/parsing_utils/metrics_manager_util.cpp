@@ -37,6 +37,7 @@
 #include "metrics/KllMetricProducer.h"
 #include "metrics/MetricProducer.h"
 #include "metrics/NumericValueMetricProducer.h"
+#include "metrics/RestrictedEventMetricProducer.h"
 #include "state/StateManager.h"
 #include "stats_util.h"
 
@@ -788,6 +789,11 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
+    if (config.has_restricted_metrics_delegate_package_name()) {
+        return {new RestrictedEventMetricProducer(
+                key, metric, conditionIndex, initialConditionCache, wizard, metricHash, timeBaseNs,
+                eventActivationMap, eventDeactivationMap)};
+    }
     return {new EventMetricProducer(key, metric, conditionIndex, initialConditionCache, wizard,
                                     metricHash, timeBaseNs, eventActivationMap,
                                     eventDeactivationMap)};
@@ -921,7 +927,9 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
     const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    pullTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     // get the condition_correction_threshold_nanos value
     const optional<int64_t> conditionCorrectionThresholdNs =
@@ -1078,7 +1086,9 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(atomTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    atomTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     sp<MetricProducer> metricProducer = new KllMetricProducer(
             key, metric, metricHash, {/*pullTagId=*/-1, pullerManager},
@@ -1218,7 +1228,9 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     }
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    pullTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     sp<MetricProducer> metricProducer = new GaugeMetricProducer(
             key, metric, conditionIndex, initialConditionCache, wizard, metricHash, trackerIndex,
@@ -1439,6 +1451,12 @@ optional<InvalidConfigReason> initMetrics(
                                 config.value_metric_size() + config.kll_metric_size();
     allMetricProducers.reserve(allMetricsCount);
     optional<InvalidConfigReason> invalidConfigReason;
+
+    if (config.has_restricted_metrics_delegate_package_name() &&
+        allMetricsCount != config.event_metric_size()) {
+        ALOGE("Restricted metrics only support event metric");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED);
+    }
 
     // Construct map from metric id to metric activation index. The map will be used to determine
     // the metric activation corresponding to a metric.

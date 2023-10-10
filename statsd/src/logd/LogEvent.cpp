@@ -23,7 +23,8 @@
 #include <android/binder_ibinder.h>
 #include <private/android_filesystem_config.h>
 
-#include "annotations.h"
+#include "flags/FlagProvider.h"
+#include "stats_annotations.h"
 #include "stats_log_util.h"
 #include "statslog_statsd.h"
 
@@ -53,7 +54,7 @@ uint8_t getNumAnnotations(uint8_t typeInfo) {
 }  // namespace
 
 LogEvent::LogEvent(int32_t uid, int32_t pid)
-    : mLogdTimestampNs(time(nullptr)), mLogUid(uid), mLogPid(pid) {
+    : mLogdTimestampNs(getWallClockNs()), mLogUid(uid), mLogPid(pid) {
 }
 
 LogEvent::LogEvent(const string& trainName, int64_t trainVersionCode, bool requiresStaging,
@@ -345,7 +346,7 @@ void LogEvent::parsePrimaryFieldFirstUidAnnotation(uint8_t annotationType,
 
 void LogEvent::parseExclusiveStateAnnotation(uint8_t annotationType,
                                              std::optional<uint8_t> numElements) {
-    // Allowed types: INT
+    // Allowed types: BOOL
     if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
         VLOG("Atom ID %d error while parseExclusiveStateAnnotation()", mTagId);
@@ -373,7 +374,7 @@ void LogEvent::parseTriggerStateResetAnnotation(uint8_t annotationType,
 
 void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
                                           std::optional<uint8_t> numElements) {
-    // Allowed types: INT
+    // Allowed types: BOOL
     if (mValues.empty() || annotationType != BOOL_TYPE || !checkPreviousValueType(INT) ||
         numElements) {
         VLOG("Atom ID %d error while parseStateNestedAnnotation()", mTagId);
@@ -383,6 +384,38 @@ void LogEvent::parseStateNestedAnnotation(uint8_t annotationType,
 
     bool nested = readNextValue<uint8_t>();
     mValues[mValues.size() - 1].mAnnotations.setNested(nested);
+}
+
+void LogEvent::parseRestrictionCategoryAnnotation(uint8_t annotationType) {
+    // Allowed types: INT, field value should be empty since this is atom-level annotation.
+    if (!mValues.empty() || annotationType != INT32_TYPE) {
+        mValid = false;
+        return;
+    }
+    int value = readNextValue<int32_t>();
+    // should be one of predefined category in StatsLog.java
+    switch (value) {
+        // Only diagnostic is currently supported for use.
+        case ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC:
+            break;
+        default:
+            mValid = false;
+            return;
+    }
+    mRestrictionCategory = static_cast<StatsdRestrictionCategory>(value);
+    return;
+}
+
+void LogEvent::parseFieldRestrictionAnnotation(uint8_t annotationType) {
+    // Allowed types: BOOL
+    if (mValues.empty() || annotationType != BOOL_TYPE) {
+        mValid = false;
+        return;
+    }
+    // Read the value so that the rest of the event is correctly parsed
+    // TODO: store the field annotations once the metrics need to parse them.
+    readNextValue<uint8_t>();
+    return;
 }
 
 // firstUidInChainIndex is a default parameter that is only needed when parsing
@@ -395,26 +428,49 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
         uint8_t annotationType = readNextValue<uint8_t>();
 
         switch (annotationId) {
-            case ANNOTATION_ID_IS_UID:
+            case ASTATSLOG_ANNOTATION_ID_IS_UID:
                 parseIsUidAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_TRUNCATE_TIMESTAMP:
+            case ASTATSLOG_ANNOTATION_ID_TRUNCATE_TIMESTAMP:
                 parseTruncateTimestampAnnotation(annotationType);
                 break;
-            case ANNOTATION_ID_PRIMARY_FIELD:
+            case ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD:
                 parsePrimaryFieldAnnotation(annotationType, numElements, firstUidInChainIndex);
                 break;
-            case ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID:
+            case ASTATSLOG_ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID:
                 parsePrimaryFieldFirstUidAnnotation(annotationType, firstUidInChainIndex);
                 break;
-            case ANNOTATION_ID_EXCLUSIVE_STATE:
+            case ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE:
                 parseExclusiveStateAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_TRIGGER_STATE_RESET:
+            case ASTATSLOG_ANNOTATION_ID_TRIGGER_STATE_RESET:
                 parseTriggerStateResetAnnotation(annotationType, numElements);
                 break;
-            case ANNOTATION_ID_STATE_NESTED:
+            case ASTATSLOG_ANNOTATION_ID_STATE_NESTED:
                 parseStateNestedAnnotation(annotationType, numElements);
+                break;
+            case ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY:
+                if (isAtLeastU()) {
+                    parseRestrictionCategoryAnnotation(annotationType);
+                } else {
+                    mValid = false;
+                }
+                break;
+            // Currently field restrictions are ignored, so we parse but do not store them.
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_PERIPHERAL_DEVICE_INFO:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_USAGE:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_APP_ACTIVITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_HEALTH_CONNECT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_ACCESSIBILITY:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_SYSTEM_SEARCH:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
+            case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
+                if (isAtLeastU()) {
+                    parseFieldRestrictionAnnotation(annotationType);
+                } else {
+                    mValid = false;
+                }
                 break;
             default:
                 VLOG("Atom ID %d error while parseAnnotations() - wrong annotationId(%d)", mTagId,

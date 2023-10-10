@@ -37,7 +37,8 @@ OringDurationTracker::OringDurationTracker(
     mLastStartTime = 0;
 }
 
-bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
+bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey,
+                                        size_t dimensionHardLimit) {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mConditionKeyMap.find(newKey) != mConditionKeyMap.end()) {
@@ -47,7 +48,7 @@ bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
         size_t newTupleCount = mConditionKeyMap.size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-        if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+        if (newTupleCount > dimensionHardLimit) {
             if (!mHasHitGuardrail) {
                 ALOGE("OringDurTracker %lld dropping data for dimension key %s",
                       (long long)mTrackerId, newKey.toString().c_str());
@@ -61,8 +62,9 @@ bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
 }
 
 void OringDurationTracker::noteStart(const HashableDimensionKey& key, bool condition,
-                                     const int64_t eventTime, const ConditionKey& conditionKey) {
-    if (hitGuardRail(key)) {
+                                     const int64_t eventTime, const ConditionKey& conditionKey,
+                                     size_t dimensionHardLimit) {
+    if (hitGuardRail(key, dimensionHardLimit)) {
         return;
     }
     if (condition) {

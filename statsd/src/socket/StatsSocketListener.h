@@ -76,10 +76,8 @@ private:
                                     const std::shared_ptr<LogEventFilter>& filter, int eventCount,
                                     int startAtomId);
 
-    FRIEND_TEST(SocketParseMessageTestNoFiltering, TestProcessMessageNoFiltering);
-    FRIEND_TEST(SocketParseMessageTestNoFiltering,
-                TestProcessMessageNoFilteringWithEmptySetExplicitSet);
-    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterEmptySet);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessage);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageEmptySetExplicitSet);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterCompleteSet);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterPartialSet);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterToggle);

@@ -216,10 +216,12 @@ TYPE_PRINTER(Atom,
 );
 
 EQ_MATCHER(ShellData,
-        REPEATED_PROPERTY_MATCHER(ShellData, atom, EqAtom)
+        REPEATED_PROPERTY_MATCHER(ShellData, atom, EqAtom),
+        REPEATED_PROPERTY_EQ(ShellData, elapsed_timestamp_nanos)
 );
 TYPE_PRINTER(ShellData,
         REPEATED_PROPERTY_PRINT(atom)
+        REPEATED_PROPERTY_PRINT(elapsed_timestamp_nanos)
 );
 
 // clang-format on

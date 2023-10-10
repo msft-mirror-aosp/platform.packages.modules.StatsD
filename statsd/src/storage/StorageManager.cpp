@@ -17,14 +17,18 @@
 #define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
-#include "android-base/stringprintf.h"
-#include "guardrail/StatsdStats.h"
 #include "storage/StorageManager.h"
-#include "stats_log_util.h"
 
 #include <android-base/file.h>
 #include <private/android_filesystem_config.h>
+#include <sys/stat.h>
+
 #include <fstream>
+
+#include "android-base/stringprintf.h"
+#include "guardrail/StatsdStats.h"
+#include "stats_log_util.h"
+#include "utils/DbUtils.h"
 
 namespace android {
 namespace os {
@@ -116,6 +120,16 @@ static void parseFileName(char* name, FileName* output) {
     output->mConfigId = result[2];
     // check if the file is a local history.
     output->mIsHistory = (substr != nullptr && strcmp("history", substr) == 0);
+}
+
+// Returns array of int64_t which contains a sqlite db's uid and configId
+static ConfigKey parseDbName(char* name) {
+    char* uid = strtok(name, "_");
+    char* configId = strtok(nullptr, ".");
+    if (uid == nullptr || configId == nullptr) {
+        return ConfigKey(-1, -1);
+    }
+    return ConfigKey(StrToInt64(uid), StrToInt64(configId));
 }
 
 void StorageManager::writeFile(const char* file, const void* buffer, int numBytes) {
@@ -805,6 +819,49 @@ void StorageManager::printDirStats(int outFd, const char* path) {
     }
     dprintf(outFd, "\tTotal number of files: %d, Total size of files: %d bytes.\n", fileCount,
             totalFileSize);
+}
+
+void StorageManager::enforceDbGuardrails(const char* path, const int64_t currWallClockSec,
+                                         const int64_t maxBytes) {
+    if (!isAtLeastU()) {
+        return;
+    }
+    unique_ptr<DIR, decltype(&closedir)> dir(opendir(path), closedir);
+    if (dir == NULL) {
+        VLOG("Path %s does not exist", path);
+        return;
+    }
+
+    dirent* de;
+    int64_t deleteThresholdSec = currWallClockSec - StatsdStats::kMaxAgeSecond;
+    while ((de = readdir(dir.get()))) {
+        char* name = de->d_name;
+        if (name[0] == '.' || de->d_type == DT_DIR) continue;
+        string fullPathName = StringPrintf("%s/%s", path, name);
+        struct stat fileInfo;
+        const ConfigKey key = parseDbName(name);
+        if (stat(fullPathName.c_str(), &fileInfo) != 0) {
+            // Remove file if stat fails.
+            remove(fullPathName.c_str());
+            continue;
+        }
+        StatsdStats::getInstance().noteRestrictedConfigDbSize(key, currWallClockSec,
+                                                              fileInfo.st_size);
+        if (fileInfo.st_mtime <= deleteThresholdSec || fileInfo.st_size >= maxBytes) {
+            remove(fullPathName.c_str());
+        }
+        if (hasFile(dbutils::getDbName(key).c_str())) {
+            dbutils::verifyIntegrityAndDeleteIfNecessary(key);
+        } else {
+            // Remove file if the file name fails to parse.
+            remove(fullPathName.c_str());
+        }
+    }
+}
+
+bool StorageManager::hasFile(const char* file) {
+    struct stat fileInfo;
+    return stat(file, &fileInfo) == 0;
 }
 
 }  // namespace statsd
