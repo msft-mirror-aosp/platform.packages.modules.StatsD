@@ -135,6 +135,8 @@ private:
     // Tracks if the dimension guardrail has been hit in the current report.
     bool mDimensionGuardrailHit;
 
+    const size_t mDimensionHardLimit;
+
     FRIEND_TEST(CountMetricProducerTest, TestNonDimensionalEvents);
     FRIEND_TEST(CountMetricProducerTest, TestEventsWithNonSlicedCondition);
     FRIEND_TEST(CountMetricProducerTest, TestEventsWithSlicedCondition);
@@ -145,6 +147,10 @@ private:
 
     FRIEND_TEST(CountMetricProducerTest_PartialBucket, TestSplitInCurrentBucket);
     FRIEND_TEST(CountMetricProducerTest_PartialBucket, TestSplitInNextBucket);
+
+    FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
 };
 
 }  // namespace statsd

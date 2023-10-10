@@ -37,7 +37,8 @@ OringDurationTracker::OringDurationTracker(
     mLastStartTime = 0;
 }
 
-bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
+bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey,
+                                        size_t dimensionHardLimit) {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mConditionKeyMap.find(newKey) != mConditionKeyMap.end()) {
@@ -47,7 +48,7 @@ bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
         size_t newTupleCount = mConditionKeyMap.size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-        if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+        if (newTupleCount > dimensionHardLimit) {
             if (!mHasHitGuardrail) {
                 ALOGE("OringDurTracker %lld dropping data for dimension key %s",
                       (long long)mTrackerId, newKey.toString().c_str());
@@ -61,8 +62,9 @@ bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
 }
 
 void OringDurationTracker::noteStart(const HashableDimensionKey& key, bool condition,
-                                     const int64_t eventTime, const ConditionKey& conditionKey) {
-    if (hitGuardRail(key)) {
+                                     const int64_t eventTime, const ConditionKey& conditionKey,
+                                     size_t dimensionHardLimit) {
+    if (hitGuardRail(key, dimensionHardLimit)) {
         return;
     }
     if (condition) {
@@ -169,6 +171,7 @@ bool OringDurationTracker::flushCurrentBucket(
     // store durations for each stateKey, so we need to flush the bucket by creating a
     // DurationBucket for each stateKey.
     for (auto& durationIt : mStateKeyDurationMap) {
+        durationIt.second.mDurationFullBucket += durationIt.second.mDuration;
         if (durationPassesThreshold(uploadThreshold, durationIt.second.mDuration)) {
             DurationBucket current_info;
             current_info.mBucketStartNs = mCurrentBucketStartTimeNs;
@@ -177,11 +180,10 @@ bool OringDurationTracker::flushCurrentBucket(
             current_info.mConditionTrueNs = globalConditionTrueNs;
             (*output)[MetricDimensionKey(mEventKey.getDimensionKeyInWhat(), durationIt.first)]
                     .push_back(current_info);
-
-            durationIt.second.mDurationFullBucket += durationIt.second.mDuration;
             VLOG("  duration: %lld", (long long)current_info.mDuration);
         } else {
-            VLOG("  duration: %lld does not pass set threshold", (long long)mDuration);
+            VLOG("  duration: %lld does not pass set threshold",
+                 (long long)durationIt.second.mDuration);
         }
 
         if (isFullBucket) {
@@ -189,9 +191,12 @@ bool OringDurationTracker::flushCurrentBucket(
             addPastBucketToAnomalyTrackers(
                     MetricDimensionKey(mEventKey.getDimensionKeyInWhat(), durationIt.first),
                     getCurrentStateKeyFullBucketDuration(), mCurrentBucketNum);
-            durationIt.second.mDurationFullBucket = 0;
         }
         durationIt.second.mDuration = 0;
+    }
+    // Full bucket is only needed when we have anomaly trackers.
+    if (isFullBucket || mAnomalyTrackers.empty()) {
+        mStateKeyDurationMap.clear();
     }
 
     if (mStarted.size() > 0) {
@@ -359,9 +364,14 @@ void OringDurationTracker::onStateChanged(const int64_t timestamp, const int32_t
     updateCurrentStateKey(atomId, newState);
 }
 
-bool OringDurationTracker::hasAccumulatingDuration() {
+bool OringDurationTracker::hasAccumulatedDuration() const {
+    return !mStarted.empty() || !mPaused.empty() || !mStateKeyDurationMap.empty();
+}
+
+bool OringDurationTracker::hasStartedDuration() const {
     return !mStarted.empty();
 }
+
 int64_t OringDurationTracker::predictAnomalyTimestampNs(const AnomalyTracker& anomalyTracker,
                                                         const int64_t eventTimestampNs) const {
     // The anomaly threshold.
