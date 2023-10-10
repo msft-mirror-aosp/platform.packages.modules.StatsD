@@ -36,7 +36,7 @@ public:
     OringDurationTracker(const OringDurationTracker& tracker) = default;
 
     void noteStart(const HashableDimensionKey& key, bool condition, const int64_t eventTime,
-                   const ConditionKey& conditionKey) override;
+                   const ConditionKey& conditionKey, size_t dimensionHardLimit) override;
     void noteStop(const HashableDimensionKey& key, const int64_t eventTime,
                   const bool stopAll) override;
     void noteStopAll(const int64_t eventTime) override;
@@ -65,9 +65,11 @@ public:
 
     void updateCurrentStateKey(const int32_t atomId, const FieldValue& newState);
 
+    bool hasAccumulatedDuration() const override;
+
 protected:
     // Returns true if at least one of the mInfos is started.
-    bool hasAccumulatingDuration() override;
+    bool hasStartedDuration() const override;
 
 private:
     // We don't need to keep track of individual durations. The information that's needed is:
@@ -81,7 +83,7 @@ private:
     std::unordered_map<HashableDimensionKey, ConditionKey> mConditionKeyMap;
 
     // return true if we should not allow newKey to be tracked because we are above the threshold
-    bool hitGuardRail(const HashableDimensionKey& newKey);
+    bool hitGuardRail(const HashableDimensionKey& newKey, size_t dimensionHardLimit);
 
     FRIEND_TEST(OringDurationTrackerTest, TestDurationOverlap);
     FRIEND_TEST(OringDurationTrackerTest, TestCrossBucketBoundary);
@@ -90,6 +92,8 @@ private:
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionExpiredAlarm);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionFiredAlarm);
     FRIEND_TEST(OringDurationTrackerTest, TestUploadThreshold);
+    FRIEND_TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenBucketFull);
+    FRIEND_TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenNoTrackers);
 };
 
 }  // namespace statsd

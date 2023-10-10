@@ -66,15 +66,16 @@ void generateAtomLogging(const std::shared_ptr<LogEventQueue>& queue,
     }
 }
 
-class SocketParseMessageTestNoFiltering : public testing::TestWithParam<bool> {
+class SocketParseMessageTest : public testing::TestWithParam<bool> {
 protected:
     std::shared_ptr<LogEventQueue> mEventQueue;
     std::shared_ptr<LogEventFilter> mLogEventFilter;
 
 public:
-    SocketParseMessageTestNoFiltering()
+    SocketParseMessageTest()
         : mEventQueue(std::make_shared<LogEventQueue>(kEventCount /*buffer limit*/)),
-          mLogEventFilter(GetParam() ? std::make_shared<LogEventFilter>() : nullptr) {
+          mLogEventFilter(std::make_shared<LogEventFilter>()) {
+        mLogEventFilter->setFilteringEnabled(GetParam());
     }
 
     static std::string ToString(testing::TestParamInfo<bool> info) {
@@ -82,14 +83,10 @@ public:
     }
 };
 
-INSTANTIATE_TEST_SUITE_P(SocketParseMessageTestNoFiltering, SocketParseMessageTestNoFiltering,
-                         testing::Bool(), SocketParseMessageTestNoFiltering::ToString);
+INSTANTIATE_TEST_SUITE_P(SocketParseMessageTest, SocketParseMessageTest, testing::Bool(),
+                         SocketParseMessageTest::ToString);
 
-TEST_P(SocketParseMessageTestNoFiltering, TestProcessMessageNoFiltering) {
-    if (GetParam()) {
-        mLogEventFilter->setFilteringEnabled(false);
-    }
-
+TEST_P(SocketParseMessageTest, TestProcessMessage) {
     generateAtomLogging(mEventQueue, mLogEventFilter, kEventCount, kAtomId);
 
     // check content of the queue
@@ -98,63 +95,22 @@ TEST_P(SocketParseMessageTestNoFiltering, TestProcessMessageNoFiltering) {
         auto logEvent = mEventQueue->waitPop();
         EXPECT_TRUE(logEvent->isValid());
         EXPECT_EQ(kAtomId + i, logEvent->GetTagId());
-        EXPECT_FALSE(logEvent->isParsedHeaderOnly());
+        EXPECT_EQ(logEvent->isParsedHeaderOnly(), GetParam());
     }
 }
 
-TEST_P(SocketParseMessageTestNoFiltering, TestProcessMessageNoFilteringWithEmptySetExplicitSet) {
-    if (GetParam()) {
-        mLogEventFilter->setFilteringEnabled(false);
-        LogEventFilter::AtomIdSet idsList;
-        mLogEventFilter->setAtomIds(idsList, nullptr);
-    }
-
-    generateAtomLogging(mEventQueue, mLogEventFilter, kEventCount, kAtomId);
-
-    // check content of the queue
-    EXPECT_EQ(kEventCount, mEventQueue->mQueue.size());
-    for (int i = 0; i < kEventCount; i++) {
-        auto logEvent = mEventQueue->waitPop();
-        EXPECT_TRUE(logEvent->isValid());
-        EXPECT_EQ(kAtomId + i, logEvent->GetTagId());
-        EXPECT_FALSE(logEvent->isParsedHeaderOnly());
-    }
-}
-
-TEST(SocketParseMessageTest, TestProcessMessageFilterEmptySet) {
-    std::shared_ptr<LogEventQueue> eventQueue =
-            std::make_shared<LogEventQueue>(kEventCount /*buffer limit*/);
-
-    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
-
-    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId);
-
-    // check content of the queue
-    for (int i = 0; i < kEventCount; i++) {
-        auto logEvent = eventQueue->waitPop();
-        EXPECT_TRUE(logEvent->isValid());
-        EXPECT_EQ(kAtomId + i, logEvent->GetTagId());
-        EXPECT_TRUE(logEvent->isParsedHeaderOnly());
-    }
-}
-
-TEST(SocketParseMessageTest, TestProcessMessageFilterEmptySetExplicitSet) {
-    std::shared_ptr<LogEventQueue> eventQueue =
-            std::make_shared<LogEventQueue>(kEventCount /*buffer limit*/);
-
-    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
-
+TEST_P(SocketParseMessageTest, TestProcessMessageEmptySetExplicitSet) {
     LogEventFilter::AtomIdSet idsList;
-    logEventFilter->setAtomIds(idsList, nullptr);
-
-    generateAtomLogging(eventQueue, logEventFilter, kEventCount, kAtomId);
+    mLogEventFilter->setAtomIds(idsList, nullptr);
+    generateAtomLogging(mEventQueue, mLogEventFilter, kEventCount, kAtomId);
 
     // check content of the queue
+    EXPECT_EQ(kEventCount, mEventQueue->mQueue.size());
     for (int i = 0; i < kEventCount; i++) {
-        auto logEvent = eventQueue->waitPop();
+        auto logEvent = mEventQueue->waitPop();
         EXPECT_TRUE(logEvent->isValid());
         EXPECT_EQ(kAtomId + i, logEvent->GetTagId());
-        EXPECT_TRUE(logEvent->isParsedHeaderOnly());
+        EXPECT_EQ(logEvent->isParsedHeaderOnly(), GetParam());
     }
 }
 

@@ -37,7 +37,7 @@ public:
     MaxDurationTracker(const MaxDurationTracker& tracker) = default;
 
     void noteStart(const HashableDimensionKey& key, bool condition, const int64_t eventTime,
-                   const ConditionKey& conditionKey) override;
+                   const ConditionKey& conditionKey, size_t dimensionHardLimit) override;
     void noteStop(const HashableDimensionKey& key, const int64_t eventTime,
                   const bool stopAll) override;
     void noteStopAll(const int64_t eventTime) override;
@@ -66,18 +66,22 @@ public:
 
     void updateCurrentStateKey(const int32_t atomId, const FieldValue& newState);
 
+    bool hasAccumulatedDuration() const override;
+
 protected:
     // Returns true if at least one of the mInfos is started.
-    bool hasAccumulatingDuration() override;
+    bool hasStartedDuration() const override;
 
 private:
     std::unordered_map<HashableDimensionKey, DurationInfo> mInfos;
+
+    int64_t mDuration;  // current recorded duration result (for partial bucket)
 
     void noteConditionChanged(const HashableDimensionKey& key, bool conditionMet,
                               const int64_t timestamp);
 
     // return true if we should not allow newKey to be tracked because we are above the threshold
-    bool hitGuardRail(const HashableDimensionKey& newKey);
+    bool hitGuardRail(const HashableDimensionKey& newKey, size_t dimensionHardLimit);
 
     FRIEND_TEST(MaxDurationTrackerTest, TestSimpleMaxDuration);
     FRIEND_TEST(MaxDurationTrackerTest, TestCrossBucketBoundary);
@@ -86,6 +90,7 @@ private:
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyDetection);
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp);
     FRIEND_TEST(MaxDurationTrackerTest, TestUploadThreshold);
+    FRIEND_TEST(MaxDurationTrackerTest, TestNoAccumulatingDuration);
 };
 
 }  // namespace statsd

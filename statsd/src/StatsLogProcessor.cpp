@@ -20,7 +20,6 @@
 #include "StatsLogProcessor.h"
 
 #include <android-base/file.h>
-#include <android-modules-utils/sdk_level.h>
 #include <cutils/multiuser.h>
 #include <src/active_config_list.pb.h>
 #include <src/experiment_ids.pb.h>
@@ -40,7 +39,6 @@
 
 using namespace android;
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
 using android::util::FIELD_TYPE_FLOAT;
@@ -555,7 +553,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
     VLOG("Updated configuration for key %s", key.ToString().c_str());
     const auto& it = mMetricsManagers.find(key);
     bool configValid = false;
-    if (IsAtLeastU() && it != mMetricsManagers.end()) {
+    if (isAtLeastU() && it != mMetricsManagers.end()) {
         if (it->second->hasRestrictedMetricsDelegate() !=
             config.has_restricted_metrics_delegate_package_name()) {
             // Not a modular update if has_restricted_metrics_delegate changes
@@ -618,7 +616,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         // Remove any existing config with the same key.
         ALOGE("StatsdConfig NOT valid");
         // Send an empty restricted metrics broadcast if the previous config was restricted.
-        if (IsAtLeastU() && it != mMetricsManagers.end() &&
+        if (isAtLeastU() && it != mMetricsManagers.end() &&
             it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
             StatsdStats::getInstance().noteDbConfigInvalid(key);
@@ -852,7 +850,7 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     if (it != mMetricsManagers.end()) {
         WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
                               NO_TIME_CONSTRAINTS);
-        if (IsAtLeastU() && it->second->hasRestrictedMetricsDelegate()) {
+        if (isAtLeastU() && it->second->hasRestrictedMetricsDelegate()) {
             StatsdStats::getInstance().noteDbDeletionConfigRemoved(key);
             dbutils::deleteDb(key);
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
@@ -888,7 +886,7 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
 // TODO(b/267501143): Add unit tests when metric producer is ready
 void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClockNs,
                                                          const int64_t elapsedRealtimeNs) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         return;
     }
     if (elapsedRealtimeNs - mLastTtlTime < StatsdStats::kMinTtlCheckPeriodNs) {
@@ -898,7 +896,7 @@ void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClock
 }
 
 void StatsLogProcessor::flushRestrictedDataIfNecessaryLocked(const int64_t elapsedRealtimeNs) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         return;
     }
     if (elapsedRealtimeNs - mLastFlushRestrictedTime < StatsdStats::kMinFlushRestrictedPeriodNs) {
@@ -915,7 +913,7 @@ void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlCli
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     string err = "";
 
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("Restricted metrics query invoked on U- device");
         StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
                 configId, configPackage, std::nullopt, callingUid,
@@ -1041,7 +1039,7 @@ set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
 
 void StatsLogProcessor::EnforceDataTtls(const int64_t wallClockNs,
                                         const int64_t elapsedRealtimeNs) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         return;
     }
     std::lock_guard<std::mutex> lock(mMetricsMutex);
@@ -1485,18 +1483,14 @@ LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
     // populate hard-coded list of useful atoms
     // we add also atoms which could be pushed by statsd itself to simplify the logic
     // to handle metric configs update: APP_BREADCRUMB_REPORTED & ANOMALY_DETECTED
-    LogEventFilter::AtomIdSet allAtomIds{
-            util::BINARY_PUSH_STATE_CHANGED,  util::DAVEY_OCCURRED,
-            util::ISOLATED_UID_CHANGED,       util::APP_BREADCRUMB_REPORTED,
-            util::WATCHDOG_ROLLBACK_OCCURRED, util::ANOMALY_DETECTED};
+    LogEventFilter::AtomIdSet allAtomIds{util::BINARY_PUSH_STATE_CHANGED, util::ANOMALY_DETECTED,
+                                         util::ISOLATED_UID_CHANGED, util::APP_BREADCRUMB_REPORTED,
+                                         util::WATCHDOG_ROLLBACK_OCCURRED};
     return allAtomIds;
 }
 
 void StatsLogProcessor::updateLogEventFilterLocked() const {
     VLOG("StatsLogProcessor: Updating allAtomIds");
-    if (!mLogEventFilter) {
-        return;
-    }
     LogEventFilter::AtomIdSet allAtomIds = getDefaultAtomIdSet();
     for (const auto& metricsManager : mMetricsManagers) {
         metricsManager.second->addAllAtomIds(allAtomIds);
