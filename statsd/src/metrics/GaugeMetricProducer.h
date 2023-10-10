@@ -242,6 +242,10 @@ private:
     FRIEND_TEST(GaugeMetricProducerTest_PartialBucket, TestPulled);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateGaugeMetrics);
+
+    FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
 };
 
 }  // namespace statsd
