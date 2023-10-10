@@ -34,9 +34,11 @@ MaxDurationTracker::MaxDurationTracker(const ConfigKey& key, const int64_t& id,
     : DurationTracker(key, id, eventKey, wizard, conditionIndex, nesting, currentBucketStartNs,
                       currentBucketNum, startTimeNs, bucketSizeNs, conditionSliced, fullLink,
                       anomalyTrackers) {
+    mDuration = 0;
 }
 
-bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
+bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey,
+                                      size_t dimensionHardLimit) {
     // ===========GuardRail==============
     if (mInfos.find(newKey) != mInfos.end()) {
         // if the key existed, we are good!
@@ -47,12 +49,13 @@ bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
         size_t newTupleCount = mInfos.size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-        if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+        if (newTupleCount > dimensionHardLimit) {
             if (!mHasHitGuardrail) {
                 ALOGE("MaxDurTracker %lld dropping data for dimension key %s",
                       (long long)mTrackerId, newKey.toString().c_str());
                 mHasHitGuardrail = true;
             }
+            StatsdStats::getInstance().noteHardDimensionLimitReached(mTrackerId);
             return true;
         }
     }
@@ -60,9 +63,10 @@ bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey) {
 }
 
 void MaxDurationTracker::noteStart(const HashableDimensionKey& key, bool condition,
-                                   const int64_t eventTime, const ConditionKey& conditionKey) {
+                                   const int64_t eventTime, const ConditionKey& conditionKey,
+                                   size_t dimensionHardLimit) {
     // this will construct a new DurationInfo if this key didn't exist.
-    if (hitGuardRail(key)) {
+    if (hitGuardRail(key, dimensionHardLimit)) {
         return;
     }
 
@@ -116,7 +120,7 @@ void MaxDurationTracker::noteStop(const HashableDimensionKey& key, const int64_t
                      (long long)duration.lastStartTime, (long long)eventTime,
                      (long long)durationTime);
                 duration.lastDuration += durationTime;
-                if (hasAccumulatingDuration()) {
+                if (hasStartedDuration()) {
                     // In case any other dimensions are still started, we need to keep the alarm
                     // set.
                     startAnomalyAlarm(eventTime);
@@ -145,13 +149,19 @@ void MaxDurationTracker::noteStop(const HashableDimensionKey& key, const int64_t
     }
 }
 
-bool MaxDurationTracker::hasAccumulatingDuration() {
+bool MaxDurationTracker::hasStartedDuration() const {
     for (auto& pair : mInfos) {
         if (pair.second.state == kStarted) {
             return true;
         }
     }
     return false;
+}
+
+bool MaxDurationTracker::hasAccumulatedDuration() const {
+    // When DurationState is changed to kStopped, we remove its entry from mInfos. Thus, mInfos
+    // will be empty when all entries are stopped.
+    return !mInfos.empty() || mDuration != 0;
 }
 
 void MaxDurationTracker::noteStopAll(const int64_t eventTime) {
@@ -273,7 +283,7 @@ void MaxDurationTracker::noteConditionChanged(const HashableDimensionKey& key, b
                 stopAnomalyAlarm(timestamp);
                 it->second.state = DurationState::kPaused;
                 it->second.lastDuration += (timestamp - it->second.lastStartTime);
-                if (hasAccumulatingDuration()) {
+                if (hasStartedDuration()) {
                     // In case any other dimensions are still started, we need to set the alarm.
                     startAnomalyAlarm(timestamp);
                 }

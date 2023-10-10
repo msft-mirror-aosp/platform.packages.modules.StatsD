@@ -15,7 +15,6 @@
 #include "StatsLogProcessor.h"
 
 #include <android-base/stringprintf.h>
-#include <android-modules-utils/sdk_level.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
@@ -43,7 +42,6 @@ namespace os {
 namespace statsd {
 
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 
 using ::testing::Expectation;
@@ -91,7 +89,8 @@ TEST(StatsLogProcessorTest, TestRateLimitByteSize) {
             m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
@@ -117,15 +116,16 @@ TEST(StatsLogProcessorTest, TestRateLimitBroadcast) {
                 return true;
             },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
     ConfigKey key(100, 12345);
     EXPECT_CALL(mockMetricsManager, byteSize())
             .Times(1)
-            .WillRepeatedly(::testing::Return(int(
-                    StatsdStats::kMaxMetricsBytesPerConfig * .95)));
+            .WillRepeatedly(
+                    ::testing::Return(int(StatsdStats::kDefaultMaxMetricsBytesPerConfig * .95)));
 
     // Expect only one broadcast despite always returning a size that should trigger broadcast.
     p.flushIfNecessaryLocked(key, mockMetricsManager);
@@ -151,14 +151,16 @@ TEST(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
                 return true;
             },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
     ConfigKey key(100, 12345);
     EXPECT_CALL(mockMetricsManager, byteSize())
             .Times(1)
-            .WillRepeatedly(::testing::Return(int(StatsdStats::kMaxMetricsBytesPerConfig * 1.2)));
+            .WillRepeatedly(
+                    ::testing::Return(int(StatsdStats::kDefaultMaxMetricsBytesPerConfig * 1.2)));
 
     EXPECT_CALL(mockMetricsManager, dropData(_)).Times(1);
 
@@ -1682,8 +1684,8 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
 
     // Send the config.
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr, nullptr);
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     string serialized = config1.SerializeAsString();
     service->addConfigurationChecked(uid, configId, {serialized.begin(), serialized.end()});
 
@@ -2151,16 +2153,36 @@ TEST(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimesta
     EXPECT_EQ(output.reports(0).last_report_elapsed_nanos(), dumpTime1Ns);
 }
 
+TEST(StatsLogProcessorTest, TestDataCorruptedEnum) {
+    ConfigKey cfgKey;
+    StatsdConfig config = MakeConfig(true);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(1, 1, config, cfgKey);
+
+    StatsdStats::getInstance().noteEventQueueOverflow(/*oldestEventTimestampNs=*/0, /*atomId=*/100,
+                                                      /*isSkipped=*/false);
+    StatsdStats::getInstance().noteLogLost(/*wallClockTimeSec=*/0, /*count=*/1, /*lastError=*/0,
+                                           /*lastTag=*/0, /*uid=*/0, /*pid=*/0);
+    vector<uint8_t> bytes;
+    ConfigMetricsReportList output;
+    processor->onDumpReport(cfgKey, 3, true, true, ADB_DUMP, FAST, &bytes);
+
+    output.ParseFromArray(bytes.data(), bytes.size());
+    ASSERT_EQ(output.reports_size(), 1);
+    ASSERT_EQ(output.reports(0).data_corrupted_reason().size(), 2);
+    EXPECT_EQ(output.reports(0).data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    EXPECT_EQ(output.reports(0).data_corrupted_reason(1), DATA_CORRUPTED_SOCKET_LOSS);
+}
+
 class StatsLogProcessorTestRestricted : public Test {
 protected:
     const ConfigKey mConfigKey = ConfigKey(1, 12345);
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
     }
     void TearDown() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         FlagProvider::getInstance().resetOverrides();

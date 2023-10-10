@@ -148,7 +148,7 @@ protected:
 
     virtual shared_ptr<StatsService> createStatsService() {
         return SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
-                                                 /* LogEventFilter */ nullptr);
+                                                 std::make_shared<LogEventFilter>());
     }
 
     bool sendConfig(const StatsdConfig& config);
@@ -563,7 +563,7 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(
         const int64_t timeBaseNs, const int64_t currentTimeNs, const StatsdConfig& config,
         const ConfigKey& key, const shared_ptr<IPullAtomCallback>& puller = nullptr,
         const int32_t atomTag = 0 /*for puller only*/, const sp<UidMap> = new UidMap(),
-        const shared_ptr<LogEventFilter>& logEventFilter = nullptr);
+        const shared_ptr<LogEventFilter>& logEventFilter = std::make_shared<LogEventFilter>());
 
 LogEventFilter::AtomIdSet CreateAtomIdSetDefault();
 LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config);
@@ -808,6 +808,10 @@ std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
     return result;
 }
 
+StatsdStatsReport getStatsdStatsReport(bool resetStats = false);
+
+StatsdStatsReport getStatsdStatsReport(StatsdStats& stats, bool resetStats = false);
+
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int atom_id);
 
 template <typename P>
@@ -817,6 +821,11 @@ std::vector<uint8_t> protoToBytes(const P& proto) {
     proto.SerializeToArray(bytes.data(), byteSize);
     return bytes;
 }
+
+StatsdConfig buildGoodConfig(int configId);
+
+StatsdConfig buildGoodConfig(int configId, int alertId);
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

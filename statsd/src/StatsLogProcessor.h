@@ -149,12 +149,9 @@ public:
     inline void setPrintLogs(bool enabled) {
         std::lock_guard<std::mutex> lock(mMetricsMutex);
         mPrintAllLogs = enabled;
-
-        if (mLogEventFilter) {
-            // Turning on print logs turns off pushed event filtering to enforce
-            // complete log event buffer parsing
-            mLogEventFilter->setFilteringEnabled(!enabled);
-        }
+        // Turning on print logs turns off pushed event filtering to enforce
+        // complete log event buffer parsing
+        mLogEventFilter->setFilteringEnabled(!enabled);
     }
 
     // Add a specific config key to the possible configs to dump ASAP.
@@ -201,6 +198,9 @@ private:
 
     // Tracks when we last checked the bytes consumed for each config key.
     std::unordered_map<ConfigKey, int64_t> mLastByteSizeTimes;
+
+    // Tracks the number of times a config with a specified config key has been dumped.
+    std::unordered_map<ConfigKey, int32_t> mDumpReportNumbers;
 
     // Tracks when we last checked the ttl for restricted metrics.
     int64_t mLastTtlTime;
@@ -327,6 +327,8 @@ private:
 
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
+
+    void writeDataCorruptedReasons(ProtoOutputStream& proto);
 
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.

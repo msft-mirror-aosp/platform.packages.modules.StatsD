@@ -22,6 +22,7 @@
 #include <inttypes.h>
 #include <utils/Timers.h>
 
+#include "guardrail/StatsdStats.h"
 #include "stats_log_util.h"
 
 using aidl::android::os::IStatsSubscriptionCallback;
@@ -96,6 +97,7 @@ void ShellSubscriber::pullAndSendHeartbeats() {
     VLOG("ShellSubscriber: helper thread starting");
     std::unique_lock<std::mutex> lock(mMutex);
     while (true) {
+        StatsdStats::getInstance().noteSubscriptionPullThreadWakeup();
         int64_t sleepTimeMs = 24 * 60 * 60 * 1000;  // 24 hours.
         const int64_t nowNanos = getElapsedRealtimeNs();
         const int64_t nowMillis = nanoseconds_to_milliseconds(nowNanos);
@@ -108,6 +110,7 @@ void ShellSubscriber::pullAndSendHeartbeats() {
                 ++clientIt;
             } else {
                 VLOG("ShellSubscriber: removing client!");
+                (*clientIt)->onUnsubscribe();
                 clientIt = mClientSet.erase(clientIt);
                 updateLogEventFilterLocked();
             }
@@ -138,6 +141,8 @@ void ShellSubscriber::onLogEvent(const LogEvent& event) {
             ++clientIt;
         } else {
             VLOG("ShellSubscriber: removing client!");
+
+            (*clientIt)->onUnsubscribe();
             clientIt = mClientSet.erase(clientIt);
             updateLogEventFilterLocked();
         }
@@ -155,6 +160,8 @@ void ShellSubscriber::flushSubscription(const shared_ptr<IStatsSubscriptionCallb
                 (*clientIt)->flush();
             } else {
                 VLOG("ShellSubscriber: removing client!");
+
+                (*clientIt)->onUnsubscribe();
 
                 // Erasing a value moves the iterator to the next value. The update expression also
                 // moves the iterator, skipping a value. This is fine because we do an early return
@@ -174,10 +181,9 @@ void ShellSubscriber::unsubscribe(const shared_ptr<IStatsSubscriptionCallback>& 
     // IStatsSubscriptionCallback to avoid this linear search.
     for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end(); ++clientIt) {
         if ((*clientIt)->hasCallback(callback)) {
-            if ((*clientIt)->isAlive()) {
-                (*clientIt)->onUnsubscribe();
-            }
             VLOG("ShellSubscriber: removing client!");
+
+            (*clientIt)->onUnsubscribe();
 
             // Erasing a value moves the iterator to the next value. The update expression also
             // moves the iterator, skipping a value. This is fine because we do an early return
@@ -191,9 +197,6 @@ void ShellSubscriber::unsubscribe(const shared_ptr<IStatsSubscriptionCallback>& 
 
 void ShellSubscriber::updateLogEventFilterLocked() const {
     VLOG("ShellSubscriber: Updating allAtomIds");
-    if (!mLogEventFilter) {
-        return;
-    }
     LogEventFilter::AtomIdSet allAtomIds;
     for (const auto& client : mClientSet) {
         client->addAllAtomIds(allAtomIds);

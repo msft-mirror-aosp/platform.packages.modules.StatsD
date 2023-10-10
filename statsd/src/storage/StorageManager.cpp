@@ -20,7 +20,6 @@
 #include "storage/StorageManager.h"
 
 #include <android-base/file.h>
-#include <android-modules-utils/sdk_level.h>
 #include <private/android_filesystem_config.h>
 #include <sys/stat.h>
 
@@ -35,7 +34,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
 using std::map;
@@ -825,7 +823,7 @@ void StorageManager::printDirStats(int outFd, const char* path) {
 
 void StorageManager::enforceDbGuardrails(const char* path, const int64_t currWallClockSec,
                                          const int64_t maxBytes) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         return;
     }
     unique_ptr<DIR, decltype(&closedir)> dir(opendir(path), closedir);
@@ -843,13 +841,19 @@ void StorageManager::enforceDbGuardrails(const char* path, const int64_t currWal
         struct stat fileInfo;
         const ConfigKey key = parseDbName(name);
         if (stat(fullPathName.c_str(), &fileInfo) != 0) {
+            StatsdStats::getInstance().noteDbStatFailed(key);
             // Remove file if stat fails.
             remove(fullPathName.c_str());
             continue;
         }
         StatsdStats::getInstance().noteRestrictedConfigDbSize(key, currWallClockSec,
                                                               fileInfo.st_size);
-        if (fileInfo.st_mtime <= deleteThresholdSec || fileInfo.st_size >= maxBytes) {
+        if (fileInfo.st_mtime <= deleteThresholdSec) {
+            StatsdStats::getInstance().noteDbTooOld(key);
+            remove(fullPathName.c_str());
+        }
+        if (fileInfo.st_size >= maxBytes) {
+            StatsdStats::getInstance().noteDbSizeExceeded(key);
             remove(fullPathName.c_str());
         }
         if (hasFile(dbutils::getDbName(key).c_str())) {

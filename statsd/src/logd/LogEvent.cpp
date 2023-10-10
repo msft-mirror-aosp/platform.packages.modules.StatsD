@@ -20,7 +20,6 @@
 #include "logd/LogEvent.h"
 
 #include <android-base/stringprintf.h>
-#include <android-modules-utils/sdk_level.h>
 #include <android/binder_ibinder.h>
 #include <private/android_filesystem_config.h>
 
@@ -38,7 +37,6 @@ const int FIELD_ID_EXPERIMENT_ID = 1;
 
 using namespace android::util;
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 using std::string;
 using std::vector;
@@ -452,7 +450,7 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
                 parseStateNestedAnnotation(annotationType, numElements);
                 break;
             case ASTATSLOG_ANNOTATION_ID_RESTRICTION_CATEGORY:
-                if (IsAtLeastU()) {
+                if (isAtLeastU()) {
                     parseRestrictionCategoryAnnotation(annotationType);
                 } else {
                     mValid = false;
@@ -468,7 +466,7 @@ void LogEvent::parseAnnotations(uint8_t numAnnotations, std::optional<uint8_t> n
             case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_USER_ENGAGEMENT:
             case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_AMBIENT_SENSING:
             case ASTATSLOG_ANNOTATION_ID_FIELD_RESTRICTION_DEMOGRAPHIC_CLASSIFICATION:
-                if (IsAtLeastU()) {
+                if (isAtLeastU()) {
                     parseFieldRestrictionAnnotation(annotationType);
                 } else {
                     mValid = false;
@@ -542,6 +540,11 @@ bool LogEvent::parseBody(const BodyBufferInfo& bodyInfo) {
 
     int32_t pos[] = {1, 1, 1};
     bool last[] = {false, false, false};
+
+    // While this number is not guaranteed to be correct due to repeated fields and
+    // attribution chains, it still positively affects performance and reduces the number
+    // of vector buffer reallocations.
+    mValues.reserve(bodyInfo.numElements);
 
     for (pos[0] = 1; pos[0] <= bodyInfo.numElements && mValid; pos[0]++) {
         last[0] = (pos[0] == bodyInfo.numElements);

@@ -200,7 +200,8 @@ public:
         translateFieldMatcher(metric.value_field(), &fieldMatchers);
 
         const auto [dimensionSoftLimit, dimensionHardLimit] =
-                StatsdStats::getAtomDimensionKeySizeLimits(tagId);
+                StatsdStats::getAtomDimensionKeySizeLimits(
+                        tagId, StatsdStats::kDimensionKeySizeHardLimitMin);
 
         int conditionIndex = conditionAfterFirstBucketPrepared ? 0 : -1;
         vector<ConditionState> initialConditionCache;
@@ -2274,10 +2275,12 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenGuardRailHi
             NumericValueMetricProducerTestHelper::createValueProducerWithCondition(
                     pullerManager, metric, ConditionState::kFalse);
 
+    ASSERT_EQ(false, StatsdStats::getInstance().hasHitDimensionGuardrail(metricId));
     valueProducer->onConditionChanged(true, bucketStartTimeNs + 2);
     EXPECT_EQ(true, valueProducer->mCurrentBucketIsSkipped);
     ASSERT_EQ(0UL, valueProducer->mCurrentSlicedBucket.size());
     ASSERT_EQ(0UL, valueProducer->mSkippedBuckets.size());
+    ASSERT_EQ(true, StatsdStats::getInstance().hasHitDimensionGuardrail(metricId));
 
     // Bucket 2 start.
     vector<shared_ptr<LogEvent>> allData;
@@ -2293,8 +2296,10 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenGuardRailHi
     std::set<string> strSet;
     valueProducer->onDumpReport(bucket2StartTimeNs + 10000, false /* include recent buckets */,
                                 true, FAST /* dumpLatency */, &strSet, &output);
+    ASSERT_EQ(true, StatsdStats::getInstance().hasHitDimensionGuardrail(metricId));
 
     StatsLogReport report = outputStreamToProto(&output);
+    EXPECT_TRUE(report.dimension_guardrail_hit());
     EXPECT_TRUE(report.has_value_metrics());
     ASSERT_EQ(0, report.value_metrics().data_size());
     ASSERT_EQ(1, report.value_metrics().skipped_size());
@@ -3339,15 +3344,11 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenConditionEv
               report.value_metrics().skipped(0).start_bucket_elapsed_millis());
     EXPECT_EQ(NanoToMillis(bucket2StartTimeNs + 100),
               report.value_metrics().skipped(0).end_bucket_elapsed_millis());
-    ASSERT_EQ(2, report.value_metrics().skipped(0).drop_event_size());
+    ASSERT_EQ(1, report.value_metrics().skipped(0).drop_event_size());
 
     auto dropEvent = report.value_metrics().skipped(0).drop_event(0);
     EXPECT_EQ(BucketDropReason::EVENT_IN_WRONG_BUCKET, dropEvent.drop_reason());
     EXPECT_EQ(NanoToMillis(bucket2StartTimeNs - 100), dropEvent.drop_time_millis());
-
-    dropEvent = report.value_metrics().skipped(0).drop_event(1);
-    EXPECT_EQ(BucketDropReason::CONDITION_UNKNOWN, dropEvent.drop_reason());
-    EXPECT_EQ(NanoToMillis(bucket2StartTimeNs + 100), dropEvent.drop_time_millis());
 }
 
 /*

@@ -2168,16 +2168,8 @@ ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
 }
 
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {
-    vector<uint8_t> statsBuffer;
-    StatsdStats::getInstance().dumpStats(&statsBuffer, false /*reset stats*/);
-    StatsdStatsReport statsReport;
+    StatsdStatsReport statsReport = getStatsdStatsReport();
     StatsdStatsReport_PulledAtomStats pulledAtomStats;
-    if (!statsReport.ParseFromArray(&statsBuffer[0], statsBuffer.size())) {
-        return pulledAtomStats;
-    }
-    if (statsReport.pulled_atom_stats_size() == 0) {
-        return pulledAtomStats;
-    }
     for (size_t i = 0; i < statsReport.pulled_atom_stats_size(); i++) {
         if (statsReport.pulled_atom_stats(i).atom_id() == atom_id) {
             return statsReport.pulled_atom_stats(i);
@@ -2226,6 +2218,72 @@ void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId) {
     }
 }
 
+StatsdStatsReport getStatsdStatsReport(bool resetStats) {
+    StatsdStats& stats = StatsdStats::getInstance();
+    return getStatsdStatsReport(stats, resetStats);
+}
+
+StatsdStatsReport getStatsdStatsReport(StatsdStats& stats, bool resetStats) {
+    vector<uint8_t> statsBuffer;
+    stats.dumpStats(&statsBuffer, resetStats);
+    StatsdStatsReport statsReport;
+    EXPECT_TRUE(statsReport.ParseFromArray(statsBuffer.data(), statsBuffer.size()));
+    return statsReport;
+}
+
+StatsdConfig buildGoodConfig(int configId) {
+    StatsdConfig config;
+    config.set_id(configId);
+
+    AtomMatcher screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
+    *config.add_atom_matcher() = screenOnMatcher;
+    *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
+
+    AtomMatcher* eventMatcher = config.add_atom_matcher();
+    eventMatcher->set_id(StringToId("SCREEN_ON_OR_OFF"));
+    AtomMatcher_Combination* combination = eventMatcher->mutable_combination();
+    combination->set_operation(LogicalOperation::OR);
+    combination->add_matcher(screenOnMatcher.id());
+    combination->add_matcher(StringToId("ScreenTurnedOff"));
+
+    CountMetric* countMetric = config.add_count_metric();
+    *countMetric = createCountMetric("Count", screenOnMatcher.id() /* what */,
+                                     nullopt /* condition */, {} /* states */);
+    countMetric->mutable_dimensions_in_what()->set_field(SCREEN_STATE_ATOM_ID);
+    countMetric->mutable_dimensions_in_what()->add_child()->set_field(1);
+
+    config.add_no_report_metric(StringToId("Count"));
+
+    *config.add_predicate() = CreateScreenIsOnPredicate();
+    *config.add_duration_metric() =
+            createDurationMetric("Duration", StringToId("ScreenIsOn") /* what */,
+                                 nullopt /* condition */, {} /* states */);
+
+    *config.add_gauge_metric() = createGaugeMetric(
+            "Gauge", screenOnMatcher.id() /* what */, GaugeMetric_SamplingType_FIRST_N_SAMPLES,
+            nullopt /* condition */, nullopt /* triggerEvent */);
+
+    *config.add_value_metric() =
+            createValueMetric("Value", screenOnMatcher /* what */, 2 /* valueField */,
+                              nullopt /* condition */, {} /* states */);
+
+    *config.add_kll_metric() = createKllMetric("Kll", screenOnMatcher /* what */, 2 /* kllField */,
+                                               nullopt /* condition */);
+
+    return config;
+}
+
+StatsdConfig buildGoodConfig(int configId, int alertId) {
+    StatsdConfig config = buildGoodConfig(configId);
+    auto alert = config.add_alert();
+    alert->set_id(alertId);
+    alert->set_metric_id(StringToId("Count"));
+    alert->set_num_buckets(10);
+    alert->set_refractory_period_secs(100);
+    alert->set_trigger_if_sum_gt(100);
+
+    return config;
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

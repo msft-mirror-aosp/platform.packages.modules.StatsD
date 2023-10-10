@@ -52,6 +52,7 @@ const int FIELD_ID_TIME_BASE = 9;
 const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
+const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 // for DurationMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 // for DurationMetricData
@@ -84,7 +85,9 @@ DurationMetricProducer::DurationMetricProducer(
       mStopIndex(stopIndex),
       mStopAllIndex(stopAllIndex),
       mNested(nesting),
-      mContainANYPositionInInternalDimensions(false) {
+      mContainANYPositionInInternalDimensions(false),
+      mDimensionHardLimit(
+              StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket())) {
     if (metric.has_bucket()) {
         mBucketSizeNs =
                 TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), metric.bucket()) * 1000000;
@@ -502,23 +505,25 @@ void DurationMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     mPastBuckets.clear();
 }
 
-void DurationMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
-                                                const bool include_current_partial_bucket,
-                                                const bool erase_data,
-                                                const DumpLatency dumpLatency,
-                                                std::set<string> *str_set,
-                                                ProtoOutputStream* protoOutput) {
+void DurationMetricProducer::onDumpReportLocked(
+        const int64_t dumpTimeNs, const bool include_current_partial_bucket, const bool erase_data,
+        const DumpLatency dumpLatency, std::set<string>* str_set, ProtoOutputStream* protoOutput) {
     if (include_current_partial_bucket) {
         flushLocked(dumpTimeNs);
     } else {
         flushIfNeededLocked(dumpTimeNs);
     }
+
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
 
     if (mPastBuckets.empty()) {
         VLOG(" Duration metric, empty return");
         return;
+    }
+
+    if (StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId)) {
+        protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT, true);
     }
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
@@ -658,7 +663,7 @@ bool DurationMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey
             StatsdStats::getInstance().noteMetricDimensionSize(
                     mConfigKey, mMetricId, newTupleCount);
             // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-            if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+            if (newTupleCount > mDimensionHardLimit) {
                 if (!mHasHitGuardrail) {
                     ALOGE("DurationMetric %lld dropping data for what dimension key %s",
                           (long long)mMetricId, newKey.getDimensionKeyInWhat().toString().c_str());
@@ -687,16 +692,18 @@ void DurationMetricProducer::handleStartEvent(const MetricDimensionKey& eventKey
 
     auto it = mCurrentSlicedDurationTrackerMap.find(whatKey);
     if (mUseWhatDimensionAsInternalDimension) {
-        it->second->noteStart(whatKey, condition, eventTimeNs, conditionKeys);
+        it->second->noteStart(whatKey, condition, eventTimeNs, conditionKeys, mDimensionHardLimit);
         return;
     }
 
     if (mInternalDimensions.empty()) {
-        it->second->noteStart(DEFAULT_DIMENSION_KEY, condition, eventTimeNs, conditionKeys);
+        it->second->noteStart(DEFAULT_DIMENSION_KEY, condition, eventTimeNs, conditionKeys,
+                              mDimensionHardLimit);
     } else {
         HashableDimensionKey dimensionKey = DEFAULT_DIMENSION_KEY;
         filterValues(mInternalDimensions, eventValues, &dimensionKey);
-        it->second->noteStart(dimensionKey, condition, eventTimeNs, conditionKeys);
+        it->second->noteStart(dimensionKey, condition, eventTimeNs, conditionKeys,
+                              mDimensionHardLimit);
     }
 }
 
@@ -726,8 +733,15 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
 
     // Handles Stopall events.
     if ((int)matcherIndex == mStopAllIndex) {
-        for (auto& whatIt : mCurrentSlicedDurationTrackerMap) {
-            whatIt.second->noteStopAll(eventTimeNs);
+        for (auto whatIt = mCurrentSlicedDurationTrackerMap.begin();
+             whatIt != mCurrentSlicedDurationTrackerMap.end();) {
+            whatIt->second->noteStopAll(eventTimeNs);
+            if (!whatIt->second->hasAccumulatedDuration()) {
+                VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                whatIt = mCurrentSlicedDurationTrackerMap.erase(whatIt);
+            } else {
+                whatIt++;
+            }
         }
         return;
     }
@@ -781,6 +795,10 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
             auto whatIt = mCurrentSlicedDurationTrackerMap.find(dimensionInWhat);
             if (whatIt != mCurrentSlicedDurationTrackerMap.end()) {
                 whatIt->second->noteStop(dimensionInWhat, eventTimeNs, false);
+                if (!whatIt->second->hasAccumulatedDuration()) {
+                    VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                    mCurrentSlicedDurationTrackerMap.erase(whatIt);
+                }
             }
             return;
         }
@@ -793,6 +811,10 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
         auto whatIt = mCurrentSlicedDurationTrackerMap.find(dimensionInWhat);
         if (whatIt != mCurrentSlicedDurationTrackerMap.end()) {
             whatIt->second->noteStop(internalDimensionKey, eventTimeNs, false);
+            if (!whatIt->second->hasAccumulatedDuration()) {
+                VLOG("erase bucket for key %s", whatIt->first.toString().c_str());
+                mCurrentSlicedDurationTrackerMap.erase(whatIt);
+            }
         }
         return;
     }
