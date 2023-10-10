@@ -36,7 +36,7 @@ public:
     OringDurationTracker(const OringDurationTracker& tracker) = default;
 
     void noteStart(const HashableDimensionKey& key, bool condition, const int64_t eventTime,
-                   const ConditionKey& conditionKey) override;
+                   const ConditionKey& conditionKey, size_t dimensionHardLimit) override;
     void noteStop(const HashableDimensionKey& key, const int64_t eventTime,
                   const bool stopAll) override;
     void noteStopAll(const int64_t eventTime) override;
@@ -83,7 +83,7 @@ private:
     std::unordered_map<HashableDimensionKey, ConditionKey> mConditionKeyMap;
 
     // return true if we should not allow newKey to be tracked because we are above the threshold
-    bool hitGuardRail(const HashableDimensionKey& newKey);
+    bool hitGuardRail(const HashableDimensionKey& newKey, size_t dimensionHardLimit);
 
     FRIEND_TEST(OringDurationTrackerTest, TestDurationOverlap);
     FRIEND_TEST(OringDurationTrackerTest, TestCrossBucketBoundary);

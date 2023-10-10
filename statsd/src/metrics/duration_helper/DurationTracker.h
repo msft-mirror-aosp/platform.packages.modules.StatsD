@@ -103,7 +103,7 @@ public:
     };
 
     virtual void noteStart(const HashableDimensionKey& key, bool condition, const int64_t eventTime,
-                           const ConditionKey& conditionKey) = 0;
+                           const ConditionKey& conditionKey, size_t dimensionHardLimit) = 0;
     virtual void noteStop(const HashableDimensionKey& key, const int64_t eventTime,
                           const bool stopAll) = 0;
     virtual void noteStopAll(const int64_t eventTime) = 0;
@@ -277,6 +277,10 @@ protected:
     FRIEND_TEST(OringDurationTrackerTest, TestPredictAnomalyTimestamp);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionExpiredAlarm);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionFiredAlarm);
+
+    FRIEND_TEST(OringDurationTrackerTest_DimLimit, TestDimLimit);
+
+    FRIEND_TEST(MaxDurationTrackerTest_DimLimit, TestDimLimit);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateDurationMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateAlerts);

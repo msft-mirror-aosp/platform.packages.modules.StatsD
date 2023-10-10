@@ -927,7 +927,9 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
     const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    pullTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     // get the condition_correction_threshold_nanos value
     const optional<int64_t> conditionCorrectionThresholdNs =
@@ -1084,7 +1086,9 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(atomTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    atomTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     sp<MetricProducer> metricProducer = new KllMetricProducer(
             key, metric, metricHash, {/*pullTagId=*/-1, pullerManager},
@@ -1224,7 +1228,9 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     }
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    pullTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     sp<MetricProducer> metricProducer = new GaugeMetricProducer(
             key, metric, conditionIndex, initialConditionCache, wizard, metricHash, trackerIndex,
