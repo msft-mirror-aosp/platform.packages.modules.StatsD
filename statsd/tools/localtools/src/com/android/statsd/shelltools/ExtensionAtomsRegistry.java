@@ -66,7 +66,7 @@ import com.google.protobuf.ExtensionRegistry;
 /**
  * CustomExtensionRegistry for local use of statsd.
  */
-public class CustomExtensionRegistry {
+public class ExtensionAtomsRegistry {
 
     public static ExtensionRegistry REGISTRY;
 
