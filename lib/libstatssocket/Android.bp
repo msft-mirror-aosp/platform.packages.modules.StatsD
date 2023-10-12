@@ -25,16 +25,24 @@ cc_defaults {
     name: "libstatssocket_defaults",
     srcs: [
         "stats_buffer_writer.c",
+        "stats_buffer_writer_queue.cpp",
         "stats_event.c",
         "stats_socket.c",
         "statsd_writer.cpp",
+        "utils.cpp",
     ],
     export_include_dirs: ["include"],
-    header_libs: ["liblog_headers"],
+    header_libs: [
+        "libcutils_headers",
+        "liblog_headers",
+    ],
     cflags: [
         "-Wall",
         "-Werror",
         "-Wthread-safety",
+
+        // for local testing & benchmarking with statsd_benchmark
+        // "-DENABLE_BENCHMARK_SUPPORT",
     ],
     static_libs: [
         "libbase",
@@ -103,6 +111,7 @@ cc_test {
     srcs: [
         "tests/stats_event_test.cpp",
         "tests/stats_writer_test.cpp",
+        "tests/stats_buffer_writer_queue_test.cpp",
     ],
     cflags: [
         "-Wall",
