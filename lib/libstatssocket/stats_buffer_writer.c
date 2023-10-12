@@ -15,9 +15,13 @@
  */
 
 #include "include/stats_buffer_writer.h"
+
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+
+#include "stats_buffer_writer_impl.h"
+#include "stats_buffer_writer_queue.h"
 #include "statsd_writer.h"
 
 static const uint32_t kStatsEventTag = 1937006964;
@@ -27,6 +31,12 @@ extern struct android_log_transport_write statsdLoggerWrite;
 static int __write_to_statsd_init(struct iovec* vec, size_t nr);
 static int (*__write_to_statsd)(struct iovec* vec, size_t nr) = __write_to_statsd_init;
 
+/**
+ * @brief Logs the error code associated with atom loss
+ *
+ * @param error To distinguish source of error, the errno code values must be negative,
+ *              while the libstatssocket internal error codes are positive
+ */
 void note_log_drop(int error, int atomId) {
     statsdLoggerWrite.noteDrop(error, atomId);
 }
@@ -45,6 +55,19 @@ int stats_log_is_closed() {
 }
 
 int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
+    const int kQueueOverflowErrorCode = 1;
+    if (should_write_via_queue(atomId)) {
+        const bool ret = write_buffer_to_statsd_queue(buffer, size, atomId);
+        if (!ret) {
+            // to account on the loss, note atom drop with predefined internal error code
+            note_log_drop(kQueueOverflowErrorCode, atomId);
+        }
+        return ret;
+    }
+    return write_buffer_to_statsd_impl(buffer, size, atomId, true);
+}
+
+int write_buffer_to_statsd_impl(void* buffer, size_t size, uint32_t atomId, bool doNoteDrop) {
     int ret = 1;
 
     struct iovec vecs[2];
@@ -55,7 +78,7 @@ int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
 
     ret = __write_to_statsd(vecs, 2);
 
-    if (ret < 0) {
+    if (ret < 0 && doNoteDrop) {
         note_log_drop(ret, atomId);
     }
 
