@@ -15,10 +15,12 @@
  */
 
 #include "include/stats_event.h"
+
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+
 #include "stats_buffer_writer.h"
+#include "utils.h"
 
 #define LOGGER_ENTRY_MAX_PAYLOAD 4068
 // Max payload size is 4 bytes less as 4 bytes are reserved for stats_eventTag.
@@ -80,13 +82,6 @@ struct AStatsEvent {
     bool built;
     size_t bufSize;
 };
-
-static int64_t get_elapsed_realtime_ns() {
-    struct timespec t;
-    t.tv_sec = t.tv_nsec = 0;
-    clock_gettime(CLOCK_BOOTTIME, &t);
-    return (int64_t)t.tv_sec * 1000000000LL + t.tv_nsec;
-}
 
 AStatsEvent* AStatsEvent_obtain() {
     AStatsEvent* event = malloc(sizeof(AStatsEvent));

@@ -128,7 +128,8 @@ public:
         translateFieldMatcher(metric.kll_field(), &fieldMatchers);
 
         const auto [dimensionSoftLimit, dimensionHardLimit] =
-                StatsdStats::getAtomDimensionKeySizeLimits(atomId);
+                StatsdStats::getAtomDimensionKeySizeLimits(
+                        atomId, StatsdStats::kDimensionKeySizeHardLimitMin);
 
         int conditionIndex = initialCondition ? 0 : -1;
         vector<ConditionState> initialConditionCache;
