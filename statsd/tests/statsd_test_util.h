@@ -821,6 +821,11 @@ std::vector<uint8_t> protoToBytes(const P& proto) {
     proto.SerializeToArray(bytes.data(), byteSize);
     return bytes;
 }
+
+StatsdConfig buildGoodConfig(int configId);
+
+StatsdConfig buildGoodConfig(int configId, int alertId);
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

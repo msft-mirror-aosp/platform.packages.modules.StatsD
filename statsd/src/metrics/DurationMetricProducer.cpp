@@ -85,7 +85,9 @@ DurationMetricProducer::DurationMetricProducer(
       mStopIndex(stopIndex),
       mStopAllIndex(stopAllIndex),
       mNested(nesting),
-      mContainANYPositionInInternalDimensions(false) {
+      mContainANYPositionInInternalDimensions(false),
+      mDimensionHardLimit(
+              StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket())) {
     if (metric.has_bucket()) {
         mBucketSizeNs =
                 TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), metric.bucket()) * 1000000;
@@ -661,7 +663,7 @@ bool DurationMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey
             StatsdStats::getInstance().noteMetricDimensionSize(
                     mConfigKey, mMetricId, newTupleCount);
             // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-            if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+            if (newTupleCount > mDimensionHardLimit) {
                 if (!mHasHitGuardrail) {
                     ALOGE("DurationMetric %lld dropping data for what dimension key %s",
                           (long long)mMetricId, newKey.getDimensionKeyInWhat().toString().c_str());
@@ -690,16 +692,18 @@ void DurationMetricProducer::handleStartEvent(const MetricDimensionKey& eventKey
 
     auto it = mCurrentSlicedDurationTrackerMap.find(whatKey);
     if (mUseWhatDimensionAsInternalDimension) {
-        it->second->noteStart(whatKey, condition, eventTimeNs, conditionKeys);
+        it->second->noteStart(whatKey, condition, eventTimeNs, conditionKeys, mDimensionHardLimit);
         return;
     }
 
     if (mInternalDimensions.empty()) {
-        it->second->noteStart(DEFAULT_DIMENSION_KEY, condition, eventTimeNs, conditionKeys);
+        it->second->noteStart(DEFAULT_DIMENSION_KEY, condition, eventTimeNs, conditionKeys,
+                              mDimensionHardLimit);
     } else {
         HashableDimensionKey dimensionKey = DEFAULT_DIMENSION_KEY;
         filterValues(mInternalDimensions, eventValues, &dimensionKey);
-        it->second->noteStart(dimensionKey, condition, eventTimeNs, conditionKeys);
+        it->second->noteStart(dimensionKey, condition, eventTimeNs, conditionKeys,
+                              mDimensionHardLimit);
     }
 }
 
