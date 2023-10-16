@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,15 @@
 
 #pragma once
 
-namespace android {
-namespace os {
-namespace statsd {
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/cdefs.h>
 
-const uint8_t ANNOTATION_ID_IS_UID = 1;
-const uint8_t ANNOTATION_ID_TRUNCATE_TIMESTAMP = 2;
-const uint8_t ANNOTATION_ID_PRIMARY_FIELD = 3;
-const uint8_t ANNOTATION_ID_EXCLUSIVE_STATE = 4;
-const uint8_t ANNOTATION_ID_PRIMARY_FIELD_FIRST_UID = 5;
-const uint8_t ANNOTATION_ID_TRIGGER_STATE_RESET = 7;
-const uint8_t ANNOTATION_ID_STATE_NESTED = 8;
+__BEGIN_DECLS
 
-} // namespace statsd
-} // namespace os
-} // namespace android
+bool write_buffer_to_statsd_queue(const uint8_t* buffer, size_t size, uint32_t atomId);
+
+bool should_write_via_queue(uint32_t atomId);
+
+__END_DECLS

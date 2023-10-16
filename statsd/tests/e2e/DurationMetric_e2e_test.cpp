@@ -254,7 +254,7 @@ TEST(DurationMetricE2eTest, TestWithActivation) {
                                               activeConfigs.end());
                 return true;
             },
-            mockLogEventFilter);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), &processor))
             .Times(1);

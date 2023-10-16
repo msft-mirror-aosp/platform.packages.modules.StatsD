@@ -33,6 +33,7 @@ aidl_interface {
         "android/os/IPullAtomResultReceiver.aidl",
         "android/os/IStatsCompanionService.aidl",
         "android/os/IStatsd.aidl",
+        "android/os/IStatsQueryCallback.aidl",
         "android/os/StatsDimensionsValueParcel.aidl",
         "android/util/PropertyParcel.aidl",
         "android/util/StatsEventParcel.aidl",

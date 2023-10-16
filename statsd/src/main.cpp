@@ -74,19 +74,15 @@ int main(int /*argc*/, char** /*argv*/) {
     ABinderProcess_setThreadPoolMaxThreadCount(9);
     ABinderProcess_startThreadPool();
 
-    std::shared_ptr<LogEventQueue> eventQueue =
-            std::make_shared<LogEventQueue>(8000 /*buffer limit. Buffer is NOT pre-allocated*/);
-
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags(
-            {OPTIMIZATION_SOCKET_PARSING_FLAG, STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
+    FlagProvider::getInstance().initBootFlags({STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
+
+    std::shared_ptr<LogEventQueue> eventQueue =
+            std::make_shared<LogEventQueue>(50000); /*buffer limit. Buffer is NOT pre-allocated*/
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
-    const bool logsFilteringEnabled = FlagProvider::getInstance().getBootFlagBool(
-            OPTIMIZATION_SOCKET_PARSING_FLAG, FLAG_FALSE);
-    std::shared_ptr<LogEventFilter> logEventFilter =
-            logsFilteringEnabled ? std::make_shared<LogEventFilter>() : nullptr;
+    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
 
     const int initEventDelay = FlagProvider::getInstance().getBootFlagBool(
                                        STATSD_INIT_COMPLETED_NO_DELAY_FLAG, FLAG_FALSE)
@@ -134,7 +130,11 @@ int main(int /*argc*/, char** /*argv*/) {
             }
             gSocketListener->stopListener();
             gStatsService->Terminate();
-            exit(1);
+            // return the signal handler to its default disposition, then raise the signal again
+            signal(SIGTERM, SIG_DFL);
+            // this is a sync call which leads to immediate process termination and
+            // no destructors are called, semantically similar to call exit(1) here
+            raise(SIGTERM);
         }
     }).detach();
 

@@ -30,6 +30,7 @@
 #include "statslog_statsdtest.h"
 #include "storage/StorageManager.h"
 #include "tests/statsd_test_util.h"
+#include "utils/DbUtils.h"
 
 using namespace android;
 using namespace testing;
@@ -53,20 +54,29 @@ using ::testing::Expectation;
  */
 class MockMetricsManager : public MetricsManager {
 public:
-    MockMetricsManager()
-        : MetricsManager(ConfigKey(1, 12345), StatsdConfig(), 1000, 1000, new UidMap(),
+    MockMetricsManager(ConfigKey configKey = ConfigKey(1, 12345))
+        : MetricsManager(configKey, StatsdConfig(), 1000, 1000, new UidMap(),
                          new StatsPullerManager(),
-                         new AlarmMonitor(10,
-                                          [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
-                                          [](const shared_ptr<IStatsCompanionService>&) {}),
-                         new AlarmMonitor(10,
-                                          [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
-                                          [](const shared_ptr<IStatsCompanionService>&) {})) {
+                         new AlarmMonitor(
+                                 10, [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
+                                 [](const shared_ptr<IStatsCompanionService>&) {}),
+                         new AlarmMonitor(
+                                 10, [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
+                                 [](const shared_ptr<IStatsCompanionService>&) {})) {
     }
 
     MOCK_METHOD0(byteSize, size_t());
 
     MOCK_METHOD1(dropData, void(const int64_t dropTimeNs));
+
+    MOCK_METHOD(void, onLogEvent, (const LogEvent& event), (override));
+
+    MOCK_METHOD(void, onDumpReport,
+                (const int64_t dumpTimeNs, const int64_t wallClockNs,
+                 const bool include_current_partial_bucket, const bool erase_data,
+                 const DumpLatency dumpLatency, std::set<string>* str_set,
+                 android::util::ProtoOutputStream* protoOutput),
+                (override));
 };
 
 TEST(StatsLogProcessorTest, TestRateLimitByteSize) {
@@ -78,7 +88,9 @@ TEST(StatsLogProcessorTest, TestRateLimitByteSize) {
     StatsLogProcessor p(
             m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; }, nullptr);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
@@ -103,7 +115,9 @@ TEST(StatsLogProcessorTest, TestRateLimitBroadcast) {
                 broadcastCount++;
                 return true;
             },
-            [](const int&, const vector<int64_t>&) { return true; }, nullptr);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
@@ -136,7 +150,9 @@ TEST(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
                 broadcastCount++;
                 return true;
             },
-            [](const int&, const vector<int64_t>&) { return true; }, nullptr);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
@@ -168,15 +184,55 @@ StatsdConfig MakeConfig(bool includeMetric) {
     return config;
 }
 
+StatsdConfig makeRestrictedConfig(bool includeMetric = false) {
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    config.set_restricted_metrics_delegate_package_name("delegate");
+
+    if (includeMetric) {
+        auto appCrashMatcher = CreateProcessCrashAtomMatcher();
+        *config.add_atom_matcher() = appCrashMatcher;
+        auto eventMetric = config.add_event_metric();
+        eventMetric->set_id(StringToId("EventAppCrashes"));
+        eventMetric->set_what(appCrashMatcher.id());
+    }
+    return config;
+}
+
+class MockRestrictedMetricsManager : public MetricsManager {
+public:
+    MockRestrictedMetricsManager(ConfigKey configKey = ConfigKey(1, 12345))
+        : MetricsManager(configKey, makeRestrictedConfig(), 1000, 1000, new UidMap(),
+                         new StatsPullerManager(),
+                         new AlarmMonitor(
+                                 10, [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
+                                 [](const shared_ptr<IStatsCompanionService>&) {}),
+                         new AlarmMonitor(
+                                 10, [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
+                                 [](const shared_ptr<IStatsCompanionService>&) {})) {
+    }
+
+    MOCK_METHOD(void, onLogEvent, (const LogEvent& event), (override));
+    MOCK_METHOD(void, onDumpReport,
+                (const int64_t dumpTimeNs, const int64_t wallClockNs,
+                 const bool include_current_partial_bucket, const bool erase_data,
+                 const DumpLatency dumpLatency, std::set<string>* str_set,
+                 android::util::ProtoOutputStream* protoOutput),
+                (override));
+    MOCK_METHOD(size_t, byteSize, (), (override));
+    MOCK_METHOD(void, flushRestrictedData, (), (override));
+};
+
 TEST(StatsLogProcessorTest, TestUidMapHasSnapshot) {
     ConfigKey key(3, 4);
     StatsdConfig config = MakeConfig(true);
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -189,7 +245,8 @@ TEST(StatsLogProcessorTest, TestUidMapHasSnapshot) {
                 broadcastCount++;
                 return true;
             },
-            [](const int&, const vector<int64_t>&) { return true; }, mockLogEventFilter);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &p)).Times(1);
@@ -215,9 +272,10 @@ TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -230,7 +288,8 @@ TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
                 broadcastCount++;
                 return true;
             },
-            [](const int&, const vector<int64_t>&) { return true; }, mockLogEventFilter);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &p)).Times(1);
@@ -270,7 +329,8 @@ TEST(StatsLogProcessorTest, TestReportIncludesSubConfig) {
                 broadcastCount++;
                 return true;
             },
-            [](const int&, const vector<int64_t>&) { return true; }, mockLogEventFilter);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &p)).Times(1);
@@ -353,7 +413,8 @@ TEST(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate) {
     StatsLogProcessor p(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; }, mockLogEventFilter);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &p)).Times(3);
@@ -375,9 +436,10 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
@@ -386,7 +448,8 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
     StatsLogProcessor p(
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; }, mockLogEventFilter);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     EXPECT_CALL(*mockLogEventFilter, setAtomIds(CreateAtomIdSetDefault(), &p)).Times(1);
     // atom used by matcher defined in MakeConfig() API
@@ -531,7 +594,7 @@ TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
                                               activeConfigs.end());
                 return true;
             },
-            mockLogEventFilter);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     // config1,config2,config3 use the same atom
     const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config1);
@@ -1621,8 +1684,8 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
 
     // Send the config.
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr, nullptr);
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     string serialized = config1.SerializeAsString();
     service->addConfigurationChecked(uid, configId, {serialized.begin(), serialized.end()});
 
@@ -1813,7 +1876,8 @@ TEST(StatsLogProcessorTest, LogEventFilterOnSetPrintLogs) {
     StatsLogProcessor p(
             m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; }, mockLogEventFilter);
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
 
     Expectation filterSetFalse =
             EXPECT_CALL(*mockLogEventFilter, setFilteringEnabled(false)).Times(1);
@@ -2107,6 +2171,202 @@ TEST(StatsLogProcessorTest, TestDataCorruptedEnum) {
     ASSERT_EQ(output.reports(0).data_corrupted_reason().size(), 2);
     EXPECT_EQ(output.reports(0).data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
     EXPECT_EQ(output.reports(0).data_corrupted_reason(1), DATA_CORRUPTED_SOCKET_LOSS);
+}
+
+class StatsLogProcessorTestRestricted : public Test {
+protected:
+    const ConfigKey mConfigKey = ConfigKey(1, 12345);
+    void SetUp() override {
+        if (!isAtLeastU()) {
+            GTEST_SKIP();
+        }
+    }
+    void TearDown() override {
+        if (!isAtLeastU()) {
+            GTEST_SKIP();
+        }
+        FlagProvider::getInstance().resetOverrides();
+        StorageManager::deleteAllFiles(STATS_DATA_DIR);
+        dbutils::deleteDb(mConfigKey);
+    }
+};
+
+TEST_F(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigUpdate) {
+    ConfigKey key(3, 4);
+    StatsdConfig config = makeRestrictedConfig(true);
+    config.set_restricted_metrics_delegate_package_name("rm_package");
+
+    sp<UidMap> m = new UidMap();
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> subscriberAlarmMonitor;
+    std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+            .Times(1);
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
+            [](const ConfigKey& key) { return true; },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
+
+    // new newConfig will be the same as config
+    const LogEventFilter::AtomIdSet atomIdsList = CreateAtomIdSetFromConfig(config);
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(atomIdsList, &p)).Times(2);
+
+    p.OnConfigUpdated(0, key, config);
+
+    EXPECT_EQ(1, p.mMetricsManagers.size());
+    EXPECT_NE(p.mMetricsManagers.find(key), p.mMetricsManagers.end());
+    sp<MetricsManager> oldMetricsManager = p.mMetricsManagers.find(key)->second;
+
+    StatsdConfig newConfig = makeRestrictedConfig(true);
+    newConfig.clear_restricted_metrics_delegate_package_name();
+    p.OnConfigUpdated(/*timestampNs=*/0, key, newConfig);
+
+    ASSERT_NE(p.mMetricsManagers.find(key)->second, oldMetricsManager);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, TestRestrictedLogEventNotPassed) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, StatsdConfig(), mConfigKey);
+    ConfigKey key(3, 4);
+    sp<MockMetricsManager> metricsManager = new MockMetricsManager(mConfigKey);
+    EXPECT_CALL(*metricsManager, onLogEvent).Times(0);
+
+    processor->mMetricsManagers[mConfigKey] = metricsManager;
+    EXPECT_FALSE(processor->mMetricsManagers[mConfigKey]->hasRestrictedMetricsDelegate());
+
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent(123);
+    EXPECT_TRUE(event->isValid());
+    EXPECT_TRUE(event->isRestricted());
+    processor->OnLogEvent(event.get());
+}
+
+TEST_F(StatsLogProcessorTestRestricted, TestRestrictedLogEventPassed) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, StatsdConfig(), mConfigKey);
+    sp<MockRestrictedMetricsManager> metricsManager = new MockRestrictedMetricsManager(mConfigKey);
+    EXPECT_CALL(*metricsManager, onLogEvent).Times(1);
+
+    processor->mMetricsManagers[mConfigKey] = metricsManager;
+    EXPECT_TRUE(processor->mMetricsManagers[mConfigKey]->hasRestrictedMetricsDelegate());
+
+    unique_ptr<LogEvent> event = CreateRestrictedLogEvent(123);
+    EXPECT_TRUE(event->isValid());
+    EXPECT_TRUE(event->isRestricted());
+    processor->OnLogEvent(event.get());
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricsManagerOnDumpReportNotCalled) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            mConfigKey);
+    sp<MockRestrictedMetricsManager> metricsManager = new MockRestrictedMetricsManager(mConfigKey);
+    EXPECT_CALL(*metricsManager, onDumpReport).Times(0);
+
+    processor->mMetricsManagers[mConfigKey] = metricsManager;
+    EXPECT_TRUE(processor->mMetricsManagers[mConfigKey]->hasRestrictedMetricsDelegate());
+
+    vector<uint8_t> buffer;
+    processor->onConfigMetricsReportLocked(mConfigKey, /*dumpTimeStampNs=*/1, /*wallClockNs=*/0,
+                                           /*include_current_partial_bucket=*/true,
+                                           /*erase_data=*/true, GET_DATA_CALLED, FAST,
+                                           /*dataSavedToDisk=*/true, &buffer);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricFlushIfReachMemoryLimit) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            mConfigKey);
+    sp<MockRestrictedMetricsManager> metricsManager = new MockRestrictedMetricsManager(mConfigKey);
+    EXPECT_CALL(*metricsManager, flushRestrictedData).Times(1);
+    EXPECT_CALL(*metricsManager, byteSize)
+            .Times(1)
+            .WillOnce(Return(StatsdStats::kBytesPerRestrictedConfigTriggerFlush + 1));
+
+    processor->mMetricsManagers[mConfigKey] = metricsManager;
+    EXPECT_TRUE(processor->mMetricsManagers[mConfigKey]->hasRestrictedMetricsDelegate());
+
+    processor->flushIfNecessaryLocked(mConfigKey, *metricsManager);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricNotFlushIfNotReachMemoryLimit) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            mConfigKey);
+    sp<MockRestrictedMetricsManager> metricsManager = new MockRestrictedMetricsManager(mConfigKey);
+    EXPECT_CALL(*metricsManager, flushRestrictedData).Times(0);
+    EXPECT_CALL(*metricsManager, byteSize)
+            .Times(1)
+            .WillOnce(Return(StatsdStats::kBytesPerRestrictedConfigTriggerFlush - 1));
+
+    processor->mMetricsManagers[mConfigKey] = metricsManager;
+    EXPECT_TRUE(processor->mMetricsManagers[mConfigKey]->hasRestrictedMetricsDelegate());
+
+    processor->flushIfNecessaryLocked(mConfigKey, *metricsManager);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, NonRestrictedMetricsManagerOnDumpReportCalled) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, MakeConfig(/*includeMetric=*/true), mConfigKey);
+    sp<MockMetricsManager> metricsManager = new MockMetricsManager(mConfigKey);
+    EXPECT_CALL(*metricsManager, onDumpReport).Times(1);
+
+    processor->mMetricsManagers[mConfigKey] = metricsManager;
+    EXPECT_FALSE(processor->mMetricsManagers[mConfigKey]->hasRestrictedMetricsDelegate());
+
+    vector<uint8_t> buffer;
+    processor->onConfigMetricsReportLocked(mConfigKey, /*dumpTimeStampNs=*/1, /*wallClockNs=*/0,
+                                           /*include_current_partial_bucket=*/true,
+                                           /*erase_data=*/true, GET_DATA_CALLED, FAST,
+                                           /*dataSavedToDisk=*/true, &buffer);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricOnDumpReportEmpty) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            mConfigKey);
+    ProtoOutputStream proto;
+    processor->onDumpReport(mConfigKey, /*dumpTimeStampNs=*/1, /*wallClockNs=*/2,
+                            /*include_current_partial_bucket=*/true, /*erase_data=*/true,
+                            DEVICE_SHUTDOWN, FAST, &proto);
+    ASSERT_EQ(proto.size(), 0);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, NonRestrictedMetricOnDumpReportNotEmpty) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, MakeConfig(/*includeMetric=*/true), mConfigKey);
+
+    ProtoOutputStream proto;
+    processor->onDumpReport(mConfigKey, /*dumpTimeStampNs=*/1, /*wallClockNs=*/2,
+                            /*include_current_partial_bucket=*/true, /*erase_data=*/true,
+                            DEVICE_SHUTDOWN, FAST, &proto);
+    ASSERT_NE(proto.size(), 0);
+}
+
+TEST_F(StatsLogProcessorTestRestricted, RestrictedMetricNotWriteToDisk) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, makeRestrictedConfig(/*includeMetric=*/true),
+            mConfigKey);
+
+    processor->WriteDataToDiskLocked(mConfigKey, /*timestampNs=*/0, /*wallClockNs=*/0,
+                                     CONFIG_UPDATED, FAST);
+
+    ASSERT_FALSE(StorageManager::hasConfigMetricsReport(mConfigKey));
+}
+
+TEST_F(StatsLogProcessorTestRestricted, NonRestrictedMetricWriteToDisk) {
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
+            /*timeBaseNs=*/1, /*currentTimeNs=*/1, MakeConfig(true), mConfigKey);
+
+    processor->WriteDataToDiskLocked(mConfigKey, /*timestampNs=*/0, /*wallClockNs=*/0,
+                                     CONFIG_UPDATED, FAST);
+
+    ASSERT_TRUE(StorageManager::hasConfigMetricsReport(mConfigKey));
 }
 
 #else

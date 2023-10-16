@@ -130,6 +130,10 @@ void ShellSubscriber::onLogEvent(const LogEvent& event) {
     if (event.isParsedHeaderOnly()) {
         return;
     }
+    // Skip RestrictedLogEvents
+    if (event.isRestricted()) {
+        return;
+    }
     std::unique_lock<std::mutex> lock(mMutex);
     for (auto clientIt = mClientSet.begin(); clientIt != mClientSet.end();) {
         (*clientIt)->onLogEvent(event);
@@ -193,9 +197,6 @@ void ShellSubscriber::unsubscribe(const shared_ptr<IStatsSubscriptionCallback>& 
 
 void ShellSubscriber::updateLogEventFilterLocked() const {
     VLOG("ShellSubscriber: Updating allAtomIds");
-    if (!mLogEventFilter) {
-        return;
-    }
     LogEventFilter::AtomIdSet allAtomIds;
     for (const auto& client : mClientSet) {
         client->addAllAtomIds(allAtomIds);

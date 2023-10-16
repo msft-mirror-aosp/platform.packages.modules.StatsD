@@ -67,14 +67,17 @@ TEST(MaxDurationTrackerTest, TestSimpleMaxDuration) {
     MaxDurationTracker tracker(kConfigKey, metricId, eventKey, wizard, -1, false, bucketStartTimeNs,
                                bucketNum, bucketStartTimeNs, bucketSizeNs, false, false, {});
 
-    tracker.noteStart(key1, true, bucketStartTimeNs, ConditionKey());
+    tracker.noteStart(key1, true, bucketStartTimeNs, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     // Event starts again. This would not change anything as it already starts.
-    tracker.noteStart(key1, true, bucketStartTimeNs + 3, ConditionKey());
+    tracker.noteStart(key1, true, bucketStartTimeNs + 3, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     // Stopped.
     tracker.noteStop(key1, bucketStartTimeNs + 10, false);
 
     // Another event starts in this bucket.
-    tracker.noteStart(key2, true, bucketStartTimeNs + 20, ConditionKey());
+    tracker.noteStart(key2, true, bucketStartTimeNs + 20, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     tracker.noteStop(key2, bucketStartTimeNs + 40, false /*stop all*/);
 
     tracker.flushIfNeeded(bucketStartTimeNs + bucketSizeNs + 1, emptyThreshold, &buckets);
@@ -101,10 +104,12 @@ TEST(MaxDurationTrackerTest, TestStopAll) {
     MaxDurationTracker tracker(kConfigKey, metricId, eventKey, wizard, -1, false, bucketStartTimeNs,
                                bucketNum, bucketStartTimeNs, bucketSizeNs, false, false, {});
 
-    tracker.noteStart(key1, true, bucketStartTimeNs + 1, ConditionKey());
+    tracker.noteStart(key1, true, bucketStartTimeNs + 1, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
 
     // Another event starts in this bucket.
-    tracker.noteStart(key2, true, bucketStartTimeNs + 20, ConditionKey());
+    tracker.noteStart(key2, true, bucketStartTimeNs + 20, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     tracker.flushIfNeeded(bucketStartTimeNs + bucketSizeNs + 40, emptyThreshold, &buckets);
     tracker.noteStopAll(bucketStartTimeNs + bucketSizeNs + 40);
     EXPECT_TRUE(tracker.mInfos.empty());
@@ -136,11 +141,12 @@ TEST(MaxDurationTrackerTest, TestCrossBucketBoundary) {
                                bucketNum, bucketStartTimeNs, bucketSizeNs, false, false, {});
 
     // The event starts.
-    tracker.noteStart(DEFAULT_DIMENSION_KEY, true, bucketStartTimeNs + 1, ConditionKey());
+    tracker.noteStart(DEFAULT_DIMENSION_KEY, true, bucketStartTimeNs + 1, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
 
     // Starts again. Does not DEFAULT_DIMENSION_KEY anything.
     tracker.noteStart(DEFAULT_DIMENSION_KEY, true, bucketStartTimeNs + bucketSizeNs + 1,
-                      ConditionKey());
+                      ConditionKey(), StatsdStats::kDimensionKeySizeHardLimitMin);
 
     // The event stops at early 4th bucket.
     // Notestop is called from DurationMetricProducer's onMatchedLogEvent, which calls
@@ -175,8 +181,10 @@ TEST(MaxDurationTrackerTest, TestCrossBucketBoundary_nested) {
                                bucketNum, bucketStartTimeNs, bucketSizeNs, false, false, {});
 
     // 2 starts
-    tracker.noteStart(DEFAULT_DIMENSION_KEY, true, bucketStartTimeNs + 1, ConditionKey());
-    tracker.noteStart(DEFAULT_DIMENSION_KEY, true, bucketStartTimeNs + 10, ConditionKey());
+    tracker.noteStart(DEFAULT_DIMENSION_KEY, true, bucketStartTimeNs + 1, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
+    tracker.noteStart(DEFAULT_DIMENSION_KEY, true, bucketStartTimeNs + 10, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     // one stop
     tracker.noteStop(DEFAULT_DIMENSION_KEY, bucketStartTimeNs + 20, false /*stop all*/);
 
@@ -220,7 +228,8 @@ TEST(MaxDurationTrackerTest, TestMaxDurationWithCondition) {
                                0, bucketStartTimeNs, bucketSizeNs, true, false, {});
     EXPECT_TRUE(tracker.mAnomalyTrackers.empty());
 
-    tracker.noteStart(key1, false, eventStartTimeNs, conditionKey1);
+    tracker.noteStart(key1, false, eventStartTimeNs, conditionKey1,
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     tracker.noteConditionChanged(key1, true, conditionStarts1);
     tracker.noteConditionChanged(key1, false, conditionStops1);
     unordered_map<MetricDimensionKey, vector<DurationBucket>> buckets;
@@ -268,7 +277,8 @@ TEST(MaxDurationTrackerTest, TestAnomalyDetection) {
                                bucketNum, bucketStartTimeNs, bucketSizeNs, true, false,
                                {anomalyTracker});
 
-    tracker.noteStart(key1, true, eventStartTimeNs, conditionKey1);
+    tracker.noteStart(key1, true, eventStartTimeNs, conditionKey1,
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     sp<const InternalAlarm> alarm = anomalyTracker->mAlarms.begin()->second;
     EXPECT_EQ((long long)(53ULL * NS_PER_SEC), (long long)(alarm->timestampSec * NS_PER_SEC));
 
@@ -327,10 +337,12 @@ TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp) {
                                bucketNum, bucketStartTimeNs, bucketSizeNs, true, false,
                                {anomalyTracker});
 
-    tracker.noteStart(key1, false, eventStartTimeNs, conditionKey1);
+    tracker.noteStart(key1, false, eventStartTimeNs, conditionKey1,
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     tracker.noteConditionChanged(key1, true, conditionStarts1);
     tracker.noteConditionChanged(key1, false, conditionStops1);
-    tracker.noteStart(key2, true, eventStartTimeNs2, conditionKey2);  // Condition is on already.
+    tracker.noteStart(key2, true, eventStartTimeNs2, conditionKey2,
+                      StatsdStats::kDimensionKeySizeHardLimitMin);  // Condition is on already.
     tracker.noteConditionChanged(key1, true, conditionStarts2);
     ASSERT_EQ(1U, anomalyTracker->mAlarms.size());
     auto alarm = anomalyTracker->mAlarms.begin()->second;
@@ -352,7 +364,8 @@ TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp) {
     int64_t eventStopTimeNs = anomalyFireTimeSec * NS_PER_SEC + 10;
     tracker.noteStop(key1, eventStopTimeNs, false);
     tracker.noteStop(key2, eventStopTimeNs, false);
-    tracker.noteStart(key1, true, eventStopTimeNs + 1000000, conditionKey1);
+    tracker.noteStart(key1, true, eventStopTimeNs + 1000000, conditionKey1,
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     // Anomaly is ongoing, but we're still in the refractory period.
     ASSERT_EQ(1U, anomalyTracker->mAlarms.size());
     alarm = anomalyTracker->mAlarms.begin()->second;
@@ -361,7 +374,8 @@ TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp) {
     // Makes sure it is correct after the refractory period is over.
     tracker.noteStop(key1, eventStopTimeNs + 2000000, false);
     int64_t justBeforeRefPeriodNs = (refractoryPeriodEndsSec - 2) * NS_PER_SEC;
-    tracker.noteStart(key1, true, justBeforeRefPeriodNs, conditionKey1);
+    tracker.noteStart(key1, true, justBeforeRefPeriodNs, conditionKey1,
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     alarm = anomalyTracker->mAlarms.begin()->second;
     EXPECT_EQ(justBeforeRefPeriodNs + 40 * NS_PER_SEC,
                 (unsigned long long)(alarm->timestampSec * NS_PER_SEC));
@@ -409,8 +423,10 @@ TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp_UpdatedOnStop) {
                                bucketNum, bucketStartTimeNs, bucketSizeNs, true, false,
                                {anomalyTracker});
 
-    tracker.noteStart(key1, true, eventStartTimeNs1, conditionKey1);
-    tracker.noteStart(key2, true, eventStartTimeNs2, conditionKey2);
+    tracker.noteStart(key1, true, eventStartTimeNs1, conditionKey1,
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
+    tracker.noteStart(key2, true, eventStartTimeNs2, conditionKey2,
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     tracker.noteStop(key1, eventStopTimeNs1, false);
     ASSERT_EQ(1U, anomalyTracker->mAlarms.size());
     auto alarm = anomalyTracker->mAlarms.begin()->second;
@@ -437,18 +453,83 @@ TEST(MaxDurationTrackerTest, TestUploadThreshold) {
                                bucketNum, bucketStartTimeNs, bucketSizeNs, false, false, {});
 
     // Duration below the gt_int threshold should not be added to past buckets.
-    tracker.noteStart(key1, true, eventStartTimeNs, ConditionKey());
+    tracker.noteStart(key1, true, eventStartTimeNs, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     tracker.noteStop(key1, eventStartTimeNs + thresholdDurationNs, false);
     tracker.flushIfNeeded(eventStartTimeNs + bucketSizeNs + 1, threshold, &buckets);
     EXPECT_TRUE(buckets.find(eventKey) == buckets.end());
 
     // Duration above the gt_int threshold should be added to past buckets.
-    tracker.noteStart(key1, true, event2StartTimeNs, ConditionKey());
+    tracker.noteStart(key1, true, event2StartTimeNs, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
     tracker.noteStop(key1, event2StartTimeNs + thresholdDurationNs + 1, false);
     tracker.flushIfNeeded(event2StartTimeNs + bucketSizeNs + 1, threshold, &buckets);
     EXPECT_TRUE(buckets.find(eventKey) != buckets.end());
     ASSERT_EQ(1u, buckets[eventKey].size());
     EXPECT_EQ(thresholdDurationNs + 1, buckets[eventKey][0].mDuration);
+}
+
+TEST(MaxDurationTrackerTest, TestNoAccumulatingDuration) {
+    const MetricDimensionKey eventKey = getMockedMetricDimensionKey(TagId, 0, "1");
+    const HashableDimensionKey key1 = getMockedDimensionKey(TagId, 1, "1");
+    const HashableDimensionKey key2 = getMockedDimensionKey(TagId, 1, "2");
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+
+    unordered_map<MetricDimensionKey, vector<DurationBucket>> buckets;
+
+    int64_t bucketSizeNs = 30 * 1000 * 1000 * 1000LL;
+    int64_t bucketStartTimeNs = 10000000000;
+    int64_t bucketEndTimeNs = bucketStartTimeNs + bucketSizeNs;
+    int64_t bucketNum = 0;
+
+    int64_t metricId = 1;
+    MaxDurationTracker tracker(kConfigKey, metricId, eventKey, wizard, -1, false, bucketStartTimeNs,
+                               bucketNum, bucketStartTimeNs, bucketSizeNs, false, false, {});
+
+    tracker.noteStart(key1, true, bucketStartTimeNs + 1, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
+    tracker.noteStop(key1, bucketStartTimeNs + 50, false);
+    EXPECT_TRUE(tracker.hasAccumulatedDuration());
+    EXPECT_FALSE(tracker.hasStartedDuration());
+
+    tracker.noteStart(key1, true, bucketStartTimeNs + 100, ConditionKey(),
+                      StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_TRUE(tracker.hasStartedDuration());
+    tracker.noteConditionChanged(key1, false, bucketStartTimeNs + 150);
+    EXPECT_TRUE(tracker.hasAccumulatedDuration());
+    EXPECT_FALSE(tracker.hasStartedDuration());
+
+    tracker.noteStop(key1, bucketStartTimeNs + 200, true);
+    tracker.flushIfNeeded(bucketEndTimeNs + 1, emptyThreshold, &buckets);
+    EXPECT_FALSE(tracker.hasAccumulatedDuration());
+}
+
+class MaxDurationTrackerTest_DimLimit : public Test {
+protected:
+    ~MaxDurationTrackerTest_DimLimit() {
+        StatsdStats::getInstance().reset();
+    }
+};
+
+TEST_F(MaxDurationTrackerTest_DimLimit, TestDimLimit) {
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    MaxDurationTracker tracker(kConfigKey, metricId, eventKey, wizard, -1 /* conditionIndex */,
+                               false /* nesting */, 0 /* currentBucketStartNs */, 0 /* bucketNum */,
+                               0 /* startTimeNs */, bucketSizeNs, false /* conditionSliced */,
+                               false /* fullLink */, {} /* anomalyTrackers */);
+
+    const size_t dimensionHardLimit = 900;
+    for (int i = 1; i <= dimensionHardLimit; i++) {
+        const HashableDimensionKey key = getMockedDimensionKey(TagId, i, "maps");
+        tracker.noteStart(key, false /* condition */, i /* eventTime */, ConditionKey(),
+                          dimensionHardLimit);
+    }
+    ASSERT_FALSE(tracker.mHasHitGuardrail);
+    const HashableDimensionKey key = getMockedDimensionKey(TagId, dimensionHardLimit + 1, "maps");
+    tracker.noteStart(key, false /* condition */, dimensionHardLimit + 1 /* eventTime */,
+                      ConditionKey(), dimensionHardLimit);
+    EXPECT_TRUE(tracker.mHasHitGuardrail);
 }
 
 }  // namespace statsd

@@ -11,6 +11,7 @@ java_binary_host {
     ],
     static_libs: [
         "platformprotos",
+        "statsd_extension_atoms_registry_lib",
         "guava",
     ],
 }
@@ -23,7 +24,18 @@ java_library_host {
     ],
     static_libs: [
         "platformprotos",
+        "statsd_extension_atoms_registry_lib",
         "guava",
+    ],
+}
+
+java_library_host {
+    name: "statsd_extension_atoms_registry_lib",
+    srcs: [
+        "src/com/android/statsd/shelltools/ExtensionAtomsRegistry.java",
+    ],
+    static_libs: [
+        "platformprotos",
     ],
 }
 

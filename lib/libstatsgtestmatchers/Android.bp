@@ -24,8 +24,8 @@ package {
 cc_test_library {
     name: "libstatsgtestmatchers",
     srcs: [
-        ":statsd_internal_protos",
-        ":libstats_internal_protos",
+        ":libstats_log_protos",
+        ":libstats_subscription_protos",
     ],
     export_include_dirs: ["include"],
     proto: {
@@ -46,6 +46,7 @@ cc_test_library {
         "-Wall",
         "-Werror",
         "-Wthread-safety",
+        "-Wno-deprecated-declarations",
     ],
     visibility: [
         "//packages/modules/StatsD/lib/libstatspull",

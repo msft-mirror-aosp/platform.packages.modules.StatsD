@@ -15,9 +15,9 @@
 #include <gtest/gtest.h>
 #include <stdio.h>
 
-#include "annotations.h"
-#include "src/statsd_config.pb.h"
 #include "matchers/matcher_util.h"
+#include "src/statsd_config.pb.h"
+#include "stats_annotations.h"
 #include "stats_event.h"
 #include "stats_log_util.h"
 #include "stats_util.h"
@@ -120,7 +120,7 @@ void makeRepeatedUidLogEvent(LogEvent* logEvent, const int32_t atomId,
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_writeInt32Array(statsEvent, intArray.data(), intArray.size());
-    AStatsEvent_addBoolAnnotation(statsEvent, ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     parseStatsEventToLogEvent(statsEvent, logEvent);
 }
 
@@ -234,15 +234,14 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "pkg0");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event));
 
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event));
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
@@ -388,15 +387,15 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
 
 TEST(AtomMatcherTest, TestUidFieldMatcher) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     // Set up matcher
     AtomMatcher matcher;
@@ -412,7 +411,8 @@ TEST(AtomMatcherTest, TestUidFieldMatcher) {
 
     // Make event with is_uid annotation.
     LogEvent event2(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event2, TAG_ID_2, 1111, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event2, TAG_ID_2, 1111, ASTATSLOG_ANNOTATION_ID_IS_UID,
+                                      true);
 
     // Event has is_uid annotation, so mapping from uid to package name occurs.
     simpleMatcher->set_atom_id(TAG_ID_2);
@@ -426,15 +426,15 @@ TEST(AtomMatcherTest, TestUidFieldMatcher) {
 
 TEST(AtomMatcherTest, TestRepeatedUidFieldMatcher) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     // Set up matcher.
     AtomMatcher matcher;
@@ -513,15 +513,15 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_SingleString) {
 
 TEST(AtomMatcherTest, TestNeqAnyStringMatcher_AttributionUids) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     std::vector<int> attributionUids = {1111, 2222, 3333, 1066};
     std::vector<string> attributionTags = {"location1", "location2", "location3", "location3"};
@@ -575,15 +575,15 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_AttributionUids) {
 
 TEST(AtomMatcherTest, TestEqAnyStringMatcher) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("pkg0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("Pkg2"), android::String16("PkG3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "Pkg2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "PkG3");
+
+    uidMap->updateMap(1, uidData);
 
     std::vector<int> attributionUids = {1067, 2222, 3333, 1066};
     std::vector<string> attributionTags = {"location1", "location2", "location3", "location3"};
@@ -1204,18 +1204,17 @@ TEST(AtomMatcherTest, TestNorMatcher) {
     matcherResults.push_back(MatchingState::kMatched);
     EXPECT_FALSE(combinationMatch(children, operation, matcherResults));
 }
-
+//
 TEST(AtomMatcherTest, TestUidFieldMatcherWithWildcardString) {
     sp<UidMap> uidMap = new UidMap();
-    uidMap->updateMap(
-            1, {1111, 1111, 2222, 3333, 3333} /* uid list */, {1, 1, 2, 1, 2} /* version list */,
-            {android::String16("v1"), android::String16("v1"), android::String16("v2"),
-             android::String16("v1"), android::String16("v2")},
-            {android::String16("package0"), android::String16("pkg1"), android::String16("pkg1"),
-             android::String16("package2"), android::String16("package3")} /* package name list */,
-            {android::String16(""), android::String16(""), android::String16(""),
-             android::String16(""), android::String16("")},
-            /* certificateHash */ {{}, {}, {}, {}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "package0");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1111, /*version*/ 1, "v1", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2222, /*version*/ 2, "v2", "pkg1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 1, "v1", "package2");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 3333, /*version*/ 2, "v2", "package3");
+
+    uidMap->updateMap(1, uidData);
 
     // Set up matcher
     AtomMatcher matcher;
@@ -1231,12 +1230,12 @@ TEST(AtomMatcherTest, TestUidFieldMatcherWithWildcardString) {
 
     // Event where mapping from uid to package name occurs.
     LogEvent event2(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event2, TAG_ID, 1111, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event2, TAG_ID, 1111, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event2));
 
     // Event where uid maps to package names that don't fit wildcard pattern.
     LogEvent event3(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event3, TAG_ID, 3333, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event3, TAG_ID, 3333, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event3));
 
     // Update matcher to match one AID
@@ -1245,12 +1244,12 @@ TEST(AtomMatcherTest, TestUidFieldMatcherWithWildcardString) {
 
     // Event where mapping from uid to aid doesn't fit wildcard pattern.
     LogEvent event4(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event4, TAG_ID, 1005, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event4, TAG_ID, 1005, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event4));
 
     // Event where mapping from uid to aid does fit wildcard pattern.
     LogEvent event5(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event5, TAG_ID, 1000, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event5, TAG_ID, 1000, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event5));
 
     // Update matcher to match multiple AIDs
@@ -1258,16 +1257,16 @@ TEST(AtomMatcherTest, TestUidFieldMatcherWithWildcardString) {
 
     // Event where mapping from uid to aid doesn't fit wildcard pattern.
     LogEvent event6(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event6, TAG_ID, 1036, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event6, TAG_ID, 1036, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event6));
 
     // Event where mapping from uid to aid does fit wildcard pattern.
     LogEvent event7(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event7, TAG_ID, 1034, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event7, TAG_ID, 1034, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event7));
 
     LogEvent event8(/*uid=*/0, /*pid=*/0);
-    makeIntWithBoolAnnotationLogEvent(&event8, TAG_ID, 1035, ANNOTATION_ID_IS_UID, true);
+    makeIntWithBoolAnnotationLogEvent(&event8, TAG_ID, 1035, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event8));
 }
 

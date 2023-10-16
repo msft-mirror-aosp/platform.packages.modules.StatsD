@@ -16,6 +16,7 @@
 
 #include <aidl/android/os/BnPendingIntentRef.h>
 #include <aidl/android/os/BnPullAtomCallback.h>
+#include <aidl/android/os/BnStatsQueryCallback.h>
 #include <aidl/android/os/BnStatsSubscriptionCallback.h>
 #include <aidl/android/os/IPullAtomCallback.h>
 #include <aidl/android/os/IPullAtomResultReceiver.h>
@@ -33,6 +34,7 @@
 #include "src/stats_log.pb.h"
 #include "src/stats_log_util.h"
 #include "src/statsd_config.pb.h"
+#include "stats_annotations.h"
 #include "stats_event.h"
 #include "statslog_statsdtest.h"
 
@@ -42,6 +44,7 @@ namespace statsd {
 
 using namespace testing;
 using ::aidl::android::os::BnPullAtomCallback;
+using ::aidl::android::os::BnStatsQueryCallback;
 using ::aidl::android::os::BnStatsSubscriptionCallback;
 using ::aidl::android::os::IPullAtomCallback;
 using ::aidl::android::os::IPullAtomResultReceiver;
@@ -93,6 +96,7 @@ class MockPendingIntentRef : public aidl::android::os::BnPendingIntentRef {
 public:
     MOCK_METHOD1(sendDataBroadcast, Status(int64_t lastReportTimeNs));
     MOCK_METHOD1(sendActiveConfigsChangedBroadcast, Status(const vector<int64_t>& configIds));
+    MOCK_METHOD1(sendRestrictedMetricsChangedBroadcast, Status(const vector<int64_t>& metricIds));
     MOCK_METHOD6(sendSubscriberBroadcast,
                  Status(int64_t configUid, int64_t configId, int64_t subscriptionId,
                         int64_t subscriptionRuleId, const vector<string>& cookies,
@@ -100,6 +104,14 @@ public:
 };
 
 typedef StrictMock<BasicMockLogEventFilter> MockLogEventFilter;
+
+class MockStatsQueryCallback : public BnStatsQueryCallback {
+public:
+    MOCK_METHOD4(sendResults,
+                 Status(const vector<string>& queryData, const vector<string>& columnNames,
+                        const vector<int32_t>& columnTypes, int32_t rowCount));
+    MOCK_METHOD1(sendFailure, Status(const string& in_error));
+};
 
 class MockStatsSubscriptionCallback : public BnStatsSubscriptionCallback {
 public:
@@ -113,7 +125,8 @@ class StatsServiceConfigTest : public ::testing::Test {
 protected:
     shared_ptr<StatsService> service;
     const int kConfigKey = 789130123;  // Randomly chosen
-    const int kCallingUid = 0;         // Randomly chosen
+    const int kCallingUid = 10100;     // Randomly chosen
+
     void SetUp() override {
         service = createStatsService();
         // Removing config file from data/misc/stats-service and data/misc/stats-data if present
@@ -135,7 +148,7 @@ protected:
 
     virtual shared_ptr<StatsService> createStatsService() {
         return SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
-                                                 /* LogEventFilter */ nullptr);
+                                                 std::make_shared<LogEventFilter>());
     }
 
     bool sendConfig(const StatsdConfig& config);
@@ -525,6 +538,9 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         const vector<string>& repeatedStringField, const bool* repeatedBoolField,
         const size_t repeatedBoolFieldLength, const vector<int>& repeatedEnumField);
 
+std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
+std::unique_ptr<LogEvent> CreateNonRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
+
 std::unique_ptr<LogEvent> CreatePhoneSignalStrengthChangedEvent(
         int64_t timestampNs, ::telephony::SignalStrengthEnum state);
 
@@ -547,7 +563,7 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(
         const int64_t timeBaseNs, const int64_t currentTimeNs, const StatsdConfig& config,
         const ConfigKey& key, const shared_ptr<IPullAtomCallback>& puller = nullptr,
         const int32_t atomTag = 0 /*for puller only*/, const sp<UidMap> = new UidMap(),
-        const shared_ptr<LogEventFilter>& logEventFilter = nullptr);
+        const shared_ptr<LogEventFilter>& logEventFilter = std::make_shared<LogEventFilter>());
 
 LogEventFilter::AtomIdSet CreateAtomIdSetDefault();
 LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config);
@@ -769,6 +785,9 @@ void writeBootFlag(const std::string& flagName, const std::string& flagValue);
 
 PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap);
 
+ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
+                                      const string& versionString, const string& package);
+
 PackageInfo buildPackageInfo(const std::string& name, const int32_t uid, const int64_t version,
                              const std::string& versionString,
                              const std::optional<std::string> installer,
@@ -802,6 +821,11 @@ std::vector<uint8_t> protoToBytes(const P& proto) {
     proto.SerializeToArray(bytes.data(), byteSize);
     return bytes;
 }
+
+StatsdConfig buildGoodConfig(int configId);
+
+StatsdConfig buildGoodConfig(int configId, int alertId);
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

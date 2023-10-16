@@ -16,24 +16,24 @@
 
 #pragma once
 
+#include <aidl/android/os/BnStatsd.h>
 #include <gtest/gtest_prod.h>
+#include <stdio.h>
+
+#include <unordered_map>
+
 #include "config/ConfigListener.h"
+#include "external/StatsPullerManager.h"
 #include "logd/LogEvent.h"
 #include "metrics/MetricsManager.h"
 #include "packages/UidMap.h"
 #include "socket/LogEventFilter.h"
-#include "external/StatsPullerManager.h"
-
 #include "src/statsd_config.pb.h"
 #include "src/statsd_metadata.pb.h"
-
-#include <stdio.h>
-#include <unordered_map>
 
 namespace android {
 namespace os {
 namespace statsd {
-
 
 class StatsLogProcessor : public ConfigListener, public virtual PackageInfoListener {
 public:
@@ -43,6 +43,8 @@ public:
             const sp<AlarmMonitor>& subscriberTriggerAlarmMonitor, const int64_t timeBaseNs,
             const std::function<bool(const ConfigKey&)>& sendBroadcast,
             const std::function<bool(const int&, const vector<int64_t>&)>& sendActivationBroadcast,
+            const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
+                    sendRestrictedMetricsBroadcast,
             const std::shared_ptr<LogEventFilter>& logEventFilter);
 
     virtual ~StatsLogProcessor();
@@ -110,6 +112,9 @@ public:
                           int64_t currentWallClockTimeNs,
                           int64_t systemElapsedTimeNs);
 
+    /* Enforces ttls for restricted metrics */
+    void EnforceDataTtls(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
+
     /* Sets the active status/ttl for all configs and metrics to the status in ActiveConfigList. */
     void SetConfigsActiveState(const ActiveConfigList& activeConfigList, int64_t currentTimeNs);
 
@@ -144,12 +149,9 @@ public:
     inline void setPrintLogs(bool enabled) {
         std::lock_guard<std::mutex> lock(mMetricsMutex);
         mPrintAllLogs = enabled;
-
-        if (mLogEventFilter) {
-            // Turning on print logs turns off pushed event filtering to enforce
-            // complete log event buffer parsing
-            mLogEventFilter->setFilteringEnabled(!enabled);
-        }
+        // Turning on print logs turns off pushed event filtering to enforce
+        // complete log event buffer parsing
+        mLogEventFilter->setFilteringEnabled(!enabled);
     }
 
     // Add a specific config key to the possible configs to dump ASAP.
@@ -158,6 +160,14 @@ public:
     void setAnomalyAlarm(const int64_t timeMillis);
 
     void cancelAnomalyAlarm();
+
+    void querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                  const optional<vector<uint8_t>>& policyConfig,
+                  const shared_ptr<aidl::android::os::IStatsQueryCallback>& callback,
+                  const int64_t configId, const string& configPackage, const int32_t callingUid);
+
+    void fillRestrictedMetrics(const int64_t configId, const string& configPackage,
+                               const int32_t delegateUid, vector<int64_t>* output);
 
     /* Returns pre-defined list of atoms to parse by LogEventFilter */
     static LogEventFilter::AtomIdSet getDefaultAtomIdSet();
@@ -188,6 +198,15 @@ private:
 
     // Tracks when we last checked the bytes consumed for each config key.
     std::unordered_map<ConfigKey, int64_t> mLastByteSizeTimes;
+
+    // Tracks when we last checked the ttl for restricted metrics.
+    int64_t mLastTtlTime;
+
+    // Tracks when we last flushed restricted metrics.
+    int64_t mLastFlushRestrictedTime;
+
+    // Tracks when we last checked db guardrails.
+    int64_t mLastDbGuardrailEnforcementTime;
 
     // Tracks which config keys has metric reports on disk
     std::set<ConfigKey> mOnDiskDataConfigs;
@@ -241,9 +260,27 @@ private:
              (e.g., before reboot). So no need to further persist local history.*/
             const bool dataSavedToDisk, vector<uint8_t>* proto);
 
+    /* Check if it is time enforce data ttls for restricted metrics, and if it is, enforce ttls
+     * on all restricted metrics. */
+    void enforceDataTtlsIfNecessaryLocked(const int64_t wallClockNs,
+                                          const int64_t elapsedRealtimeNs);
+
+    // Enforces ttls on all restricted metrics.
+    void enforceDataTtlsLocked(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
+
+    // Enforces that dbs are within guardrail parameters.
+    void enforceDbGuardrailsIfNecessaryLocked(const int64_t wallClockNs,
+                                              const int64_t elapsedRealtimeNs);
+
     /* Check if we should send a broadcast if approaching memory limits and if we're over, we
      * actually delete the data. */
     void flushIfNecessaryLocked(const ConfigKey& key, MetricsManager& metricsManager);
+
+    set<ConfigKey> getRestrictedConfigKeysToQueryLocked(const int32_t callingUid,
+                                                        const int64_t configId,
+                                                        const set<int32_t>& configPackageUids,
+                                                        string& err,
+                                                        InvalidQueryReason& invalidQueryReason);
 
     // Maps the isolated uid in the log event to host uid if the log event contains uid fields.
     void mapIsolatedUidToHostUidIfNecessaryLocked(LogEvent* event) const;
@@ -281,6 +318,10 @@ private:
             const int64_t& timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
+    void flushRestrictedDataLocked(const int64_t elapsedRealtimeNs);
+
+    void flushRestrictedDataIfNecessaryLocked(const int64_t elapsedRealtimeNs);
+
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
 
@@ -293,6 +334,12 @@ private:
     // Function used to send a broadcast so that receiver can be notified of which configs
     // are currently active.
     std::function<bool(const int& uid, const vector<int64_t>& configIds)> mSendActivationBroadcast;
+
+    // Function used to send a broadcast if necessary so the receiver can be notified of the
+    // restricted metrics for the given config.
+    std::function<void(const ConfigKey& key, const string& delegatePackage,
+                       const vector<int64_t>& restrictedMetricIds)>
+            mSendRestrictedMetricsBroadcast;
 
     const int64_t mTimeBaseNs;
 
@@ -317,6 +364,7 @@ private:
 
     bool mPrintAllLogs = false;
 
+    friend class StatsLogProcessorTestRestricted;
     FRIEND_TEST(StatsLogProcessorTest, TestOutOfOrderLogs);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitByteSize);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitBroadcast);
@@ -333,6 +381,17 @@ private:
     FRIEND_TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap);
     FRIEND_TEST(StatsLogProcessorTest, TestReportIncludesSubConfig);
     FRIEND_TEST(StatsLogProcessorTest, TestPullUidProviderSetOnConfigUpdate);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigUpdate);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestRestrictedLogEventPassed);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, TestRestrictedLogEventNotPassed);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricsManagerOnDumpReportNotCalled);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricsManagerOnDumpReportCalled);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricOnDumpReportEmpty);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricOnDumpReportNotEmpty);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotWriteToDisk);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, NonRestrictedMetricWriteToDisk);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricFlushIfReachMemoryLimit);
+    FRIEND_TEST(StatsLogProcessorTestRestricted, RestrictedMetricNotFlushIfNotReachMemoryLimit);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration1);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration2);
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensionsForSumDuration3);
@@ -352,6 +411,19 @@ private:
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsWithActivation);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestRandomSamplePulledEventsNoCondition);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestConditionChangeToTrueSamplePulledEvents);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceTtlRemovesOldEvents);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlagDisabled);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsEnforceTtls);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestQueryEnforceTtls);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestLogEventsDoesNotEnforceTtls);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestNotFlushed);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushInWriteDataToDisk);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlushPeriodically);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestTTlsEnforceDbGuardrails);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestOnLogEventMalformedDbNameDeleted);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeGuardrail);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestRestrictedMetricLoadsTtlFromDisk);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);

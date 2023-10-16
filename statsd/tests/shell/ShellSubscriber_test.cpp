@@ -160,7 +160,7 @@ void runShellTest(ShellSubscription config, sp<MockUidMap> uidMap,
                   const vector<std::shared_ptr<LogEvent>>& pushedEvents,
                   const vector<ShellData>& expectedData, int numClients) {
     sp<ShellSubscriber> shellManager =
-            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
+            new ShellSubscriber(uidMap, pullerManager, std::make_shared<LogEventFilter>());
 
     size_t bufferSize = config.ByteSize();
     vector<uint8_t> buffer(bufferSize);
@@ -806,7 +806,7 @@ TEST(ShellSubscriberTest, testMaxSizeGuard) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
     sp<ShellSubscriber> shellManager =
-            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
+            new ShellSubscriber(uidMap, pullerManager, std::make_shared<LogEventFilter>());
 
     // set up 2 pipes for read/write config and data
     int fds_config[2];
@@ -830,7 +830,7 @@ TEST(ShellSubscriberTest, testMaxSubscriptionsGuard) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
     sp<ShellSubscriber> shellManager =
-            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
+            new ShellSubscriber(uidMap, pullerManager, std::make_shared<LogEventFilter>());
 
     // create a simple config to get screen events
     ShellSubscription config;
@@ -880,7 +880,7 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
     sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
     sp<ShellSubscriber> shellManager =
-            new ShellSubscriber(uidMap, pullerManager, /*LogEventFilter=*/nullptr);
+            new ShellSubscriber(uidMap, pullerManager, std::make_shared<LogEventFilter>());
 
     // number of different configs
     int numConfigs = 2;
@@ -955,6 +955,28 @@ TEST(ShellSubscriberTest, testDifferentConfigs) {
     EXPECT_THAT(expected4, EqShellData(actual4));
 
     // Not closing fds_datas[i][0] because this causes writes within ShellSubscriberClient to hang
+}
+
+TEST(ShellSubscriberTest, testPushedSubscriptionRestrictedEvent) {
+    sp<MockUidMap> uidMap = new NaggyMock<MockUidMap>();
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+
+    std::vector<shared_ptr<LogEvent>> pushedList;
+    pushedList.push_back(CreateRestrictedLogEvent(/*atomTag=*/10, /*timestamp=*/1000));
+
+    // create a simple config to get screen events
+    ShellSubscription config;
+    config.add_pushed()->set_atom_id(10);
+
+    // expect empty data
+    vector<ShellData> expectedData;
+
+    // Test with single client
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData,
+               kSingleClient);
+
+    // Test with multiple client
+    TRACE_CALL(runShellTest, config, uidMap, pullerManager, pushedList, expectedData, kNumClients);
 }
 
 #else
