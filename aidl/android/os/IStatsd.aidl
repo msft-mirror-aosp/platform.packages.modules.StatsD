@@ -95,6 +95,7 @@ interface IStatsd {
      * wire-encoded of ConfigMetricsReportList.
      *
      * Requires Manifest.permission.DUMP.
+     * @deprecated use #getDataFd() instead for Android T+
      */
     byte[] getData(in long key, int callingUid);
 
