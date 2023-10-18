@@ -61,7 +61,11 @@ public class StatsdPermissionTest {
 
     e = assertThrows(
         StatsManager.StatsUnavailableException.class, () -> statsManager.getReports(1234));
-    assertThat(e).hasCauseThat().isInstanceOf(SecurityException.class);
+    // expectations are:
+    // - for Android T+ receive IllegalStateException
+    // - for previous versions receive SecurityExceptions
+    assertThat(e.getCause().getClass()).
+            isAnyOf(SecurityException.class, IllegalStateException.class);
 
     e = assertThrows(
         StatsManager.StatsUnavailableException.class, () -> statsManager.getStatsMetadata());
