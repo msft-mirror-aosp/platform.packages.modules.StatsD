@@ -17,6 +17,8 @@
 #define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
+#include "subscriber_util.h"
+
 #include "external/Perfetto.h"
 #include "subscriber/IncidentdReporter.h"
 #include "subscriber/SubscriberReporter.h"
@@ -25,8 +27,9 @@ namespace android {
 namespace os {
 namespace statsd {
 
-void triggerSubscribers(int64_t ruleId, int64_t metricId, const MetricDimensionKey& dimensionKey,
-                        int64_t metricValue, const ConfigKey& configKey,
+void triggerSubscribers(const int64_t ruleId, const int64_t metricId,
+                        const MetricDimensionKey& dimensionKey, int64_t metricValue,
+                        const ConfigKey& configKey,
                         const std::vector<Subscription>& subscriptions) {
     VLOG("informSubscribers called.");
     if (subscriptions.empty()) {
