@@ -156,7 +156,7 @@ bool should_write_via_queue(uint32_t atomId) {
 #else
 bool should_write_via_queue(uint32_t /*atomId*/) {
 #endif
-    static const uint32_t appUid = getuid();
+    const uint32_t appUid = getuid();
 
     // hard-coded push all system server atoms to queue
     if (appUid == AID_SYSTEM) {
