@@ -55,6 +55,7 @@ cc_defaults {
         "src/HashableDimensionKey.cpp",
         "src/logd/LogEvent.cpp",
         "src/logd/LogEventQueue.cpp",
+        "src/logd/logevent_util.cpp",
         "src/matchers/CombinationAtomMatchingTracker.cpp",
         "src/matchers/EventMatcherWizard.cpp",
         "src/matchers/matcher_util.cpp",
@@ -423,6 +424,7 @@ cc_benchmark {
         "benchmark/main.cpp",
         "benchmark/metric_util.cpp",
         "benchmark/stats_write_benchmark.cpp",
+        "benchmark/loss_info_container_benchmark.cpp",
         "src/stats_log.proto",
     ],
 
