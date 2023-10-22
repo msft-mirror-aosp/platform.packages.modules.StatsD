@@ -929,12 +929,8 @@ public final class StatsManager {
         }
     }
 
-    private static final String USE_FILE_DESCRIPTOR_FLAG = "use_file_descriptor";
-
     private static boolean getUseFileDescriptor() {
-        return SdkLevel.isAtLeastT()
-                && DeviceConfig.getBoolean(
-                NAMESPACE_STATSD_JAVA, USE_FILE_DESCRIPTOR_FLAG, /* defaultValue= */ false);
+        return SdkLevel.isAtLeastT();
     }
 
     private static final int MAX_BUFFER_SIZE = 1024 * 1024 * 20; // 20MB
