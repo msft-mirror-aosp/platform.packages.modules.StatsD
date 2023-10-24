@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "config/ConfigKey.h"
+#include "logd/logevent_util.h"
 
 namespace android {
 namespace os {
@@ -266,6 +267,9 @@ public:
 
     // Maximum number of pushed atoms error statsd stats will track.
     static const int kMaxPushedAtomErrorStatsSize = 100;
+
+    // Maximum number of socket loss stats to track.
+    static const int kMaxSocketLossStatsSize = 100;
 
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
@@ -663,6 +667,11 @@ public:
                                     const int64_t dbSize);
 
     /**
+     * Records libstatssocket was not able to write into socket.
+     */
+    void noteAtomSocketLoss(const SocketLossInfo& lossInfo);
+
+    /**
      * Report a new subscription has started and report the static stats about the subscription
      * config.
      *
@@ -840,6 +849,17 @@ private:
     // corresponding counts for pulled atoms are stored in PulledAtomStats.
     // The max size of this map is kMaxPushedAtomErrorStatsSize.
     std::map<int, int> mPushedAtomErrorStats;
+
+    // Stores the number of times a pushed atom was lost due to socket error.
+    // Represents counter per uid per tag per error
+    // The max size of this map is kMaxSocketLossStatsSize.
+    std::map<std::tuple<int32_t, int32_t, int32_t>, int32_t> mSocketLossStats;
+
+    // Stores the number of times a pushed atom loss info was dropped to be added into stats
+    // on libstatssocket side due to guardrail hit.
+    // Represents counter per uid.
+    // The max size of this map is kMaxSocketLossStatsSize.
+    std::map<int32_t, int32_t> mSocketLossStatsOverflowCounter;
 
     // Maps metric ID to its stats. The size is capped by the number of metrics.
     std::map<int64_t, AtomMetricStats> mAtomMetricStats;
