@@ -1466,9 +1466,10 @@ LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
     // populate hard-coded list of useful atoms
     // we add also atoms which could be pushed by statsd itself to simplify the logic
     // to handle metric configs update: APP_BREADCRUMB_REPORTED & ANOMALY_DETECTED
-    LogEventFilter::AtomIdSet allAtomIds{util::BINARY_PUSH_STATE_CHANGED, util::ANOMALY_DETECTED,
-                                         util::ISOLATED_UID_CHANGED, util::APP_BREADCRUMB_REPORTED,
-                                         util::WATCHDOG_ROLLBACK_OCCURRED};
+    LogEventFilter::AtomIdSet allAtomIds{
+            util::BINARY_PUSH_STATE_CHANGED, util::ISOLATED_UID_CHANGED,
+            util::APP_BREADCRUMB_REPORTED,   util::WATCHDOG_ROLLBACK_OCCURRED,
+            util::ANOMALY_DETECTED,          util::STATS_SOCKET_LOSS_REPORTED};
     return allAtomIds;
 }
 

@@ -341,6 +341,33 @@ void StatsdStats::noteAtomDroppedLocked(int32_t atomId) {
     }
 }
 
+void StatsdStats::noteAtomSocketLoss(const SocketLossInfo& lossInfo) {
+    ALOGW("SocketLossEvent detected: %lld (firstLossTsNanos), %lld (lastLossTsNanos)",
+          (long long)lossInfo.firstLossTsNanos, (long long)lossInfo.lastLossTsNanos);
+    lock_guard<std::mutex> lock(mLock);
+    for (size_t i = 0; i < lossInfo.atomIds.size(); i++) {
+        ALOGW("For uid %d atom %d was lost %d times with error %d", lossInfo.uid,
+              lossInfo.atomIds[i], lossInfo.counts[i], lossInfo.errors[i]);
+        const auto lossInfoKey =
+                std::make_tuple(lossInfo.uid, lossInfo.atomIds[i], lossInfo.errors[i]);
+        auto counterIt = mSocketLossStats.find(lossInfoKey);
+        if (counterIt != mSocketLossStats.end()) {
+            counterIt->second += lossInfo.counts[i];
+        } else if (mSocketLossStats.size() < kMaxSocketLossStatsSize) {
+            mSocketLossStats[lossInfoKey] = lossInfo.counts[i];
+        }
+    }
+
+    if (lossInfo.overflowCounter > 0) {
+        auto overflowPerUid = mSocketLossStatsOverflowCounter.find(lossInfo.uid);
+        if (overflowPerUid != mSocketLossStatsOverflowCounter.end()) {
+            overflowPerUid->second += lossInfo.overflowCounter;
+        } else if (mSocketLossStatsOverflowCounter.size() < kMaxSocketLossStatsSize) {
+            mSocketLossStatsOverflowCounter[lossInfo.uid] = lossInfo.overflowCounter;
+        }
+    }
+}
+
 void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes, int32_t timeSec) {
     lock_guard<std::mutex> lock(mLock);
     auto it = mConfigStats.find(key);
@@ -956,6 +983,8 @@ void StatsdStats::resetInternalLocked() {
     mAtomMetricStats.clear();
     mActivationBroadcastGuardrailStats.clear();
     mPushedAtomErrorStats.clear();
+    mSocketLossStats.clear();
+    mSocketLossStatsOverflowCounter.clear();
     mPushedAtomDropsStats.clear();
     mSubscriptionPullThreadWakeupCount = 0;
 
@@ -1229,6 +1258,26 @@ void StatsdStats::dumpStats(int out) const {
                 loss.mUid, loss.mPid);
     }
 
+    if (mSocketLossStats.size()) {
+        dprintf(out, "********SocketLossStats stats***********\n");
+        for (const auto& loss : mSocketLossStats) {
+            const int32_t uid = std::get<0>(loss.first);
+            const int32_t tag = std::get<1>(loss.first);
+            const int32_t error = std::get<2>(loss.first);
+            dprintf(out, "Socket loss: %d (uid), %d (tag) %d (error), %d (count)\n", uid, tag,
+                    error, loss.second);
+        }
+    }
+
+    if (mSocketLossStatsOverflowCounter.size()) {
+        dprintf(out, "********mSocketLossStatsOverflowCounter stats***********\n");
+        for (const auto& overflow : mSocketLossStatsOverflowCounter) {
+            dprintf(out, "Socket loss overflow for %d uid is %d times\n", overflow.first,
+                    overflow.second);
+        }
+    }
+
+    dprintf(out, "********EventQueueOverflow stats***********\n");
     dprintf(out, "Event queue overflow: %d; MaxHistoryNs: %lld; MinHistoryNs: %lld\n",
             mOverflowCount, (long long)mMaxQueueHistoryNs, (long long)mMinQueueHistoryNs);
 
