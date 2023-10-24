@@ -1,11 +1,11 @@
 /*
- * Copyright (C) 2023, The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-#pragma once
+#include <gtest/gtest.h>
 
-#include <stddef.h>
-#include <stdint.h>
+#include "stats_statsdsocketlog.h"
+#include "utils.h"
 
-__BEGIN_DECLS
+TEST(StatsStatsdSocketLog, TestToSocketLossError) {
+    using namespace android::os::statsdsocket;
 
-int64_t get_elapsed_realtime_ns();
-
-int toSocketLossError(int errno_code);
-
-__END_DECLS
+    EXPECT_EQ(-EAGAIN, toSocketLossError(EAGAIN));
+    EXPECT_EQ(STATS_SOCKET_LOSS_REPORTED__ERRORS__SOCKET_LOSS_ERROR_UNKNOWN,
+              toSocketLossError(ERANGE));
+}
