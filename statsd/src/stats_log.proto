@@ -640,6 +640,7 @@ message StatsdStatsReport {
     }
     repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;
     optional uint32 shard_offset = 21;
+    optional int32 statsd_stats_id = 22;
 
     message SubscriptionStats {
       message PerSubscriptionStats {
@@ -655,7 +656,6 @@ message StatsdStatsReport {
     }
 
     optional SubscriptionStats subscription_stats = 23;
-    optional int32 statsd_stats_id = 22;
 }
 
 message AlertTriggerDetails {

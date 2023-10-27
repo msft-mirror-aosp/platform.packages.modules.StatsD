@@ -734,6 +734,14 @@ public:
     }
 
     /**
+     * Return the unique identifier for the statsd stats report. This id is
+     * reset on boot.
+     */
+    inline int32_t getStatsdStatsId() const {
+        return mStatsdStatsId;
+    }
+
+    /**
      * Returns true if there is recorded event queue overflow
      */
     bool hasEventQueueOverflow() const;
@@ -742,14 +750,6 @@ public:
      * Returns true if there is recorded socket loss
      */
     bool hasSocketLoss() const;
-
-    /**
-     * Return the unique identifier for the statsd stats report. This id is
-     * reset on boot.
-     */
-    inline int32_t getStatsdStatsId() const {
-        return mStatsdStatsId;
-    }
 
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;

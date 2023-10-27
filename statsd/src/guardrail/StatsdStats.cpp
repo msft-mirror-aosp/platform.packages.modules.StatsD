@@ -59,8 +59,8 @@ const int FIELD_ID_OVERFLOW = 18;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS = 20;
 const int FIELD_ID_SHARD_OFFSET = 21;
-const int FIELD_ID_SUBSCRIPTION_STATS = 23;
 const int FIELD_ID_STATSD_STATS_ID = 22;
+const int FIELD_ID_SUBSCRIPTION_STATS = 23;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -1062,6 +1062,7 @@ void StatsdStats::resetInternalLocked() {
     mSocketLossStats.clear();
     mSocketLossStatsOverflowCounter.clear();
     mPushedAtomDropsStats.clear();
+    mRestrictedMetricQueryStats.clear();
     mSubscriptionPullThreadWakeupCount = 0;
 
     for (auto it = mSubscriptionStats.begin(); it != mSubscriptionStats.end();) {
@@ -1814,6 +1815,8 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
     proto.write(FIELD_TYPE_UINT32 | FIELD_ID_SHARD_OFFSET,
                 static_cast<long>(ShardOffsetProvider::getInstance().getShardOffset()));
 
+    proto.write(FIELD_TYPE_INT32 | FIELD_ID_STATSD_STATS_ID, mStatsdStatsId);
+
     // Write subscription stats
     const uint64_t token = proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SUBSCRIPTION_STATS);
     for (const auto& [id, subStats] : mSubscriptionStats) {
@@ -1834,8 +1837,6 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
                                  subStats.flush_count, &proto);
         proto.end(token);
     }
-    proto.write(FIELD_TYPE_INT32 | FIELD_ID_STATSD_STATS_ID, mStatsdStatsId);
-
     writeNonZeroStatToStream(
             FIELD_TYPE_INT32 | FIELD_ID_SUBSCRIPTION_STATS_PULL_THREAD_WAKEUP_COUNT,
             mSubscriptionPullThreadWakeupCount, &proto);
