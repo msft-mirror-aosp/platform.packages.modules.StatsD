@@ -214,15 +214,6 @@ cc_binary {
         // "-O0",
     ],
 
-    product_variables: {
-        eng: {
-            // Enable sanitizer ONLY on eng builds
-            //sanitize: {
-            //    address: true,
-            //},
-        },
-    },
-
     proto: {
         type: "lite",
         static: true,
