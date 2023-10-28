@@ -80,7 +80,7 @@ private:
     // Update the StateMap based on the received state value.
     void updateStateForPrimaryKey(const int64_t eventTimeNs, const HashableDimensionKey& primaryKey,
                                   const FieldValue& newState, const bool nested,
-                                  StateValueInfo* stateValueInfo);
+                                  StateValueInfo& stateValueInfo);
 
     // Notify registered state listeners of state change.
     void notifyListeners(const int64_t eventTimeNs, const HashableDimensionKey& primaryKey,
