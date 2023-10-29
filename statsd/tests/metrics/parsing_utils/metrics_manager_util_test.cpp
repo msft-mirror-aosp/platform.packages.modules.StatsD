@@ -1652,48 +1652,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionALL) {
                                   metric.id()));
 }
 
-TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionFIRST) {
-    AtomMatcher testAtomReportedMatcher =
-            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
-
-    StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
-    *config.add_atom_matcher() = testAtomReportedMatcher;
-
-    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
-                                           testAtomReportedMatcher.id(), nullopt, {});
-    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
-            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::FIRST});
-    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
-            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
-                                     {Position::FIRST});
-    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
-    *config.add_count_metric() = metric;
-
-    EXPECT_EQ(initConfig(config), nullopt);
-}
-
-TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionLAST) {
-    AtomMatcher testAtomReportedMatcher =
-            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
-
-    StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
-    *config.add_atom_matcher() = testAtomReportedMatcher;
-
-    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
-                                           testAtomReportedMatcher.id(), nullopt, {});
-    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
-            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::LAST});
-    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
-            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
-                                     {Position::LAST});
-    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
-    *config.add_count_metric() = metric;
-
-    EXPECT_EQ(initConfig(config), nullopt);
-}
-
 TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
     AtomMatcher testAtomReportedMatcher =
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
@@ -1717,7 +1675,7 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
                                   metric.id()));
 }
 
-TEST_F(MetricsManagerUtilTest, TestMetricSampledFieldNotSubsetDimension) {
+TEST_F(MetricsManagerUtilTest, TestMetricSampledField_DifferentFieldsNotSubsetDimension) {
     AtomMatcher appCrashMatcher =
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
@@ -1736,6 +1694,138 @@ TEST_F(MetricsManagerUtilTest, TestMetricSampledFieldNotSubsetDimension) {
             initConfig(config),
             InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
                                 metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastNotSubsetDimensionsFirst) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::FIRST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::LAST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
+                                metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstNotSubsetDimensionsLast) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::LAST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::FIRST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
+                                metric.id()));
+}
+
+// dimensions_in_what position ALL, sampled_what_field position FIRST
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstSubsetDimensionsAll) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::ALL});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::FIRST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+// dimensions_in_what position ALL, sampled_what_field position LAST
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastSubsetDimensionsAll) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::ALL});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::LAST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+// dimensions_in_what position FIRST, sampled_what_field position FIRST
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstSubsetDimensionsFirst) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::FIRST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::FIRST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+// dimensions_in_what position LAST, sampled_what_field position LAST
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastSubsetDimensionsLast) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::LAST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::LAST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+    EXPECT_EQ(initConfig(config), nullopt);
 }
 
 TEST_F(MetricsManagerUtilTest, TestCountMetricHasRestrictedDelegate) {
