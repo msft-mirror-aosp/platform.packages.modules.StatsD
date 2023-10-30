@@ -61,6 +61,8 @@ const int FIELD_ID_REPORTS = 2;
 // for ConfigKey
 const int FIELD_ID_UID = 1;
 const int FIELD_ID_ID = 2;
+const int FIELD_ID_REPORT_NUMBER = 3;
+const int FIELD_ID_STATSD_STATS_ID = 4;
 // for ConfigMetricsReport
 // const int FIELD_ID_METRICS = 1; // written in MetricsManager.cpp
 const int FIELD_ID_UID_MAP = 2;
@@ -558,6 +560,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
             modularUpdate = false;
         }
         if (!modularUpdate && it->second->hasRestrictedMetricsDelegate()) {
+            StatsdStats::getInstance().noteDbDeletionConfigUpdated(key);
             // Always delete the old db if restricted metrics config is not a
             // modular update.
             dbutils::deleteDb(key);
@@ -616,6 +619,7 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         if (isAtLeastU() && it != mMetricsManagers.end() &&
             it->second->hasRestrictedMetricsDelegate()) {
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+            StatsdStats::getInstance().noteDbConfigInvalid(key);
             dbutils::deleteDb(key);
         }
         mMetricsManagers.erase(key);
@@ -692,6 +696,18 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
     } else {
         ALOGW("Config source %s does not exist", key.ToString().c_str());
     }
+
+    if (erase_data) {
+        ++mDumpReportNumbers[key];
+    }
+    proto->write(FIELD_TYPE_INT32 | FIELD_ID_REPORT_NUMBER, mDumpReportNumbers[key]);
+
+    proto->write(FIELD_TYPE_INT32 | FIELD_ID_STATSD_STATS_ID,
+                 StatsdStats::getInstance().getStatsdStatsId());
+    if (erase_data) {
+        StatsdStats::getInstance().noteMetricsReportSent(key, proto->size(),
+                                                         mDumpReportNumbers[key]);
+    }
 }
 
 /*
@@ -710,8 +726,6 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
         flushProtoToBuffer(proto, outData);
         VLOG("output data size %zu", outData->size());
     }
-
-    StatsdStats::getInstance().noteMetricsReportSent(key, proto.size());
 }
 
 /*
@@ -837,6 +851,7 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
         WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
                               NO_TIME_CONSTRAINTS);
         if (isAtLeastU() && it->second->hasRestrictedMetricsDelegate()) {
+            StatsdStats::getInstance().noteDbDeletionConfigRemoved(key);
             dbutils::deleteDb(key);
             mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
         }
@@ -846,6 +861,8 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     StatsdStats::getInstance().noteConfigRemoved(key);
 
     mLastBroadcastTimes.erase(key);
+    mLastByteSizeTimes.erase(key);
+    mDumpReportNumbers.erase(key);
 
     int uid = key.GetUid();
     bool lastConfigForUid = true;
@@ -1466,9 +1483,10 @@ LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
     // populate hard-coded list of useful atoms
     // we add also atoms which could be pushed by statsd itself to simplify the logic
     // to handle metric configs update: APP_BREADCRUMB_REPORTED & ANOMALY_DETECTED
-    LogEventFilter::AtomIdSet allAtomIds{util::BINARY_PUSH_STATE_CHANGED, util::ANOMALY_DETECTED,
-                                         util::ISOLATED_UID_CHANGED, util::APP_BREADCRUMB_REPORTED,
-                                         util::WATCHDOG_ROLLBACK_OCCURRED};
+    LogEventFilter::AtomIdSet allAtomIds{
+            util::BINARY_PUSH_STATE_CHANGED, util::ISOLATED_UID_CHANGED,
+            util::APP_BREADCRUMB_REPORTED,   util::WATCHDOG_ROLLBACK_OCCURRED,
+            util::ANOMALY_DETECTED,          util::STATS_SOCKET_LOSS_REPORTED};
     return allAtomIds;
 }
 

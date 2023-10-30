@@ -480,6 +480,7 @@ bool equalDimensions(const std::vector<Matcher>& dimension_a,
     return eq;
 }
 
+/* Is dimension_a a subset of dimension_b. */
 bool subsetDimensions(const std::vector<Matcher>& dimension_a,
                       const std::vector<Matcher>& dimension_b) {
     if (dimension_a.size() > dimension_b.size()) {
@@ -490,6 +491,18 @@ bool subsetDimensions(const std::vector<Matcher>& dimension_a,
         for (size_t j = 0; j < dimension_b.size(); ++j) {
             if (dimension_a[i] == dimension_b[j]) {
                 found = true;
+                break;
+            }
+
+            // Check equality of repeated fields with different positions.
+            // Only position FIRST and LAST are considered subsets of position ALL.
+            if (dimension_b[j].hasAllPositionMatcher() &&
+                (dimension_a[i].hasFirstPositionMatcher() ||
+                 dimension_a[i].hasLastPositionMatcher())) {
+                if (dimension_a[i].isEqualWithoutPositionBits(dimension_b[j])) {
+                    found = true;
+                    break;
+                }
             }
         }
         if (!found) {

@@ -23,4 +23,6 @@ __BEGIN_DECLS
 
 int64_t get_elapsed_realtime_ns();
 
+int toSocketLossError(int errno_code);
+
 __END_DECLS

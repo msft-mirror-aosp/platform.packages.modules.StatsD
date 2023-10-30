@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "config/ConfigKey.h"
+#include "logd/logevent_util.h"
 
 namespace android {
 namespace os {
@@ -52,19 +53,6 @@ struct InvalidConfigReason {
     }
 };
 
-// Keep this in sync with InvalidQueryReason enum in stats_log.proto
-enum InvalidQueryReason {
-    UNKNOWN_REASON = 0,
-    FLAG_DISABLED = 1,
-    UNSUPPORTED_SQLITE_VERSION = 2,
-    AMBIGUOUS_CONFIG_KEY = 3,
-    CONFIG_KEY_NOT_FOUND = 4,
-    CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5,
-    QUERY_FAILURE = 6,
-    INCONSISTENT_ROW_SIZE = 7,
-    NULL_CALLBACK = 8
-};
-
 typedef struct {
     int64_t insertError = 0;
     int64_t tableCreationError = 0;
@@ -72,6 +60,17 @@ typedef struct {
     std::list<int64_t> flushLatencyNs;
     int64_t categoryChangedCount = 0;
 } RestrictedMetricStats;
+
+struct DumpReportStats {
+    DumpReportStats(int32_t dumpReportSec, int32_t dumpReportSize, int32_t reportNumber)
+        : mDumpReportTimeSec(dumpReportSec),
+          mDumpReportSizeBytes(dumpReportSize),
+          mDumpReportNumber(reportNumber) {
+    }
+    int32_t mDumpReportTimeSec = 0;
+    int32_t mDumpReportSizeBytes = 0;
+    int32_t mDumpReportNumber = 0;
+};
 
 struct ConfigStats {
     int32_t uid;
@@ -86,6 +85,12 @@ struct ConfigStats {
     bool is_valid;
     bool device_info_table_creation_failed = false;
     int32_t db_corrupted_count = 0;
+    int32_t db_deletion_stat_failed = 0;
+    int32_t db_deletion_size_exceeded_limit = 0;
+    int32_t db_deletion_config_invalid = 0;
+    int32_t db_deletion_too_old = 0;
+    int32_t db_deletion_config_removed = 0;
+    int32_t db_deletion_config_updated = 0;
 
     // Stores reasons for why config is valid or not
     std::optional<InvalidConfigReason> reason;
@@ -101,7 +106,8 @@ struct ConfigStats {
     std::list<int32_t> data_drop_time_sec;
     // Number of bytes dropped at corresponding time.
     std::list<int64_t> data_drop_bytes;
-    std::list<std::pair<int32_t, int64_t>> dump_report_stats;
+
+    std::list<DumpReportStats> dump_report_stats;
 
     // Stores how many times a matcher have been matched. The map size is capped by kMaxConfigCount.
     std::map<const int64_t, int> matcher_stats;
@@ -262,6 +268,9 @@ public:
     // Maximum number of pushed atoms error statsd stats will track.
     static const int kMaxPushedAtomErrorStatsSize = 100;
 
+    // Maximum number of socket loss stats to track.
+    static const int kMaxSocketLossStatsSize = 100;
+
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
     static const int kMaxPushedAtomId = 900;
@@ -329,7 +338,8 @@ public:
      *
      * The report may be requested via StatsManager API, or through adb cmd.
      */
-    void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes);
+    void noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                               const int32_t reportNumber);
 
     /**
      * Report failure in creating the device info metadata table for restricted configs.
@@ -340,6 +350,36 @@ public:
      * Report db corruption for restricted configs.
      */
     void noteDbCorrupted(const ConfigKey& key);
+
+    /**
+     * Report db exceeded the size limit for restricted configs.
+     */
+    void noteDbSizeExceeded(const ConfigKey& key);
+
+    /**
+     * Report db size check with stat for restricted configs failed.
+     */
+    void noteDbStatFailed(const ConfigKey& key);
+
+    /**
+     * Report restricted config is invalid.
+     */
+    void noteDbConfigInvalid(const ConfigKey& key);
+
+    /**
+     * Report db is too old for restricted configs.
+     */
+    void noteDbTooOld(const ConfigKey& key);
+
+    /**
+     * Report db was deleted due to config removal.
+     */
+    void noteDbDeletionConfigRemoved(const ConfigKey& key);
+
+    /**
+     * Report db was deleted due to config update.
+     */
+    void noteDbDeletionConfigUpdated(const ConfigKey& key);
 
     /**
      * Report the size of output tuple of a condition.
@@ -627,6 +667,11 @@ public:
                                     const int64_t dbSize);
 
     /**
+     * Records libstatssocket was not able to write into socket.
+     */
+    void noteAtomSocketLoss(const SocketLossInfo& lossInfo);
+
+    /**
      * Report a new subscription has started and report the static stats about the subscription
      * config.
      *
@@ -686,6 +731,14 @@ public:
 
     inline static int clampDimensionKeySizeLimit(int dimLimit) {
         return std::clamp(dimLimit, kDimensionKeySizeHardLimitMin, kDimensionKeySizeHardLimitMax);
+    }
+
+    /**
+     * Return the unique identifier for the statsd stats report. This id is
+     * reset on boot.
+     */
+    inline int32_t getStatsdStatsId() const {
+        return mStatsdStatsId;
     }
 
     /**
@@ -753,6 +806,11 @@ private:
 
     int32_t mStartTimeSec;
 
+    // Random id set using rand() during the initialization. Used to uniquely
+    // identify a session. This is more reliable than mStartTimeSec due to the
+    // unreliable nature of wall clock times.
+    const int32_t mStatsdStatsId;
+
     // Track the number of dropped entries used by the uid map.
     UidMapStats mUidMapStats;
 
@@ -791,6 +849,17 @@ private:
     // corresponding counts for pulled atoms are stored in PulledAtomStats.
     // The max size of this map is kMaxPushedAtomErrorStatsSize.
     std::map<int, int> mPushedAtomErrorStats;
+
+    // Stores the number of times a pushed atom was lost due to socket error.
+    // Represents counter per uid per tag per error
+    // The max size of this map is kMaxSocketLossStatsSize.
+    std::map<std::tuple<int32_t, int32_t, int32_t>, int32_t> mSocketLossStats;
+
+    // Stores the number of times a pushed atom loss info was dropped to be added into stats
+    // on libstatssocket side due to guardrail hit.
+    // Represents counter per uid.
+    // The max size of this map is kMaxSocketLossStatsSize.
+    std::map<int32_t, int32_t> mSocketLossStatsOverflowCounter;
 
     // Maps metric ID to its stats. The size is capped by the number of metrics.
     std::map<int64_t, AtomMetricStats> mAtomMetricStats;
@@ -893,7 +962,8 @@ private:
 
     void noteDataDropped(const ConfigKey& key, const size_t totalBytes, int32_t timeSec);
 
-    void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes, int32_t timeSec);
+    void noteMetricsReportSent(const ConfigKey& key, const size_t numBytes, int32_t timeSec,
+                               const int32_t reportNumber);
 
     void noteBroadcastSent(const ConfigKey& key, int32_t timeSec);
 
@@ -906,6 +976,8 @@ private:
     int getPushedAtomErrorsLocked(int atomId) const;
 
     int getPushedAtomDropsLocked(int atomId) const;
+
+    bool hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const;
 
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference

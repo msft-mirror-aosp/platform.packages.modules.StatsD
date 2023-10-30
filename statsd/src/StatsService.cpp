@@ -29,6 +29,7 @@
 #include <statslog_statsd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/random.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <utils/String16.h>

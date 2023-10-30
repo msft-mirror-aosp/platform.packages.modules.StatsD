@@ -14,20 +14,15 @@
  * limitations under the License.
  */
 
-#include "ShardOffsetProvider.h"
+#include <gtest/gtest.h>
 
-namespace android {
-namespace os {
-namespace statsd {
+#include "stats_statsdsocketlog.h"
+#include "utils.h"
 
-ShardOffsetProvider::ShardOffsetProvider(const uint32_t shardOffset) : mShardOffset(shardOffset) {
+TEST(StatsStatsdSocketLog, TestToSocketLossError) {
+    using namespace android::os::statsdsocket;
+
+    EXPECT_EQ(-EAGAIN, toSocketLossError(EAGAIN));
+    EXPECT_EQ(STATS_SOCKET_LOSS_REPORTED__ERRORS__SOCKET_LOSS_ERROR_UNKNOWN,
+              toSocketLossError(ERANGE));
 }
-
-ShardOffsetProvider& ShardOffsetProvider::getInstance() {
-    static ShardOffsetProvider sShardOffsetProvider(rand());
-    return sShardOffsetProvider;
-}
-
-}  // namespace statsd
-}  // namespace os
-}  // namespace android

@@ -14,19 +14,29 @@
  * limitations under the License.
  */
 
-#include "ShardOffsetProvider.h"
+#pragma once
+
+#include <optional>
+
+#include "logd/LogEvent.h"
 
 namespace android {
 namespace os {
 namespace statsd {
 
-ShardOffsetProvider::ShardOffsetProvider(const uint32_t shardOffset) : mShardOffset(shardOffset) {
-}
+struct SocketLossInfo {
+    int32_t uid;
+    int64_t firstLossTsNanos;
+    int64_t lastLossTsNanos;
+    int32_t overflowCounter;
 
-ShardOffsetProvider& ShardOffsetProvider::getInstance() {
-    static ShardOffsetProvider sShardOffsetProvider(rand());
-    return sShardOffsetProvider;
-}
+    std::vector<int32_t> errors;
+    std::vector<int32_t> atomIds;
+    std::vector<int32_t> counts;
+};
+
+// helper API to parse LogEvent into SocketLossInfo;
+std::optional<SocketLossInfo> toSocketLossInfo(const LogEvent& event);
 
 }  // namespace statsd
 }  // namespace os
