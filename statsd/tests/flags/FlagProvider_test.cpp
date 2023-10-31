@@ -14,7 +14,6 @@
 
 #include "src/flags/FlagProvider.h"
 
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "tests/statsd_test_util.h"
@@ -25,7 +24,6 @@ namespace statsd {
 
 #ifdef __ANDROID__
 
-using android::modules::sdklevel::IsAtLeastS;
 using namespace std;
 
 const string TEST_FLAG = "MyFlagTest";
@@ -77,7 +75,7 @@ TEST_P(FlagProviderTest_SPlus, TestOverrideLocalFlags) {
 
 class FlagProviderTest_SPlus_RealValues : public testing::TestWithParam<FlagParam> {
     void SetUp() override {
-        if (!IsAtLeastS()) {
+        if (!isAtLeastS()) {
             GTEST_SKIP() << "Cannot query flags from system property on R-.";
         }
     }

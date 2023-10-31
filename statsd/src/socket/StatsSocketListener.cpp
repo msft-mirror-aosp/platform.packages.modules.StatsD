@@ -16,7 +16,10 @@
 #define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
+#include "StatsSocketListener.h"
+
 #include <ctype.h>
+#include <cutils/sockets.h>
 #include <limits.h>
 #include <stdio.h>
 #include <sys/cdefs.h>
@@ -26,11 +29,10 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#include <cutils/sockets.h>
-
-#include "StatsSocketListener.h"
 #include "guardrail/StatsdStats.h"
+#include "logd/logevent_util.h"
 #include "stats_log_util.h"
+#include "statslog_statsd.h"
 
 namespace android {
 namespace os {
@@ -135,7 +137,7 @@ void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
                                          const std::shared_ptr<LogEventFilter>& filter) {
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
 
-    if (filter && filter->getFilteringEnabled()) {
+    if (filter->getFilteringEnabled()) {
         const LogEvent::BodyBufferInfo bodyInfo = logEvent->parseHeader(msg, len);
         if (filter->isAtomInUse(logEvent->GetTagId())) {
             logEvent->parseBody(bodyInfo);
@@ -146,6 +148,22 @@ void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
 
     const int32_t atomId = logEvent->GetTagId();
     const bool isAtomSkipped = logEvent->isParsedHeaderOnly();
+
+    if (atomId == util::STATS_SOCKET_LOSS_REPORTED) {
+        if (isAtomSkipped) {
+            ALOGW("Atom STATS_SOCKET_LOSS_REPORTED should not be skipped");
+        }
+
+        // handling socket loss info reported atom
+        // processing it here to not lose info due to queue overflow
+        const std::optional<SocketLossInfo>& lossInfo = toSocketLossInfo(*logEvent);
+        if (lossInfo) {
+            StatsdStats::getInstance().noteAtomSocketLoss(*lossInfo);
+        } else {
+            ALOGW("Atom STATS_SOCKET_LOSS_REPORTED content is invalid");
+        }
+    }
+
     int64_t oldestTimestamp;
     if (!queue->push(std::move(logEvent), &oldestTimestamp)) {
         StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId, isAtomSkipped);

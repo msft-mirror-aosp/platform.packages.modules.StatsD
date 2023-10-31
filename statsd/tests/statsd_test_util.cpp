@@ -991,6 +991,21 @@ std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestam
     AStatsEvent_setAtomId(statsEvent, util::PLUGGED_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, state);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
+
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, util::PLUGGED_STATE_CHANGED);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+    AStatsEvent_writeString(statsEvent, "bad_state");
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -2231,6 +2246,59 @@ StatsdStatsReport getStatsdStatsReport(StatsdStats& stats, bool resetStats) {
     return statsReport;
 }
 
+StatsdConfig buildGoodConfig(int configId) {
+    StatsdConfig config;
+    config.set_id(configId);
+
+    AtomMatcher screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
+    *config.add_atom_matcher() = screenOnMatcher;
+    *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
+
+    AtomMatcher* eventMatcher = config.add_atom_matcher();
+    eventMatcher->set_id(StringToId("SCREEN_ON_OR_OFF"));
+    AtomMatcher_Combination* combination = eventMatcher->mutable_combination();
+    combination->set_operation(LogicalOperation::OR);
+    combination->add_matcher(screenOnMatcher.id());
+    combination->add_matcher(StringToId("ScreenTurnedOff"));
+
+    CountMetric* countMetric = config.add_count_metric();
+    *countMetric = createCountMetric("Count", screenOnMatcher.id() /* what */,
+                                     nullopt /* condition */, {} /* states */);
+    countMetric->mutable_dimensions_in_what()->set_field(SCREEN_STATE_ATOM_ID);
+    countMetric->mutable_dimensions_in_what()->add_child()->set_field(1);
+
+    config.add_no_report_metric(StringToId("Count"));
+
+    *config.add_predicate() = CreateScreenIsOnPredicate();
+    *config.add_duration_metric() =
+            createDurationMetric("Duration", StringToId("ScreenIsOn") /* what */,
+                                 nullopt /* condition */, {} /* states */);
+
+    *config.add_gauge_metric() = createGaugeMetric(
+            "Gauge", screenOnMatcher.id() /* what */, GaugeMetric_SamplingType_FIRST_N_SAMPLES,
+            nullopt /* condition */, nullopt /* triggerEvent */);
+
+    *config.add_value_metric() =
+            createValueMetric("Value", screenOnMatcher /* what */, 2 /* valueField */,
+                              nullopt /* condition */, {} /* states */);
+
+    *config.add_kll_metric() = createKllMetric("Kll", screenOnMatcher /* what */, 2 /* kllField */,
+                                               nullopt /* condition */);
+
+    return config;
+}
+
+StatsdConfig buildGoodConfig(int configId, int alertId) {
+    StatsdConfig config = buildGoodConfig(configId);
+    auto alert = config.add_alert();
+    alert->set_id(alertId);
+    alert->set_metric_id(StringToId("Count"));
+    alert->set_num_buckets(10);
+    alert->set_refractory_period_secs(100);
+    alert->set_trigger_if_sum_gt(100);
+
+    return config;
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
