@@ -266,11 +266,6 @@ private:
     void init_system_properties();
 
     /**
-     * Initiates srand for randomness.
-     */
-    static void init_seed_random();
-
-    /**
      * Helper for loading system properties.
      */
     static void init_build_type_callback(void* cookie, const char* name, const char* value,

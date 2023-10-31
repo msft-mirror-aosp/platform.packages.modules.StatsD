@@ -216,7 +216,7 @@ public:
     //
     // If the index within the atom definition is desired, do the following:
     //    const std::optional<size_t>& vectorIndex = LogEvent.getExclusiveStateFieldIndex();
-    //    if (!vectorIndex) {
+    //    if (vectorIndex) {
     //        FieldValue& v = LogEvent.getValues()[vectorIndex.value()];
     //        int atomIndex = v.mField.getPosAtDepth(0);
     //    }

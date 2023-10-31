@@ -59,6 +59,7 @@ const int FIELD_ID_OVERFLOW = 18;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL = 19;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS = 20;
 const int FIELD_ID_SHARD_OFFSET = 21;
+const int FIELD_ID_STATSD_STATS_ID = 22;
 const int FIELD_ID_SUBSCRIPTION_STATS = 23;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
@@ -123,6 +124,13 @@ const int FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT = 27;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY = 28;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_TIME_SEC = 29;
 const int FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_DB_SIZE_BYTES = 30;
+const int FIELD_ID_CONFIG_STATS_DUMP_REPORT_NUMBER = 31;
+const int FIELD_ID_DB_DELETION_STAT_FAILED = 32;
+const int FIELD_ID_DB_DELETION_SIZE_EXCEEDED_LIMIT = 33;
+const int FIELD_ID_DB_DELETION_CONFIG_INVALID = 34;
+const int FIELD_ID_DB_DELETION_TOO_OLD = 35;
+const int FIELD_ID_DB_DELETION_CONFIG_REMOVED = 36;
+const int FIELD_ID_DB_DELETION_CONFIG_UPDATED = 37;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -174,7 +182,7 @@ const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySiz
         {util::CPU_TIME_PER_UID_FREQ, {6000, 10000}},
 };
 
-StatsdStats::StatsdStats() {
+StatsdStats::StatsdStats() : mStatsdStatsId(rand()) {
     mPushedAtomStats.resize(kMaxPushedAtomId + 1);
     mStartTimeSec = getWallClockSec();
 }
@@ -383,22 +391,24 @@ void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes,
     it->second->data_drop_bytes.push_back(totalBytes);
 }
 
-void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes) {
-    noteMetricsReportSent(key, num_bytes, getWallClockSec());
+void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                                        const int32_t reportNumber) {
+    noteMetricsReportSent(key, numBytes, getWallClockSec(), reportNumber);
 }
 
-void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes,
-                                        int32_t timeSec) {
+void StatsdStats::noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                                        int32_t timeSec, const int32_t reportNumber) {
     lock_guard<std::mutex> lock(mLock);
     auto it = mConfigStats.find(key);
     if (it == mConfigStats.end()) {
         ALOGE("Config key %s not found!", key.ToString().c_str());
         return;
     }
+
     if (it->second->dump_report_stats.size() == kMaxTimestampCount) {
         it->second->dump_report_stats.pop_front();
     }
-    it->second->dump_report_stats.push_back(std::make_pair(timeSec, num_bytes));
+    it->second->dump_report_stats.emplace_back(timeSec, numBytes, reportNumber);
 }
 
 void StatsdStats::noteDeviceInfoTableCreationFailed(const ConfigKey& key) {
@@ -419,6 +429,66 @@ void StatsdStats::noteDbCorrupted(const ConfigKey& key) {
         return;
     }
     it->second->db_corrupted_count++;
+}
+
+void StatsdStats::noteDbSizeExceeded(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_size_exceeded_limit++;
+}
+
+void StatsdStats::noteDbStatFailed(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_stat_failed++;
+}
+
+void StatsdStats::noteDbConfigInvalid(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_config_invalid++;
+}
+
+void StatsdStats::noteDbTooOld(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_too_old++;
+}
+
+void StatsdStats::noteDbDeletionConfigRemoved(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_config_removed++;
+}
+
+void StatsdStats::noteDbDeletionConfigUpdated(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->db_deletion_config_updated++;
 }
 
 void StatsdStats::noteUidMapDropped(int deltas) {
@@ -956,6 +1026,12 @@ void StatsdStats::resetInternalLocked() {
         config.second->total_flush_latency_ns.clear();
         config.second->total_db_size_timestamps.clear();
         config.second->total_db_sizes.clear();
+        config.second->db_deletion_size_exceeded_limit = 0;
+        config.second->db_deletion_stat_failed = 0;
+        config.second->db_deletion_config_invalid = 0;
+        config.second->db_deletion_too_old = 0;
+        config.second->db_deletion_config_removed = 0;
+        config.second->db_deletion_config_updated = 0;
     }
     for (auto& pullStats : mPulledAtomStats) {
         pullStats.second.totalPull = 0;
@@ -986,6 +1062,7 @@ void StatsdStats::resetInternalLocked() {
     mSocketLossStats.clear();
     mSocketLossStatsOverflowCounter.clear();
     mPushedAtomDropsStats.clear();
+    mRestrictedMetricQueryStats.clear();
     mSubscriptionPullThreadWakeupCount = 0;
 
     for (auto it = mSubscriptionStats.begin(); it != mSubscriptionStats.end();) {
@@ -1026,6 +1103,13 @@ int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
     }
 }
 
+bool StatsdStats::hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const {
+    return configStats->device_info_table_creation_failed || configStats->db_corrupted_count ||
+           configStats->db_deletion_size_exceeded_limit || configStats->db_deletion_stat_failed ||
+           configStats->db_deletion_config_invalid || configStats->db_deletion_too_old ||
+           configStats->db_deletion_config_removed || configStats->db_deletion_config_updated;
+}
+
 bool StatsdStats::hasEventQueueOverflow() const {
     lock_guard<std::mutex> lock(mLock);
     return mOverflowCount != 0;
@@ -1047,14 +1131,24 @@ void StatsdStats::dumpStats(int out) const {
     for (const auto& configStats : mIceBox) {
         dprintf(out,
                 "Config {%d_%lld}: creation=%d, deletion=%d, reset=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d, device_info_table_creation_failed=%d, "
-                "db_corrupted_count=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->reset_time_sec,
                 configStats->metric_count, configStats->condition_count, configStats->matcher_count,
-                configStats->alert_count, configStats->is_valid,
-                configStats->device_info_table_creation_failed, configStats->db_corrupted_count);
-
+                configStats->alert_count, configStats->is_valid);
+        if (hasRestrictedConfigErrors(configStats)) {
+            dprintf(out,
+                    ", device_info_table_creation_failed=%d, db_corrupted_count=%d, "
+                    "db_size_exceeded=%d, db_stat_failed=%d, "
+                    "db_config_invalid=%d, db_too_old=%d, db_deletion_config_removed=%d, "
+                    "db_deletion_config_updated=%d",
+                    configStats->device_info_table_creation_failed, configStats->db_corrupted_count,
+                    configStats->db_deletion_size_exceeded_limit,
+                    configStats->db_deletion_stat_failed, configStats->db_deletion_config_invalid,
+                    configStats->db_deletion_too_old, configStats->db_deletion_config_removed,
+                    configStats->db_deletion_config_updated);
+        }
+        dprintf(out, "\n");
         if (!configStats->is_valid) {
             dprintf(out, "\tinvalid config reason: %s\n",
                     InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
@@ -1080,6 +1174,22 @@ void StatsdStats::dumpStats(int out) const {
                     (long long)*dropBytesPtr);
         }
 
+        for (const auto& stats : configStats->restricted_metric_stats) {
+            dprintf(out, "Restricted MetricId %lld: ", (long long)stats.first);
+            dprintf(out, "Insert error %lld, ", (long long)stats.second.insertError);
+            dprintf(out, "Table creation error %lld, ", (long long)stats.second.tableCreationError);
+            dprintf(out, "Table deletion error %lld ", (long long)stats.second.tableDeletionError);
+            dprintf(out, "Category changed count %lld\n ",
+                    (long long)stats.second.categoryChangedCount);
+            string flushLatencies = "Flush Latencies: ";
+            for (const int64_t latencyNs : stats.second.flushLatencyNs) {
+                flushLatencies.append(to_string(latencyNs).append(","));
+            }
+            flushLatencies.pop_back();
+            flushLatencies.push_back('\n');
+            dprintf(out, "%s", flushLatencies.c_str());
+        }
+
         for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
             dprintf(out, "\tflush latency time ns: %lld\n", (long long)flushLatency);
         }
@@ -1093,14 +1203,24 @@ void StatsdStats::dumpStats(int out) const {
         auto& configStats = pair.second;
         dprintf(out,
                 "Config {%d-%lld}: creation=%d, deletion=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d, device_info_table_creation_failed=%d, "
-                "db_corrupted_count=%d\n",
+                "#matcher=%d, #alert=%d, valid=%d",
                 configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
                 configStats->deletion_time_sec, configStats->metric_count,
                 configStats->condition_count, configStats->matcher_count, configStats->alert_count,
-                configStats->is_valid, configStats->device_info_table_creation_failed,
-                configStats->db_corrupted_count);
-
+                configStats->is_valid);
+        if (hasRestrictedConfigErrors(configStats)) {
+            dprintf(out,
+                    ", device_info_table_creation_failed=%d, db_corrupted_count=%d, "
+                    "db_size_exceeded=%d, db_stat_failed=%d, "
+                    "db_config_invalid=%d, db_too_old=%d, db_deletion_config_removed=%d, "
+                    "db_deletion_config_updated=%d",
+                    configStats->device_info_table_creation_failed, configStats->db_corrupted_count,
+                    configStats->db_deletion_size_exceeded_limit,
+                    configStats->db_deletion_stat_failed, configStats->db_deletion_config_invalid,
+                    configStats->db_deletion_too_old, configStats->db_deletion_config_removed,
+                    configStats->db_deletion_config_updated);
+        }
+        dprintf(out, "\n");
         if (!configStats->is_valid) {
             dprintf(out, "\tinvalid config reason: %s\n",
                     InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
@@ -1134,9 +1254,10 @@ void StatsdStats::dumpStats(int out) const {
         }
 
         for (const auto& dump : configStats->dump_report_stats) {
-            dprintf(out, "\tdump report time: %s(%lld) bytes: %lld\n",
-                    buildTimeString(dump.first).c_str(), (long long)dump.first,
-                    (long long)dump.second);
+            dprintf(out, "\tdump report time: %s(%lld) bytes: %d reportNumber: %d\n",
+                    buildTimeString(dump.mDumpReportTimeSec).c_str(),
+                    (long long)dump.mDumpReportTimeSec, dump.mDumpReportSizeBytes,
+                    dump.mDumpReportNumber);
         }
 
         for (const auto& stats : pair.second->matcher_stats) {
@@ -1175,6 +1296,10 @@ void StatsdStats::dumpStats(int out) const {
 
         for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
             dprintf(out, "flush latency time ns: %lld\n", (long long)flushLatency);
+        }
+
+        for (const int64_t dbSize : configStats->total_db_sizes) {
+            dprintf(out, "\tdb size: %lld\n", (long long)dbSize);
         }
     }
     dprintf(out, "********Disk Usage stats***********\n");
@@ -1322,6 +1447,8 @@ void StatsdStats::dumpStats(int out) const {
             }
         }
     }
+    dprintf(out, "********Statsd Stats Id***********\n");
+    dprintf(out, "Statsd Stats Id %d\n", mStatsdStatsId);
     dprintf(out, "********Shard Offset Provider stats***********\n");
     dprintf(out, "Shard Offset: %u\n", ShardOffsetProvider::getInstance().getShardOffset());
 }
@@ -1411,15 +1538,21 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
     }
 
     for (const auto& dump : configStats.dump_report_stats) {
-        proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_TIME |
-                     FIELD_COUNT_REPEATED,
-                     dump.first);
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_TIME | FIELD_COUNT_REPEATED,
+                dump.mDumpReportTimeSec);
     }
 
     for (const auto& dump : configStats.dump_report_stats) {
-        proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_BYTES |
-                     FIELD_COUNT_REPEATED,
-                     (long long)dump.second);
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_BYTES | FIELD_COUNT_REPEATED,
+                (long long)dump.mDumpReportSizeBytes);
+    }
+
+    for (const auto& dump : configStats.dump_report_stats) {
+        proto->write(
+                FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_DUMP_REPORT_NUMBER | FIELD_COUNT_REPEATED,
+                dump.mDumpReportNumber);
     }
 
     for (const auto& annotation : configStats.annotations) {
@@ -1492,10 +1625,23 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
                 (long long)pair.second.categoryChangedCount, proto);
         proto->end(token);
     }
-    proto->write(FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED,
-                 configStats.device_info_table_creation_failed);
-    proto->write(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT,
-                 configStats.db_corrupted_count);
+    writeNonZeroStatToStream(
+            FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_DEVICE_INFO_TABLE_CREATION_FAILED,
+            configStats.device_info_table_creation_failed, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_STATS_RESTRICTED_DB_CORRUPTED_COUNT,
+                             configStats.db_corrupted_count, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_STAT_FAILED,
+                             configStats.db_deletion_size_exceeded_limit, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_SIZE_EXCEEDED_LIMIT,
+                             configStats.db_deletion_size_exceeded_limit, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_CONFIG_INVALID,
+                             configStats.db_deletion_config_invalid, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_TOO_OLD,
+                             configStats.db_deletion_too_old, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_CONFIG_REMOVED,
+                             configStats.db_deletion_config_removed, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_CONFIG_UPDATED,
+                             configStats.db_deletion_config_updated, proto);
     for (int64_t latency : configStats.total_flush_latency_ns) {
         proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY |
                              FIELD_COUNT_REPEATED,
@@ -1668,6 +1814,8 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
 
     proto.write(FIELD_TYPE_UINT32 | FIELD_ID_SHARD_OFFSET,
                 static_cast<long>(ShardOffsetProvider::getInstance().getShardOffset()));
+
+    proto.write(FIELD_TYPE_INT32 | FIELD_ID_STATSD_STATS_ID, mStatsdStatsId);
 
     // Write subscription stats
     const uint64_t token = proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SUBSCRIPTION_STATS);
