@@ -33,6 +33,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "stats_socket_loss_reporter.h"
+#include "utils.h"
 
 // Compatibility shims for glibc-2.17 in the Android tree.
 #ifndef __BIONIC__
@@ -166,6 +168,8 @@ static void statsdNoteDrop(int error, int tag) {
     atomic_fetch_add_explicit(&dropped, 1, memory_order_relaxed);
     atomic_exchange_explicit(&log_error, error, memory_order_relaxed);
     atomic_exchange_explicit(&atom_tag, tag, memory_order_relaxed);
+
+    StatsSocketLossReporter::getInstance().noteDrop(error, tag);
 }
 
 static int statsdIsClosed() {
@@ -239,6 +243,10 @@ static int statsdWrite(struct timespec* ts, struct iovec* vec, size_t nr) {
             ret = TEMP_FAILURE_RETRY(writev(sock, newVec, 2));
             if (ret != (ssize_t)(sizeof(header) + sizeof(buffer))) {
                 atomic_fetch_add_explicit(&dropped, snapshot, memory_order_relaxed);
+            } else {
+                // try to send socket loss info only when socket connection established
+                // and it is proved by previous write that socket is available
+                StatsSocketLossReporter::getInstance().dumpAtomsLossStats();
             }
         }
     }
