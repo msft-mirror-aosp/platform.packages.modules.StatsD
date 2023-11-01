@@ -29,7 +29,7 @@ android_test {
     manifest: "AndroidManifest.xml",
     static_libs: [
         "androidx.test.rules",
-        "truth-prebuilt",
+        "truth",
         "statsdprotolite",
         "StatsdTestUtils",
     ],

@@ -26,6 +26,7 @@
 #include "src/condition/CombinationConditionTracker.h"
 #include "src/condition/SimpleConditionTracker.h"
 #include "src/matchers/CombinationAtomMatchingTracker.h"
+#include "src/metrics/CountMetricProducer.h"
 #include "src/metrics/DurationMetricProducer.h"
 #include "src/metrics/GaugeMetricProducer.h"
 #include "src/metrics/KllMetricProducer.h"
@@ -52,7 +53,8 @@ namespace statsd {
 
 namespace {
 
-ConfigKey key(123, 456);
+const int configId = 456;
+const ConfigKey key(123, configId);
 const int64_t timeBaseNs = 1000 * NS_PER_SEC;
 
 sp<UidMap> uidMap = new UidMap();
@@ -109,8 +111,6 @@ vector<int> filterMatcherIndexesById(const vector<sp<AtomMatchingTracker>>& atom
     return result;
 }
 
-}  // anonymous namespace
-
 class ConfigUpdateTest : public ::testing::Test {
 public:
     void SetUp() override {
@@ -135,6 +135,29 @@ public:
         StateManager::getInstance().clear();
     }
 };
+
+struct DimLimitTestCase {
+    int oldLimit;
+    int newLimit;
+    int actualLimit;
+
+    friend void PrintTo(const DimLimitTestCase& testCase, ostream* os) {
+        *os << testCase.oldLimit << "To" << testCase.newLimit;
+    }
+};
+
+class ConfigUpdateDimLimitTest : public ConfigUpdateTest,
+                                 public WithParamInterface<DimLimitTestCase> {};
+
+const vector<DimLimitTestCase> dimLimitTestCases = {
+        {900, 900, 900}, {1000, 850, 850},   {1100, 1500, 1500},
+        {800, 799, 800}, {3000, 3001, 3000}, {800, 0, 800},
+};
+
+INSTANTIATE_TEST_SUITE_P(DimLimit, ConfigUpdateDimLimitTest, ValuesIn(dimLimitTestCases),
+                         PrintToStringParamName());
+
+}  // anonymous namespace
 
 TEST_F(ConfigUpdateTest, TestSimpleMatcherPreserve) {
     StatsdConfig config;
@@ -4140,6 +4163,109 @@ TEST_F(ConfigUpdateTest, TestUpdateConfigNonEventMetricHasRestrictedDelegate) {
                             deactivationAtomTrackerToMetricMap, metricsWithActivation,
                             replacedMetrics),
               InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_P(ConfigUpdateDimLimitTest, TestDimLimit) {
+    StatsdConfig config = buildGoodConfig(configId);
+    const auto& [oldLimit, newLimit, actualLimit] = GetParam();
+    if (oldLimit > 0) {
+        config.mutable_count_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+        config.mutable_duration_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+        config.mutable_gauge_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+        config.mutable_value_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+        config.mutable_kll_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+    }
+
+    EXPECT_TRUE(initConfig(config));
+
+    StatsdConfig newConfig = config;
+    if (newLimit == 0) {
+        newConfig.mutable_count_metric(0)->clear_max_dimensions_per_bucket();
+        newConfig.mutable_duration_metric(0)->clear_max_dimensions_per_bucket();
+        newConfig.mutable_gauge_metric(0)->clear_max_dimensions_per_bucket();
+        newConfig.mutable_value_metric(0)->clear_max_dimensions_per_bucket();
+        newConfig.mutable_kll_metric(0)->clear_max_dimensions_per_bucket();
+    } else {
+        newConfig.mutable_count_metric(0)->set_max_dimensions_per_bucket(newLimit);
+        newConfig.mutable_duration_metric(0)->set_max_dimensions_per_bucket(newLimit);
+        newConfig.mutable_gauge_metric(0)->set_max_dimensions_per_bucket(newLimit);
+        newConfig.mutable_value_metric(0)->set_max_dimensions_per_bucket(newLimit);
+        newConfig.mutable_kll_metric(0)->set_max_dimensions_per_bucket(newLimit);
+    }
+
+    unordered_map<int64_t, int> newMetricProducerMap;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    set<int64_t> noReportMetricIds;
+    vector<int> metricsWithActivation;
+    vector<sp<MetricProducer>> newMetricProducers;
+    set<int64_t> replacedMetrics;
+    EXPECT_EQ(updateMetrics(
+                      key, newConfig, /*timeBaseNs=*/123, /*currentTimeNs=*/12345,
+                      new StatsPullerManager(), oldAtomMatchingTrackerMap,
+                      oldAtomMatchingTrackerMap, /*replacedMatchers=*/{}, oldAtomMatchingTrackers,
+                      oldConditionTrackerMap, /*replacedConditions=*/{}, oldConditionTrackers,
+                      /*conditionCache=*/{}, /*stateAtomIdMap=*/{}, /*allStateGroupMaps=*/{},
+                      /*replacedStates=*/{}, oldMetricProducerMap, oldMetricProducers,
+                      newMetricProducerMap, newMetricProducers, conditionToMetricMap,
+                      trackerToMetricMap, noReportMetricIds, activationAtomTrackerToMetricMap,
+                      deactivationAtomTrackerToMetricMap, metricsWithActivation, replacedMetrics),
+              nullopt);
+
+    ASSERT_EQ(5u, oldMetricProducers.size());
+    ASSERT_EQ(5u, newMetricProducers.size());
+
+    // Check that old MetricProducers have the old dimension limit and the new producers have the
+    // new dimension limit.
+
+    // Count
+    sp<MetricProducer> producer =
+            oldMetricProducers[oldMetricProducerMap.at(config.count_metric(0).id())];
+    CountMetricProducer* countProducer = static_cast<CountMetricProducer*>(producer.get());
+    EXPECT_EQ(countProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.count_metric(0).id())];
+    countProducer = static_cast<CountMetricProducer*>(producer.get());
+    EXPECT_EQ(countProducer->mDimensionHardLimit, actualLimit);
+
+    // Duration
+    producer = oldMetricProducers[oldMetricProducerMap.at(config.duration_metric(0).id())];
+    DurationMetricProducer* durationProducer = static_cast<DurationMetricProducer*>(producer.get());
+    EXPECT_EQ(durationProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.duration_metric(0).id())];
+    durationProducer = static_cast<DurationMetricProducer*>(producer.get());
+    EXPECT_EQ(durationProducer->mDimensionHardLimit, actualLimit);
+
+    // Gauge
+    producer = oldMetricProducers[oldMetricProducerMap.at(config.gauge_metric(0).id())];
+    GaugeMetricProducer* gaugeProducer = static_cast<GaugeMetricProducer*>(producer.get());
+    EXPECT_EQ(gaugeProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.gauge_metric(0).id())];
+    gaugeProducer = static_cast<GaugeMetricProducer*>(producer.get());
+    EXPECT_EQ(gaugeProducer->mDimensionHardLimit, actualLimit);
+
+    // Value
+    producer = oldMetricProducers[oldMetricProducerMap.at(config.value_metric(0).id())];
+    NumericValueMetricProducer* numericValueProducer =
+            static_cast<NumericValueMetricProducer*>(producer.get());
+    EXPECT_EQ(numericValueProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.value_metric(0).id())];
+    numericValueProducer = static_cast<NumericValueMetricProducer*>(producer.get());
+    EXPECT_EQ(numericValueProducer->mDimensionHardLimit, actualLimit);
+
+    // KLL
+    producer = oldMetricProducers[oldMetricProducerMap.at(config.kll_metric(0).id())];
+    KllMetricProducer* kllProducer = static_cast<KllMetricProducer*>(producer.get());
+    EXPECT_EQ(kllProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.kll_metric(0).id())];
+    kllProducer = static_cast<KllMetricProducer*>(producer.get());
+    EXPECT_EQ(kllProducer->mDimensionHardLimit, actualLimit);
 }
 
 }  // namespace statsd
