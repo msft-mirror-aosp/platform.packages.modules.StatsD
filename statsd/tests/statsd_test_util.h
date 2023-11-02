@@ -477,6 +477,10 @@ std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestam
 // Create malformed log event for battery state change.
 std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs);
 
+std::unique_ptr<LogEvent> CreateActivityForegroundStateChangedEvent(
+        uint64_t timestampNs, const int uid, const string& pkgName, const string& className,
+        const ActivityForegroundStateChanged::State state);
+
 // Create log event for app moving to background.
 std::unique_ptr<LogEvent> CreateMoveToBackgroundEvent(uint64_t timestampNs, const int uid);
 
@@ -542,6 +546,10 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
         const vector<int64_t>& repeatedLongField, const vector<float>& repeatedFloatField,
         const vector<string>& repeatedStringField, const bool* repeatedBoolField,
         const size_t repeatedBoolFieldLength, const vector<int>& repeatedEnumField);
+
+std::unique_ptr<LogEvent> CreateTestAtomReportedEventWithPrimitives(
+        uint64_t timestampNs, int intField, long longField, float floatField,
+        const string& stringField, bool boolField, TestAtomReported::State enumField);
 
 std::unique_ptr<LogEvent> CreateRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);
 std::unique_ptr<LogEvent> CreateNonRestrictedLogEvent(int atomTag, int64_t timestampNs = 0);

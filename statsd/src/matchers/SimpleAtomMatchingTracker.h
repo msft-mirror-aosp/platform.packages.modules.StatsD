@@ -35,11 +35,10 @@ public:
 
     ~SimpleAtomMatchingTracker();
 
-    optional<InvalidConfigReason> init(
-            int matcherIndex, const std::vector<AtomMatcher>& allAtomMatchers,
-            const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-            const std::unordered_map<int64_t, int>& matcherMap,
-            std::vector<uint8_t>& stack) override;
+    MatcherInitResult init(int matcherIndex, const std::vector<AtomMatcher>& allAtomMatchers,
+                           const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+                           const std::unordered_map<int64_t, int>& matcherMap,
+                           std::vector<uint8_t>& stack) override;
 
     optional<InvalidConfigReason> onConfigUpdated(
             const AtomMatcher& matcher,
@@ -47,7 +46,8 @@ public:
 
     void onLogEvent(const LogEvent& event, int matcherIndex,
                     const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                    std::vector<MatchingState>& matcherResults) override;
+                    std::vector<MatchingState>& matcherResults,
+                    std::vector<std::shared_ptr<LogEvent>>& matcherTransformations) override;
 
 private:
     const SimpleAtomMatcher mMatcher;

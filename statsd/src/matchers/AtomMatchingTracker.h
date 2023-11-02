@@ -32,6 +32,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
+struct MatcherInitResult {
+    optional<InvalidConfigReason> invalidConfigReason;
+    bool hasStringTransformation;
+};
+
 class AtomMatchingTracker : public virtual RefBase {
 public:
     AtomMatchingTracker(const int64_t id, const uint64_t protoHash)
@@ -49,7 +54,7 @@ public:
     //                          CombinationAtomMatchingTrackers using DFS.
     // stack: a bit map to record which matcher has been visited on the stack. This is for detecting
     //        circle dependency.
-    virtual optional<InvalidConfigReason> init(
+    virtual MatcherInitResult init(
             int matcherIndex, const std::vector<AtomMatcher>& allAtomMatchers,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& matcherMap, std::vector<uint8_t>& stack) = 0;
@@ -70,9 +75,11 @@ public:
     // matcherResults: The cached results for all matchers for this event. Parent matchers can
     //                 directly access the children's matching results if they have been evaluated.
     //                 Otherwise, call children matchers' onLogEvent.
+    // matcherTransformations: the cached transformations for all matchers for this event.
     virtual void onLogEvent(const LogEvent& event, int matcherIndex,
                             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                            std::vector<MatchingState>& matcherResults) = 0;
+                            std::vector<MatchingState>& matcherResults,
+                            std::vector<std::shared_ptr<LogEvent>>& matcherTransformations) = 0;
 
     // Get the tagIds that this matcher cares about. The combined collection is stored
     // in MetricMananger, so that we can pass any LogEvents that are not interest of us. It uses
