@@ -466,7 +466,6 @@ TEST(DurationMetricE2eTest, TestWithCondition) {
 
 TEST(DurationMetricE2eTest, TestWithSlicedCondition) {
     StatsdConfig config;
-    auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateMoveToBackgroundAtomMatcher();

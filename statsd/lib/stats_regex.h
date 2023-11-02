@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,33 +16,15 @@
 
 #pragma once
 
-#include "logd/LogEvent.h"
-
-#include <vector>
-#include "src/statsd_config.pb.h"
-#include "packages/UidMap.h"
-#include "stats_util.h"
+#include <regex>
 
 namespace android {
 namespace os {
 namespace statsd {
 
-enum MatchingState {
-    kNotComputed = -1,
-    kNotMatched = 0,
-    kMatched = 1,
-};
+std::unique_ptr<std::regex> createRegex(const std::string& pattern);
 
-struct MatchResult {
-    bool matched;
-    std::unique_ptr<LogEvent> transformedEvent;
-};
-
-bool combinationMatch(const std::vector<int>& children, const LogicalOperation& operation,
-                      const std::vector<MatchingState>& matcherResults);
-
-MatchResult matchesSimple(const sp<UidMap>& uidMap, const SimpleAtomMatcher& simpleMatcher,
-                          const LogEvent& wrapper);
+std::string regexReplace(const std::string& input, const std::regex& re, const std::string& format);
 
 }  // namespace statsd
 }  // namespace os
