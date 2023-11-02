@@ -200,7 +200,8 @@ public:
         translateFieldMatcher(metric.value_field(), &fieldMatchers);
 
         const auto [dimensionSoftLimit, dimensionHardLimit] =
-                StatsdStats::getAtomDimensionKeySizeLimits(tagId);
+                StatsdStats::getAtomDimensionKeySizeLimits(
+                        tagId, StatsdStats::kDimensionKeySizeHardLimitMin);
 
         int conditionIndex = conditionAfterFirstBucketPrepared ? 0 : -1;
         vector<ConditionState> initialConditionCache;

@@ -35,8 +35,6 @@
 
 using namespace testing;
 using android::sp;
-using android::modules::sdklevel::IsAtLeastS;
-using android::modules::sdklevel::IsAtLeastU;
 using android::os::statsd::Predicate;
 using std::map;
 using std::set;
@@ -50,54 +48,14 @@ namespace os {
 namespace statsd {
 
 namespace {
-const ConfigKey kConfigKey(0, 12345);
+const int kConfigId = 12345;
+const ConfigKey kConfigKey(0, kConfigId);
 
 const long timeBaseSec = 1000;
 
-StatsdConfig buildGoodConfig() {
-    StatsdConfig config;
-    config.set_id(12345);
-
-    AtomMatcher* eventMatcher = config.add_atom_matcher();
-    eventMatcher->set_id(StringToId("SCREEN_IS_ON"));
-
-    SimpleAtomMatcher* simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
-    simpleAtomMatcher->set_atom_id(2 /*SCREEN_STATE_CHANGE*/);
-    simpleAtomMatcher->add_field_value_matcher()->set_field(
-            1 /*SCREEN_STATE_CHANGE__DISPLAY_STATE*/);
-    simpleAtomMatcher->mutable_field_value_matcher(0)->set_eq_int(
-            2 /*SCREEN_STATE_CHANGE__DISPLAY_STATE__STATE_ON*/);
-
-    eventMatcher = config.add_atom_matcher();
-    eventMatcher->set_id(StringToId("SCREEN_IS_OFF"));
-
-    simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
-    simpleAtomMatcher->set_atom_id(2 /*SCREEN_STATE_CHANGE*/);
-    simpleAtomMatcher->add_field_value_matcher()->set_field(
-            1 /*SCREEN_STATE_CHANGE__DISPLAY_STATE*/);
-    simpleAtomMatcher->mutable_field_value_matcher(0)->set_eq_int(
-            1 /*SCREEN_STATE_CHANGE__DISPLAY_STATE__STATE_OFF*/);
-
-    eventMatcher = config.add_atom_matcher();
-    eventMatcher->set_id(StringToId("SCREEN_ON_OR_OFF"));
-
-    AtomMatcher_Combination* combination = eventMatcher->mutable_combination();
-    combination->set_operation(LogicalOperation::OR);
-    combination->add_matcher(StringToId("SCREEN_IS_ON"));
-    combination->add_matcher(StringToId("SCREEN_IS_OFF"));
-
-    CountMetric* metric = config.add_count_metric();
-    metric->set_id(3);
-    metric->set_what(StringToId("SCREEN_IS_ON"));
-    metric->set_bucket(ONE_MINUTE);
-    metric->mutable_dimensions_in_what()->set_field(2 /*SCREEN_STATE_CHANGE*/);
-    metric->mutable_dimensions_in_what()->add_child()->set_field(1);
-    return config;
-}
-
 StatsdConfig buildGoodRestrictedConfig() {
     StatsdConfig config;
-    config.set_id(12345);
+    config.set_id(kConfigId);
     config.set_restricted_metrics_delegate_package_name("delegate");
 
     AtomMatcher* eventMatcher = config.add_atom_matcher();
@@ -298,7 +256,7 @@ protected:
     }
 
     bool shouldSkipTest() const {
-        return !IsAtLeastS();
+        return !isAtLeastS();
     }
 
     string skipReason() const {
@@ -349,7 +307,7 @@ TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> periodicAlarmMonitor;
 
-    StatsdConfig config = buildGoodConfig();
+    StatsdConfig config = buildGoodConfig(kConfigId);
     config.add_allowed_log_source("AID_SYSTEM");
     config.add_whitelisted_atom_ids(3);
     config.add_whitelisted_atom_ids(4);
@@ -384,7 +342,7 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
     MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
                                   pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
 
-    if (IsAtLeastU()) {
+    if (isAtLeastU()) {
         EXPECT_TRUE(metricsManager.isConfigValid());
     } else {
         EXPECT_EQ(metricsManager.mInvalidConfigReason,
@@ -410,7 +368,7 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate) {
     metricsManager.updateConfig(config, timeBaseSec, timeBaseSec, anomalyAlarmMonitor,
                                 periodicAlarmMonitor);
 
-    if (IsAtLeastU()) {
+    if (isAtLeastU()) {
         EXPECT_TRUE(metricsManager.isConfigValid());
     } else {
         EXPECT_EQ(metricsManager.mInvalidConfigReason,
@@ -426,7 +384,7 @@ TEST(MetricsManagerTest, TestMaxMetricsMemoryKb) {
     sp<AlarmMonitor> periodicAlarmMonitor;
     size_t memoryLimitKb = 8 * 1024;
 
-    StatsdConfig config = buildGoodConfig();
+    StatsdConfig config = buildGoodConfig(kConfigId);
     config.add_allowed_log_source("AID_SYSTEM");
     config.set_max_metrics_memory_kb(memoryLimitKb);
 
@@ -444,7 +402,7 @@ TEST(MetricsManagerTest, TestMaxMetricsMemoryKbOnConfigUpdate) {
     sp<AlarmMonitor> periodicAlarmMonitor;
     size_t memoryLimitKb = 8 * 1024;
 
-    StatsdConfig config = buildGoodConfig();
+    StatsdConfig config = buildGoodConfig(kConfigId);
     config.add_allowed_log_source("AID_SYSTEM");
     config.set_max_metrics_memory_kb(memoryLimitKb);
 
@@ -474,7 +432,7 @@ TEST(MetricsManagerTest, TestMaxMetricsMemoryKbInvalid) {
     size_t memoryLimitKb = (StatsdStats::kHardMaxMetricsBytesPerConfig / 1024) + 1;
     size_t defaultMemoryLimit = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
 
-    StatsdConfig config = buildGoodConfig();
+    StatsdConfig config = buildGoodConfig(kConfigId);
     config.add_allowed_log_source("AID_SYSTEM");
     config.set_max_metrics_memory_kb(memoryLimitKb);
 

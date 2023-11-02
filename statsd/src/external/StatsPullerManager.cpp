@@ -47,7 +47,7 @@ const int64_t NO_ALARM_UPDATE = INT64_MAX;
 StatsPullerManager::StatsPullerManager()
     : kAllPullAtomInfo({
               // TrainInfo.
-              {{.atomTag = util::TRAIN_INFO, .uid = AID_STATSD}, new TrainInfoPuller()},
+              {{.uid = AID_STATSD, .atomTag = util::TRAIN_INFO}, new TrainInfoPuller()},
       }),
       mNextPullTimeNs(NO_ALARM_UPDATE) {
 }
@@ -89,7 +89,7 @@ bool StatsPullerManager::PullLocked(int tagId, const vector<int32_t>& uids,
                                     const int64_t eventTimeNs, vector<shared_ptr<LogEvent>>* data) {
     VLOG("Initiating pulling %d", tagId);
     for (int32_t uid : uids) {
-        PullerKey key = {.atomTag = tagId, .uid = uid};
+        PullerKey key = {.uid = uid, .atomTag = tagId};
         auto pullerIt = kAllPullAtomInfo.find(key);
         if (pullerIt != kAllPullAtomInfo.end()) {
             PullErrorCode status = pullerIt->second->Pull(eventTimeNs, data);
@@ -328,7 +328,7 @@ void StatsPullerManager::RegisterPullAtomCallback(const int uid, const int32_t a
 
     sp<StatsCallbackPuller> puller = new StatsCallbackPuller(atomTag, callback, actualCoolDownNs,
                                                              actualTimeoutNs, additiveFields);
-    PullerKey key = {.atomTag = atomTag, .uid = uid};
+    PullerKey key = {.uid = uid, .atomTag = atomTag};
     auto it = kAllPullAtomInfo.find(key);
     if (it != kAllPullAtomInfo.end()) {
         StatsdStats::getInstance().notePullerCallbackRegistrationChanged(atomTag,
@@ -340,7 +340,7 @@ void StatsPullerManager::RegisterPullAtomCallback(const int uid, const int32_t a
 
 void StatsPullerManager::UnregisterPullAtomCallback(const int uid, const int32_t atomTag) {
     std::lock_guard<std::mutex> _l(mLock);
-    PullerKey key = {.atomTag = atomTag, .uid = uid};
+    PullerKey key = {.uid = uid, .atomTag = atomTag};
     if (kAllPullAtomInfo.find(key) != kAllPullAtomInfo.end()) {
         StatsdStats::getInstance().notePullerCallbackRegistrationChanged(atomTag,
                                                                          /*registered=*/false);
