@@ -59,8 +59,7 @@ void StateTracker::onLogEvent(const LogEvent& event) {
     }
 
     const bool nested = newState.mAnnotations.isNested();
-    StateValueInfo* stateValueInfo = &mStateMap[primaryKey];
-    updateStateForPrimaryKey(eventTimeNs, primaryKey, newState, nested, stateValueInfo);
+    updateStateForPrimaryKey(eventTimeNs, primaryKey, newState, nested, mStateMap[primaryKey]);
 }
 
 void StateTracker::registerListener(wp<StateListener> listener) {
@@ -90,7 +89,7 @@ void StateTracker::handleReset(const int64_t eventTimeNs, const FieldValue& newS
     for (auto& [primaryKey, stateValueInfo] : mStateMap) {
         updateStateForPrimaryKey(eventTimeNs, primaryKey, newState,
                                  false /* nested; treat this state change as not nested */,
-                                 &stateValueInfo);
+                                 stateValueInfo);
     }
 }
 
@@ -106,36 +105,28 @@ void StateTracker::clearStateForPrimaryKey(const int64_t eventTimeNs,
     if (it != mStateMap.end()) {
         updateStateForPrimaryKey(eventTimeNs, primaryKey, state,
                                  false /* nested; treat this state change as not nested */,
-                                 &it->second);
+                                 it->second);
     }
 }
 
 void StateTracker::updateStateForPrimaryKey(const int64_t eventTimeNs,
                                             const HashableDimensionKey& primaryKey,
                                             const FieldValue& newState, const bool nested,
-                                            StateValueInfo* stateValueInfo) {
+                                            StateValueInfo& stateValueInfo) {
     FieldValue oldState;
     oldState.mField = mField;
-    oldState.mValue.setInt(stateValueInfo->state);
-    const int32_t oldStateValue = stateValueInfo->state;
+    oldState.mValue.setInt(stateValueInfo.state);
+    const int32_t oldStateValue = stateValueInfo.state;
     const int32_t newStateValue = newState.mValue.int_value;
 
-    if (kStateUnknown == newStateValue) {
-        mStateMap.erase(primaryKey);
-    }
-
-    // Update state map for non-nested counting case.
+    // Update state map and notify listeners if state has changed.
     // Every state event triggers a state overwrite.
     if (!nested) {
-        stateValueInfo->state = newStateValue;
-        stateValueInfo->count = 1;
-
-        // Notify listeners if state has changed.
-        if (oldStateValue != newStateValue) {
+        if (newStateValue != oldStateValue) {
+            stateValueInfo.state = newStateValue;
+            stateValueInfo.count = 1;
             notifyListeners(eventTimeNs, primaryKey, oldState, newState);
         }
-        return;
-    }
 
     // Update state map for nested counting case.
     //
@@ -147,20 +138,27 @@ void StateTracker::updateStateForPrimaryKey(const int64_t eventTimeNs,
     // In atoms.proto, a state atom with nested counting enabled
     // must only have 2 states. There is no enforcemnt here of this requirement.
     // The atom must be logged correctly.
-    if (kStateUnknown == newStateValue) {
-        if (kStateUnknown != oldStateValue) {
+    } else if (newStateValue == kStateUnknown) {
+        if (oldStateValue != kStateUnknown) {
             notifyListeners(eventTimeNs, primaryKey, oldState, newState);
         }
     } else if (oldStateValue == kStateUnknown) {
-        stateValueInfo->state = newStateValue;
-        stateValueInfo->count = 1;
+        stateValueInfo.state = newStateValue;
+        stateValueInfo.count = 1;
         notifyListeners(eventTimeNs, primaryKey, oldState, newState);
     } else if (oldStateValue == newStateValue) {
-        stateValueInfo->count++;
-    } else if (--stateValueInfo->count == 0) {
-        stateValueInfo->state = newStateValue;
-        stateValueInfo->count = 1;
+        stateValueInfo.count++;
+    } else if (--stateValueInfo.count == 0) {
+        stateValueInfo.state = newStateValue;
+        stateValueInfo.count = 1;
         notifyListeners(eventTimeNs, primaryKey, oldState, newState);
+    }
+
+    // Clear primary key entry from state map if state is now unknown.
+    // stateValueInfo points to a value in mStateMap and should not be accessed after erasing the
+    // entry
+    if (newStateValue == kStateUnknown) {
+        mStateMap.erase(primaryKey);
     }
 }
 

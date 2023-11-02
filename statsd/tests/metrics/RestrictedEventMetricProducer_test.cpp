@@ -1,6 +1,5 @@
 #include "src/metrics/RestrictedEventMetricProducer.h"
 
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "flags/FlagProvider.h"
@@ -19,8 +18,6 @@ using std::vector;
 namespace android {
 namespace os {
 namespace statsd {
-
-using android::modules::sdklevel::IsAtLeastU;
 
 namespace {
 const ConfigKey configKey(/*uid=*/0, /*id=*/12345);
@@ -41,12 +38,12 @@ bool metricTableExist(int64_t metricId) {
 class RestrictedEventMetricProducerTest : public Test {
 protected:
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
     }
     void TearDown() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         dbutils::deleteDb(configKey);

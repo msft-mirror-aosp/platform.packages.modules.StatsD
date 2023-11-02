@@ -240,7 +240,21 @@ struct Matcher {
     }
 
     bool hasAllPositionMatcher() const {
-        return mMatcher.getDepth() >= 1 && mMatcher.getRawPosAtDepth(1) == 0;
+        return mMatcher.getDepth() >= 1 && mMatcher.getRawPosAtDepth(1) == 0 &&
+               getRawMaskAtDepth(1) == 0x7f;
+    }
+
+    bool hasFirstPositionMatcher() const {
+        return mMatcher.getDepth() >= 1 && mMatcher.getRawPosAtDepth(1) == 1;
+    }
+
+    bool hasLastPositionMatcher() const {
+        return mMatcher.getDepth() >= 1 && mMatcher.isLastPosMatcher(1);
+    }
+
+    bool isEqualWithoutPositionBits(const Matcher& that) const {
+        return ((mMatcher.getField() & kClearAllPositionMatcherMask) ==
+                (that.getMatcher().getField() & kClearAllPositionMatcherMask));
     }
 
     inline bool operator!=(const Matcher& that) const {
