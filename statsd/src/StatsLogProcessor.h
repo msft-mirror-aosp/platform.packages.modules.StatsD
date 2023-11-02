@@ -149,12 +149,9 @@ public:
     inline void setPrintLogs(bool enabled) {
         std::lock_guard<std::mutex> lock(mMetricsMutex);
         mPrintAllLogs = enabled;
-
-        if (mLogEventFilter) {
-            // Turning on print logs turns off pushed event filtering to enforce
-            // complete log event buffer parsing
-            mLogEventFilter->setFilteringEnabled(!enabled);
-        }
+        // Turning on print logs turns off pushed event filtering to enforce
+        // complete log event buffer parsing
+        mLogEventFilter->setFilteringEnabled(!enabled);
     }
 
     // Add a specific config key to the possible configs to dump ASAP.

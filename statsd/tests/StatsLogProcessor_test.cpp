@@ -15,7 +15,6 @@
 #include "StatsLogProcessor.h"
 
 #include <android-base/stringprintf.h>
-#include <android-modules-utils/sdk_level.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
@@ -43,7 +42,6 @@ namespace os {
 namespace statsd {
 
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 
 using ::testing::Expectation;
@@ -91,7 +89,8 @@ TEST(StatsLogProcessorTest, TestRateLimitByteSize) {
             m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
@@ -117,7 +116,8 @@ TEST(StatsLogProcessorTest, TestRateLimitBroadcast) {
                 return true;
             },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
@@ -151,7 +151,8 @@ TEST(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
                 return true;
             },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
@@ -1683,8 +1684,8 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
 
     // Send the config.
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr, nullptr);
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     string serialized = config1.SerializeAsString();
     service->addConfigurationChecked(uid, configId, {serialized.begin(), serialized.end()});
 
@@ -2176,12 +2177,12 @@ class StatsLogProcessorTestRestricted : public Test {
 protected:
     const ConfigKey mConfigKey = ConfigKey(1, 12345);
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
     }
     void TearDown() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         FlagProvider::getInstance().resetOverrides();
