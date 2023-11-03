@@ -31,6 +31,7 @@ namespace os {
 namespace statsd {
 
 const int32_t timestampNs = 1000;
+const int32_t kStateUnknown = -1;
 
 /**
  * Mock StateListener class for testing.
@@ -451,28 +452,6 @@ TEST(StateTrackerTest, TestStateChangeMultiplePrimaryFields) {
               getStateInt(mgr, util::OVERLAY_STATE_CHANGED, queryKey));
 }
 
-/**
- * Test StateManager's onLogEvent and StateListener's onStateChanged
- * when there is an error extracting state from log event. Listener is not
- * updated of state change.
- */
-TEST(StateTrackerTest, TestStateChangeEventError) {
-    sp<TestStateListener> listener1 = new TestStateListener();
-    StateManager mgr;
-    mgr.registerListener(util::OVERLAY_STATE_CHANGED, listener1);
-
-    // log event
-    std::shared_ptr<LogEvent> event1 =
-            buildIncorrectOverlayEvent(1000 /* uid */, "package1", 1 /* state */);
-    std::shared_ptr<LogEvent> event2 = buildOverlayEventBadStateType(1001 /* uid */, "package2");
-
-    // check listener was updated
-    mgr.onLogEvent(*event1);
-    ASSERT_EQ(0, listener1->updates.size());
-    mgr.onLogEvent(*event2);
-    ASSERT_EQ(0, listener1->updates.size());
-}
-
 TEST(StateTrackerTest, TestStateQuery) {
     sp<TestStateListener> listener1 = new TestStateListener();
     sp<TestStateListener> listener2 = new TestStateListener();
@@ -562,6 +541,54 @@ TEST(StateTrackerTest, TestStateQuery) {
     getPartialWakelockKey(1005, "wakelock1", &queryKey5);
     EXPECT_EQ(WakelockStateChanged::ACQUIRE,
               getStateInt(mgr, util::WAKELOCK_STATE_CHANGED, queryKey5));
+}
+
+/**
+ * Test StateManager's onLogEvent and StateListener's onStateChanged
+ * when there is an error extracting state from log event. Listener is not
+ * updated of state change.
+ */
+TEST(StateTrackerTest, TestMalformedStateEvent_NoExistingStateValue) {
+    sp<TestStateListener> listener1 = new TestStateListener();
+    StateManager mgr;
+    mgr.registerListener(util::OVERLAY_STATE_CHANGED, listener1);
+
+    // log event
+    std::shared_ptr<LogEvent> event1 =
+            buildIncorrectOverlayEvent(1000 /* uid */, "package1", 1 /* state */);
+    std::shared_ptr<LogEvent> event2 = buildOverlayEventBadStateType(1001 /* uid */, "package2");
+
+    // check listener was not updated
+    mgr.onLogEvent(*event1);
+    ASSERT_EQ(0, listener1->updates.size());
+    mgr.onLogEvent(*event2);
+    ASSERT_EQ(0, listener1->updates.size());
+}
+
+TEST(StateTrackerTest, TestMalformedStateEvent_ExistingStateValue) {
+    sp<TestStateListener> listener = new TestStateListener();
+    StateManager mgr;
+    mgr.registerListener(util::PLUGGED_STATE_CHANGED, listener);
+
+    std::unique_ptr<LogEvent> event1 = CreateBatteryStateChangedEvent(
+            timestampNs, BatteryPluggedStateEnum::BATTERY_PLUGGED_USB);
+    mgr.onLogEvent(*event1);
+    ASSERT_EQ(1, listener->updates.size());
+    EXPECT_EQ(BatteryPluggedStateEnum::BATTERY_PLUGGED_USB, listener->updates[0].mState);
+    FieldValue stateFieldValue;
+    mgr.getStateValue(util::PLUGGED_STATE_CHANGED, listener->updates[0].mKey, &stateFieldValue);
+    EXPECT_EQ(BatteryPluggedStateEnum::BATTERY_PLUGGED_USB, stateFieldValue.mValue.int_value);
+    listener->updates.clear();
+
+    // Malformed event.
+    std::unique_ptr<LogEvent> event2 = CreateMalformedBatteryStateChangedEvent(timestampNs + 1000);
+    mgr.onLogEvent(*event2);
+    ASSERT_EQ(1, listener->updates.size());
+    EXPECT_EQ(kStateUnknown, listener->updates[0].mState);
+    EXPECT_FALSE(mgr.getStateValue(util::PLUGGED_STATE_CHANGED, listener->updates[0].mKey,
+                                   &stateFieldValue));
+    EXPECT_EQ(kStateUnknown, stateFieldValue.mValue.int_value);
+    listener->updates.clear();
 }
 
 }  // namespace statsd

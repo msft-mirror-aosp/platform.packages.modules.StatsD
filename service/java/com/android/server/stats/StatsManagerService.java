@@ -39,6 +39,7 @@ import com.android.internal.annotations.GuardedBy;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -480,23 +481,27 @@ public class StatsManagerService extends IStatsManagerService.Stub {
     @Override
     public void getDataFd(long key, String packageName, ParcelFileDescriptor writeFd)
             throws IllegalStateException, RemoteException {
-        enforceDumpAndUsageStatsPermission(packageName);
-        PowerManager powerManager = mContext.getSystemService(PowerManager.class);
-        PowerManager.WakeLock wl = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
-                /*tag=*/ StatsManagerService.class.getCanonicalName());
-        final int callingUid = Binder.getCallingUid();
-        final long token = Binder.clearCallingIdentity();
-        wl.acquire();
-        try {
-            IStatsd statsd = waitForStatsd();
-            if (statsd != null) {
-                // create another intermediate pipe for statsd
-                getDataWithFd(statsd, key, callingUid, writeFd);
-                return;
+        try (writeFd) {
+            enforceDumpAndUsageStatsPermission(packageName);
+            PowerManager powerManager = mContext.getSystemService(PowerManager.class);
+            PowerManager.WakeLock wl = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                    /*tag=*/ StatsManagerService.class.getCanonicalName());
+            final int callingUid = Binder.getCallingUid();
+            final long token = Binder.clearCallingIdentity();
+            wl.acquire();
+            try {
+                IStatsd statsd = waitForStatsd();
+                if (statsd != null) {
+                    // will create another intermediate pipe for statsd
+                    getDataFdFromStatsd(statsd, key, callingUid, writeFd.getFileDescriptor());
+                    return;
+                }
+            } finally {
+                wl.release();
+                Binder.restoreCallingIdentity(token);
             }
-        } finally {
-            wl.release();
-            Binder.restoreCallingIdentity(token);
+        } catch (IOException e) {
+            throw new IllegalStateException("IOException during getDataFd() call", e);
         }
         throw new IllegalStateException("Failed to connect to statsd to getDataFd");
     }
@@ -852,8 +857,8 @@ public class StatsManagerService extends IStatsManagerService.Stub {
      * No exception handling in this API since they will not be propagated back to caller
      * to make debugging easier, since this API part of oneway binder call flow.
      */
-    public static void getDataWithFd(IStatsd service, long configKey, int callingUid,
-            ParcelFileDescriptor dstFd)
+    private static void getDataFdFromStatsd(IStatsd service, long configKey, int callingUid,
+            FileDescriptor dstFd)
             throws IllegalStateException, RemoteException {
         ParcelFileDescriptor[] pipe;
         try {
@@ -877,10 +882,13 @@ public class StatsManagerService extends IStatsManagerService.Stub {
             throw new IllegalStateException("Failed to close FD.", e);
         }
 
+        // There are many possible exceptions below, to not forget close pipe descriptors
+        // wrapping in the try-with-resources statement
         try (FileInputStream inputStream = new ParcelFileDescriptor.AutoCloseInputStream(readFd);
              DataInputStream srcDataStream = new DataInputStream(inputStream);
-             FileOutputStream outStream = new ParcelFileDescriptor.AutoCloseOutputStream(dstFd);
+             FileOutputStream outStream = new FileOutputStream(dstFd);
              DataOutputStream dstDataStream = new DataOutputStream(outStream)) {
+
             byte[] chunk = new byte[CHUNK_SIZE];
             int chunkLen = 0;
             int readBytes = 0;
