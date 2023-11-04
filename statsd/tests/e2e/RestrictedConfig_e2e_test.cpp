@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "flags/FlagProvider.h"
@@ -22,8 +21,6 @@
 namespace android {
 namespace os {
 namespace statsd {
-
-using android::modules::sdklevel::IsAtLeastU;
 
 #ifdef __ANDROID__
 
@@ -83,7 +80,7 @@ protected:
     string error;
 
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         StatsServiceConfigTest::SetUp();
@@ -119,7 +116,7 @@ protected:
         service->mUidMap->updateMap(startTimeNs, uidData);
     }
     void TearDown() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         Mock::VerifyAndClear(mockStatsQueryCallback.get());
