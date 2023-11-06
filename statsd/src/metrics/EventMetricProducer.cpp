@@ -66,7 +66,8 @@ EventMetricProducer::EventMetricProducer(
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, startTimeNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap, /*splitBucketForAppUpgrade=*/nullopt) {
+                     stateGroupMap, /*splitBucketForAppUpgrade=*/nullopt),
+      mSamplingPercentage(metric.sampling_percentage()) {
     if (metric.links().size() > 0) {
         for (const auto& link : metric.links()) {
             Metric2Condition mc;
@@ -77,6 +78,7 @@ EventMetricProducer::EventMetricProducer(
         }
         mConditionSliced = true;
     }
+
     mTotalSize = 0;
     VLOG("metric %lld created. bucket size %lld start_time: %lld", (long long)mMetricId,
          (long long)mBucketSizeNs, (long long)mTimeBaseNs);
@@ -208,6 +210,10 @@ void EventMetricProducer::onMatchedLogEventInternalLocked(
         const ConditionKey& conditionKey, bool condition, const LogEvent& event,
         const map<int, HashableDimensionKey>& statePrimaryKeys) {
     if (!condition) {
+        return;
+    }
+
+    if (mSamplingPercentage < 100 && !shouldKeepRandomSample(mSamplingPercentage)) {
         return;
     }
 
