@@ -16,7 +16,6 @@
 
 #include "FlagProvider.h"
 
-using android::modules::sdklevel::IsAtLeastS;
 using server_configurable_flags::GetServerConfigurableFlag;
 using std::string;
 using std::vector;
@@ -26,7 +25,7 @@ namespace os {
 namespace statsd {
 
 FlagProvider::FlagProvider()
-    : mIsAtLeastSFunc(IsAtLeastS), mGetServerFlagFunc(GetServerConfigurableFlag) {
+    : mIsAtLeastSFunc(isAtLeastS), mGetServerFlagFunc(GetServerConfigurableFlag) {
 }
 
 FlagProvider& FlagProvider::getInstance() {

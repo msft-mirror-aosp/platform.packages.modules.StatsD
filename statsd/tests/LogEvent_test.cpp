@@ -14,7 +14,6 @@
 
 #include "src/logd/LogEvent.h"
 
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "flags/FlagProvider.h"
@@ -31,7 +30,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-using android::modules::sdklevel::IsAtLeastU;
 using std::string;
 using std::vector;
 using ::util::ProtoOutputStream;
@@ -998,7 +996,7 @@ TEST_P(LogEventTest, TestResetStateAnnotation) {
 }
 
 TEST_P(LogEventTest, TestRestrictionCategoryAnnotation) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         GTEST_SKIP();
     }
     int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
@@ -1011,7 +1009,7 @@ TEST_P(LogEventTest, TestRestrictionCategoryAnnotation) {
 }
 
 TEST_P(LogEventTest, TestInvalidRestrictionCategoryAnnotation) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         GTEST_SKIP();
     }
     int32_t restrictionCategory = 619;  // unknown category
@@ -1022,7 +1020,7 @@ TEST_P(LogEventTest, TestInvalidRestrictionCategoryAnnotation) {
 }
 
 TEST_P(LogEventTest, TestRestrictionCategoryAnnotationBelowUDevice) {
-    if (IsAtLeastU()) {
+    if (isAtLeastU()) {
         GTEST_SKIP();
     }
     int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;
@@ -1150,7 +1148,7 @@ INSTANTIATE_TEST_SUITE_P(
         LogEvent_FieldRestrictionTest::ToString);
 
 TEST_P(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         GTEST_SKIP();
     }
     LogEvent event(/*uid=*/0, /*pid=*/0);
@@ -1164,7 +1162,7 @@ TEST_P(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation) {
 }
 
 TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         GTEST_SKIP();
     }
     LogEvent event(/*uid=*/0, /*pid=*/0);
@@ -1174,7 +1172,7 @@ TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType) {
 }
 
 TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel) {
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         GTEST_SKIP();
     }
     LogEvent event(/*uid=*/0, /*pid=*/0);
@@ -1184,7 +1182,7 @@ TEST_P(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel) {
 }
 
 TEST_P(LogEvent_FieldRestrictionTest, TestRestrictionCategoryAnnotationBelowUDevice) {
-    if (IsAtLeastU()) {
+    if (isAtLeastU()) {
         GTEST_SKIP();
     }
     int32_t restrictionCategory = ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC;

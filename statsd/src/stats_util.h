@@ -16,9 +16,11 @@
 
 #pragma once
 
-#include "HashableDimensionKey.h"
+#include <android-modules-utils/sdk_level.h>
 
 #include <unordered_map>
+
+#include "HashableDimensionKey.h"
 
 namespace android {
 namespace os {
@@ -46,6 +48,16 @@ using ConditionLinks = google::protobuf::RepeatedPtrField<MetricConditionLink>;
 using StateLinks = google::protobuf::RepeatedPtrField<MetricStateLink>;
 
 struct Empty {};
+
+inline bool isAtLeastS() {
+    const static bool isAtLeastS = android::modules::sdklevel::IsAtLeastS();
+    return isAtLeastS;
+}
+
+inline bool isAtLeastU() {
+    const static bool isAtLeastU = android::modules::sdklevel::IsAtLeastU();
+    return isAtLeastU;
+}
 
 }  // namespace statsd
 }  // namespace os
