@@ -17,7 +17,7 @@
 package android.cts.statsd.metadata;
 
 import android.cts.statsd.atom.AtomTestCase;
-import com.android.internal.os.StatsdConfigProto;
+
 import com.android.internal.os.StatsdConfigProto.StatsdConfig;
 import com.android.os.AtomsProto.Atom;
 import com.android.os.StatsLog.StatsdStatsReport;
@@ -25,6 +25,9 @@ import com.android.tradefed.log.LogUtil;
 
 public class MetadataTestCase extends AtomTestCase {
     public static final String DUMP_METADATA_CMD = "cmd stats print-stats";
+
+    public static final String DEVICE_SIDE_TEST_APK = "CtsStatsdApp.apk";
+    public static final String DEVICE_SIDE_TEST_PACKAGE = "com.android.server.cts.device.statsd";
 
     protected StatsdStatsReport getStatsdStatsReport() throws Exception {
         try {
@@ -41,5 +44,13 @@ public class MetadataTestCase extends AtomTestCase {
       StatsdConfig.Builder builder = createConfigBuilder();
       addAtomEvent(builder, Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER);
       return builder;
+    }
+
+    @Override
+    protected void setUp() throws Exception {
+        super.setUp();
+        getDevice().uninstallPackage(DEVICE_SIDE_TEST_PACKAGE);
+        installPackage(DEVICE_SIDE_TEST_APK, true);
+        Thread.sleep(1000);
     }
 }
