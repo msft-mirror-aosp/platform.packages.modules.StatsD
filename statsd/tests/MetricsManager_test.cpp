@@ -497,7 +497,7 @@ TEST(MetricsManagerTest, TestGetTriggerMemoryKbInvalid) {
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> periodicAlarmMonitor;
     size_t memoryLimitKb = (StatsdStats::kHardMaxTriggerGetDataBytes / 1024) + 1;
-    size_t defaultMemoryLimit = StatsdStats::kBytesPerConfigTriggerGetData;
+    size_t defaultMemoryLimit = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
 
     StatsdConfig config = buildGoodConfig(kConfigId);
     config.add_allowed_log_source("AID_SYSTEM");
@@ -516,8 +516,7 @@ TEST(MetricsManagerTest, TestGetTriggerMemoryKbUnset) {
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> periodicAlarmMonitor;
-    size_t memoryLimitKb = (StatsdStats::kHardMaxTriggerGetDataBytes / 1024) + 1;
-    size_t defaultMemoryLimit = StatsdStats::kBytesPerConfigTriggerGetData;
+    size_t defaultMemoryLimit = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
 
     StatsdConfig config = buildGoodConfig(kConfigId);
     config.add_allowed_log_source("AID_SYSTEM");
