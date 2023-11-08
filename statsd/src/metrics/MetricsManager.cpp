@@ -289,14 +289,14 @@ void MetricsManager::setMaxMetricsBytesFromConfig(const StatsdConfig& config) {
 
 void MetricsManager::setTriggerGetDataBytesFromConfig(const StatsdConfig& config) {
     if (!config.has_soft_metrics_memory_kb()) {
-        mTriggerGetDataBytes = StatsdStats::kBytesPerConfigTriggerGetData;
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
         return;
     }
     if (config.soft_metrics_memory_kb() <= 0 ||
         static_cast<size_t>(config.soft_metrics_memory_kb() * 1024) >
                 StatsdStats::kHardMaxTriggerGetDataBytes) {
         ALOGW("Memory limit ust be between 0KB and 10MB. Setting to default value (192KB).");
-        mTriggerGetDataBytes = StatsdStats::kBytesPerConfigTriggerGetData;
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
     } else {
         mTriggerGetDataBytes = config.soft_metrics_memory_kb() * 1024;
     }
