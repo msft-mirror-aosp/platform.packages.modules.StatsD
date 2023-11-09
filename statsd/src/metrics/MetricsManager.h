@@ -191,6 +191,10 @@ public:
         return mMaxMetricsBytes;
     }
 
+    inline size_t getTriggerGetDataBytes() const {
+        return mTriggerGetDataBytes;
+    }
+
 private:
     // For test only.
     inline int64_t getTtlEndNs() const { return mTtlEndNs; }
@@ -354,8 +358,15 @@ private:
     // Only called on config creation/update. Sets the memory limit in bytes for storing metrics.
     void setMaxMetricsBytesFromConfig(const StatsdConfig& config);
 
+    // Only called on config creation/update. Sets the soft memory limit in bytes for storing
+    // metrics.
+    void setTriggerGetDataBytesFromConfig(const StatsdConfig& config);
+
     // The memory limit in bytes for storing metrics
     size_t mMaxMetricsBytes;
+
+    // The memory limit in bytes for triggering get data.
+    size_t mTriggerGetDataBytes;
 
     FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensions);
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
