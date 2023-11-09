@@ -229,6 +229,8 @@ message EventMetric {
 
   repeated MetricConditionLink links = 4;
 
+  optional int32 sampling_percentage = 5 [default = 100];
+
   reserved 100;
   reserved 101;
 }
