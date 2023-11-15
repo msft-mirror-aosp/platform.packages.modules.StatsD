@@ -59,6 +59,10 @@ inline bool isAtLeastU() {
     return isAtLeastU;
 }
 
+inline bool shouldKeepRandomSample(int samplingPercentage) {
+    return (rand() % (100) + 1) <= samplingPercentage;
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

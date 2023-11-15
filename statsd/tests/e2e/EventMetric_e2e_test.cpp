@@ -293,6 +293,56 @@ TEST_F(EventMetricE2eTest, TestDumpReportIncrementsReportNumber) {
     EXPECT_EQ(reports.statsd_stats_id(), StatsdStats::getInstance().getStatsdStatsId());
 }
 
+TEST_F(EventMetricE2eTest, TestEventMetricSampling) {
+    // Set srand seed to make rand deterministic for testing.
+    srand(0);
+
+    StatsdConfig config;
+    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
+
+    AtomMatcher batterySaverOnMatcher = CreateBatterySaverModeStartAtomMatcher();
+    *config.add_atom_matcher() = batterySaverOnMatcher;
+
+    EventMetric batterySaverOnEventMetric =
+            createEventMetric("EventBatterySaverOn", batterySaverOnMatcher.id(), nullopt);
+    batterySaverOnEventMetric.set_sampling_percentage(50);
+    *config.add_event_metric() = batterySaverOnEventMetric;
+
+    ConfigKey key(123, 987);
+    uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+
+    // Initialize log events before update.
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    for (int i = 0; i < 100; i++) {
+        events.push_back(CreateBatterySaverOnEvent(bucketStartTimeNs + (10 + 10 * i) * NS_PER_SEC));
+    }
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    uint64_t dumpTimeNs = bucketStartTimeNs + 2000 * NS_PER_SEC;
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
+    ASSERT_EQ(reports.reports_size(), 1);
+
+    ConfigMetricsReport report = reports.reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+    StatsLogReport metricReport = report.metrics(0);
+    EXPECT_EQ(metricReport.metric_id(), batterySaverOnEventMetric.id());
+    EXPECT_TRUE(metricReport.has_event_metrics());
+    ASSERT_EQ(metricReport.event_metrics().data_size(), 46);
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif
