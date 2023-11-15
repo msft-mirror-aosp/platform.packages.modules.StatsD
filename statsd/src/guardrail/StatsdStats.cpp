@@ -1331,7 +1331,7 @@ void StatsdStats::dumpStats(int out) const {
                 "  (pull timeout)%ld, (pull exceed max delay)%ld"
                 "  (no uid provider count)%ld, (no puller found count)%ld\n"
                 "  (registered count) %ld, (unregistered count) %ld"
-                "  (atom error count) %d, (subscription pull count) %d\n",
+                "  (atom error count) %d, (subscription pull count) %d, (binder call failed) %ld\n",
                 (int)pair.first, (long)pair.second.totalPull, (long)pair.second.totalPullFromCache,
                 (long)pair.second.pullFailed, (long)pair.second.minPullIntervalSec,
                 (long long)pair.second.avgPullTimeNs, (long long)pair.second.maxPullTimeNs,
@@ -1339,7 +1339,8 @@ void StatsdStats::dumpStats(int out) const {
                 pair.second.dataError, pair.second.pullTimeout, pair.second.pullExceedMaxDelay,
                 pair.second.pullUidProviderNotFound, pair.second.pullerNotFound,
                 pair.second.registeredCount, pair.second.unregisteredCount,
-                pair.second.atomErrorCount, pair.second.subscriptionPullCount);
+                pair.second.atomErrorCount, pair.second.subscriptionPullCount,
+                pair.second.binderCallFailCount);
         if (pair.second.pullTimeoutMetadata.size() > 0) {
             string uptimeMillis = "(pull timeout system uptime millis) ";
             string pullTimeoutMillis = "(pull timeout elapsed time millis) ";
