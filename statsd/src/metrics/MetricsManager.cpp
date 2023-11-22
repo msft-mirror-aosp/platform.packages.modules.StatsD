@@ -518,6 +518,12 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
     if (mWhitelistedAtomIds.find(event.GetTagId()) != mWhitelistedAtomIds.end()) {
         return true;
     }
+
+    if (event.GetUid() > AID_ROOT && event.GetUid() < AID_SHELL) {
+        // enable atoms logged from pre-installed Android system services
+        return true;
+    }
+
     std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
     if (mAllowedLogSources.find(event.GetUid()) == mAllowedLogSources.end()) {
         VLOG("log source %d not on the whitelist", event.GetUid());
