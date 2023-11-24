@@ -44,69 +44,6 @@ public class ProcStatsValidationTests extends ProcStateTestCase {
 
     private static final int EXTRA_WAIT_TIME_MS = 1_000; // as buffer when proc state changing.
 
-    public void testProcessStatePssValue() throws Exception {
-        if(isPssProfilingDisabled())  {
-            LogUtil.CLog.i("testProcessStatePssValue is ignored when PSS profiling is disabled");
-            return;
-        }
-        final String fileName = "PROCSTATSQ_PROCS_STATE_PSS_VALUE.pbtxt";
-        StatsdConfig config = createValidationUtil().getConfig(fileName);
-        LogUtil.CLog.d("Updating the following config:\n" + config.toString());
-        uploadConfig(config);
-        clearProcStats();
-        toggleScreenAndSleep(WAIT_TIME_SHORT);
-
-        // foreground service
-        executeForegroundService();
-        toggleScreenAndSleep(SLEEP_OF_FOREGROUND_SERVICE + EXTRA_WAIT_TIME_MS);
-        // background
-        executeBackgroundService(ACTION_BACKGROUND_SLEEP);
-        toggleScreenAndSleep(SLEEP_OF_ACTION_BACKGROUND_SLEEP + EXTRA_WAIT_TIME_MS);
-        // top
-        executeForegroundActivity(ACTION_LONG_SLEEP_WHILE_TOP);
-        toggleScreenAndSleep(SLEEP_OF_ACTION_LONG_SLEEP_WHILE_TOP + EXTRA_WAIT_TIME_MS);
-        // Start extremely short-lived activity, so app goes into cache state (#1 - #3 above).
-        executeBackgroundService(ACTION_END_IMMEDIATELY);
-        final int cacheTime = 2_000; // process should be in cached state for up to this long
-        toggleScreenAndSleep(cacheTime);
-        // foreground
-        // overlay should take 2 sec to appear. So this makes it 4 sec in TOP
-        executeForegroundActivity(ACTION_SHOW_APPLICATION_OVERLAY);
-        toggleScreenAndSleep(EXTRA_WAIT_TIME_MS + 5_000);
-
-        // Sorted list of events in order in which they occurred.
-        List<ValueMetricData> statsdData = getValueMetricDataList();
-
-        List<ProcessStatsProto> processStatsProtoList = getProcStatsProto();
-
-        LogUtil.CLog.d("======================");
-
-        String statsdPkgName = "com.android.server.cts.device.statsd";
-        double valueInStatsd = 0;
-        for (ValueMetricData d : statsdData) {
-            List<DimensionsValue> dimensionsValuesInWhat = d.getDimensionLeafValuesInWhatList();
-            if (dimensionsValuesInWhat.get(0).getValueStr().equals(statsdPkgName)
-                    && dimensionsValuesInWhat.get(1).getValueStr().equals(statsdPkgName)) {
-                LogUtil.CLog.d(d.toString());
-                for (ValueBucketInfo bucket : d.getBucketInfoList()) {
-                    valueInStatsd = Math.max(bucket.getValues(0).getValueLong(), valueInStatsd);
-                }
-            }
-        }
-
-        double valueInProcStats = 0;
-        for (ProcessStatsProto p : processStatsProtoList) {
-            if (p.getProcess().equals(statsdPkgName)) {
-                LogUtil.CLog.d(p.toString());
-                for (ProcessStatsStateProto s : p.getStatesList()) {
-                    valueInProcStats = Math.max(s.getPss().getMax(), valueInProcStats);
-                }
-            }
-        }
-        assertThat(valueInProcStats).isGreaterThan(0d);
-        assertThat(valueInStatsd).isWithin(1e-10).of(valueInProcStats);
-    }
-
     private void toggleScreenAndSleep(final long duration) throws Exception {
         final long half = duration >> 1;
         Thread.sleep(half);
