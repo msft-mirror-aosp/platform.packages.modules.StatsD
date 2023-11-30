@@ -125,7 +125,7 @@ private:
     void handleConditionEvent(const HashableDimensionKey& outputKey, bool matchStart,
                               ConditionState* conditionCache, bool* changedCache);
 
-    bool hitGuardRail(const HashableDimensionKey& newKey);
+    bool hitGuardRail(const HashableDimensionKey& newKey) const;
 
     void dumpState();
 

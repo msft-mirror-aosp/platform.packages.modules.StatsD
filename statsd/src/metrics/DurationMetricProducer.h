@@ -179,7 +179,7 @@ private:
             const MetricDimensionKey& eventKey) const;
 
     // Util function to check whether the specified dimension hits the guardrail.
-    bool hitGuardRailLocked(const MetricDimensionKey& newKey);
+    bool hitGuardRailLocked(const MetricDimensionKey& newKey) const;
 
     static const size_t kBucketSize = sizeof(DurationBucket{});
 
