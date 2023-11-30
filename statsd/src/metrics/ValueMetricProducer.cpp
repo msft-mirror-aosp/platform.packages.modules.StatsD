@@ -616,7 +616,7 @@ bool ValueMetricProducer<AggregatedValue, DimExtras>::hasReachedGuardRailLimit()
 
 template <typename AggregatedValue, typename DimExtras>
 bool ValueMetricProducer<AggregatedValue, DimExtras>::hitGuardRailLocked(
-        const MetricDimensionKey& newKey) {
+        const MetricDimensionKey& newKey) const {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mCurrentSlicedBucket.find(newKey) != mCurrentSlicedBucket.end()) {
