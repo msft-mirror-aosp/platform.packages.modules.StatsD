@@ -211,9 +211,13 @@ public:
     // Hard limit for custom memory allowed for storing metrics per configuration.
     static const size_t kHardMaxMetricsBytesPerConfig = 20 * 1024 * 1024;
 
+    // Max memory allowed for storing metrics per configuration before triggering a intent to fetch
+    // data.
+    static const size_t kHardMaxTriggerGetDataBytes = 10 * 1024 * 1024;
+
     // Soft memory limit per configuration. Once this limit is exceeded, we begin notifying the
     // data subscriber that it's time to call getData.
-    static const size_t kBytesPerConfigTriggerGetData = 192 * 1024;
+    static const size_t kDefaultBytesPerConfigTriggerGetData = 192 * 1024;
 
     // Soft memory limit per restricted configuration. Once this limit is exceeded,
     // we begin flush in-memory restricted metrics to database.

@@ -1112,7 +1112,7 @@ void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
     mLastByteSizeTimes[key] = elapsedRealtimeNs;
     const size_t kBytesPerConfig = metricsManager.hasRestrictedMetricsDelegate()
                                            ? StatsdStats::kBytesPerRestrictedConfigTriggerFlush
-                                           : StatsdStats::kBytesPerConfigTriggerGetData;
+                                           : metricsManager.getTriggerGetDataBytes();
     bool requestDump = false;
     if (totalBytes > metricsManager.getMaxMetricsBytes()) {
         // Too late. We need to start clearing data.
