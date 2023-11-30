@@ -81,7 +81,7 @@ private:
                               const int64_t timestamp);
 
     // return true if we should not allow newKey to be tracked because we are above the threshold
-    bool hitGuardRail(const HashableDimensionKey& newKey, size_t dimensionHardLimit);
+    bool hitGuardRail(const HashableDimensionKey& newKey, size_t dimensionHardLimit) const;
 
     FRIEND_TEST(MaxDurationTrackerTest, TestSimpleMaxDuration);
     FRIEND_TEST(MaxDurationTrackerTest, TestCrossBucketBoundary);
