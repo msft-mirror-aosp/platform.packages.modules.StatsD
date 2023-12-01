@@ -38,13 +38,13 @@ OringDurationTracker::OringDurationTracker(
 }
 
 bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey,
-                                        size_t dimensionHardLimit) {
+                                        size_t dimensionHardLimit) const {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mConditionKeyMap.find(newKey) != mConditionKeyMap.end()) {
         return false;
     }
-    if (mConditionKeyMap.size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mConditionKeyMap.size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mConditionKeyMap.size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
