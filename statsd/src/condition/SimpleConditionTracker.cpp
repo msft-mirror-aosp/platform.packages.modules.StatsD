@@ -164,13 +164,13 @@ void SimpleConditionTracker::handleStopAll(std::vector<ConditionState>& conditio
     conditionCache[mIndex] = ConditionState::kFalse;
 }
 
-bool SimpleConditionTracker::hitGuardRail(const HashableDimensionKey& newKey) {
+bool SimpleConditionTracker::hitGuardRail(const HashableDimensionKey& newKey) const {
     if (!mSliced || mSlicedConditionState.find(newKey) != mSlicedConditionState.end()) {
         // if the condition is not sliced or the key is not new, we are good!
         return false;
     }
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mSlicedConditionState.size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mSlicedConditionState.size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mSlicedConditionState.size() + 1;
         StatsdStats::getInstance().noteConditionDimensionSize(mConfigKey, mConditionId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.

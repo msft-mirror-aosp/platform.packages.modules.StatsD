@@ -341,7 +341,7 @@ bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
     }
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mCurrentSlicedCounter->size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mCurrentSlicedCounter->size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mCurrentSlicedCounter->size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
