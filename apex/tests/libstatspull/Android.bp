@@ -22,7 +22,7 @@ android_test {
         "androidx.test.rules",
         "platformprotoslite",
         "statsdprotolite",
-        "truth-prebuilt",
+        "truth",
     ],
     libs: [
         "android.test.runner.stubs",
@@ -34,7 +34,7 @@ android_test {
     srcs: [
         "src/**/*.java",
         "protos/**/*.proto",
-        ],
+    ],
     test_suites: [
         "device-tests",
         "mts",

@@ -107,6 +107,7 @@ interface IStatsManagerService {
      * wire-encoded of ConfigMetricsReportList.
      *
      * Requires Manifest.permission.DUMP and Manifest.permission.PACKAGE_USAGE_STATS.
+     * @deprecated use #getDataFd() instead
      */
     byte[] getData(in long key, in String packageName);
 

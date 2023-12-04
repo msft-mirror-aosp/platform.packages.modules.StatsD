@@ -13,12 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "benchmark/benchmark.h"
 #include <statslog.h>
+
+#include "benchmark/benchmark.h"
 
 namespace android {
 namespace os {
 namespace statsd {
+
+static void BM_StatsEventObtain(benchmark::State& state) {
+    while (state.KeepRunning()) {
+        AStatsEvent* event = AStatsEvent_obtain();
+        benchmark::DoNotOptimize(event);
+        AStatsEvent_release(event);
+    }
+}
+BENCHMARK(BM_StatsEventObtain);
 
 static void BM_StatsWrite(benchmark::State& state) {
     const char* reason = "test";
@@ -34,6 +44,19 @@ static void BM_StatsWrite(benchmark::State& state) {
     }
 }
 BENCHMARK(BM_StatsWrite);
+
+static void BM_StatsWriteViaQueue(benchmark::State& state) {
+    // writes dedicated atom which known to be put into the queue for the test purpose
+    int32_t uid = 0;
+    int32_t label = 100;
+    int32_t a_state = 1;
+    // TODO: choose atom with a same structure as used in BM_StatsWrite
+    while (state.KeepRunning()) {
+        benchmark::DoNotOptimize(android::util::stats_write(android::util::APP_BREADCRUMB_REPORTED,
+                                                            uid, label, a_state++));
+    }
+}
+BENCHMARK(BM_StatsWriteViaQueue);
 
 }  //  namespace statsd
 }  //  namespace os

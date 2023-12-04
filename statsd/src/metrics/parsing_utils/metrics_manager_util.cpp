@@ -249,7 +249,7 @@ optional<InvalidConfigReason> handleMetricWithStateLink(const int64_t metricId,
     return nullopt;
 }
 
-optional<InvalidConfigReason> handleMetricWithSampling(
+optional<InvalidConfigReason> handleMetricWithDimensionalSampling(
         const int64_t metricId, const DimensionalSamplingInfo& dimSamplingInfo,
         const vector<Matcher>& dimensionsInWhat, SamplingInfo& samplingInfo) {
     if (!dimSamplingInfo.has_sampled_what_field()) {
@@ -533,7 +533,7 @@ optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
 
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -718,7 +718,7 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
 
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -772,6 +772,12 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
                     INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
             return nullopt;
         }
+    }
+
+    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE, metric.id());
+        return nullopt;
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
@@ -927,7 +933,9 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
     const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    pullTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     // get the condition_correction_threshold_nanos value
     const optional<int64_t> conditionCorrectionThresholdNs =
@@ -947,7 +955,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
 
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -1084,7 +1092,9 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(atomTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    atomTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     sp<MetricProducer> metricProducer = new KllMetricProducer(
             key, metric, metricHash, {/*pullTagId=*/-1, pullerManager},
@@ -1098,7 +1108,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
 
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -1224,7 +1234,9 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     }
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
-            StatsdStats::getAtomDimensionKeySizeLimits(pullTagId);
+            StatsdStats::getAtomDimensionKeySizeLimits(
+                    pullTagId,
+                    StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket()));
 
     sp<MetricProducer> metricProducer = new GaugeMetricProducer(
             key, metric, conditionIndex, initialConditionCache, wizard, metricHash, trackerIndex,
@@ -1236,7 +1248,7 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     std::vector<Matcher> dimensionsInWhat;
     translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
