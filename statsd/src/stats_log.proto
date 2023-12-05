@@ -656,6 +656,32 @@ message StatsdStatsReport {
     }
 
     optional SubscriptionStats subscription_stats = 23;
+
+    message SocketLossStats {
+      message LossStatsPerUid {
+        message AtomIdLossStats {
+            optional int32 atom_id = 1;
+            optional int32 error = 2;
+            optional int32 count = 3;
+        }
+        optional int32 uid = 1;
+        optional int64 first_timestamp_nanos = 2;
+        optional int64 last_timestamp_nanos = 3;
+        repeated AtomIdLossStats atom_id_loss_stats = 4;
+      }
+
+      repeated LossStatsPerUid loss_stats_per_uid = 1;
+
+      // tracks overflow of stats container on the libstatssocket side per logging application
+      message LossStatsOverflowCounters {
+        optional int32 uid = 1;
+        optional int32 count = 2;
+      }
+
+      repeated LossStatsOverflowCounters loss_stats_overflow_counters = 2;
+    }
+
+    optional SocketLossStats socket_loss_stats = 24;
 }
 
 message AlertTriggerDetails {
