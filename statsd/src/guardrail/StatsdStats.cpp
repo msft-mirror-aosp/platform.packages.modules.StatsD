@@ -61,6 +61,7 @@ const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS = 20;
 const int FIELD_ID_SHARD_OFFSET = 21;
 const int FIELD_ID_STATSD_STATS_ID = 22;
 const int FIELD_ID_SUBSCRIPTION_STATS = 23;
+const int FIELD_ID_SOCKET_LOSS_STATS = 24;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -157,6 +158,25 @@ const int FIELD_ID_UID_MAP_DELETED_APPS = 4;
 
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL_UID = 1;
 const int FIELD_ID_ACTIVATION_BROADCAST_GUARDRAIL_TIME = 2;
+
+// SocketLossStats
+const int FIELD_ID_SOCKET_LOSS_STATS_PER_UID = 1;
+const int FIELD_ID_SOCKET_LOSS_STATS_OVERFLOW_COUNTERS = 2;
+
+// for LossStatsOverflowCounters proto
+const int FIELD_ID_SOCKET_LOSS_STATS_OVERFLOW_COUNTERS_UID = 1;
+const int FIELD_ID_SOCKET_LOSS_STATS_OVERFLOW_COUNTERS_COUNT = 2;
+
+// for LossStatsPerUid proto
+const int FIELD_ID_SOCKET_LOSS_STATS_UID = 1;
+const int FIELD_ID_SOCKET_LOSS_STATS_FIRST_TIMESTAMP_NANOS = 2;
+const int FIELD_ID_SOCKET_LOSS_STATS_LAST_TIMESTAMP_NANOS = 3;
+const int FIELD_ID_SOCKET_LOSS_ATOM_ID_LOSS_STATS = 4;
+
+// for AtomIdLossStats proto
+const int FIELD_ID_ATOM_ID_LOSS_STATS_ATOM_ID = 1;
+const int FIELD_ID_ATOM_ID_LOSS_STATS_ERROR = 2;
+const int FIELD_ID_ATOM_ID_LOSS_STATS_COUNT = 3;
 
 // for RestrictedMetricStats proto
 const int FIELD_ID_RESTRICTED_STATS_METRIC_ID = 1;
@@ -353,25 +373,26 @@ void StatsdStats::noteAtomSocketLoss(const SocketLossInfo& lossInfo) {
     ALOGW("SocketLossEvent detected: %lld (firstLossTsNanos), %lld (lastLossTsNanos)",
           (long long)lossInfo.firstLossTsNanos, (long long)lossInfo.lastLossTsNanos);
     lock_guard<std::mutex> lock(mLock);
+
+    if (mSocketLossStats.size() == kMaxSocketLossStatsSize) {
+        // erase the oldest record
+        mSocketLossStats.pop_front();
+    }
+    mSocketLossStats.emplace_back(lossInfo.uid, lossInfo.firstLossTsNanos,
+                                  lossInfo.lastLossTsNanos);
     for (size_t i = 0; i < lossInfo.atomIds.size(); i++) {
         ALOGW("For uid %d atom %d was lost %d times with error %d", lossInfo.uid,
               lossInfo.atomIds[i], lossInfo.counts[i], lossInfo.errors[i]);
-        const auto lossInfoKey =
-                std::make_tuple(lossInfo.uid, lossInfo.atomIds[i], lossInfo.errors[i]);
-        auto counterIt = mSocketLossStats.find(lossInfoKey);
-        if (counterIt != mSocketLossStats.end()) {
-            counterIt->second += lossInfo.counts[i];
-        } else if (mSocketLossStats.size() < kMaxSocketLossStatsSize) {
-            mSocketLossStats[lossInfoKey] = lossInfo.counts[i];
-        }
+        mSocketLossStats.back().mLossCountPerErrorAtomId.emplace_back(
+                lossInfo.atomIds[i], lossInfo.errors[i], lossInfo.counts[i]);
     }
 
     if (lossInfo.overflowCounter > 0) {
-        auto overflowPerUid = mSocketLossStatsOverflowCounter.find(lossInfo.uid);
-        if (overflowPerUid != mSocketLossStatsOverflowCounter.end()) {
+        auto overflowPerUid = mSocketLossStatsOverflowCounters.find(lossInfo.uid);
+        if (overflowPerUid != mSocketLossStatsOverflowCounters.end()) {
             overflowPerUid->second += lossInfo.overflowCounter;
-        } else if (mSocketLossStatsOverflowCounter.size() < kMaxSocketLossStatsSize) {
-            mSocketLossStatsOverflowCounter[lossInfo.uid] = lossInfo.overflowCounter;
+        } else if (mSocketLossStatsOverflowCounters.size() < kMaxSocketLossStatsSize) {
+            mSocketLossStatsOverflowCounters[lossInfo.uid] = lossInfo.overflowCounter;
         }
     }
 }
@@ -1060,7 +1081,7 @@ void StatsdStats::resetInternalLocked() {
     mActivationBroadcastGuardrailStats.clear();
     mPushedAtomErrorStats.clear();
     mSocketLossStats.clear();
-    mSocketLossStatsOverflowCounter.clear();
+    mSocketLossStatsOverflowCounters.clear();
     mPushedAtomDropsStats.clear();
     mRestrictedMetricQueryStats.clear();
     mSubscriptionPullThreadWakeupCount = 0;
@@ -1387,17 +1408,18 @@ void StatsdStats::dumpStats(int out) const {
     if (mSocketLossStats.size()) {
         dprintf(out, "********SocketLossStats stats***********\n");
         for (const auto& loss : mSocketLossStats) {
-            const int32_t uid = std::get<0>(loss.first);
-            const int32_t tag = std::get<1>(loss.first);
-            const int32_t error = std::get<2>(loss.first);
-            dprintf(out, "Socket loss: %d (uid), %d (tag) %d (error), %d (count)\n", uid, tag,
-                    error, loss.second);
+            dprintf(out, "Socket loss: %d (uid), first loss at %lld, last loss at %lld\n",
+                    loss.mUid, (long long)loss.mFirstLossTsNanos, (long long)loss.mLastLossTsNanos);
+            for (const auto& counterInfo : loss.mLossCountPerErrorAtomId) {
+                dprintf(out, "\t\t %d (atomId) %d (error), %d (count)\n", counterInfo.mAtomId,
+                        counterInfo.mError, counterInfo.mCount);
+            }
         }
     }
 
-    if (mSocketLossStatsOverflowCounter.size()) {
-        dprintf(out, "********mSocketLossStatsOverflowCounter stats***********\n");
-        for (const auto& overflow : mSocketLossStatsOverflowCounter) {
+    if (mSocketLossStatsOverflowCounters.size()) {
+        dprintf(out, "********mSocketLossStatsOverflowCounters stats***********\n");
+        for (const auto& overflow : mSocketLossStatsOverflowCounters) {
             dprintf(out, "Socket loss overflow for %d uid is %d times\n", overflow.first,
                     overflow.second);
         }
@@ -1842,6 +1864,47 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
             FIELD_TYPE_INT32 | FIELD_ID_SUBSCRIPTION_STATS_PULL_THREAD_WAKEUP_COUNT,
             mSubscriptionPullThreadWakeupCount, &proto);
     proto.end(token);
+
+    // libstatssocket specific stats
+
+    const uint64_t socketLossStatsToken =
+            proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SOCKET_LOSS_STATS);
+
+    // socket loss stats info per uid/error/atom id counter
+    for (const auto& perUidLossInfo : mSocketLossStats) {
+        uint64_t token = proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SOCKET_LOSS_STATS_PER_UID |
+                                     FIELD_COUNT_REPEATED);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_SOCKET_LOSS_STATS_UID, perUidLossInfo.mUid);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_SOCKET_LOSS_STATS_FIRST_TIMESTAMP_NANOS,
+                    perUidLossInfo.mFirstLossTsNanos);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_SOCKET_LOSS_STATS_LAST_TIMESTAMP_NANOS,
+                    perUidLossInfo.mLastLossTsNanos);
+        for (const auto& counterInfo : perUidLossInfo.mLossCountPerErrorAtomId) {
+            uint64_t token =
+                    proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SOCKET_LOSS_ATOM_ID_LOSS_STATS |
+                                FIELD_COUNT_REPEATED);
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_ID_LOSS_STATS_ATOM_ID,
+                        counterInfo.mAtomId);
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_ID_LOSS_STATS_ERROR, counterInfo.mError);
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_ATOM_ID_LOSS_STATS_COUNT, counterInfo.mCount);
+            proto.end(token);
+        }
+        proto.end(token);
+    }
+
+    // socket loss stats overflow counters
+    for (const auto& overflowInfo : mSocketLossStatsOverflowCounters) {
+        uint64_t token =
+                proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SOCKET_LOSS_STATS_OVERFLOW_COUNTERS |
+                            FIELD_COUNT_REPEATED);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_SOCKET_LOSS_STATS_OVERFLOW_COUNTERS_UID,
+                    overflowInfo.first);
+        proto.write(FIELD_TYPE_INT32 | FIELD_ID_SOCKET_LOSS_STATS_OVERFLOW_COUNTERS_COUNT,
+                    overflowInfo.second);
+        proto.end(token);
+    }
+
+    proto.end(socketLossStatsToken);
 
     output->clear();
     proto.serializeToVector(output);
