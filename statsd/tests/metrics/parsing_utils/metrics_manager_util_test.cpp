@@ -615,6 +615,43 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricConditionlinkNoCondition) {
                                   StringToId("Event")));
 }
 
+TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentage) {
+    StatsdConfig config;
+    EventMetric* metric = config.add_event_metric();
+    *metric = createEventMetric(/*name=*/"Event", /*what=*/StringToId("ScreenTurnedOn"),
+                                /*condition=*/nullopt);
+    metric->set_sampling_percentage(101);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                  StringToId("Event")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentage2) {
+    StatsdConfig config;
+    EventMetric* metric = config.add_event_metric();
+    *metric = createEventMetric(/*name=*/"Event", /*what=*/StringToId("ScreenTurnedOn"),
+                                /*condition=*/nullopt);
+    metric->set_sampling_percentage(0);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                  StringToId("Event")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestEventMetricValidSamplingPercentage2) {
+    StatsdConfig config;
+    EventMetric* metric = config.add_event_metric();
+    *metric = createEventMetric(/*name=*/"Event", /*what=*/StringToId("ScreenTurnedOn"),
+                                /*condition=*/nullopt);
+    metric->set_sampling_percentage(50);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingIdOrWhat) {
     StatsdConfig config;
     int64_t metricId = 1;

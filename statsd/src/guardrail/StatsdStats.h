@@ -211,9 +211,13 @@ public:
     // Hard limit for custom memory allowed for storing metrics per configuration.
     static const size_t kHardMaxMetricsBytesPerConfig = 20 * 1024 * 1024;
 
+    // Max memory allowed for storing metrics per configuration before triggering a intent to fetch
+    // data.
+    static const size_t kHardMaxTriggerGetDataBytes = 10 * 1024 * 1024;
+
     // Soft memory limit per configuration. Once this limit is exceeded, we begin notifying the
     // data subscriber that it's time to call getData.
-    static const size_t kBytesPerConfigTriggerGetData = 192 * 1024;
+    static const size_t kDefaultBytesPerConfigTriggerGetData = 192 * 1024;
 
     // Soft memory limit per restricted configuration. Once this limit is exceeded,
     // we begin flush in-memory restricted metrics to database.
@@ -269,7 +273,7 @@ public:
     static const int kMaxPushedAtomErrorStatsSize = 100;
 
     // Maximum number of socket loss stats to track.
-    static const int kMaxSocketLossStatsSize = 100;
+    static const int kMaxSocketLossStatsSize = 50;
 
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
@@ -851,15 +855,35 @@ private:
     std::map<int, int> mPushedAtomErrorStats;
 
     // Stores the number of times a pushed atom was lost due to socket error.
-    // Represents counter per uid per tag per error
-    // The max size of this map is kMaxSocketLossStatsSize.
-    std::map<std::tuple<int32_t, int32_t, int32_t>, int32_t> mSocketLossStats;
+    // Represents counter per uid per tag per error with indication when the loss event was observed
+    // first & last time.
+    struct SocketLossStats {
+        SocketLossStats(int32_t uid, int64_t firstLossTsNanos, int64_t lastLossTsNanos)
+            : mUid(uid), mFirstLossTsNanos(firstLossTsNanos), mLastLossTsNanos(lastLossTsNanos) {
+        }
 
-    // Stores the number of times a pushed atom loss info was dropped to be added into stats
+        int32_t mUid;
+        int64_t mFirstLossTsNanos;
+        int64_t mLastLossTsNanos;
+        // atom loss count per error, atom id
+        struct AtomLossInfo {
+            AtomLossInfo(int32_t atomId, int32_t error, int32_t count)
+                : mAtomId(atomId), mError(error), mCount(count) {
+            }
+            int mAtomId;
+            int mError;
+            int mCount;
+        };
+        std::vector<AtomLossInfo> mLossCountPerErrorAtomId;
+    };
+    // The max size of this list is kMaxSocketLossStatsSize.
+    std::list<SocketLossStats> mSocketLossStats;
+
+    // Stores the number of times a pushed atom loss info was dropped from the stats
     // on libstatssocket side due to guardrail hit.
     // Represents counter per uid.
     // The max size of this map is kMaxSocketLossStatsSize.
-    std::map<int32_t, int32_t> mSocketLossStatsOverflowCounter;
+    std::map<int32_t, int32_t> mSocketLossStatsOverflowCounters;
 
     // Maps metric ID to its stats. The size is capped by the number of metrics.
     std::map<int64_t, AtomMetricStats> mAtomMetricStats;
@@ -1015,6 +1039,8 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup);
     FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions);
     FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription);
+    FRIEND_TEST(StatsdStatsTest, TestSocketLossStats);
+    FRIEND_TEST(StatsdStatsTest, TestSocketLossStatsOverflowCounter);
 
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
 };
