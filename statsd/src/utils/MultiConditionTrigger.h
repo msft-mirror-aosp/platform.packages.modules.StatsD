@@ -47,9 +47,8 @@ private:
     std::set<std::string> mRemainingConditionNames;
     std::function<void()> mTrigger;
     bool mCompleted;
-
-    FRIEND_TEST(MultiConditionTriggerTest, TestCountDownCalledBySameEventName);
 };
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
