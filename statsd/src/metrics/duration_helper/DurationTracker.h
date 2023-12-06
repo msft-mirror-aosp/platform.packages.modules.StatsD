@@ -272,7 +272,7 @@ protected:
 
     std::vector<sp<AnomalyTracker>> mAnomalyTrackers;
 
-    bool mHasHitGuardrail;
+    mutable bool mHasHitGuardrail;
 
     FRIEND_TEST(OringDurationTrackerTest, TestPredictAnomalyTimestamp);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionExpiredAlarm);
