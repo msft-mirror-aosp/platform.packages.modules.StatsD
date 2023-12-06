@@ -27,12 +27,42 @@
 
 #ifdef __ANDROID__
 
+namespace std {
+void PrintTo(const tuple<int, size_t>& atomIdDimensionLimitTuple, ostream* os) {
+    *os << get<0>(atomIdDimensionLimitTuple) << "_" << get<1>(atomIdDimensionLimitTuple);
+}
+}  // namespace std
+
 namespace android {
 namespace os {
 namespace statsd {
+namespace {
 
+using namespace testing;
 using PerSubscriptionStats = StatsdStatsReport_SubscriptionStats_PerSubscriptionStats;
+using std::tuple;
 using std::vector;
+
+class StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap
+    : public TestWithParam<tuple<int, size_t>> {};
+INSTANTIATE_TEST_SUITE_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap,
+                         StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap,
+                         Combine(Values(10022 /* BINDER_CALLS */, 10024 /* LOOPER_STATS */,
+                                        10010 /* CPU_TIME_PER_UID_FREQ */),
+                                 Values(-1, 0, 500, 800, 1000, 3000, 3300)),
+                         PrintToStringParamName());
+
+class StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap
+    : public StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap {};
+
+INSTANTIATE_TEST_SUITE_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap,
+                         StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap,
+                         Combine(Values(util::TEST_ATOM_REPORTED, util::SCREEN_STATE_CHANGED,
+                                        util::SUBSYSTEM_SLEEP_STATE),
+                                 Values(-1, 0, 500, 800, 1000, 3000, 3300)),
+                         PrintToStringParamName());
+
+}  // anonymous namespace
 
 TEST(StatsdStatsTest, TestValidConfigAdd) {
     StatsdStats stats;
@@ -966,6 +996,111 @@ TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription) {
                 Not(Contains(Property(&PerSubscriptionStats::id, Eq(5)))));
     EXPECT_THAT(subscriptionStats.per_subscription_stats(),
                 Contains(Property(&PerSubscriptionStats::id, Eq(maxSubs + 1))));
+}
+
+TEST(StatsdStatsTest, TestEnforceDimensionKeySizeLimit) {
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(-1),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(0),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(500),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(1000), 1000);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(3500),
+              StatsdStats::kDimensionKeySizeHardLimitMax);
+}
+
+TEST(StatsdStatsTest, TestSocketLossStats) {
+    StatsdStats stats;
+
+    const int maxLossEvents = StatsdStats::kMaxSocketLossStatsSize;
+
+    // Note maxLossEvents + 1
+    for (int eventId = 0; eventId <= maxLossEvents; eventId++) {
+        SocketLossInfo info;
+
+        info.uid = eventId;
+        info.firstLossTsNanos = 10 * eventId;
+        info.lastLossTsNanos = 10 * eventId + 1;
+
+        info.atomIds.push_back(eventId * 10);
+        info.errors.push_back(eventId * 20);
+        info.counts.push_back(eventId * 30);
+
+        stats.noteAtomSocketLoss(info);
+    }
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto socketLossStats = report.socket_loss_stats();
+    ASSERT_EQ(socketLossStats.loss_stats_per_uid().size(), maxLossEvents);
+
+    for (int i = 0; i < socketLossStats.loss_stats_per_uid().size(); i++) {
+        const auto& info = report.socket_loss_stats().loss_stats_per_uid(i);
+
+        // due to the very first one with id 0 is popped out from the list ids (index) start from 1
+        const int index = i + 1;
+
+        ASSERT_EQ(info.uid(), index);
+        ASSERT_EQ(info.first_timestamp_nanos(), 10 * index);
+        ASSERT_EQ(info.last_timestamp_nanos(), 10 * index + 1);
+
+        ASSERT_EQ(info.atom_id_loss_stats().size(), 1);
+
+        ASSERT_EQ(info.atom_id_loss_stats(0).atom_id(), index * 10);
+        ASSERT_EQ(info.atom_id_loss_stats(0).error(), index * 20);
+        ASSERT_EQ(info.atom_id_loss_stats(0).count(), index * 30);
+    }
+}
+
+TEST(StatsdStatsTest, TestSocketLossStatsOverflowCounter) {
+    StatsdStats stats;
+
+    const int uidsCount = 5;
+    const int lossEventCount = 5;
+
+    for (int uid = 0; uid < uidsCount; uid++) {
+        for (int eventId = 0; eventId < lossEventCount; eventId++) {
+            SocketLossInfo info;
+
+            info.uid = uid;
+            info.firstLossTsNanos = 10 * eventId;
+            info.lastLossTsNanos = 10 * eventId + 1;
+            // the counter value will be accumulated
+            info.overflowCounter = 1;
+
+            info.atomIds.push_back(eventId * 10);
+            info.errors.push_back(eventId * 20);
+            info.counts.push_back(eventId * 30);
+
+            stats.noteAtomSocketLoss(info);
+        }
+    }
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto socketLossStatsOverflowCounters =
+            report.socket_loss_stats().loss_stats_overflow_counters();
+    ASSERT_EQ(socketLossStatsOverflowCounters.size(), uidsCount);
+
+    for (int i = 0; i < socketLossStatsOverflowCounters.size(); i++) {
+        const auto& counters = report.socket_loss_stats().loss_stats_overflow_counters(i);
+
+        ASSERT_EQ(counters.uid(), i);
+        ASSERT_EQ(counters.count(), lossEventCount);
+    }
+}
+
+TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap, TestGetAtomDimensionKeySizeLimits) {
+    const auto& [atomId, defaultHardLimit] = GetParam();
+    EXPECT_EQ(StatsdStats::getAtomDimensionKeySizeLimits(atomId, defaultHardLimit),
+              StatsdStats::kAtomDimensionKeySizeLimitMap.at(atomId));
+}
+
+TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap, TestGetAtomDimensionKeySizeLimits) {
+    const auto& [atomId, defaultHardLimit] = GetParam();
+    EXPECT_EQ(
+            StatsdStats::getAtomDimensionKeySizeLimits(atomId, defaultHardLimit),
+            (std::pair<size_t, size_t>(StatsdStats::kDimensionKeySizeSoftLimit, defaultHardLimit)));
 }
 
 }  // namespace statsd

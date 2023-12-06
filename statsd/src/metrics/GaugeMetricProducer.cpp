@@ -513,7 +513,7 @@ bool GaugeMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
         return false;
     }
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mCurrentSlicedBucket->size() > mDimensionSoftLimit - 1) {
+    if (mCurrentSlicedBucket->size() >= mDimensionSoftLimit) {
         size_t newTupleCount = mCurrentSlicedBucket->size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.

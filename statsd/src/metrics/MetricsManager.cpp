@@ -103,6 +103,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
 
     createAllLogSourcesFromConfig(config);
     setMaxMetricsBytesFromConfig(config);
+    setTriggerGetDataBytesFromConfig(config);
     mPullerManager->RegisterPullUidProvider(mConfigKey, this);
 
     // Store the sub-configs used.
@@ -203,6 +204,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mPullAtomPackages.clear();
     createAllLogSourcesFromConfig(config);
     setMaxMetricsBytesFromConfig(config);
+    setTriggerGetDataBytesFromConfig(config);
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
@@ -282,6 +284,21 @@ void MetricsManager::setMaxMetricsBytesFromConfig(const StatsdConfig& config) {
         mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
     } else {
         mMaxMetricsBytes = config.max_metrics_memory_kb() * 1024;
+    }
+}
+
+void MetricsManager::setTriggerGetDataBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_soft_metrics_memory_kb()) {
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
+        return;
+    }
+    if (config.soft_metrics_memory_kb() <= 0 ||
+        static_cast<size_t>(config.soft_metrics_memory_kb() * 1024) >
+                StatsdStats::kHardMaxTriggerGetDataBytes) {
+        ALOGW("Memory limit ust be between 0KB and 10MB. Setting to default value (192KB).");
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
+    } else {
+        mTriggerGetDataBytes = config.soft_metrics_memory_kb() * 1024;
     }
 }
 
@@ -501,6 +518,12 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
     if (mWhitelistedAtomIds.find(event.GetTagId()) != mWhitelistedAtomIds.end()) {
         return true;
     }
+
+    if (event.GetUid() > AID_ROOT && event.GetUid() < AID_SHELL) {
+        // enable atoms logged from pre-installed Android system services
+        return true;
+    }
+
     std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
     if (mAllowedLogSources.find(event.GetUid()) == mAllowedLogSources.end()) {
         VLOG("log source %d not on the whitelist", event.GetUid());
@@ -538,32 +561,6 @@ bool MetricsManager::eventSanityCheck(const LogEvent& event) {
             return false;
         } else if (appHookState < 0 || appHookState > 3) {
             VLOG("APP_BREADCRUMB_REPORTED does not have valid state %ld", appHookState);
-            return false;
-        }
-    } else if (event.GetTagId() == util::DAVEY_OCCURRED) {
-        // Daveys can be logged from any app since they are logged in libs/hwui/JankTracker.cpp.
-        // Check that the davey duration is reasonable. Max length check is for privacy.
-        status_t err = NO_ERROR;
-
-        // Uid is the first field provided.
-        long jankUid = event.GetLong(1, &err);
-        if (err != NO_ERROR) {
-            VLOG("Davey occurred had error when parsing the uid");
-            return false;
-        }
-        int32_t loggerUid = event.GetUid();
-        if (loggerUid != jankUid && loggerUid != AID_STATSD) {
-            VLOG("DAVEY_OCCURRED has invalid uid: claimed %ld but caller is %d", jankUid,
-                 loggerUid);
-            return false;
-        }
-
-        long duration = event.GetLong(event.size(), &err);
-        if (err != NO_ERROR) {
-            VLOG("Davey occurred had error when parsing the duration");
-            return false;
-        } else if (duration > 100000) {
-            VLOG("Davey duration is unreasonably long: %ld", duration);
             return false;
         }
     }

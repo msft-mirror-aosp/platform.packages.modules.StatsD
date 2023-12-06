@@ -172,19 +172,20 @@ private:
     std::unordered_map<HashableDimensionKey, std::unique_ptr<DurationTracker>>
             mCurrentSlicedDurationTrackerMap;
 
+    const size_t mDimensionHardLimit;
+
     // Helper function to create a duration tracker given the metric aggregation type.
     std::unique_ptr<DurationTracker> createDurationTracker(
             const MetricDimensionKey& eventKey) const;
 
     // Util function to check whether the specified dimension hits the guardrail.
-    bool hitGuardRailLocked(const MetricDimensionKey& newKey);
+    bool hitGuardRailLocked(const MetricDimensionKey& newKey) const;
 
     static const size_t kBucketSize = sizeof(DurationBucket{});
 
     FRIEND_TEST(DurationMetricTrackerTest, TestNoCondition);
     FRIEND_TEST(DurationMetricTrackerTest, TestNonSlicedCondition);
     FRIEND_TEST(DurationMetricTrackerTest, TestNonSlicedConditionUnknownState);
-    FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicates);
     FRIEND_TEST(DurationMetricTrackerTest, TestFirstBucket);
 
     FRIEND_TEST(DurationMetricProducerTest, TestSumDurationAppUpgradeSplitDisabled);
@@ -197,6 +198,10 @@ private:
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateDurationMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateAlerts);
+
+    FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
 };
 
 }  // namespace statsd

@@ -472,6 +472,9 @@ std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs);
 // Create log event when battery state changes.
 std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs, const BatteryPluggedStateEnum state);
 
+// Create malformed log event for battery state change.
+std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs);
+
 // Create log event for app moving to background.
 std::unique_ptr<LogEvent> CreateMoveToBackgroundEvent(uint64_t timestampNs, const int uid);
 
@@ -821,6 +824,11 @@ std::vector<uint8_t> protoToBytes(const P& proto) {
     proto.SerializeToArray(bytes.data(), byteSize);
     return bytes;
 }
+
+StatsdConfig buildGoodConfig(int configId);
+
+StatsdConfig buildGoodConfig(int configId, int alertId);
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
