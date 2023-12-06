@@ -214,6 +214,19 @@ void AnomalyTracker::declareAnomaly(const int64_t& timestampNs, int64_t metricId
         VLOG("Skipping anomaly declaration since within refractory period");
         return;
     }
+
+    // TODO(b/110564268): This should also take in the const MetricDimensionKey& key?
+    util::stats_write(util::ANOMALY_DETECTED, mConfigKey.GetUid(), mConfigKey.GetId(), mAlert.id());
+
+    if (mAlert.probability_of_informing() < 1 &&
+        ((float)rand() / (float)RAND_MAX) >= mAlert.probability_of_informing()) {
+        // Note that due to float imprecision, 0.0 and 1.0 might not truly mean never/always.
+        // The config writer was advised to use -0.1 and 1.1 for never/always.
+        ALOGI("Fate decided that an alert will not trigger subscribers or start the refactory "
+              "period countdown.");
+        return;
+    }
+
     if (mAlert.has_refractory_period_secs()) {
         mRefractoryPeriodEndsSec[key] = ((timestampNs + NS_PER_SEC - 1) / NS_PER_SEC) // round up
                                         + mAlert.refractory_period_secs();
@@ -231,10 +244,6 @@ void AnomalyTracker::declareAnomaly(const int64_t& timestampNs, int64_t metricId
     }
 
     StatsdStats::getInstance().noteAnomalyDeclared(mConfigKey, mAlert.id());
-
-    // TODO(b/110564268): This should also take in the const MetricDimensionKey& key?
-    util::stats_write(util::ANOMALY_DETECTED, mConfigKey.GetUid(),
-                      mConfigKey.GetId(), mAlert.id());
 }
 
 void AnomalyTracker::detectAndDeclareAnomaly(const int64_t& timestampNs,
