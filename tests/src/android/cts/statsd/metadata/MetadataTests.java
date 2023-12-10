@@ -24,7 +24,11 @@ import com.android.os.AtomsProto.Atom;
 import com.android.os.StatsLog.StatsdStatsReport;
 import com.android.os.StatsLog.StatsdStatsReport.ConfigStats;
 import com.android.os.StatsLog.StatsdStatsReport.LogLossStats;
+import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats;
+import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid;
+import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid.AtomIdLossStats;
 import com.android.tradefed.log.LogUtil;
+import java.util.HashSet;
 
 /**
  * Statsd Metadata tests.
@@ -155,6 +159,51 @@ public class MetadataTests extends MetadataTestCase {
 
             assertThat(detectedLossEventForAppBreadcrumbAtom).isTrue();
             assertThat(detectedLossEventForSystemServer).isFalse();
+
+            boolean detectedLossEventForAppBreadcrumbAtomViaSocketLossStats = false;
+            for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+                for (AtomIdLossStats atomLossStats : lossStats.getAtomIdLossStatsList()) {
+                    if (atomLossStats.getAtomId() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
+                        detectedLossEventForAppBreadcrumbAtomViaSocketLossStats = true;
+                    }
+                }
+            }
+
+            assertThat(detectedLossEventForAppBreadcrumbAtomViaSocketLossStats).isTrue();
         }
+    }
+
+    /** Test libstatssocket logging queue atom id distribution collection */
+    public void testAtomIdLossDistributionCollection() throws Exception {
+        if (!ApiLevelUtil.codenameEquals(getDevice(), "VanillaIceCream")) {
+            return;
+        }
+
+        final String appTestApk = "StatsdAtomStormApp.apk";
+        final String app2TestApk = "StatsdAtomStormApp2.apk";
+
+        final String appTestPkg = "com.android.statsd.app.atomstorm";
+        final String app2TestPkg = "com.android.statsd.app.atomstorm.copy";
+
+        getDevice().uninstallPackage(appTestPkg);
+        getDevice().uninstallPackage(app2TestPkg);
+        installPackage(appTestApk, true);
+        installPackage(app2TestApk, true);
+
+        // run reference test app with UID 1
+        runDeviceTests(appTestPkg, null, null);
+        // run reference test app with UID 2
+        runDeviceTests(app2TestPkg, null, null);
+
+        StatsdStatsReport report = getStatsdStatsReport();
+        assertThat(report).isNotNull();
+        HashSet<Integer> reportedUids = new HashSet<Integer>();
+        for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+            reportedUids.add(lossStats.getUid());
+        }
+        assertThat(reportedUids.size()).isGreaterThan(1);
+
+        getDevice().uninstallPackage(appTestPkg);
+        getDevice().uninstallPackage(app2TestPkg);
     }
 }
