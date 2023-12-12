@@ -39,7 +39,6 @@ namespace statsd {
 TEST(CountMetricE2eTest, TestInitialConditionChanges) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");     // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     auto syncStartMatcher = CreateSyncStartAtomMatcher();
@@ -116,7 +115,6 @@ TEST(CountMetricE2eTest, TestInitialConditionChanges) {
 TEST(CountMetricE2eTest, TestConditionTrueNanos) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");     // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
@@ -283,7 +281,6 @@ TEST(CountMetricE2eTest, TestConditionTrueNanos) {
 TEST(CountMetricE2eTest, TestSlicedState) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -432,7 +429,6 @@ TEST(CountMetricE2eTest, TestSlicedState) {
 TEST(CountMetricE2eTest, TestSlicedStateWithMap) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -611,7 +607,6 @@ TEST(CountMetricE2eTest, TestSlicedStateWithMap) {
 TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto appCrashMatcher =
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
@@ -815,7 +810,6 @@ TEST(CountMetricE2eTest, TestSlicedStateWithPrimaryFields) {
 TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto appCrashMatcher =
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
@@ -1090,7 +1084,6 @@ TEST(CountMetricE2eTest, TestMultipleSlicedStates) {
 TEST(CountMetricE2eTest, TestUploadThreshold) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto appCrashMatcher = CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
     *config.add_atom_matcher() = appCrashMatcher;
@@ -1161,7 +1154,6 @@ TEST(CountMetricE2eTest, TestUploadThreshold) {
 
 TEST(CountMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -1229,7 +1221,6 @@ TEST(CountMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
 
 TEST(CountMetricE2eTest, TestMatchRepeatedFieldPositionAny) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedStateAnyOnAtomMatcher =
             CreateTestAtomRepeatedStateAnyOnAtomMatcher();
@@ -1295,7 +1286,6 @@ TEST(CountMetricE2eTest, TestMatchRepeatedFieldPositionAny) {
 
 TEST(CountMetricE2eTest, TestRepeatedFieldDimension_PositionFirst) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -1383,7 +1373,6 @@ TEST(CountMetricE2eTest, TestRepeatedFieldDimension_PositionFirst) {
 
 TEST(CountMetricE2eTest, TestRepeatedFieldDimension_PositionLast) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -1462,7 +1451,6 @@ TEST(CountMetricE2eTest, TestRepeatedFieldDimension_PositionLast) {
 
 TEST(CountMetricE2eTest, TestRepeatedFieldDimension_PositionAll) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -1568,7 +1556,6 @@ TEST(CountMetricE2eTest, TestRepeatedFieldDimension_PositionAll) {
 
 TEST(CountMetricE2eTest, TestMultipleRepeatedFieldDimensions_PositionFirst) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -1683,7 +1670,6 @@ TEST(CountMetricE2eTest, TestMultipleRepeatedFieldDimensions_PositionFirst) {
 
 TEST(CountMetricE2eTest, TestMultipleRepeatedFieldDimensions_PositionAll) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -1813,7 +1799,6 @@ TEST(CountMetricE2eTest, TestMultipleRepeatedFieldDimensions_PositionAll) {
 
 TEST(CountMetricE2eTest, TestConditionSlicedByRepeatedUidWithUidDimension) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher uidProcessStateChangedAtomMatcher = CreateUidProcessStateChangedAtomMatcher();
     AtomMatcher repeatedStateFirstOffAtomMatcher = CreateTestAtomRepeatedStateFirstOffAtomMatcher();
@@ -1946,7 +1931,6 @@ TEST(CountMetricE2eTest, TestDimensionalSampling) {
 
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher appCrashMatcher =
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);

@@ -29,7 +29,6 @@ namespace statsd {
 
 TEST(DurationMetricE2eTest, TestOneBucket) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     auto screenOffMatcher = CreateScreenTurnedOffAtomMatcher();
@@ -112,7 +111,6 @@ TEST(DurationMetricE2eTest, TestOneBucket) {
 
 TEST(DurationMetricE2eTest, TestTwoBuckets) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     auto screenOffMatcher = CreateScreenTurnedOffAtomMatcher();
@@ -198,7 +196,6 @@ TEST(DurationMetricE2eTest, TestTwoBuckets) {
 
 TEST(DurationMetricE2eTest, TestWithActivation) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     auto screenOffMatcher = CreateScreenTurnedOffAtomMatcher();
@@ -377,7 +374,6 @@ TEST(DurationMetricE2eTest, TestWithActivation) {
 
 TEST(DurationMetricE2eTest, TestWithCondition) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateMoveToBackgroundAtomMatcher();
@@ -470,7 +466,6 @@ TEST(DurationMetricE2eTest, TestWithCondition) {
 
 TEST(DurationMetricE2eTest, TestWithSlicedCondition) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
@@ -574,7 +569,6 @@ TEST(DurationMetricE2eTest, TestWithSlicedCondition) {
 
 TEST(DurationMetricE2eTest, TestWithActivationAndSlicedCondition) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
@@ -741,7 +735,6 @@ TEST(DurationMetricE2eTest, TestWithActivationAndSlicedCondition) {
 TEST(DurationMetricE2eTest, TestWithSlicedState) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     *config.add_atom_matcher() = CreateBatterySaverModeStartAtomMatcher();
     *config.add_atom_matcher() = CreateBatterySaverModeStopAtomMatcher();
@@ -884,7 +877,6 @@ TEST(DurationMetricE2eTest, TestWithSlicedState) {
 TEST(DurationMetricE2eTest, TestWithConditionAndSlicedState) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     *config.add_atom_matcher() = CreateBatterySaverModeStartAtomMatcher();
     *config.add_atom_matcher() = CreateBatterySaverModeStopAtomMatcher();
@@ -1046,7 +1038,6 @@ TEST(DurationMetricE2eTest, TestWithConditionAndSlicedState) {
 TEST(DurationMetricE2eTest, TestWithSlicedStateMapped) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     *config.add_atom_matcher() = CreateBatterySaverModeStartAtomMatcher();
     *config.add_atom_matcher() = CreateBatterySaverModeStopAtomMatcher();
@@ -1194,7 +1185,6 @@ TEST(DurationMetricE2eTest, TestWithSlicedStateMapped) {
 TEST(DurationMetricE2eTest, TestSlicedStatePrimaryFieldsNotSubsetDimInWhat) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
@@ -1238,7 +1228,6 @@ TEST(DurationMetricE2eTest, TestSlicedStatePrimaryFieldsNotSubsetDimInWhat) {
 TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset) {
     // Initialize config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
@@ -1485,7 +1474,6 @@ TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset) {
 
 TEST(DurationMetricE2eTest, TestUploadThreshold) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     auto screenOffMatcher = CreateScreenTurnedOffAtomMatcher();
@@ -1580,7 +1568,6 @@ TEST(DurationMetricE2eTest, TestUploadThreshold) {
 
 TEST(DurationMetricE2eTest, TestConditionOnRepeatedEnumField) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher repeatedStateFirstOffAtomMatcher = CreateTestAtomRepeatedStateFirstOffAtomMatcher();
     AtomMatcher repeatedStateFirstOnAtomMatcher = CreateTestAtomRepeatedStateFirstOnAtomMatcher();
@@ -1669,7 +1656,6 @@ TEST(DurationMetricE2eTest, TestDimensionalSampling) {
     ShardOffsetProvider::getInstance().setShardOffset(5);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     *config.add_atom_matcher() = CreateStartScheduledJobAtomMatcher();
     *config.add_atom_matcher() = CreateFinishScheduledJobAtomMatcher();
