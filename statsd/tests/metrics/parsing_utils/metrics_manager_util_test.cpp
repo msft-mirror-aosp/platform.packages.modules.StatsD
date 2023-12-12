@@ -1420,7 +1420,6 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerDurationTooLong) {
 
 TEST_F(MetricsManagerUtilTest, TestCreateDurationProducerDimensionsInWhatInvalid) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateMoveToBackgroundAtomMatcher();
@@ -1457,7 +1456,6 @@ TEST_F(MetricsManagerUtilTest, TestCreateDurationProducerDimensionsInWhatInvalid
 
 TEST_F(MetricsManagerUtilTest, TestSampledMetrics) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher appCrashMatcher =
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
@@ -1609,7 +1607,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasShardCountButNoSampledField) {
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = appCrashMatcher;
 
     CountMetric metric =
@@ -1629,7 +1626,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasSampledFieldIncorrectShardCount) {
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = appCrashMatcher;
 
     CountMetric metric =
@@ -1650,7 +1646,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasMultipleSampledFields) {
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = appCrashMatcher;
 
     CountMetric metric =
@@ -1671,7 +1666,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionALL) {
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1694,7 +1688,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1717,7 +1710,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricSampledField_DifferentFieldsNotSubsetDi
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = appCrashMatcher;
 
     CountMetric metric =
@@ -1738,7 +1730,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastNotSubsetDi
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1762,7 +1753,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstNotSubsetD
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1787,7 +1777,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstSubsetDime
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1808,7 +1797,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastSubsetDimen
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1829,7 +1817,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstSubsetDime
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1850,7 +1837,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastSubsetDimen
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
