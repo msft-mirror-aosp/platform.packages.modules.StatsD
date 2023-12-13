@@ -475,19 +475,13 @@ TEST_F(ConfigUpdateTest, TestUpdateMatchers) {
     EXPECT_NE(oldAtomMatchingTrackers[oldAtomMatchingTrackerMap.at(combination2Id)],
               newAtomMatchingTrackers[newAtomMatchingTrackerMap.at(combination2Id)]);
 
-    // Validation, make sure the matchers have the proper ids/indices. Could do more checks here.
+    // Validation, make sure the matchers have the proper ids. Could do more checks here.
     EXPECT_EQ(newAtomMatchingTrackers[0]->getId(), combination3Id);
-    EXPECT_EQ(newAtomMatchingTrackers[0]->mIndex, 0);
     EXPECT_EQ(newAtomMatchingTrackers[1]->getId(), simple2Id);
-    EXPECT_EQ(newAtomMatchingTrackers[1]->mIndex, 1);
     EXPECT_EQ(newAtomMatchingTrackers[2]->getId(), combination2Id);
-    EXPECT_EQ(newAtomMatchingTrackers[2]->mIndex, 2);
     EXPECT_EQ(newAtomMatchingTrackers[3]->getId(), simple1Id);
-    EXPECT_EQ(newAtomMatchingTrackers[3]->mIndex, 3);
     EXPECT_EQ(newAtomMatchingTrackers[4]->getId(), simple4Id);
-    EXPECT_EQ(newAtomMatchingTrackers[4]->mIndex, 4);
     EXPECT_EQ(newAtomMatchingTrackers[5]->getId(), combination1Id);
-    EXPECT_EQ(newAtomMatchingTrackers[5]->mIndex, 5);
 
     // Verify child indices of Combination Matchers are correct.
     CombinationAtomMatchingTracker* combinationTracker1 =
