@@ -75,7 +75,6 @@ protected:
 
 TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -161,7 +160,6 @@ TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
 
     // Do update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     *newConfig.add_atom_matcher() = screenOnMatcher;
     *newConfig.add_atom_matcher() = batteryPluggedUsbMatcher;
@@ -299,7 +297,6 @@ TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
 
 TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -402,7 +399,6 @@ TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
 
     // Do update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     *newConfig.add_atom_matcher() = screenOnMatcher;
     *newConfig.add_atom_matcher() = screenOffMatcher;
@@ -554,7 +550,6 @@ TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
 
 TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -684,7 +679,6 @@ TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
 
     // Do update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     *newConfig.add_atom_matcher() = wakelockReleaseMatcher;
     *newConfig.add_atom_matcher() = syncStopMatcher;
@@ -909,7 +903,6 @@ TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
 
 TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     AtomMatcher appStartMatcher = CreateSimpleAtomMatcher("AppStart", util::APP_START_OCCURRED);
@@ -1019,7 +1012,6 @@ TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
 
     // Do the update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     newConfig.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     *newConfig.add_atom_matcher() = screenOffMatcher;
@@ -1313,7 +1305,6 @@ TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
 
 TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     AtomMatcher brightnessMatcher = CreateScreenBrightnessChangedAtomMatcher();
@@ -1399,7 +1390,6 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
 
     // Do the update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     newConfig.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     *newConfig.add_atom_matcher() = screenOffMatcher;
@@ -1649,7 +1639,6 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
 
 TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher brightnessMatcher = CreateScreenBrightnessChangedAtomMatcher();
     *config.add_atom_matcher() = brightnessMatcher;
@@ -1703,7 +1692,6 @@ TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
 
     // Do the update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     *newConfig.add_atom_matcher() = screenOffMatcher;
     *newConfig.add_atom_matcher() = unpluggedMatcher;
@@ -1865,7 +1853,6 @@ TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
 TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     ALOGE("Start ConfigUpdateE2eTest#TestMetricActivation");
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     string immediateTag = "immediate", bootTag = "boot", childTag = "child";
 
@@ -1969,7 +1956,6 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
 
     // Do update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     newConfig.set_hash_strings_in_metric_report(false);  // Modify metadata for fun.
 
     // Change combination matcher, will mean combination metric isn't active after update.
@@ -2117,7 +2103,6 @@ TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
 
 TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -2251,7 +2236,6 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
 
     // Do config update.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     *newConfig.add_atom_matcher() = wakelockAcquireMatcher;
     *newConfig.add_atom_matcher() = syncStartMatcher;
 
@@ -2330,7 +2314,6 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
 
 TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = wakelockAcquireMatcher;
@@ -2584,7 +2567,6 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
 
     // Do config update.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     *newConfig.add_atom_matcher() = wakelockAcquireMatcher;
     *newConfig.add_atom_matcher() = screenOffMatcher;
     *newConfig.add_atom_matcher() = wakelockReleaseMatcher;
@@ -2689,7 +2671,6 @@ TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
 
 TEST_F(ConfigUpdateE2eTest, TestAlarms) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     Alarm alarmPreserve = createAlarm("AlarmPreserve", /*offset*/ 5 * MS_PER_SEC,
                                       /*period*/ TimeUnitToBucketSizeInMillis(ONE_MINUTE));
     Alarm alarmReplace = createAlarm("AlarmReplace", /*offset*/ 1,
@@ -2785,7 +2766,6 @@ TEST_F(ConfigUpdateE2eTest, TestAlarms) {
 
     // Do config update.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     // Change alarm replace's definition.
     alarmReplace.set_period_millis(TimeUnitToBucketSizeInMillis(ONE_MINUTE));
@@ -2857,7 +2837,6 @@ TEST_F(ConfigUpdateE2eTest, TestAlarms) {
 
 TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
 
@@ -2921,7 +2900,6 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
 
 TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateMoveToBackgroundAtomMatcher();
@@ -3022,7 +3000,6 @@ TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
 
 TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedState) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
 
