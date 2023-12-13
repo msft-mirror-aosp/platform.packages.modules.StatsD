@@ -914,7 +914,6 @@ TEST(GaugeMetricProducerTest, TestPullDimensionalSampling) {
     ShardOffsetProvider::getInstance().setShardOffset(5);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     int triggerId = 5;
     int shardCount = 2;
