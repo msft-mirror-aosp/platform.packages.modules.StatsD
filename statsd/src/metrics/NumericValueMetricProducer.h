@@ -279,6 +279,10 @@ private:
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateValueMetrics);
 
+    FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
+
     friend class NumericValueMetricProducerTestHelper;
 };
 
