@@ -30,6 +30,7 @@ import com.android.os.AtomsProto.ProcessStatsStateProto;
 import com.android.os.StatsLog.DimensionsValue;
 import com.android.os.StatsLog.ValueBucketInfo;
 import com.android.os.StatsLog.ValueMetricData;
+import com.android.tradefed.device.ITestDevice;
 import com.android.tradefed.log.LogUtil;
 
 import java.util.List;
@@ -44,6 +45,10 @@ public class ProcStatsValidationTests extends ProcStateTestCase {
     private static final int EXTRA_WAIT_TIME_MS = 1_000; // as buffer when proc state changing.
 
     public void testProcessStatePssValue() throws Exception {
+        if(isPssProfilingDisabled())  {
+            LogUtil.CLog.i("testProcessStatePssValue is ignored when PSS profiling is disabled");
+            return;
+        }
         final String fileName = "PROCSTATSQ_PROCS_STATE_PSS_VALUE.pbtxt";
         StatsdConfig config = createValidationUtil().getConfig(fileName);
         LogUtil.CLog.d("Updating the following config:\n" + config.toString());
@@ -302,5 +307,14 @@ public class ProcStatsValidationTests extends ProcStateTestCase {
         LogUtil.CLog.d("avg pss from procstats is " + pssAvgProcstats);
         assertThat(rssAvgStatsd).isEqualTo(rssAvgProcstats);
         */
+    }
+
+    private boolean isPssProfilingDisabled() throws Exception {
+        ITestDevice device = getDevice();
+        final String disablePssProfilingKey = "disable_app_profiler_pss_profiling";
+        final String stringToCompare = " " + disablePssProfilingKey + "=true";
+
+        final String dumpsys = device.executeShellCommand("dumpsys activity settings");
+        return (dumpsys.contains(stringToCompare));
     }
 }
