@@ -51,7 +51,7 @@ public:
     virtual optional<InvalidConfigReason> init(
             const std::vector<AtomMatcher>& allAtomMatchers,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-            const std::unordered_map<int64_t, int>& matcherMap, std::vector<bool>& stack) = 0;
+            const std::unordered_map<int64_t, int>& matcherMap, std::vector<uint8_t>& stack) = 0;
 
     // Update appropriate state on config updates. Primarily, all indices need to be updated.
     // This matcher and all of its children are guaranteed to be preserved across the update.

@@ -39,7 +39,7 @@ CombinationAtomMatchingTracker::~CombinationAtomMatchingTracker() {
 optional<InvalidConfigReason> CombinationAtomMatchingTracker::init(
         const vector<AtomMatcher>& allAtomMatchers,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-        const unordered_map<int64_t, int>& matcherMap, vector<bool>& stack) {
+        const unordered_map<int64_t, int>& matcherMap, vector<uint8_t>& stack) {
     if (mInitialized) {
         return nullopt;
     }

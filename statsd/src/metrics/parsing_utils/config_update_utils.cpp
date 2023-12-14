@@ -37,7 +37,7 @@ optional<InvalidConfigReason> determineMatcherUpdateStatus(
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
         const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
         const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-        vector<UpdateStatus>& matchersToUpdate, vector<bool>& cycleTracker) {
+        vector<UpdateStatus>& matchersToUpdate, vector<uint8_t>& cycleTracker) {
     // Have already examined this matcher.
     if (matchersToUpdate[matcherIdx] != UPDATE_UNKNOWN) {
         return nullopt;
@@ -145,7 +145,7 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
 
     // For combination matchers, we need to determine if any children need to be updated.
     vector<UpdateStatus> matchersToUpdate(atomMatcherCount, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(atomMatcherCount, false);
+    vector<uint8_t> cycleTracker(atomMatcherCount, false);
     for (int i = 0; i < atomMatcherCount; i++) {
         invalidConfigReason = determineMatcherUpdateStatus(
                 config, i, oldAtomMatchingTrackerMap, oldAtomMatchingTrackers,
@@ -238,7 +238,7 @@ optional<InvalidConfigReason> determineConditionUpdateStatus(
         const vector<sp<ConditionTracker>>& oldConditionTrackers,
         const unordered_map<int64_t, int>& newConditionTrackerMap,
         const set<int64_t>& replacedMatchers, vector<UpdateStatus>& conditionsToUpdate,
-        vector<bool>& cycleTracker) {
+        vector<uint8_t>& cycleTracker) {
     // Have already examined this condition.
     if (conditionsToUpdate[conditionIdx] != UPDATE_UNKNOWN) {
         return nullopt;
@@ -369,7 +369,7 @@ optional<InvalidConfigReason> updateConditions(
     }
 
     vector<UpdateStatus> conditionsToUpdate(conditionTrackerCount, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(conditionTrackerCount, false);
+    vector<uint8_t> cycleTracker(conditionTrackerCount, false);
     for (int i = 0; i < conditionTrackerCount; i++) {
         invalidConfigReason = determineConditionUpdateStatus(
                 config, i, oldConditionTrackerMap, oldConditionTrackers, newConditionTrackerMap,

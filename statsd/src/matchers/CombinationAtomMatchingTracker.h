@@ -34,7 +34,7 @@ public:
     optional<InvalidConfigReason> init(
             const std::vector<AtomMatcher>& allAtomMatchers,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-            const std::unordered_map<int64_t, int>& matcherMap, std::vector<bool>& stack);
+            const std::unordered_map<int64_t, int>& matcherMap, std::vector<uint8_t>& stack);
 
     optional<InvalidConfigReason> onConfigUpdated(
             const AtomMatcher& matcher, const int index,

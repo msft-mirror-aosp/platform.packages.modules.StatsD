@@ -1327,7 +1327,7 @@ optional<InvalidConfigReason> initAtomMatchingTrackers(
         matcherConfigs.push_back(logMatcher);
     }
 
-    vector<bool> stackTracker2(allAtomMatchingTrackers.size(), false);
+    vector<uint8_t> stackTracker2(allAtomMatchingTrackers.size(), false);
     for (size_t matcherIndex = 0; matcherIndex < allAtomMatchingTrackers.size(); matcherIndex++) {
         auto& matcher = allAtomMatchingTrackers[matcherIndex];
         invalidConfigReason = matcher->init(matcherConfigs, allAtomMatchingTrackers,
@@ -1388,7 +1388,7 @@ optional<InvalidConfigReason> initConditions(
         conditionConfigs.push_back(condition);
     }
 
-    vector<bool> stackTracker(allConditionTrackers.size(), false);
+    vector<uint8_t> stackTracker(allConditionTrackers.size(), false);
     for (size_t i = 0; i < allConditionTrackers.size(); i++) {
         auto& conditionTracker = allConditionTrackers[i];
         invalidConfigReason =
