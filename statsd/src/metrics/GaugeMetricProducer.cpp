@@ -409,10 +409,10 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         return;
     }
     for (const auto& data : allData) {
-        LogEvent localCopy = *data;
-        localCopy.setElapsedTimestampNs(timestampNs);
-        if (mEventMatcherWizard->matchLogEvent(localCopy, mWhatMatcherIndex) ==
+        if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) ==
             MatchingState::kMatched) {
+            LogEvent localCopy = *data;
+            localCopy.setElapsedTimestampNs(timestampNs);
             onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
         }
     }
