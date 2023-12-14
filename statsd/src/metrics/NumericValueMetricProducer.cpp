@@ -297,9 +297,9 @@ void NumericValueMetricProducer::accumulateEvents(const vector<shared_ptr<LogEve
         }
     } else {
         for (const auto& data : allData) {
-            LogEvent localCopy = *data;
-            if (mEventMatcherWizard->matchLogEvent(localCopy, mWhatMatcherIndex) ==
+            if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) ==
                 MatchingState::kMatched) {
+                LogEvent localCopy = *data;
                 localCopy.setElapsedTimestampNs(eventElapsedTimeNs);
                 onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
             }
