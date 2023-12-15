@@ -18,17 +18,51 @@
 
 #include <vector>
 
+#include "gtest_matchers.h"
 #include "src/metrics/parsing_utils/metrics_manager_util.h"
+#include "src/shell/ShellSubscriber.h"
+#include "src/stats_log.pb.h"
 #include "statslog_statsdtest.h"
 #include "tests/statsd_test_util.h"
 
 #ifdef __ANDROID__
 
+namespace std {
+void PrintTo(const tuple<int, size_t>& atomIdDimensionLimitTuple, ostream* os) {
+    *os << get<0>(atomIdDimensionLimitTuple) << "_" << get<1>(atomIdDimensionLimitTuple);
+}
+}  // namespace std
+
 namespace android {
 namespace os {
 namespace statsd {
+namespace {
 
+using namespace testing;
+using PerSubscriptionStats = StatsdStatsReport_SubscriptionStats_PerSubscriptionStats;
+using std::tuple;
 using std::vector;
+
+class StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap
+    : public TestWithParam<tuple<int, size_t>> {};
+INSTANTIATE_TEST_SUITE_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap,
+                         StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap,
+                         Combine(Values(10022 /* BINDER_CALLS */, 10024 /* LOOPER_STATS */,
+                                        10010 /* CPU_TIME_PER_UID_FREQ */),
+                                 Values(-1, 0, 500, 800, 1000, 3000, 3300)),
+                         PrintToStringParamName());
+
+class StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap
+    : public StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap {};
+
+INSTANTIATE_TEST_SUITE_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap,
+                         StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap,
+                         Combine(Values(util::TEST_ATOM_REPORTED, util::SCREEN_STATE_CHANGED,
+                                        util::SUBSYSTEM_SLEEP_STATE),
+                                 Values(-1, 0, 500, 800, 1000, 3000, 3300)),
+                         PrintToStringParamName());
+
+}  // anonymous namespace
 
 TEST(StatsdStatsTest, TestValidConfigAdd) {
     StatsdStats stats;
@@ -39,12 +73,8 @@ TEST(StatsdStatsTest, TestValidConfigAdd) {
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              nullopt /*valid config*/);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false /*reset stats*/);
 
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     EXPECT_EQ(0, configReport.uid());
@@ -78,12 +108,8 @@ TEST(StatsdStatsTest, TestInvalidConfigAdd) {
     invalidConfigReason->conditionIds.push_back(10);
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              invalidConfigReason /*bad config*/);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
 
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     // The invalid config should be put into icebox with a deletion time.
@@ -122,12 +148,8 @@ TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId) {
     invalidConfigReason->conditionIds.push_back(7);
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              invalidConfigReason /*bad config*/);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
 
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     // The invalid config should be put into icebox with a deletion time.
@@ -158,12 +180,8 @@ TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId) {
             InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_NOT_IN_PREV_CONFIG, 1);
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              invalidConfigReason /*bad config*/);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
 
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     // The invalid config should be put into icebox with a deletion time.
@@ -189,19 +207,15 @@ TEST(StatsdStatsTest, TestConfigRemove) {
     const int alertsCount = 10;
     stats.noteConfigReceived(key, metricsCount, conditionsCount, matchersCount, alertsCount, {},
                              nullopt);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     EXPECT_FALSE(configReport.has_deletion_time_sec());
 
     stats.noteConfigRemoved(key);
-    stats.dumpStats(&output, false);
-    good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+
+    report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport2 = report.config_stats(0);
     EXPECT_TRUE(configReport2.has_deletion_time_sec());
@@ -234,9 +248,9 @@ TEST(StatsdStatsTest, TestSubStats) {
     stats.noteDataDropped(key, 123);
 
     // dump report -> 3
-    stats.noteMetricsReportSent(key, 0);
-    stats.noteMetricsReportSent(key, 0);
-    stats.noteMetricsReportSent(key, 0);
+    stats.noteMetricsReportSent(key, 0, 1);
+    stats.noteMetricsReportSent(key, 0, 2);
+    stats.noteMetricsReportSent(key, 0, 3);
 
     // activation_time_sec -> 2
     stats.noteActiveStatusChanged(key, true);
@@ -245,11 +259,7 @@ TEST(StatsdStatsTest, TestSubStats) {
     // deactivation_time_sec -> 1
     stats.noteActiveStatusChanged(key, false);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, true);  // Dump and reset stats
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ true);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport = report.config_stats(0);
     ASSERT_EQ(2, configReport.broadcast_sent_time_sec_size());
@@ -258,6 +268,10 @@ TEST(StatsdStatsTest, TestSubStats) {
     EXPECT_EQ(123, configReport.data_drop_bytes(0));
     ASSERT_EQ(3, configReport.dump_report_time_sec_size());
     ASSERT_EQ(3, configReport.dump_report_data_size_size());
+    ASSERT_EQ(3, configReport.dump_report_number_size());
+    EXPECT_EQ(1, configReport.dump_report_number(0));
+    EXPECT_EQ(2, configReport.dump_report_number(1));
+    EXPECT_EQ(3, configReport.dump_report_number(2));
     ASSERT_EQ(2, configReport.activation_time_sec_size());
     ASSERT_EQ(1, configReport.deactivation_time_sec_size());
     ASSERT_EQ(1, configReport.annotation_size());
@@ -301,9 +315,7 @@ TEST(StatsdStatsTest, TestSubStats) {
     stats.noteAnomalyDeclared(key, StringToId("alert99"));
 
     // now the config stats should only contain the stats about the new event.
-    stats.dumpStats(&output, false);
-    good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
+    report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.config_stats_size());
     const auto& configReport2 = report.config_stats(0);
     ASSERT_EQ(1, configReport2.matcher_stats_size());
@@ -333,12 +345,7 @@ TEST(StatsdStatsTest, TestAtomLog) {
     stats.noteAtomLogged(util::SENSOR_STATE_CHANGED, now + 2, false);
     stats.noteAtomLogged(util::APP_CRASH_OCCURRED, now + 3, false);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.atom_stats_size());
     bool sensorAtomGood = false;
     bool dropboxAtomGood = false;
@@ -368,12 +375,7 @@ TEST(StatsdStatsTest, TestNonPlatformAtomLog) {
     stats.noteAtomLogged(newAtom1, now + 2, false);
     stats.noteAtomLogged(newAtom2, now + 3, false);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.atom_stats_size());
     bool newAtom1Good = false;
     bool newAtom2Good = false;
@@ -418,12 +420,7 @@ TEST(StatsdStatsTest, TestPullAtomStats) {
     stats.notePullTimeout(util::DISK_SPACE, 3000L, 6000L);
     stats.notePullTimeout(util::DISK_SPACE, 4000L, 7000L);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(1, report.pulled_atom_stats_size());
 
     EXPECT_EQ(util::DISK_SPACE, report.pulled_atom_stats(0).atom_id());
@@ -460,12 +457,7 @@ TEST(StatsdStatsTest, TestAtomMetricsStats) {
 
     stats.noteBucketBoundaryDelayNs(10000000001LL, 1L);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.atom_metric_stats().size());
 
     auto atomStats = report.atom_metric_stats(0);
@@ -498,14 +490,15 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     stats.noteConfigReceived(configKeyWithoutError, 2, 3, 4, 5, {}, nullopt);
     stats.noteDbCorrupted(key);
     stats.noteDbCorrupted(key);
+    stats.noteDbSizeExceeded(key);
+    stats.noteDbStatFailed(key);
+    stats.noteDbConfigInvalid(key);
+    stats.noteDbTooOld(key);
+    stats.noteDbDeletionConfigRemoved(key);
+    stats.noteDbDeletionConfigUpdated(key);
     stats.noteRestrictedConfigDbSize(key, 999, 111);
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.config_stats().size());
     ASSERT_EQ(0, report.config_stats(0).restricted_metric_stats().size());
     ASSERT_EQ(1, report.config_stats(1).restricted_metric_stats().size());
@@ -525,6 +518,12 @@ TEST(StatsdStatsTest, TestRestrictedMetricsStats) {
     EXPECT_TRUE(report.config_stats(1).device_info_table_creation_failed());
     EXPECT_EQ(metricId, report.config_stats(1).restricted_metric_stats(0).restricted_metric_id());
     EXPECT_EQ(2, report.config_stats(1).restricted_db_corrupted_count());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_stat_failed());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_size_exceeded_limit());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_invalid());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_too_old());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_removed());
+    EXPECT_EQ(1, report.config_stats(1).db_deletion_config_updated());
 }
 
 TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
@@ -544,12 +543,7 @@ TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats) {
                                           callingUid, InvalidQueryReason(AMBIGUOUS_CONFIG_KEY),
                                           "error_message");
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(3, report.restricted_metric_query_stats().size());
     EXPECT_EQ(configKey.GetId(), report.restricted_metric_query_stats(0).config_id());
     EXPECT_EQ(configKey.GetUid(), report.restricted_metric_query_stats(0).config_uid());
@@ -576,12 +570,7 @@ TEST(StatsdStatsTest, TestAnomalyMonitor) {
     stats.noteRegisteredAnomalyAlarmChanged();
     stats.noteRegisteredAnomalyAlarmChanged();
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    bool good = report.ParseFromArray(&output[0], output.size());
-    EXPECT_TRUE(good);
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     EXPECT_EQ(2, report.anomaly_alarm_stats().alarms_registered());
 }
 
@@ -597,7 +586,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
     for (int i = 0; i < StatsdStats::kMaxTimestampCount; i++) {
         stats.noteDataDropped(key, timestamps[i]);
         stats.noteBroadcastSent(key, timestamps[i]);
-        stats.noteMetricsReportSent(key, 0, timestamps[i]);
+        stats.noteMetricsReportSent(key, 0, timestamps[i], i + 1);
         stats.noteActiveStatusChanged(key, true, timestamps[i]);
         stats.noteActiveStatusChanged(key, false, timestamps[i]);
     }
@@ -607,7 +596,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
     // now it should trigger removing oldest timestamp
     stats.noteDataDropped(key, 123, 10000);
     stats.noteBroadcastSent(key, 10000);
-    stats.noteMetricsReportSent(key, 0, 10000);
+    stats.noteMetricsReportSent(key, 0, 10000, 21);
     stats.noteActiveStatusChanged(key, true, 10000);
     stats.noteActiveStatusChanged(key, false, 10000);
 
@@ -624,7 +613,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
     // the oldest timestamp is the second timestamp in history
     EXPECT_EQ(1, configStats->broadcast_sent_time_sec.front());
     EXPECT_EQ(1, configStats->data_drop_bytes.front());
-    EXPECT_EQ(1, configStats->dump_report_stats.front().first);
+    EXPECT_EQ(1, configStats->dump_report_stats.front().mDumpReportTimeSec);
     EXPECT_EQ(1, configStats->activation_time_sec.front());
     EXPECT_EQ(1, configStats->deactivation_time_sec.front());
 
@@ -632,7 +621,7 @@ TEST(StatsdStatsTest, TestTimestampThreshold) {
     EXPECT_EQ(newTimestamp, configStats->broadcast_sent_time_sec.back());
     EXPECT_EQ(newTimestamp, configStats->data_drop_time_sec.back());
     EXPECT_EQ(123, configStats->data_drop_bytes.back());
-    EXPECT_EQ(newTimestamp, configStats->dump_report_stats.back().first);
+    EXPECT_EQ(newTimestamp, configStats->dump_report_stats.back().mDumpReportTimeSec);
     EXPECT_EQ(newTimestamp, configStats->activation_time_sec.back());
     EXPECT_EQ(newTimestamp, configStats->deactivation_time_sec.back());
 }
@@ -644,17 +633,14 @@ TEST(StatsdStatsTest, TestSystemServerCrash) {
         timestamps.push_back(i);
         stats.noteSystemServerRestart(timestamps[i]);
     }
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     const int maxCount = StatsdStats::kMaxSystemServerRestarts;
     ASSERT_EQ(maxCount, (int)report.system_restart_sec_size());
 
     stats.noteSystemServerRestart(StatsdStats::kMaxSystemServerRestarts + 1);
-    output.clear();
-    stats.dumpStats(&output, false);
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+
+    report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(maxCount, (int)report.system_restart_sec_size());
     EXPECT_EQ(StatsdStats::kMaxSystemServerRestarts + 1, report.system_restart_sec(maxCount - 1));
 }
@@ -671,11 +657,7 @@ TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit) {
         stats.noteActivationBroadcastGuardrailHit(uid2, i);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
-
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     ASSERT_EQ(2, report.activation_guardrail_stats_size());
     bool uid1Good = false;
     bool uid2Good = false;
@@ -717,10 +699,7 @@ TEST(StatsdStatsTest, TestAtomErrorStats) {
         stats.noteAtomError(pullAtomTag, /*pull=*/true);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
 
     // Check error count = numErrors for push atom
     ASSERT_EQ(1, report.atom_stats_size());
@@ -749,12 +728,9 @@ TEST(StatsdStatsTest, TestAtomDroppedStats) {
         stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, true);
-    ASSERT_EQ(0, stats.mPushedAtomDropsStats.size());
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ true);
 
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    ASSERT_EQ(0, stats.mPushedAtomDropsStats.size());
 
     // Check dropped_count = numDropped for push atoms
     ASSERT_EQ(2, report.atom_stats_size());
@@ -792,10 +768,7 @@ TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats) {
         stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
 
     // Check dropped_count = numDropped for push atoms
     ASSERT_EQ(2, report.atom_stats_size());
@@ -827,10 +800,7 @@ TEST(StatsdStatsTest, TestAtomSkippedStats) {
         stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec=*/0, /*isSkipped*/ true);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
 
     // Check skip_count = numSkipped for push atoms
     ASSERT_EQ(2, report.atom_stats_size());
@@ -866,10 +836,7 @@ TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats) {
         stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, true);
     }
 
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
 
     // Check dropped_count = numDropped for push atoms
     ASSERT_EQ(2, report.atom_stats_size());
@@ -892,12 +859,248 @@ TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats) {
 TEST(StatsdStatsTest, TestShardOffsetProvider) {
     StatsdStats stats;
     ShardOffsetProvider::getInstance().setShardOffset(15);
-    vector<uint8_t> output;
-    stats.dumpStats(&output, false);
 
-    StatsdStatsReport report;
-    EXPECT_TRUE(report.ParseFromArray(&output[0], output.size()));
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
     EXPECT_EQ(report.shard_offset(), 15);
+}
+
+TEST(StatsdStatsTest, TestHasHitDimensionGuardrail) {
+    StatsdStats stats;
+    int metricId1 = 1;
+    int metricId2 = 2;
+    int metricId3 = 3;
+
+    stats.noteBucketCount(metricId2);
+    stats.noteHardDimensionLimitReached(metricId3);
+
+    // No AtomMetricStats.
+    EXPECT_FALSE(stats.hasHitDimensionGuardrail(metricId1));
+
+    // Has AtomMetricStats but hasn't hit dimension guardrail.
+    EXPECT_FALSE(stats.hasHitDimensionGuardrail(metricId2));
+
+    // Has hit dimension guardrail.
+    EXPECT_TRUE(stats.hasHitDimensionGuardrail(metricId3));
+}
+
+TEST(StatsdStatsTest, TestSubscriptionStarted) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionStarted(/* id */ 1, /* pushedCount */ 3, /* pulledCount */ 1);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    EXPECT_EQ(subscriptionStats.pull_thread_wakeup_count(), 0);
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    auto perSubscriptionStats = subscriptionStats.per_subscription_stats(0);
+    EXPECT_EQ(perSubscriptionStats.pushed_atom_count(), 3);
+    EXPECT_EQ(perSubscriptionStats.pulled_atom_count(), 1);
+    EXPECT_GT(perSubscriptionStats.start_time_sec(), 0);
+    EXPECT_FALSE(perSubscriptionStats.has_end_time_sec());
+    EXPECT_EQ(perSubscriptionStats.flush_count(), 0);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionFlushed) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionStarted(/* id */ 1, /* pushedCount */ 3, /* pulledCount */ 1);
+    stats.noteSubscriptionFlushed(/* id */ 1);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    auto perSubscriptionStats = subscriptionStats.per_subscription_stats(0);
+    EXPECT_EQ(perSubscriptionStats.flush_count(), 1);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionEnded) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionStarted(/* id */ 1, /* pushedCount */ 3, /* pulledCount */ 1);
+    stats.noteSubscriptionEnded(/* id */ 1);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), 1);
+    EXPECT_GT(subscriptionStats.per_subscription_stats(0).end_time_sec(), 0);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionAtomPulled) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionAtomPulled(/* atomId */ 10'001);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    ASSERT_EQ(report.pulled_atom_stats_size(), 1);
+    auto pulledAtomStats = report.pulled_atom_stats(0);
+    EXPECT_EQ(pulledAtomStats.subscription_pull_count(), 1);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup) {
+    StatsdStats stats;
+
+    stats.noteSubscriptionPullThreadWakeup();
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    EXPECT_EQ(subscriptionStats.pull_thread_wakeup_count(), 1);
+}
+
+TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions) {
+    StatsdStats stats;
+
+    const int maxSubs = ShellSubscriber::getMaxSubscriptions();
+
+    // Start more than max # of allowed subscriptions.
+    // maxSub + 1th subscriptions should not have been added.
+    for (int id = 1; id <= maxSubs + 1; id++) {
+        stats.noteSubscriptionStarted(id, /* pushedCount */ 3, /* pulledCount */ 1);
+    }
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), maxSubs);
+    EXPECT_THAT(subscriptionStats.per_subscription_stats(),
+                Not(Contains(Property(&PerSubscriptionStats::id, Eq(maxSubs + 1)))));
+}
+
+TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription) {
+    StatsdStats stats;
+
+    const int maxSubs = ShellSubscriber::getMaxSubscriptions();
+
+    // Start max # of allowed subscriptions
+    for (int id = 1; id <= maxSubs; id++) {
+        stats.noteSubscriptionStarted(id, /* pushedCount */ 3, /* pulledCount */ 1);
+    }
+
+    // End subscription with id 5.
+    stats.noteSubscriptionEnded(/* id */ 5);
+
+    // Add one more subscription after we've added max # of subscriptions.
+    // Subscription wth id 5 should be removed and the new subscription added here should be
+    // accepted.
+    stats.noteSubscriptionStarted(maxSubs + 1, /* pushedCount */ 3, /* pulledCount */ 1);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto subscriptionStats = report.subscription_stats();
+    ASSERT_EQ(subscriptionStats.per_subscription_stats_size(), maxSubs);
+    EXPECT_THAT(subscriptionStats.per_subscription_stats(),
+                Not(Contains(Property(&PerSubscriptionStats::id, Eq(5)))));
+    EXPECT_THAT(subscriptionStats.per_subscription_stats(),
+                Contains(Property(&PerSubscriptionStats::id, Eq(maxSubs + 1))));
+}
+
+TEST(StatsdStatsTest, TestEnforceDimensionKeySizeLimit) {
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(-1),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(0),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(500),
+              StatsdStats::kDimensionKeySizeHardLimitMin);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(1000), 1000);
+    EXPECT_EQ(StatsdStats::clampDimensionKeySizeLimit(3500),
+              StatsdStats::kDimensionKeySizeHardLimitMax);
+}
+
+TEST(StatsdStatsTest, TestSocketLossStats) {
+    StatsdStats stats;
+
+    const int maxLossEvents = StatsdStats::kMaxSocketLossStatsSize;
+
+    // Note maxLossEvents + 1
+    for (int eventId = 0; eventId <= maxLossEvents; eventId++) {
+        SocketLossInfo info;
+
+        info.uid = eventId;
+        info.firstLossTsNanos = 10 * eventId;
+        info.lastLossTsNanos = 10 * eventId + 1;
+
+        info.atomIds.push_back(eventId * 10);
+        info.errors.push_back(eventId * 20);
+        info.counts.push_back(eventId * 30);
+
+        stats.noteAtomSocketLoss(info);
+    }
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto socketLossStats = report.socket_loss_stats();
+    ASSERT_EQ(socketLossStats.loss_stats_per_uid().size(), maxLossEvents);
+
+    for (int i = 0; i < socketLossStats.loss_stats_per_uid().size(); i++) {
+        const auto& info = report.socket_loss_stats().loss_stats_per_uid(i);
+
+        // due to the very first one with id 0 is popped out from the list ids (index) start from 1
+        const int index = i + 1;
+
+        ASSERT_EQ(info.uid(), index);
+        ASSERT_EQ(info.first_timestamp_nanos(), 10 * index);
+        ASSERT_EQ(info.last_timestamp_nanos(), 10 * index + 1);
+
+        ASSERT_EQ(info.atom_id_loss_stats().size(), 1);
+
+        ASSERT_EQ(info.atom_id_loss_stats(0).atom_id(), index * 10);
+        ASSERT_EQ(info.atom_id_loss_stats(0).error(), index * 20);
+        ASSERT_EQ(info.atom_id_loss_stats(0).count(), index * 30);
+    }
+}
+
+TEST(StatsdStatsTest, TestSocketLossStatsOverflowCounter) {
+    StatsdStats stats;
+
+    const int uidsCount = 5;
+    const int lossEventCount = 5;
+
+    for (int uid = 0; uid < uidsCount; uid++) {
+        for (int eventId = 0; eventId < lossEventCount; eventId++) {
+            SocketLossInfo info;
+
+            info.uid = uid;
+            info.firstLossTsNanos = 10 * eventId;
+            info.lastLossTsNanos = 10 * eventId + 1;
+            // the counter value will be accumulated
+            info.overflowCounter = 1;
+
+            info.atomIds.push_back(eventId * 10);
+            info.errors.push_back(eventId * 20);
+            info.counts.push_back(eventId * 30);
+
+            stats.noteAtomSocketLoss(info);
+        }
+    }
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    auto socketLossStatsOverflowCounters =
+            report.socket_loss_stats().loss_stats_overflow_counters();
+    ASSERT_EQ(socketLossStatsOverflowCounters.size(), uidsCount);
+
+    for (int i = 0; i < socketLossStatsOverflowCounters.size(); i++) {
+        const auto& counters = report.socket_loss_stats().loss_stats_overflow_counters(i);
+
+        ASSERT_EQ(counters.uid(), i);
+        ASSERT_EQ(counters.count(), lossEventCount);
+    }
+}
+
+TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap, TestGetAtomDimensionKeySizeLimits) {
+    const auto& [atomId, defaultHardLimit] = GetParam();
+    EXPECT_EQ(StatsdStats::getAtomDimensionKeySizeLimits(atomId, defaultHardLimit),
+              StatsdStats::kAtomDimensionKeySizeLimitMap.at(atomId));
+}
+
+TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap, TestGetAtomDimensionKeySizeLimits) {
+    const auto& [atomId, defaultHardLimit] = GetParam();
+    EXPECT_EQ(
+            StatsdStats::getAtomDimensionKeySizeLimits(atomId, defaultHardLimit),
+            (std::pair<size_t, size_t>(StatsdStats::kDimensionKeySizeSoftLimit, defaultHardLimit)));
 }
 
 }  // namespace statsd

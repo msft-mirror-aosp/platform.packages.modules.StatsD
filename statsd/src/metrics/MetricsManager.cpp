@@ -18,7 +18,6 @@
 
 #include "MetricsManager.h"
 
-#include <android-modules-utils/sdk_level.h>
 #include <private/android_filesystem_config.h>
 
 #include "CountMetricProducer.h"
@@ -35,8 +34,6 @@
 #include "stats_util.h"
 #include "statslog_statsd.h"
 #include "utils/DbUtils.h"
-
-using android::modules::sdklevel::IsAtLeastU;
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_INT32;
@@ -81,7 +78,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
       mShouldPersistHistory(config.persist_locally()) {
-    if (!IsAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
+    if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return;
@@ -105,6 +102,8 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
     mInstallerInReport = config.installer_in_metric_report();
 
     createAllLogSourcesFromConfig(config);
+    setMaxMetricsBytesFromConfig(config);
+    setTriggerGetDataBytesFromConfig(config);
     mPullerManager->RegisterPullUidProvider(mConfigKey, this);
 
     // Store the sub-configs used.
@@ -130,7 +129,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
                                   const int64_t currentTimeNs,
                                   const sp<AlarmMonitor>& anomalyAlarmMonitor,
                                   const sp<AlarmMonitor>& periodicAlarmMonitor) {
-    if (!IsAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
+    if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return false;
@@ -204,6 +203,8 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mPullAtomUids.clear();
     mPullAtomPackages.clear();
     createAllLogSourcesFromConfig(config);
+    setMaxMetricsBytesFromConfig(config);
+    setTriggerGetDataBytesFromConfig(config);
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
@@ -212,27 +213,20 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 
 void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
     // Init allowed pushed atom uids.
-    if (config.allowed_log_source_size() == 0) {
-        ALOGE("Log source allowlist is empty! This config won't get any data. Suggest adding at "
-              "least AID_SYSTEM and AID_STATSD to the allowed_log_source field.");
-        mInvalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_LOG_SOURCE_ALLOWLIST_EMPTY);
-    } else {
-        for (const auto& source : config.allowed_log_source()) {
-            auto it = UidMap::sAidToUidMapping.find(source);
-            if (it != UidMap::sAidToUidMapping.end()) {
-                mAllowedUid.push_back(it->second);
-            } else {
-                mAllowedPkg.push_back(source);
-            }
-        }
-
-        if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
-            ALOGE("Too many log sources. This is likely to be an error in the config.");
-            mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    for (const auto& source : config.allowed_log_source()) {
+        auto it = UidMap::sAidToUidMapping.find(source);
+        if (it != UidMap::sAidToUidMapping.end()) {
+            mAllowedUid.push_back(it->second);
         } else {
-            initAllowedLogSources();
+            mAllowedPkg.push_back(source);
         }
+    }
+
+    if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
+        ALOGE("Too many log sources. This is likely to be an error in the config.");
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    } else {
+        initAllowedLogSources();
     }
 
     // Init default allowed pull atom uids.
@@ -268,6 +262,36 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
                 InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_SOURCES_IN_PULL_PACKAGES);
     } else {
         initPullAtomSources();
+    }
+}
+
+void MetricsManager::setMaxMetricsBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_max_metrics_memory_kb()) {
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+        return;
+    }
+    if (config.max_metrics_memory_kb() <= 0 ||
+        static_cast<size_t>(config.max_metrics_memory_kb() * 1024) >
+                StatsdStats::kHardMaxMetricsBytesPerConfig) {
+        ALOGW("Memory limit must be between 0KB and 20MB. Setting to default value (2MB).");
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+    } else {
+        mMaxMetricsBytes = config.max_metrics_memory_kb() * 1024;
+    }
+}
+
+void MetricsManager::setTriggerGetDataBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_soft_metrics_memory_kb()) {
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
+        return;
+    }
+    if (config.soft_metrics_memory_kb() <= 0 ||
+        static_cast<size_t>(config.soft_metrics_memory_kb() * 1024) >
+                StatsdStats::kHardMaxTriggerGetDataBytes) {
+        ALOGW("Memory limit ust be between 0KB and 10MB. Setting to default value (192KB).");
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
+    } else {
+        mTriggerGetDataBytes = config.soft_metrics_memory_kb() * 1024;
     }
 }
 
@@ -487,6 +511,13 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
     if (mWhitelistedAtomIds.find(event.GetTagId()) != mWhitelistedAtomIds.end()) {
         return true;
     }
+
+    if (event.GetUid() == AID_ROOT ||
+        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL)) {
+        // enable atoms logged from pre-installed Android system services
+        return true;
+    }
+
     std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
     if (mAllowedLogSources.find(event.GetUid()) == mAllowedLogSources.end()) {
         VLOG("log source %d not on the whitelist", event.GetUid());
@@ -524,32 +555,6 @@ bool MetricsManager::eventSanityCheck(const LogEvent& event) {
             return false;
         } else if (appHookState < 0 || appHookState > 3) {
             VLOG("APP_BREADCRUMB_REPORTED does not have valid state %ld", appHookState);
-            return false;
-        }
-    } else if (event.GetTagId() == util::DAVEY_OCCURRED) {
-        // Daveys can be logged from any app since they are logged in libs/hwui/JankTracker.cpp.
-        // Check that the davey duration is reasonable. Max length check is for privacy.
-        status_t err = NO_ERROR;
-
-        // Uid is the first field provided.
-        long jankUid = event.GetLong(1, &err);
-        if (err != NO_ERROR) {
-            VLOG("Davey occurred had error when parsing the uid");
-            return false;
-        }
-        int32_t loggerUid = event.GetUid();
-        if (loggerUid != jankUid && loggerUid != AID_STATSD) {
-            VLOG("DAVEY_OCCURRED has invalid uid: claimed %ld but caller is %d", jankUid,
-                 loggerUid);
-            return false;
-        }
-
-        long duration = event.GetLong(event.size(), &err);
-        if (err != NO_ERROR) {
-            VLOG("Davey occurred had error when parsing the duration");
-            return false;
-        } else if (duration > 100000) {
-            VLOG("Davey duration is unreasonably long: %ld", duration);
             return false;
         }
     }

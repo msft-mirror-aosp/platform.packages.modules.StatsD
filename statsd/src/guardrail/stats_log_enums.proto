@@ -14,12 +14,45 @@
  * limitations under the License.
  */
 
- syntax = "proto2";
+syntax = "proto2";
 
- package android.os.statsd;
+package android.os.statsd;
 
- option java_package = "com.android.os";
- option java_outer_classname = "InvalidConfigReason";
+option java_package = "com.android.os";
+
+enum BucketDropReason {
+    // For ValueMetric, a bucket is dropped during a dump report request iff
+    // current bucket should be included, a pull is needed (pulled metric and
+    // condition is true), and we are under fast time constraints.
+    DUMP_REPORT_REQUESTED = 1;
+    EVENT_IN_WRONG_BUCKET = 2;
+    CONDITION_UNKNOWN = 3;
+    PULL_FAILED = 4;
+    PULL_DELAYED = 5;
+    DIMENSION_GUARDRAIL_REACHED = 6;
+    MULTIPLE_BUCKETS_SKIPPED = 7;
+    // Not an invalid bucket case, but the bucket is dropped.
+    BUCKET_TOO_SMALL = 8;
+    // Not an invalid bucket case, but the bucket is skipped.
+    NO_DATA = 9;
+};
+
+enum DataCorruptedReason {
+    DATA_CORRUPTED_UNKNOWN = 0;
+    DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW = 1;
+    DATA_CORRUPTED_SOCKET_LOSS = 2;
+};
+
+enum DumpReportReason {
+    DEVICE_SHUTDOWN = 1;
+    CONFIG_UPDATED = 2;
+    CONFIG_REMOVED = 3;
+    GET_DATA_CALLED = 4;
+    ADB_DUMP = 5;
+    CONFIG_RESET = 6;
+    STATSCOMPANION_DIED = 7;
+    TERMINATION_SIGNAL_RECEIVED = 8;
+};
 
 enum InvalidConfigReasonEnum {
     INVALID_CONFIG_REASON_UNKNOWN = 0;
@@ -108,4 +141,17 @@ enum InvalidConfigReasonEnum {
     INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT = 83;
     INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED = 84;
     INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED = 85;
+    INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE = 86;
+};
+
+enum InvalidQueryReason {
+    UNKNOWN_REASON = 0;
+    FLAG_DISABLED = 1;
+    UNSUPPORTED_SQLITE_VERSION = 2;
+    AMBIGUOUS_CONFIG_KEY = 3;
+    CONFIG_KEY_NOT_FOUND = 4;
+    CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5;
+    QUERY_FAILURE = 6;
+    INCONSISTENT_ROW_SIZE = 7;
+    NULL_CALLBACK = 8;
 };

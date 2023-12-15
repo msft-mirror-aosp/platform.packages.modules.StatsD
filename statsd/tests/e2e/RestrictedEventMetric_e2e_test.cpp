@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -31,7 +30,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-using android::modules::sdklevel::IsAtLeastU;
 using base::StringPrintf;
 
 #ifdef __ANDROID__
@@ -66,7 +64,7 @@ protected:
 
 private:
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
 
@@ -93,8 +91,6 @@ private:
                     rowCountResult = 0;
                     return Status::ok();
                 }));
-
-        config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
         atomTag = 999;
         AtomMatcher restrictedAtomMatcher = CreateSimpleAtomMatcher("restricted_matcher", atomTag);

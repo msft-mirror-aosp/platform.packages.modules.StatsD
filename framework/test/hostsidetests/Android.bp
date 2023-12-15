@@ -24,7 +24,7 @@ android_test_helper_app {
         "androidx.test.runner",
         "androidx.test.core",
         "statsdprotolite",
-        "truth-prebuilt",
+        "truth",
         "framework-statsd.stubs.module_lib",
     ],
     compile_multilib: "both",
@@ -42,7 +42,7 @@ android_test_helper_app {
         "androidx.test.runner",
         "androidx.test.core",
         "statsdprotolite",
-        "truth-prebuilt",
+        "truth",
         "framework-statsd.stubs.module_lib",
     ],
     compile_multilib: "both",
@@ -54,10 +54,10 @@ android_test_helper_app {
 
 java_test_host {
     name: "FrameworkStatsdHostTest",
-    srcs: [ "src/**/*.java" ],
+    srcs: ["src/**/*.java"],
     libs: [
         "tradefed",
-        "truth-prebuilt",
+        "truth",
     ],
     test_suites: [
         "device-tests",

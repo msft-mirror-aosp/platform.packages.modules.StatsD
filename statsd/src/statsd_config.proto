@@ -229,6 +229,8 @@ message EventMetric {
 
   repeated MetricConditionLink links = 4;
 
+  optional int32 sampling_percentage = 5 [default = 100];
+
   reserved 100;
   reserved 101;
 }
@@ -257,6 +259,8 @@ message CountMetric {
   optional FieldMatcher dimensions_in_condition = 7 [deprecated = true];
 
   optional DimensionalSamplingInfo dimensional_sampling_info = 12;
+
+  optional int32 max_dimensions_per_bucket = 13;
 
   reserved 100;
   reserved 101;
@@ -293,6 +297,8 @@ message DurationMetric {
   optional FieldMatcher dimensions_in_condition = 8 [deprecated = true];
 
   optional DimensionalSamplingInfo dimensional_sampling_info = 13;
+
+  optional int32 max_dimensions_per_bucket = 14;
 
   reserved 100;
   reserved 101;
@@ -334,6 +340,8 @@ message GaugeMetric {
   optional bool split_bucket_for_app_upgrade = 14;
 
   optional DimensionalSamplingInfo dimensional_sampling_info = 15;
+
+  optional int32 max_dimensions_per_bucket = 16;
 
   reserved 100;
   reserved 101;
@@ -398,37 +406,41 @@ message ValueMetric {
 
   optional DimensionalSamplingInfo dimensional_sampling_info = 23;
 
+  optional int32 max_dimensions_per_bucket = 24;
+
   reserved 100;
   reserved 101;
 }
 
 message KllMetric {
-    optional int64 id = 1;
+  optional int64 id = 1;
 
-    optional int64 what = 2;
+  optional int64 what = 2;
 
-    optional FieldMatcher kll_field = 3;
+  optional FieldMatcher kll_field = 3;
 
-    optional int64 condition = 4;
+  optional int64 condition = 4;
 
-    optional FieldMatcher dimensions_in_what = 5;
+  optional FieldMatcher dimensions_in_what = 5;
 
-    optional TimeUnit bucket = 6;
+  optional TimeUnit bucket = 6;
 
-    repeated MetricConditionLink links = 7;
+  repeated MetricConditionLink links = 7;
 
-    optional int64 min_bucket_size_nanos = 8;
+  optional int64 min_bucket_size_nanos = 8;
 
-    optional bool split_bucket_for_app_upgrade = 9;
+  optional bool split_bucket_for_app_upgrade = 9;
 
-    repeated int64 slice_by_state = 10;
+  repeated int64 slice_by_state = 10;
 
-    repeated MetricStateLink state_link = 11;
+  repeated MetricStateLink state_link = 11;
 
-    optional DimensionalSamplingInfo dimensional_sampling_info = 12;
+  optional DimensionalSamplingInfo dimensional_sampling_info = 12;
 
-    reserved 100;
-    reserved 101;
+  optional int32 max_dimensions_per_bucket = 13;
+
+  reserved 100;
+  reserved 101;
 }
 
 message Alert {
@@ -441,6 +453,8 @@ message Alert {
   optional int32 refractory_period_secs = 4;
 
   optional double trigger_if_sum_gt = 5;
+
+  optional float probability_of_informing = 6 [default = 1.1];
 }
 
 message Alarm {
@@ -449,6 +463,8 @@ message Alarm {
   optional int64 offset_millis = 2;
 
   optional int64 period_millis = 3;
+
+  optional float probability_of_informing = 4 [default = 1.1];
 }
 
 message IncidentdDetails {
@@ -592,6 +608,10 @@ message StatsdConfig {
   optional uint32 package_certificate_hash_size_bytes = 26;
 
   optional string restricted_metrics_delegate_package_name = 27;
+
+  optional int32 max_metrics_memory_kb = 28;
+
+  optional int32 soft_metrics_memory_kb = 29;
 
   // Do not use.
   reserved 1000, 1001;
