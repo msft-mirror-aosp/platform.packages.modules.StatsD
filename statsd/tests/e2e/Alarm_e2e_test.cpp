@@ -30,7 +30,6 @@ namespace {
 
 StatsdConfig CreateStatsdConfig() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
 
     auto alarm = config.add_alarm();
     alarm->set_id(123456);

@@ -470,7 +470,9 @@ std::unique_ptr<LogEvent> CreateBatterySaverOnEvent(uint64_t timestampNs);
 std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs);
 
 // Create log event when battery state changes.
-std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs, const BatteryPluggedStateEnum state);
+std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs,
+                                                         const BatteryPluggedStateEnum state,
+                                                         int32_t uid = AID_ROOT);
 
 // Create malformed log event for battery state change.
 std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs);
