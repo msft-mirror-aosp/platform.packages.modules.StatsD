@@ -409,10 +409,10 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         return;
     }
     for (const auto& data : allData) {
-        LogEvent localCopy = *data;
-        localCopy.setElapsedTimestampNs(timestampNs);
-        if (mEventMatcherWizard->matchLogEvent(localCopy, mWhatMatcherIndex) ==
+        if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) ==
             MatchingState::kMatched) {
+            LogEvent localCopy = *data;
+            localCopy.setElapsedTimestampNs(timestampNs);
             onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
         }
     }
@@ -513,7 +513,7 @@ bool GaugeMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
         return false;
     }
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mCurrentSlicedBucket->size() > mDimensionSoftLimit - 1) {
+    if (mCurrentSlicedBucket->size() >= mDimensionSoftLimit) {
         size_t newTupleCount = mCurrentSlicedBucket->size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.

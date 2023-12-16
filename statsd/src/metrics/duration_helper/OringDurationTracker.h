@@ -83,7 +83,7 @@ private:
     std::unordered_map<HashableDimensionKey, ConditionKey> mConditionKeyMap;
 
     // return true if we should not allow newKey to be tracked because we are above the threshold
-    bool hitGuardRail(const HashableDimensionKey& newKey, size_t dimensionHardLimit);
+    bool hitGuardRail(const HashableDimensionKey& newKey, size_t dimensionHardLimit) const;
 
     FRIEND_TEST(OringDurationTrackerTest, TestDurationOverlap);
     FRIEND_TEST(OringDurationTrackerTest, TestCrossBucketBoundary);
