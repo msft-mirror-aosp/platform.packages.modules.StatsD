@@ -276,11 +276,8 @@ class CallbackOperationsHandler {
 
 public:
     ~CallbackOperationsHandler() {
-        for (auto& workThread : mWorkThreads) {
-            if (workThread.joinable()) {
-                mCondition.notify_one();
-                workThread.join();
-            }
+        if (mWorkThread.joinable()) {
+            mWorkThread.join();
         }
     }
 
@@ -296,9 +293,7 @@ public:
         registerCmd->callback = std::move(callback);
         pushToQueue(std::move(registerCmd));
 
-        std::thread registerThread(&CallbackOperationsHandler::processCommands, this,
-                                   statsProvider);
-        mWorkThreads.push_back(std::move(registerThread));
+        startWorkerThread();
     }
 
     void unregisterCallback(int atomTag) {
@@ -307,15 +302,13 @@ public:
         unregisterCmd->atomTag = atomTag;
         pushToQueue(std::move(unregisterCmd));
 
-        std::thread unregisterThread(&CallbackOperationsHandler::processCommands, this,
-                                     statsProvider);
-        mWorkThreads.push_back(std::move(unregisterThread));
+        startWorkerThread();
     }
 
 private:
-    std::vector<std::thread> mWorkThreads;
+    std::atomic_bool mThreadAlive = false;
+    std::thread mWorkThread;
 
-    std::condition_variable mCondition;
     std::mutex mMutex;
     std::queue<std::unique_ptr<Cmd>> mCmdQueue;
 
@@ -323,11 +316,20 @@ private:
     }
 
     void pushToQueue(std::unique_ptr<Cmd> cmd) {
-        {
-            std::unique_lock<std::mutex> lock(mMutex);
-            mCmdQueue.push(std::move(cmd));
+        std::unique_lock<std::mutex> lock(mMutex);
+        mCmdQueue.push(std::move(cmd));
+    }
+
+    void startWorkerThread() {
+        // Only spawn one thread to manage requests
+        if (mThreadAlive) {
+            return;
         }
-        mCondition.notify_one();
+        mThreadAlive = true;
+        if (mWorkThread.joinable()) {
+            mWorkThread.join();
+        }
+        mWorkThread = std::thread(&CallbackOperationsHandler::processCommands, this, statsProvider);
     }
 
     void processCommands(std::shared_ptr<StatsdProvider> statsProvider) {
@@ -337,37 +339,41 @@ private:
          */
         const std::shared_ptr<IStatsd> statsService = statsProvider->getStatsService();
 
-        /**
-         * To guarantee sequential commands processing we need to lock mutex queue
-         */
-        std::unique_lock<std::mutex> lock(mMutex);
-        /**
-         * This should never really block in practice, since the command was already queued
-         * from the main thread by registerCallback or unregisterCallback.
-         * We are putting command to the queue, and only after a worker thread is created,
-         * which will pop a single command from a queue and will be terminated after processing.
-         * It makes producer/consumer as 1:1 match
-         */
-        if (mCmdQueue.empty()) {
-            mCondition.wait(lock, [this] { return !this->mCmdQueue.empty(); });
-        }
-
-        std::unique_ptr<Cmd> cmd = std::move(mCmdQueue.front());
-        mCmdQueue.pop();
-
         if (!statsService) {
-            // Statsd not available - dropping command request
+            // Statsd not available - dropping all submitted command requests
+            std::queue<std::unique_ptr<Cmd>> emptyQueue;
+            std::unique_lock<std::mutex> lock(mMutex);
+            mCmdQueue.swap(emptyQueue);
+            mThreadAlive = false;
             return;
         }
 
-        switch (cmd->type) {
-            case Cmd::CMD_REGISTER: {
-                registerStatsPullAtomCallbackBlocking(cmd->atomTag, statsProvider, cmd->callback);
-                break;
+        while (true) {
+            std::unique_ptr<Cmd> cmd = nullptr;
+            {
+                /**
+                 * To guarantee sequential commands processing we need to lock mutex queue
+                 */
+                std::unique_lock<std::mutex> lock(mMutex);
+                if (mCmdQueue.empty()) {
+                    mThreadAlive = false;
+                    return;
+                }
+
+                cmd = std::move(mCmdQueue.front());
+                mCmdQueue.pop();
             }
-            case Cmd::CMD_UNREGISTER: {
-                unregisterStatsPullAtomCallbackBlocking(cmd->atomTag, statsProvider);
-                break;
+
+            switch (cmd->type) {
+                case Cmd::CMD_REGISTER: {
+                    registerStatsPullAtomCallbackBlocking(cmd->atomTag, statsProvider,
+                                                          cmd->callback);
+                    break;
+                }
+                case Cmd::CMD_UNREGISTER: {
+                    unregisterStatsPullAtomCallbackBlocking(cmd->atomTag, statsProvider);
+                    break;
+                }
             }
         }
     }
