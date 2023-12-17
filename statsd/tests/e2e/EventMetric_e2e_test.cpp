@@ -41,7 +41,6 @@ class EventMetricE2eTest : public ::testing::Test {
 
 TEST_F(EventMetricE2eTest, TestEventMetricDataAggregated) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = wakelockAcquireMatcher;
@@ -103,7 +102,6 @@ TEST_F(EventMetricE2eTest, TestEventMetricDataAggregated) {
 
 TEST_F(EventMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -195,7 +193,6 @@ TEST_F(EventMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
 
 TEST_F(EventMetricE2eTest, TestMatchRepeatedFieldPositionFirst) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedStateFirstOnAtomMatcher =
             CreateTestAtomRepeatedStateFirstOnAtomMatcher();
@@ -259,7 +256,6 @@ TEST_F(EventMetricE2eTest, TestMatchRepeatedFieldPositionFirst) {
 
 TEST_F(EventMetricE2eTest, TestDumpReportIncrementsReportNumber) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedStateFirstOnAtomMatcher =
             CreateTestAtomRepeatedStateFirstOnAtomMatcher();
@@ -298,7 +294,6 @@ TEST_F(EventMetricE2eTest, TestEventMetricSampling) {
     srand(0);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher batterySaverOnMatcher = CreateBatterySaverModeStartAtomMatcher();
     *config.add_atom_matcher() = batterySaverOnMatcher;

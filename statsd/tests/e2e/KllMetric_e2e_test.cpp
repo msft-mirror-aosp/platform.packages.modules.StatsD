@@ -50,8 +50,6 @@ protected:
         metric = createKllMetric("ScreenBrightness", whatMatcher, /*valueField=*/1,
                                  /*condition=*/nullopt);
 
-        config.add_allowed_log_source("AID_ROOT");
-
         *config.add_atom_matcher() = whatMatcher;
         *config.add_kll_metric() = metric;
 
@@ -177,7 +175,6 @@ TEST_F(KllMetricE2eTest, TestMetricWithDimensions) {
 TEST_F(KllMetricE2eTest, TestInitWithKllFieldPositionALL) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -209,7 +206,6 @@ TEST_F(KllMetricE2eTest, TestDimensionalSampling) {
 
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher bleScanResultReceivedMatcher = CreateSimpleAtomMatcher(
             "BleScanResultReceivedAtomMatcher", util::BLE_SCAN_RESULT_RECEIVED);

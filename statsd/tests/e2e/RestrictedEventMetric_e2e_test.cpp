@@ -92,8 +92,6 @@ private:
                     return Status::ok();
                 }));
 
-        config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
-
         atomTag = 999;
         AtomMatcher restrictedAtomMatcher = CreateSimpleAtomMatcher("restricted_matcher", atomTag);
         *config.add_atom_matcher() = restrictedAtomMatcher;
