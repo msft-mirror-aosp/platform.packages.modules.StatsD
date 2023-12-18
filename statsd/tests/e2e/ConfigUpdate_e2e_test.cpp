@@ -50,16 +50,13 @@ void ValidateSubsystemSleepDimension(const DimensionsValue& value, string name) 
 sp<StatsLogProcessor> CreateStatsLogProcessor(
         const int64_t timeBaseNs, const int64_t currentTimeNs, const StatsdConfig& config,
         const ConfigKey& key, const shared_ptr<MockLogEventFilter>& logEventFilter) {
-    if (logEventFilter) {
-        // call from StatsLogProcessor constructor
-        Expectation initCall = EXPECT_CALL(*logEventFilter,
-                                           setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
-                                       .Times(1);
-        EXPECT_CALL(*logEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
-                .Times(1)
-                .After(initCall);
-    }
-
+    // call from StatsLogProcessor constructor
+    Expectation initCall =
+            EXPECT_CALL(*logEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+                    .Times(1);
+    EXPECT_CALL(*logEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
+            .Times(1)
+            .After(initCall);
     return CreateStatsLogProcessor(timeBaseNs, currentTimeNs, config, key, nullptr, 0, new UidMap(),
                                    logEventFilter);
 }
@@ -67,26 +64,17 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(
 }  // Anonymous namespace.
 
 // Setup for test fixture.
-class ConfigUpdateE2eTest : public testing::TestWithParam<bool> {
+class ConfigUpdateE2eTest : public testing::Test {
 protected:
     std::shared_ptr<MockLogEventFilter> mLogEventFilter;
 
     void SetUp() override {
-        mLogEventFilter = GetParam() ? std::make_shared<MockLogEventFilter>() : nullptr;
-    }
-
-public:
-    static std::string ToString(testing::TestParamInfo<bool> info) {
-        return info.param ? "WithLogEventFilter" : "NoLogEventFilter";
+        mLogEventFilter = std::make_shared<MockLogEventFilter>();
     }
 };
 
-INSTANTIATE_TEST_SUITE_P(ConfigUpdateE2eTest, ConfigUpdateE2eTest, testing::Bool(),
-                         ConfigUpdateE2eTest::ToString);
-
-TEST_P(ConfigUpdateE2eTest, TestEventMetric) {
+TEST_F(ConfigUpdateE2eTest, TestEventMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -172,7 +160,6 @@ TEST_P(ConfigUpdateE2eTest, TestEventMetric) {
 
     // Do update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     *newConfig.add_atom_matcher() = screenOnMatcher;
     *newConfig.add_atom_matcher() = batteryPluggedUsbMatcher;
@@ -193,11 +180,8 @@ TEST_P(ConfigUpdateE2eTest, TestEventMetric) {
     *newConfig.add_event_metric() = eventPersist;
 
     int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Send events after the update.
@@ -311,9 +295,8 @@ TEST_P(ConfigUpdateE2eTest, TestEventMetric) {
     EXPECT_EQ(data.atom().sync_state_changed().sync_name(), "sync3");
 }
 
-TEST_P(ConfigUpdateE2eTest, TestCountMetric) {
+TEST_F(ConfigUpdateE2eTest, TestCountMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -416,7 +399,6 @@ TEST_P(ConfigUpdateE2eTest, TestCountMetric) {
 
     // Do update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     *newConfig.add_atom_matcher() = screenOnMatcher;
     *newConfig.add_atom_matcher() = screenOffMatcher;
@@ -436,11 +418,8 @@ TEST_P(ConfigUpdateE2eTest, TestCountMetric) {
     *newConfig.add_count_metric() = countPersist;
 
     int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Send events after the update. Counts reset to 0 since this is a new bucket.
@@ -569,9 +548,8 @@ TEST_P(ConfigUpdateE2eTest, TestCountMetric) {
     ValidateCountBucket(data.bucket_info(0), updateTimeNs, bucketStartTimeNs + bucketSizeNs, 2);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestDurationMetric) {
+TEST_F(ConfigUpdateE2eTest, TestDurationMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -701,7 +679,6 @@ TEST_P(ConfigUpdateE2eTest, TestDurationMetric) {
 
     // Do update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     *newConfig.add_atom_matcher() = wakelockReleaseMatcher;
     *newConfig.add_atom_matcher() = syncStopMatcher;
@@ -725,11 +702,8 @@ TEST_P(ConfigUpdateE2eTest, TestDurationMetric) {
     // At update, only uid 1 is syncing & holding a wakelock, duration=33. Max is paused for uid3.
     // Before the update, only uid2 will report a duration for max, since others are started/paused.
     int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Send events after the update.
@@ -927,9 +901,8 @@ TEST_P(ConfigUpdateE2eTest, TestDurationMetric) {
     ValidateDurationBucket(data.bucket_info(0), updateTimeNs, bucketEndTimeNs, 20 * NS_PER_SEC);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestGaugeMetric) {
+TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     AtomMatcher appStartMatcher = CreateSimpleAtomMatcher("AppStart", util::APP_START_OCCURRED);
@@ -988,15 +961,13 @@ TEST_P(ConfigUpdateE2eTest, TestGaugeMetric) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = getElapsedRealtimeNs();  // 0:10
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    if (GetParam()) {
-        // call from StatsLogProcessor constructor
-        Expectation initCall = EXPECT_CALL(*mLogEventFilter,
-                                           setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
-                                       .Times(1);
-        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
-                .Times(1)
-                .After(initCall);
-    }
+    // call from StatsLogProcessor constructor
+    Expectation initCall =
+            EXPECT_CALL(*mLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+                    .Times(1);
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
+            .Times(1)
+            .After(initCall);
     sp<StatsLogProcessor> processor =
             CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key,
                                     SharedRefBase::make<FakeSubsystemSleepCallback>(),
@@ -1041,7 +1012,6 @@ TEST_P(ConfigUpdateE2eTest, TestGaugeMetric) {
 
     // Do the update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     newConfig.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     *newConfig.add_atom_matcher() = screenOffMatcher;
@@ -1066,9 +1036,7 @@ TEST_P(ConfigUpdateE2eTest, TestGaugeMetric) {
 
     int64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;
     // Update pulls gaugePullPersist and gaugeNew.
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Verify puller manager is properly set.
@@ -1335,9 +1303,8 @@ TEST_P(ConfigUpdateE2eTest, TestGaugeMetric) {
     EXPECT_EQ(data.bucket_info(0).atom(0).subsystem_sleep_state().time_millis(), 902);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestValueMetric) {
+TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     AtomMatcher brightnessMatcher = CreateScreenBrightnessChangedAtomMatcher();
@@ -1389,15 +1356,13 @@ TEST_P(ConfigUpdateE2eTest, TestValueMetric) {
     ConfigKey key(123, 987);
     uint64_t bucketStartTimeNs = getElapsedRealtimeNs();
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    if (GetParam()) {
-        // call from StatsLogProcessor constructor
-        Expectation initCall = EXPECT_CALL(*mLogEventFilter,
-                                           setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
-                                       .Times(1);
-        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
-                .Times(1)
-                .After(initCall);
-    }
+    // call from StatsLogProcessor constructor
+    Expectation initCall =
+            EXPECT_CALL(*mLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+                    .Times(1);
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
+            .Times(1)
+            .After(initCall);
     // Config creation triggers pull #1.
     sp<StatsLogProcessor> processor =
             CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key,
@@ -1425,7 +1390,6 @@ TEST_P(ConfigUpdateE2eTest, TestValueMetric) {
 
     // Do the update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     newConfig.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     *newConfig.add_atom_matcher() = screenOffMatcher;
@@ -1450,9 +1414,7 @@ TEST_P(ConfigUpdateE2eTest, TestValueMetric) {
 
     int64_t updateTimeNs = bucketStartTimeNs + 30 * NS_PER_SEC;
     // Update pulls valuePullPersist and valueNew. Pull #3.
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Verify puller manager is properly set.
@@ -1675,9 +1637,8 @@ TEST_P(ConfigUpdateE2eTest, TestValueMetric) {
     EXPECT_EQ(skipBucket.drop_event(0).drop_reason(), BucketDropReason::DUMP_REPORT_REQUESTED);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestKllMetric) {
+TEST_F(ConfigUpdateE2eTest, TestKllMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher brightnessMatcher = CreateScreenBrightnessChangedAtomMatcher();
     *config.add_atom_matcher() = brightnessMatcher;
@@ -1731,7 +1692,6 @@ TEST_P(ConfigUpdateE2eTest, TestKllMetric) {
 
     // Do the update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     *newConfig.add_atom_matcher() = screenOffMatcher;
     *newConfig.add_atom_matcher() = unpluggedMatcher;
@@ -1757,11 +1717,8 @@ TEST_P(ConfigUpdateE2eTest, TestKllMetric) {
     *newConfig.add_kll_metric() = kllPersist;
 
     int64_t updateTimeNs = bucketStartTimeNs + 30 * NS_PER_SEC;
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Send events after the update. This is a new bucket.
@@ -1893,10 +1850,9 @@ TEST_P(ConfigUpdateE2eTest, TestKllMetric) {
     EXPECT_EQ(kllPersistAfter.kll_metrics().skipped_size(), 0);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestMetricActivation) {
+TEST_F(ConfigUpdateE2eTest, TestMetricActivation) {
     ALOGE("Start ConfigUpdateE2eTest#TestMetricActivation");
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     string immediateTag = "immediate", bootTag = "boot", childTag = "child";
 
@@ -2000,7 +1956,6 @@ TEST_P(ConfigUpdateE2eTest, TestMetricActivation) {
 
     // Do update. Add matchers/conditions in different order to force indices to change.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     newConfig.set_hash_strings_in_metric_report(false);  // Modify metadata for fun.
 
     // Change combination matcher, will mean combination metric isn't active after update.
@@ -2021,11 +1976,8 @@ TEST_P(ConfigUpdateE2eTest, TestMetricActivation) {
     *newConfig.add_metric_activation() = immediateMetricActivation;
 
     int64_t updateTimeNs = bucketStartTimeNs + 40 * NS_PER_SEC;
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // The reboot will write to disk again, so sleep for 1 second to avoid this.
@@ -2149,9 +2101,8 @@ TEST_P(ConfigUpdateE2eTest, TestMetricActivation) {
     ALOGE("End ConfigUpdateE2eTest#TestMetricActivation");
 }
 
-TEST_P(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
+TEST_F(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher syncStartMatcher = CreateSyncStartAtomMatcher();
     *config.add_atom_matcher() = syncStartMatcher;
@@ -2285,7 +2236,6 @@ TEST_P(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
 
     // Do config update.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     *newConfig.add_atom_matcher() = wakelockAcquireMatcher;
     *newConfig.add_atom_matcher() = syncStartMatcher;
 
@@ -2325,11 +2275,8 @@ TEST_P(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, newSubId, newBroadcast);
 
     int64_t updateTimeNs = bucket2StartTimeNs + 15 * NS_PER_SEC;
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Within refractory of AlertPreserve, but AlertNew should fire since the full bucket has 2.
@@ -2365,9 +2312,8 @@ TEST_P(ConfigUpdateE2eTest, TestAnomalyCountMetric) {
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, newSubId);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
+TEST_F(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = wakelockAcquireMatcher;
@@ -2469,17 +2415,15 @@ TEST_P(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, removeSubId, removeBroadcast);
 
     const sp<UidMap> uidMap = new UidMap();
-    if (GetParam()) {
-        // call from StatsLogProcessor constructor
-        Expectation initCall = EXPECT_CALL(*mLogEventFilter,
-                                           setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
-                                       .Times(1);
-        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
-                .Times(1)
-                .After(initCall);
-    }
-    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ mLogEventFilter);
+    // call from StatsLogProcessor constructor
+    Expectation initCall =
+            EXPECT_CALL(*mLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+                    .Times(1);
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
+            .Times(1)
+            .After(initCall);
+    const shared_ptr<StatsService> service =
+            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr, mLogEventFilter);
     sp<StatsLogProcessor> processor = service->mProcessor;
     uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
     int64_t bucketStartTimeNs = processor->mTimeBaseNs;
@@ -2623,7 +2567,6 @@ TEST_P(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
 
     // Do config update.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
     *newConfig.add_atom_matcher() = wakelockAcquireMatcher;
     *newConfig.add_atom_matcher() = screenOffMatcher;
     *newConfig.add_atom_matcher() = wakelockReleaseMatcher;
@@ -2666,9 +2609,7 @@ TEST_P(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, newSubId, newBroadcast);
 
     int64_t updateTimeNs = bucket2StartTimeNs + 50 * NS_PER_SEC;
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, newConfig);
 
     // Alert preserve will set alarm after the refractory period, but alert new will set it for
@@ -2728,9 +2669,8 @@ TEST_P(ConfigUpdateE2eTest, TestAnomalyDurationMetric) {
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, newSubId);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestAlarms) {
+TEST_F(ConfigUpdateE2eTest, TestAlarms) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     Alarm alarmPreserve = createAlarm("AlarmPreserve", /*offset*/ 5 * MS_PER_SEC,
                                       /*period*/ TimeUnitToBucketSizeInMillis(ONE_MINUTE));
     Alarm alarmReplace = createAlarm("AlarmReplace", /*offset*/ 1,
@@ -2826,7 +2766,6 @@ TEST_P(ConfigUpdateE2eTest, TestAlarms) {
 
     // Do config update.
     StatsdConfig newConfig;
-    newConfig.add_allowed_log_source("AID_ROOT");
 
     // Change alarm replace's definition.
     alarmReplace.set_period_millis(TimeUnitToBucketSizeInMillis(ONE_MINUTE));
@@ -2856,9 +2795,7 @@ TEST_P(ConfigUpdateE2eTest, TestAlarms) {
                 return Status::ok();
             });
     SubscriberReporter::getInstance().setBroadcastSubscriber(key, newSubId, newBroadcast);
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(newConfig), _)).Times(1);
     processor->OnConfigUpdated((startTimeSec + 90) * NS_PER_SEC, key, newConfig);
     // After the update, the alarm time should remain unchanged since alarm replace now fires every
     // minute with no offset.
@@ -2898,9 +2835,8 @@ TEST_P(ConfigUpdateE2eTest, TestAlarms) {
     SubscriberReporter::getInstance().unsetBroadcastSubscriber(key, newSubId);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
+TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
 
@@ -2930,11 +2866,8 @@ TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
     durationMetric->set_bucket(FIVE_MINUTES);
 
     uint64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;  // 1:00
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, config);
 
     event = CreateReleaseWakelockEvent(bucketStartTimeNs + 80 * NS_PER_SEC, attributionUids1,
@@ -2965,9 +2898,8 @@ TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhat) {
     EXPECT_EQ(bucketInfo.duration_nanos(), 20 * NS_PER_SEC);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
+TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateMoveToBackgroundAtomMatcher();
@@ -3025,11 +2957,8 @@ TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
             CreateDimensions(util::ACTIVITY_FOREGROUND_STATE_CHANGED, {1 /*uid*/});
 
     uint64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;  // 1:00
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, config);
 
     event = CreateMoveToBackgroundEvent(bucketStartTimeNs + 73 * NS_PER_SEC, app2Uid);  // 1:13
@@ -3069,9 +2998,8 @@ TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedCondition) {
     EXPECT_EQ(bucketInfo.duration_nanos(), 17 * NS_PER_SEC);
 }
 
-TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedState) {
+TEST_F(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedState) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
 
@@ -3144,11 +3072,8 @@ TEST_P(ConfigUpdateE2eTest, TestNewDurationExistingWhatSlicedState) {
             CreateDimensions(util::UID_PROCESS_STATE_CHANGED, {1 /*uid*/});
 
     uint64_t updateTimeNs = bucketStartTimeNs + 60 * NS_PER_SEC;  // 1:00
-    if (GetParam()) {
-        EXPECT_CALL(*mLogEventFilter,
-                    setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
-                .Times(1);
-    }
+    EXPECT_CALL(*mLogEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), processor.get()))
+            .Times(1);
     processor->OnConfigUpdated(updateTimeNs, key, config);
 
     event = CreateAcquireWakelockEvent(bucketStartTimeNs + 72 * NS_PER_SEC, attributionUids2,

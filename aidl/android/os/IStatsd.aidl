@@ -95,6 +95,7 @@ interface IStatsd {
      * wire-encoded of ConfigMetricsReportList.
      *
      * Requires Manifest.permission.DUMP.
+     * @deprecated use #getDataFd() instead for Android T+
      */
     byte[] getData(in long key, int callingUid);
 
@@ -302,4 +303,19 @@ interface IStatsd {
      * Enforces caller is in the traced_probes selinux domain.
      */
     oneway void flushSubscription(IStatsSubscriptionCallback callback);
+
+    /**
+     * Same as #getData(in long key, int callingUid), but the data is stored in a file descriptor.
+     *
+     * The call is async, purpose is to initiate data transfer process.
+     * Report is expected to be written into fd.
+     * The content schema is |4 bytes - expected report size in bytes|report body of len bytes|EOF|.
+     * fd will be closed automatically at the end of the transaction.
+     * To confirm report correctness expected report size should be equal to size of report body
+     * read from file descriptor. Any IOException during the read signals about failure and API
+     * call should be considered as failed.
+     *
+     * Requires Manifest.permission.DUMP.
+     */
+    oneway void getDataFd(long key, int callingUid, in ParcelFileDescriptor fd);
 }

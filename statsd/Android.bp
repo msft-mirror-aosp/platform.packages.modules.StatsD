@@ -23,6 +23,7 @@ cc_defaults {
 
     cflags: [
         "-Wno-deprecated-declarations",
+        "-Wthread-safety",
     ],
 
     srcs: [
@@ -54,6 +55,7 @@ cc_defaults {
         "src/HashableDimensionKey.cpp",
         "src/logd/LogEvent.cpp",
         "src/logd/LogEventQueue.cpp",
+        "src/logd/logevent_util.cpp",
         "src/matchers/CombinationAtomMatchingTracker.cpp",
         "src/matchers/EventMatcherWizard.cpp",
         "src/matchers/matcher_util.cpp",
@@ -85,7 +87,7 @@ cc_defaults {
         "src/statscompanion_util.cpp",
         "src/statsd_config.proto",
         "src/statsd_metadata.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
         "src/StatsLogProcessor.cpp",
         "src/StatsService.cpp",
         "src/storage/StorageManager.cpp",
@@ -211,15 +213,6 @@ cc_binary {
         // "-g",
         // "-O0",
     ],
-
-    product_variables: {
-        eng: {
-            // Enable sanitizer ONLY on eng builds
-            //sanitize: {
-            //    address: true,
-            //},
-        },
-    },
 
     proto: {
         type: "lite",
@@ -431,6 +424,7 @@ cc_benchmark {
         "benchmark/main.cpp",
         "benchmark/metric_util.cpp",
         "benchmark/stats_write_benchmark.cpp",
+        "benchmark/loss_info_container_benchmark.cpp",
         "src/stats_log.proto",
     ],
 
@@ -486,7 +480,7 @@ java_library {
         "src/shell/shell_data.proto",
         "src/stats_log.proto",
         "src/statsd_config.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
     ],
 
     static_libs: [
@@ -515,7 +509,7 @@ java_library {
         "src/shell/shell_data.proto",
         "src/stats_log.proto",
         "src/statsd_config.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
     ],
     static_libs: [
         "platformprotosnano",
@@ -537,7 +531,7 @@ filegroup {
     name: "libstats_log_protos",
     srcs: [
         "src/stats_log.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
     ],
 }
 
@@ -553,7 +547,7 @@ filegroup {
         "src/statsd_metadata.proto",
         "src/stats_log.proto",
         "src/uid_data.proto",
-        "src/guardrail/invalid_config_reason_enum.proto",
+        "src/guardrail/stats_log_enums.proto",
     ],
 }
 

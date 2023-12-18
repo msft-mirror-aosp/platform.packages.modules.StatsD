@@ -22,7 +22,7 @@ option java_package = "com.android.os";
 option java_outer_classname = "StatsLog";
 
 import "frameworks/proto_logging/stats/atoms.proto";
-import "packages/modules/StatsD/statsd/src/guardrail/invalid_config_reason_enum.proto";
+import "packages/modules/StatsD/statsd/src/guardrail/stats_log_enums.proto";
 
 message DimensionsValue {
   optional int32 field = 1;
@@ -250,24 +250,6 @@ message StatsLogReport {
   // Deprecated.
   reserved 2, 3;
 
-  // Keep this in sync with BucketDropReason enum in MetricProducer.h.
-  enum BucketDropReason {
-      // For ValueMetric, a bucket is dropped during a dump report request iff
-      // current bucket should be included, a pull is needed (pulled metric and
-      // condition is true), and we are under fast time constraints.
-      DUMP_REPORT_REQUESTED = 1;
-      EVENT_IN_WRONG_BUCKET = 2;
-      CONDITION_UNKNOWN = 3;
-      PULL_FAILED = 4;
-      PULL_DELAYED = 5;
-      DIMENSION_GUARDRAIL_REACHED = 6;
-      MULTIPLE_BUCKETS_SKIPPED = 7;
-      // Not an invalid bucket case, but the bucket is dropped.
-      BUCKET_TOO_SMALL = 8;
-      // Not an invalid bucket case, but the bucket is skipped.
-      NO_DATA = 9;
-  };
-
   message DropEvent {
       optional BucketDropReason drop_reason = 1;
 
@@ -333,6 +315,8 @@ message StatsLogReport {
   optional DimensionsValue dimensions_path_in_condition = 12 [deprecated = true];
 
   optional bool is_active = 14;
+
+  optional bool dimension_guardrail_hit = 17;
 
   // Do not use.
   reserved 13, 15;
@@ -412,19 +396,11 @@ message ConfigMetricsReport {
   }
   repeated Annotation annotation = 7;
 
-  enum DumpReportReason {
-      DEVICE_SHUTDOWN = 1;
-      CONFIG_UPDATED = 2;
-      CONFIG_REMOVED = 3;
-      GET_DATA_CALLED = 4;
-      ADB_DUMP = 5;
-      CONFIG_RESET = 6;
-      STATSCOMPANION_DIED = 7;
-      TERMINATION_SIGNAL_RECEIVED = 8;
-  }
   optional DumpReportReason dump_report_reason = 8;
 
   repeated string strings = 9;
+
+  repeated DataCorruptedReason data_corrupted_reason = 10;
 }
 
 message ConfigMetricsReportList {
@@ -435,6 +411,10 @@ message ConfigMetricsReportList {
   optional ConfigKey config_key = 1;
 
   repeated ConfigMetricsReport reports = 2;
+
+  optional int32 report_number = 3;
+
+  optional int32 statsd_stats_id = 4;
 
   reserved 10 to 13, 101;
 }
@@ -510,6 +490,13 @@ message StatsdStatsReport {
         repeated int64 restricted_flush_latency = 28;
         repeated int64 restricted_db_size_time_sec = 29;
         repeated int64 restricted_db_size_bytes = 30;
+        repeated int32 dump_report_number = 31;
+        optional int32 db_deletion_stat_failed = 32;
+        optional int32 db_deletion_size_exceeded_limit = 33;
+        optional int32 db_deletion_config_invalid = 34;
+        optional int32 db_deletion_too_old = 35;
+        optional int32 db_deletion_config_removed = 36;
+        optional int32 db_deletion_config_updated = 37;
     }
 
     repeated ConfigStats config_stats = 3;
@@ -564,6 +551,7 @@ message StatsdStatsReport {
           optional int64 pull_timeout_elapsed_millis = 2;
         }
         repeated PullTimeoutMetadata pull_atom_metadata = 22;
+        optional int32 subscription_pull_count = 23;
     }
     repeated PulledAtomStats pulled_atom_stats = 10;
 
@@ -644,19 +632,6 @@ message StatsdStatsReport {
       optional int64 config_id = 2;
       optional int32 config_uid = 3;
       optional string config_package = 4;
-
-      enum InvalidQueryReason {
-        UNKNOWN_REASON = 0;
-        FLAG_DISABLED = 1;
-        UNSUPPORTED_SQLITE_VERSION = 2;
-        AMBIGUOUS_CONFIG_KEY = 3;
-        CONFIG_KEY_NOT_FOUND = 4;
-        CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5;
-        QUERY_FAILURE = 6;
-        INCONSISTENT_ROW_SIZE = 7;
-        NULL_CALLBACK = 8;
-      }
-
       optional InvalidQueryReason invalid_query_reason = 5;
       optional int64 query_wall_time_ns = 6;
       optional bool has_error = 7;
@@ -665,6 +640,48 @@ message StatsdStatsReport {
     }
     repeated RestrictedMetricQueryStats restricted_metric_query_stats = 20;
     optional uint32 shard_offset = 21;
+    optional int32 statsd_stats_id = 22;
+
+    message SubscriptionStats {
+      message PerSubscriptionStats {
+        optional int32 id = 1;
+        optional int32 pushed_atom_count = 2;
+        optional int32 pulled_atom_count = 3;
+        optional int32 start_time_sec = 4;
+        optional int32 end_time_sec = 5;
+        optional int32 flush_count = 6;
+      }
+        repeated PerSubscriptionStats per_subscription_stats = 1;
+        optional int32 pull_thread_wakeup_count = 2;
+    }
+
+    optional SubscriptionStats subscription_stats = 23;
+
+    message SocketLossStats {
+      message LossStatsPerUid {
+        message AtomIdLossStats {
+            optional int32 atom_id = 1;
+            optional int32 error = 2;
+            optional int32 count = 3;
+        }
+        optional int32 uid = 1;
+        optional int64 first_timestamp_nanos = 2;
+        optional int64 last_timestamp_nanos = 3;
+        repeated AtomIdLossStats atom_id_loss_stats = 4;
+      }
+
+      repeated LossStatsPerUid loss_stats_per_uid = 1;
+
+      // tracks overflow of stats container on the libstatssocket side per logging application
+      message LossStatsOverflowCounters {
+        optional int32 uid = 1;
+        optional int32 count = 2;
+      }
+
+      repeated LossStatsOverflowCounters loss_stats_overflow_counters = 2;
+    }
+
+    optional SocketLossStats socket_loss_stats = 24;
 }
 
 message AlertTriggerDetails {

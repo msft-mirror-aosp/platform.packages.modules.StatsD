@@ -25,15 +25,30 @@ cc_defaults {
     name: "libstatssocket_defaults",
     srcs: [
         "stats_buffer_writer.c",
+        "stats_buffer_writer_queue.cpp",
         "stats_event.c",
         "stats_socket.c",
-        "statsd_writer.c",
+        "statsd_writer.cpp",
+        "stats_socket_loss_reporter.cpp",
+        "utils.cpp",
     ],
+    generated_sources: ["stats_statsdsocketlog.cpp"],
+    generated_headers: ["stats_statsdsocketlog.h"],
     export_include_dirs: ["include"],
-    header_libs: ["liblog_headers"],
+    header_libs: [
+        "libcutils_headers",
+        "liblog_headers",
+    ],
     cflags: [
         "-Wall",
         "-Werror",
+        "-Wthread-safety",
+
+        // for local testing & benchmarking with statsd_benchmark
+        // "-DENABLE_BENCHMARK_SUPPORT",
+    ],
+    static_libs: [
+        "libbase",
     ],
 }
 
@@ -99,12 +114,18 @@ cc_test {
     srcs: [
         "tests/stats_event_test.cpp",
         "tests/stats_writer_test.cpp",
+        "tests/stats_buffer_writer_queue_test.cpp",
+        "tests/stats_socketlog_test.cpp",
     ],
+    generated_sources: ["stats_statsdsocketlog.cpp"],
+    generated_headers: ["stats_statsdsocketlog.h"],
     cflags: [
         "-Wall",
         "-Werror",
+        "-Wthread-safety",
     ],
     static_libs: [
+        "libbase",
         "libgmock",
         "libstatssocket_private",
     ],
@@ -129,4 +150,29 @@ cc_test {
     },
     require_root: true,
     min_sdk_version: "30",
+}
+
+genrule {
+    name: "stats_statsdsocketlog.h",
+    tools: ["stats-log-api-gen"],
+    cmd: "$(location stats-log-api-gen) " +
+        "--header $(genDir)/stats_statsdsocketlog.h " +
+        "--module statsdsocket " +
+        "--namespace android,os,statsdsocket",
+    out: [
+        "stats_statsdsocketlog.h",
+    ],
+}
+
+genrule {
+    name: "stats_statsdsocketlog.cpp",
+    tools: ["stats-log-api-gen"],
+    cmd: "$(location stats-log-api-gen) " +
+        "--cpp $(genDir)/stats_statsdsocketlog.cpp " +
+        "--module statsdsocket " +
+        "--namespace android,os,statsdsocket " +
+        "--importHeader stats_statsdsocketlog.h",
+    out: [
+        "stats_statsdsocketlog.cpp",
+    ],
 }

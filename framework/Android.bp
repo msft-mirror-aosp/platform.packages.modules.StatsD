@@ -21,7 +21,7 @@ genrule {
     name: "statslog-statsd-java-gen",
     tools: ["stats-log-api-gen"],
     cmd: "$(location stats-log-api-gen) --java $(out) --module statsd" +
-         " --javaPackage com.android.internal.statsd --javaClass StatsdStatsLog --minApiLevel 30",
+         " --javaPackage com.android.internal.statsd --javaClass StatsdStatsLog",
     out: ["com/android/internal/statsd/StatsdStatsLog.java"],
 }
 
@@ -60,6 +60,7 @@ java_sdk_library {
 
     libs: [
         "androidx.annotation_annotation",
+        "framework-configinfrastructure",
     ],
 
     static_libs: [
@@ -87,8 +88,8 @@ java_sdk_library {
     },
 
     impl_library_visibility: [
-        "//frameworks/base/apex/statsd/framework/test:__subpackages__",
         "//packages/modules/StatsD/framework/test:__subpackages__",
+        "//packages/modules/StatsD/tests/utils:__pkg__",
         "//packages/modules/StatsD/service:__subpackages__",
     ],
 
@@ -123,6 +124,7 @@ cc_library_shared {
         "-Werror",
         "-Wextra",
         "-Wno-unused-parameter",
+        "-Wthread-safety",
     ],
     apex_available: [
         "com.android.os.statsd",

@@ -31,7 +31,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 using ::ndk::SharedRefBase;
 
@@ -44,7 +43,6 @@ const int32_t ATOM_TAG = util::SUBSYSTEM_SLEEP_STATE;
 
 StatsdConfig CreateStatsdConfig(const GaugeMetric::SamplingType samplingType) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");     // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
     auto atomMatcher = CreateSimpleAtomMatcher("TestMatcher", ATOM_TAG);
     *config.add_atom_matcher() = atomMatcher;
@@ -69,7 +67,7 @@ public:
 TEST(StatsServiceTest, TestAddConfig_simple) {
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     const int kConfigKey = 12345;
     const int kCallingUid = 123;
     StatsdConfig config;
@@ -88,7 +86,7 @@ TEST(StatsServiceTest, TestAddConfig_simple) {
 TEST(StatsServiceTest, TestAddConfig_empty) {
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     string serialized = "";
     const int kConfigKey = 12345;
     const int kCallingUid = 123;
@@ -104,7 +102,7 @@ TEST(StatsServiceTest, TestAddConfig_empty) {
 TEST(StatsServiceTest, TestAddConfig_invalid) {
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     string serialized = "Invalid config!";
 
     EXPECT_FALSE(
@@ -123,7 +121,7 @@ TEST(StatsServiceTest, TestGetUidFromArgs) {
 
     const sp<UidMap> uidMap = new UidMap();
     shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     service->mEngBuild = true;
 
     // "-1"
@@ -163,7 +161,7 @@ protected:
 
     shared_ptr<StatsService> createStatsService() override {
         return SharedRefBase::make<StatsService>(new UidMap(), /*queue=*/nullptr,
-                                                 /*LogEventFilter=*/nullptr,
+                                                 std::make_shared<LogEventFilter>(),
                                                  /*initEventDelaySecs=*/kInitDelaySec);
     }
 };
@@ -173,7 +171,7 @@ INSTANTIATE_TEST_SUITE_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest,
 
 TEST_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest) {
     // used for error threshold tolerance due to sleep() is involved
-    const int64_t ERROR_THRESHOLD_NS = GetParam() ? 1000000 : 5 * 1000000;
+    const int64_t ERROR_THRESHOLD_NS = 25 * 1000000;  // 25 ms
 
     auto pullAtomCallback = SharedRefBase::make<FakeSubsystemSleepCallbackWithTiming>();
 
@@ -181,9 +179,9 @@ TEST_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest) {
     service->mPullerManager->RegisterPullAtomCallback(/*uid=*/0, ATOM_TAG, NS_PER_SEC,
                                                       NS_PER_SEC * 10, {}, pullAtomCallback);
 
-    const int64_t createConfigTimeNs = getElapsedRealtimeNs();
     StatsdConfig config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE);
     config.set_id(kConfigKey);
+    const int64_t createConfigTimeNs = getElapsedRealtimeNs();
     ASSERT_TRUE(sendConfig(config));
     ASSERT_EQ(2, pullAtomCallback->pullNum);
 
@@ -246,14 +244,13 @@ TEST_P(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest) {
     ASSERT_GT(bucketInfo1.atom(0).subsystem_sleep_state().time_millis(), 0);
 
     EXPECT_GE(NanoToMillis(bucketInfo1.start_bucket_elapsed_nanos()),
-              NanoToMillis(createConfigTimeNs + kInitDelaySec * NS_PER_SEC));
+              NanoToMillis(initCompletedTimeNs + kInitDelaySec * NS_PER_SEC));
     EXPECT_LE(NanoToMillis(bucketInfo1.start_bucket_elapsed_nanos()),
-              NanoToMillis(createConfigTimeNs + kInitDelaySec * NS_PER_SEC + ERROR_THRESHOLD_NS));
+              NanoToMillis(initCompletedTimeNs + kInitDelaySec * NS_PER_SEC + ERROR_THRESHOLD_NS));
 
-    EXPECT_GE(NanoToMillis(createConfigTimeNs + bucketSizeNs),
-              NanoToMillis(bucketInfo1.end_bucket_elapsed_nanos()));
-    EXPECT_LE(NanoToMillis(createConfigTimeNs + bucketSizeNs),
-              NanoToMillis(bucketInfo1.end_bucket_elapsed_nanos() + ERROR_THRESHOLD_NS));
+    // this check confirms that bucket end is not affected by the StatsService init delay
+    EXPECT_EQ(NanoToMillis(bucketInfo1.end_bucket_elapsed_nanos()),
+              NanoToMillis(service->mProcessor->mTimeBaseNs + bucketSizeNs));
 }
 
 #else

@@ -41,7 +41,6 @@ class EventMetricE2eTest : public ::testing::Test {
 
 TEST_F(EventMetricE2eTest, TestEventMetricDataAggregated) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = wakelockAcquireMatcher;
@@ -103,7 +102,6 @@ TEST_F(EventMetricE2eTest, TestEventMetricDataAggregated) {
 
 TEST_F(EventMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -195,7 +193,6 @@ TEST_F(EventMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
 
 TEST_F(EventMetricE2eTest, TestMatchRepeatedFieldPositionFirst) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedStateFirstOnAtomMatcher =
             CreateTestAtomRepeatedStateFirstOnAtomMatcher();
@@ -255,6 +252,90 @@ TEST_F(EventMetricE2eTest, TestMatchRepeatedFieldPositionFirst) {
     ASSERT_EQ(atom.repeated_string_field_size(), 0);
     ASSERT_EQ(atom.repeated_boolean_field_size(), 0);
     EXPECT_THAT(atom.repeated_enum_field(), ElementsAreArray(enumArrayMatch));
+}
+
+TEST_F(EventMetricE2eTest, TestDumpReportIncrementsReportNumber) {
+    StatsdConfig config;
+
+    AtomMatcher testAtomReportedStateFirstOnAtomMatcher =
+            CreateTestAtomRepeatedStateFirstOnAtomMatcher();
+    *config.add_atom_matcher() = testAtomReportedStateFirstOnAtomMatcher;
+
+    EventMetric testAtomReportedEventMetric = createEventMetric(
+            "EventTestAtomReported", testAtomReportedStateFirstOnAtomMatcher.id(), nullopt);
+    *config.add_event_metric() = testAtomReportedEventMetric;
+
+    ConfigKey key(123, 987);
+    uint64_t configUpdateTime = 10000000000;  // 0:10
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configUpdateTime, configUpdateTime, config, key);
+
+    uint64_t dumpTimeNs = configUpdateTime + 100 * NS_PER_SEC;
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(reports.reports_size(), 1);
+
+    EXPECT_EQ(reports.report_number(), 1);
+    EXPECT_EQ(reports.statsd_stats_id(), StatsdStats::getInstance().getStatsdStatsId());
+
+    buffer.clear();
+    processor->onDumpReport(key, dumpTimeNs + 100, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    ASSERT_EQ(reports.reports_size(), 1);
+
+    EXPECT_EQ(reports.report_number(), 2);
+    EXPECT_EQ(reports.statsd_stats_id(), StatsdStats::getInstance().getStatsdStatsId());
+}
+
+TEST_F(EventMetricE2eTest, TestEventMetricSampling) {
+    // Set srand seed to make rand deterministic for testing.
+    srand(0);
+
+    StatsdConfig config;
+
+    AtomMatcher batterySaverOnMatcher = CreateBatterySaverModeStartAtomMatcher();
+    *config.add_atom_matcher() = batterySaverOnMatcher;
+
+    EventMetric batterySaverOnEventMetric =
+            createEventMetric("EventBatterySaverOn", batterySaverOnMatcher.id(), nullopt);
+    batterySaverOnEventMetric.set_sampling_percentage(50);
+    *config.add_event_metric() = batterySaverOnEventMetric;
+
+    ConfigKey key(123, 987);
+    uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+
+    // Initialize log events before update.
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    for (int i = 0; i < 100; i++) {
+        events.push_back(CreateBatterySaverOnEvent(bucketStartTimeNs + (10 + 10 * i) * NS_PER_SEC));
+    }
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    uint64_t dumpTimeNs = bucketStartTimeNs + 2000 * NS_PER_SEC;
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
+    ASSERT_EQ(reports.reports_size(), 1);
+
+    ConfigMetricsReport report = reports.reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+    StatsLogReport metricReport = report.metrics(0);
+    EXPECT_EQ(metricReport.metric_id(), batterySaverOnEventMetric.id());
+    EXPECT_TRUE(metricReport.has_event_metrics());
+    ASSERT_EQ(metricReport.event_metrics().data_size(), 46);
 }
 
 #else
