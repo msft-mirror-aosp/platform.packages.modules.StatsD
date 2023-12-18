@@ -1174,14 +1174,13 @@ TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerInvalidMatcher) {
     // Matcher has no contents_case (simple/combination), so it is invalid.
     matcher.set_id(21);
     optional<InvalidConfigReason> invalidConfigReason;
-    EXPECT_EQ(createAtomMatchingTracker(matcher, 0, uidMap, invalidConfigReason), nullptr);
+    EXPECT_EQ(createAtomMatchingTracker(matcher, uidMap, invalidConfigReason), nullptr);
     EXPECT_EQ(invalidConfigReason,
               createInvalidConfigReasonWithMatcher(
                       INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE, matcher.id()));
 }
 
 TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerSimple) {
-    int index = 1;
     int64_t id = 123;
     sp<UidMap> uidMap = new UidMap();
     AtomMatcher matcher;
@@ -1195,20 +1194,18 @@ TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerSimple) {
 
     optional<InvalidConfigReason> invalidConfigReason;
     sp<AtomMatchingTracker> tracker =
-            createAtomMatchingTracker(matcher, index, uidMap, invalidConfigReason);
+            createAtomMatchingTracker(matcher, uidMap, invalidConfigReason);
     EXPECT_NE(tracker, nullptr);
     EXPECT_EQ(invalidConfigReason, nullopt);
 
     EXPECT_TRUE(tracker->mInitialized);
     EXPECT_EQ(tracker->getId(), id);
-    EXPECT_EQ(tracker->mIndex, index);
     const set<int>& atomIds = tracker->getAtomIds();
     ASSERT_EQ(atomIds.size(), 1);
     EXPECT_EQ(atomIds.count(SCREEN_STATE_ATOM_ID), 1);
 }
 
 TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerCombination) {
-    int index = 1;
     int64_t id = 123;
     sp<UidMap> uidMap = new UidMap();
     AtomMatcher matcher;
@@ -1220,14 +1217,13 @@ TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerCombination) {
 
     optional<InvalidConfigReason> invalidConfigReason;
     sp<AtomMatchingTracker> tracker =
-            createAtomMatchingTracker(matcher, index, uidMap, invalidConfigReason);
+            createAtomMatchingTracker(matcher, uidMap, invalidConfigReason);
     EXPECT_NE(tracker, nullptr);
     EXPECT_EQ(invalidConfigReason, nullopt);
 
     // Combination matchers need to be initialized first.
     EXPECT_FALSE(tracker->mInitialized);
     EXPECT_EQ(tracker->getId(), id);
-    EXPECT_EQ(tracker->mIndex, index);
     const set<int>& atomIds = tracker->getAtomIds();
     ASSERT_EQ(atomIds.size(), 0);
 }

@@ -171,7 +171,7 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
                 const sp<AtomMatchingTracker>& tracker =
                         oldAtomMatchingTrackers[oldAtomMatchingTrackerIt->second];
                 invalidConfigReason =
-                        tracker->onConfigUpdated(matcherProtos[i], i, newAtomMatchingTrackerMap);
+                        tracker->onConfigUpdated(matcherProtos[i], newAtomMatchingTrackerMap);
                 if (invalidConfigReason.has_value()) {
                     ALOGW("Config update failed for matcher %lld", (long long)id);
                     return invalidConfigReason;
@@ -184,7 +184,7 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
                 [[fallthrough]];  // Intentionally fallthrough to create the new matcher.
             case UPDATE_NEW: {
                 sp<AtomMatchingTracker> tracker =
-                        createAtomMatchingTracker(matcher, i, uidMap, invalidConfigReason);
+                        createAtomMatchingTracker(matcher, uidMap, invalidConfigReason);
                 if (tracker == nullptr) {
                     return invalidConfigReason;
                 }
@@ -203,7 +203,7 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
     std::fill(cycleTracker.begin(), cycleTracker.end(), false);
     for (size_t matcherIndex = 0; matcherIndex < newAtomMatchingTrackers.size(); matcherIndex++) {
         auto& matcher = newAtomMatchingTrackers[matcherIndex];
-        invalidConfigReason = matcher->init(matcherProtos, newAtomMatchingTrackers,
+        invalidConfigReason = matcher->init(matcherIndex, matcherProtos, newAtomMatchingTrackers,
                                             newAtomMatchingTrackerMap, cycleTracker);
         if (invalidConfigReason.has_value()) {
             return invalidConfigReason;
