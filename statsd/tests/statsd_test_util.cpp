@@ -1491,8 +1491,8 @@ sp<EventMatcherWizard> createEventMatcherWizard(
     }
     uint64_t matcherHash = 0x12345678;
     int64_t matcherId = 678;
-    return new EventMatcherWizard({new SimpleAtomMatchingTracker(
-            matcherId, matcherIndex, matcherHash, atomMatcher, uidMap)});
+    return new EventMatcherWizard(
+            {new SimpleAtomMatchingTracker(matcherId, matcherHash, atomMatcher, uidMap)});
 }
 
 StatsDimensionsValueParcel CreateAttributionUidDimensionsValueParcel(const int atomId,
