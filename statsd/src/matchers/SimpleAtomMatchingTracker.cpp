@@ -26,11 +26,10 @@ namespace statsd {
 using std::unordered_map;
 using std::vector;
 
-SimpleAtomMatchingTracker::SimpleAtomMatchingTracker(const int64_t& id, const int index,
-                                                     const uint64_t protoHash,
+SimpleAtomMatchingTracker::SimpleAtomMatchingTracker(const int64_t id, const uint64_t protoHash,
                                                      const SimpleAtomMatcher& matcher,
                                                      const sp<UidMap>& uidMap)
-    : AtomMatchingTracker(id, index, protoHash), mMatcher(matcher), mUidMap(uidMap) {
+    : AtomMatchingTracker(id, protoHash), mMatcher(matcher), mUidMap(uidMap) {
     if (!matcher.has_atom_id()) {
         mInitialized = false;
     } else {
@@ -43,7 +42,7 @@ SimpleAtomMatchingTracker::~SimpleAtomMatchingTracker() {
 }
 
 optional<InvalidConfigReason> SimpleAtomMatchingTracker::init(
-        const vector<AtomMatcher>& allAtomMatchers,
+        int matcherIndex, const vector<AtomMatcher>& allAtomMatchers,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& matcherMap, vector<bool>& stack) {
     // no need to do anything.
@@ -55,9 +54,7 @@ optional<InvalidConfigReason> SimpleAtomMatchingTracker::init(
 }
 
 optional<InvalidConfigReason> SimpleAtomMatchingTracker::onConfigUpdated(
-        const AtomMatcher& matcher, const int index,
-        const unordered_map<int64_t, int>& atomMatchingTrackerMap) {
-    mIndex = index;
+        const AtomMatcher& matcher, const unordered_map<int64_t, int>& atomMatchingTrackerMap) {
     // Do not need to update mMatcher since the matcher must be identical across the update.
     if (!mInitialized) {
         return createInvalidConfigReasonWithMatcher(
@@ -67,20 +64,21 @@ optional<InvalidConfigReason> SimpleAtomMatchingTracker::onConfigUpdated(
 }
 
 void SimpleAtomMatchingTracker::onLogEvent(
-        const LogEvent& event, const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const LogEvent& event, int matcherIndex,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         vector<MatchingState>& matcherResults) {
-    if (matcherResults[mIndex] != MatchingState::kNotComputed) {
+    if (matcherResults[matcherIndex] != MatchingState::kNotComputed) {
         VLOG("Matcher %lld already evaluated ", (long long)mId);
         return;
     }
 
     if (mAtomIds.find(event.GetTagId()) == mAtomIds.end()) {
-        matcherResults[mIndex] = MatchingState::kNotMatched;
+        matcherResults[matcherIndex] = MatchingState::kNotMatched;
         return;
     }
 
     bool matched = matchesSimple(mUidMap, mMatcher, event);
-    matcherResults[mIndex] = matched ? MatchingState::kMatched : MatchingState::kNotMatched;
+    matcherResults[matcherIndex] = matched ? MatchingState::kMatched : MatchingState::kNotMatched;
     VLOG("Stats SimpleAtomMatcher %lld matched? %d", (long long)mId, matched);
 }
 
