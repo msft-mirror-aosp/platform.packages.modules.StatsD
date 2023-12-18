@@ -618,8 +618,8 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
                                        MatchingState::kNotComputed);
 
     for (const auto& matcherIndex : matchersIt->second) {
-        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                           matcherCache);
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, matcherIndex,
+                                                           mAllAtomMatchingTrackers, matcherCache);
     }
 
     // Set of metrics that received an activation cancellation.
