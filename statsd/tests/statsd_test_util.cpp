@@ -986,11 +986,28 @@ std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs) {
     return logEvent;
 }
 
-std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs, const BatteryPluggedStateEnum state) {
+std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs,
+                                                         const BatteryPluggedStateEnum state,
+                                                         int32_t uid) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, util::PLUGGED_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, state);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
+
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/uid, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, util::PLUGGED_STATE_CHANGED);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+    AStatsEvent_writeString(statsEvent, "bad_state");
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1474,8 +1491,8 @@ sp<EventMatcherWizard> createEventMatcherWizard(
     }
     uint64_t matcherHash = 0x12345678;
     int64_t matcherId = 678;
-    return new EventMatcherWizard({new SimpleAtomMatchingTracker(
-            matcherId, matcherIndex, matcherHash, atomMatcher, uidMap)});
+    return new EventMatcherWizard(
+            {new SimpleAtomMatchingTracker(matcherId, matcherHash, atomMatcher, uidMap)});
 }
 
 StatsDimensionsValueParcel CreateAttributionUidDimensionsValueParcel(const int atomId,

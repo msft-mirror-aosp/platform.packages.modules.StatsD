@@ -103,6 +103,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
 
     createAllLogSourcesFromConfig(config);
     setMaxMetricsBytesFromConfig(config);
+    setTriggerGetDataBytesFromConfig(config);
     mPullerManager->RegisterPullUidProvider(mConfigKey, this);
 
     // Store the sub-configs used.
@@ -203,6 +204,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mPullAtomPackages.clear();
     createAllLogSourcesFromConfig(config);
     setMaxMetricsBytesFromConfig(config);
+    setTriggerGetDataBytesFromConfig(config);
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
@@ -211,27 +213,20 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 
 void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
     // Init allowed pushed atom uids.
-    if (config.allowed_log_source_size() == 0) {
-        ALOGE("Log source allowlist is empty! This config won't get any data. Suggest adding at "
-              "least AID_SYSTEM and AID_STATSD to the allowed_log_source field.");
-        mInvalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_LOG_SOURCE_ALLOWLIST_EMPTY);
-    } else {
-        for (const auto& source : config.allowed_log_source()) {
-            auto it = UidMap::sAidToUidMapping.find(source);
-            if (it != UidMap::sAidToUidMapping.end()) {
-                mAllowedUid.push_back(it->second);
-            } else {
-                mAllowedPkg.push_back(source);
-            }
-        }
-
-        if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
-            ALOGE("Too many log sources. This is likely to be an error in the config.");
-            mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    for (const auto& source : config.allowed_log_source()) {
+        auto it = UidMap::sAidToUidMapping.find(source);
+        if (it != UidMap::sAidToUidMapping.end()) {
+            mAllowedUid.push_back(it->second);
         } else {
-            initAllowedLogSources();
+            mAllowedPkg.push_back(source);
         }
+    }
+
+    if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
+        ALOGE("Too many log sources. This is likely to be an error in the config.");
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    } else {
+        initAllowedLogSources();
     }
 
     // Init default allowed pull atom uids.
@@ -282,6 +277,21 @@ void MetricsManager::setMaxMetricsBytesFromConfig(const StatsdConfig& config) {
         mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
     } else {
         mMaxMetricsBytes = config.max_metrics_memory_kb() * 1024;
+    }
+}
+
+void MetricsManager::setTriggerGetDataBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_soft_metrics_memory_kb()) {
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
+        return;
+    }
+    if (config.soft_metrics_memory_kb() <= 0 ||
+        static_cast<size_t>(config.soft_metrics_memory_kb() * 1024) >
+                StatsdStats::kHardMaxTriggerGetDataBytes) {
+        ALOGW("Memory limit ust be between 0KB and 10MB. Setting to default value (192KB).");
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
+    } else {
+        mTriggerGetDataBytes = config.soft_metrics_memory_kb() * 1024;
     }
 }
 
@@ -501,6 +511,13 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
     if (mWhitelistedAtomIds.find(event.GetTagId()) != mWhitelistedAtomIds.end()) {
         return true;
     }
+
+    if (event.GetUid() == AID_ROOT ||
+        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL)) {
+        // enable atoms logged from pre-installed Android system services
+        return true;
+    }
+
     std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
     if (mAllowedLogSources.find(event.GetUid()) == mAllowedLogSources.end()) {
         VLOG("log source %d not on the whitelist", event.GetUid());
@@ -601,8 +618,8 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
                                        MatchingState::kNotComputed);
 
     for (const auto& matcherIndex : matchersIt->second) {
-        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                           matcherCache);
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, matcherIndex,
+                                                           mAllAtomMatchingTrackers, matcherCache);
     }
 
     // Set of metrics that received an activation cancellation.

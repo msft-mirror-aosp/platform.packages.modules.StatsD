@@ -67,7 +67,7 @@ bool hasLeafNode(const FieldMatcher& matcher) {
 }  // namespace
 
 sp<AtomMatchingTracker> createAtomMatchingTracker(
-        const AtomMatcher& logMatcher, const int index, const sp<UidMap>& uidMap,
+        const AtomMatcher& logMatcher, const sp<UidMap>& uidMap,
         optional<InvalidConfigReason>& invalidConfigReason) {
     string serializedMatcher;
     if (!logMatcher.SerializeToString(&serializedMatcher)) {
@@ -80,11 +80,11 @@ sp<AtomMatchingTracker> createAtomMatchingTracker(
     switch (logMatcher.contents_case()) {
         case AtomMatcher::ContentsCase::kSimpleAtomMatcher: {
             sp<AtomMatchingTracker> simpleAtomMatcher = new SimpleAtomMatchingTracker(
-                    logMatcher.id(), index, protoHash, logMatcher.simple_atom_matcher(), uidMap);
+                    logMatcher.id(), protoHash, logMatcher.simple_atom_matcher(), uidMap);
             return simpleAtomMatcher;
         }
         case AtomMatcher::ContentsCase::kCombination:
-            return new CombinationAtomMatchingTracker(logMatcher.id(), index, protoHash);
+            return new CombinationAtomMatchingTracker(logMatcher.id(), protoHash);
         default:
             ALOGE("Matcher \"%lld\" malformed", (long long)logMatcher.id());
             invalidConfigReason = createInvalidConfigReasonWithMatcher(
@@ -249,7 +249,7 @@ optional<InvalidConfigReason> handleMetricWithStateLink(const int64_t metricId,
     return nullopt;
 }
 
-optional<InvalidConfigReason> handleMetricWithSampling(
+optional<InvalidConfigReason> handleMetricWithDimensionalSampling(
         const int64_t metricId, const DimensionalSamplingInfo& dimSamplingInfo,
         const vector<Matcher>& dimensionsInWhat, SamplingInfo& samplingInfo) {
     if (!dimSamplingInfo.has_sampled_what_field()) {
@@ -533,7 +533,7 @@ optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
 
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -718,7 +718,7 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
 
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -772,6 +772,12 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
                     INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
             return nullopt;
         }
+    }
+
+    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE, metric.id());
+        return nullopt;
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
@@ -949,7 +955,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
 
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -1102,7 +1108,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
 
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -1242,7 +1248,7 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     std::vector<Matcher> dimensionsInWhat;
     translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithSampling(
+        invalidConfigReason = handleMetricWithDimensionalSampling(
                 metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
         if (invalidConfigReason.has_value()) {
             return nullopt;
@@ -1307,7 +1313,7 @@ optional<InvalidConfigReason> initAtomMatchingTrackers(
     for (int i = 0; i < atomMatcherCount; i++) {
         const AtomMatcher& logMatcher = config.atom_matcher(i);
         sp<AtomMatchingTracker> tracker =
-                createAtomMatchingTracker(logMatcher, i, uidMap, invalidConfigReason);
+                createAtomMatchingTracker(logMatcher, uidMap, invalidConfigReason);
         if (tracker == nullptr) {
             return invalidConfigReason;
         }
@@ -1324,7 +1330,7 @@ optional<InvalidConfigReason> initAtomMatchingTrackers(
     vector<bool> stackTracker2(allAtomMatchingTrackers.size(), false);
     for (size_t matcherIndex = 0; matcherIndex < allAtomMatchingTrackers.size(); matcherIndex++) {
         auto& matcher = allAtomMatchingTrackers[matcherIndex];
-        invalidConfigReason = matcher->init(matcherConfigs, allAtomMatchingTrackers,
+        invalidConfigReason = matcher->init(matcherIndex, matcherConfigs, allAtomMatchingTrackers,
                                             atomMatchingTrackerMap, stackTracker2);
         if (invalidConfigReason.has_value()) {
             return invalidConfigReason;
