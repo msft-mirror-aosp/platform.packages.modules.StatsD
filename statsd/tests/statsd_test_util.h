@@ -803,7 +803,7 @@ std::vector<PackageInfo> buildPackageInfos(
         const std::vector<string>& names, const std::vector<int32_t>& uids,
         const std::vector<int64_t>& versions, const std::vector<std::string>& versionStrings,
         const std::vector<std::string>& installers,
-        const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<bool>& deleted,
+        const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<uint8_t>& deleted,
         const std::vector<uint32_t>& installerIndices, const bool hashStrings);
 
 template <typename T>
