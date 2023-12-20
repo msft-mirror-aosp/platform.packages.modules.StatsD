@@ -52,7 +52,7 @@ const vector<string> kVersionStrings{"v1", "v1", "v2"};
 const vector<string> kApps{kApp1, kApp2, kApp3};
 const vector<string> kInstallers{"", "", "com.android.vending"};
 const vector<vector<uint8_t>> kCertificateHashes{{'a', 'z'}, {'b', 'c'}, {'d', 'e'}};
-const vector<bool> kDeleted(3, false);
+const vector<uint8_t> kDeleted(3, false);
 
 void sendPackagesToStatsd(shared_ptr<StatsService> service, const vector<int32_t>& uids,
                           const vector<int64_t>& versions, const vector<string>& versionStrings,
@@ -214,7 +214,7 @@ TEST(UidMapTest, TestRemoveApp) {
     std::set<string> name_set = uidMap->getAppNamesFromUid(1000, true /* returnNormalized */);
     EXPECT_THAT(name_set, UnorderedElementsAre(kApp2));
 
-    vector<bool> deleted(kDeleted);
+    vector<uint8_t> deleted(kDeleted);
     deleted[0] = true;
     vector<PackageInfo> expectedPackageInfos =
             buildPackageInfos(kApps, kUids, kVersions, kVersionStrings, kInstallers,
@@ -299,7 +299,7 @@ TEST(UidMapTest, TestUpdateApp) {
     versionStrings[0] = "v40";
     vector<string> apps = concatenate(kApps, {"NeW_aPP1_NAmE", "NeW_aPP1_NAmE"});
     vector<string> installers = concatenate(kInstallers, {"com.android.vending", "new_installer"});
-    vector<bool> deleted = concatenate(kDeleted, {false, false});
+    vector<uint8_t> deleted = concatenate(kDeleted, {false, false});
     vector<vector<uint8_t>> certHashes = concatenate(kCertificateHashes, {{'a'}, {'b'}});
     vector<PackageInfo> expectedPackageInfos =
             buildPackageInfos(apps, uids, versions, versionStrings, installers, certHashes, deleted,

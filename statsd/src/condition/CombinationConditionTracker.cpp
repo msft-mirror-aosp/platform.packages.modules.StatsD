@@ -38,7 +38,7 @@ CombinationConditionTracker::~CombinationConditionTracker() {
 optional<InvalidConfigReason> CombinationConditionTracker::init(
         const vector<Predicate>& allConditionConfig,
         const vector<sp<ConditionTracker>>& allConditionTrackers,
-        const unordered_map<int64_t, int>& conditionIdIndexMap, vector<bool>& stack,
+        const unordered_map<int64_t, int>& conditionIdIndexMap, vector<uint8_t>& stack,
         vector<ConditionState>& conditionCache) {
     VLOG("Combination predicate init() %lld", (long long)mConditionId);
     if (mInitialized) {
@@ -203,7 +203,7 @@ void CombinationConditionTracker::evaluateCondition(
         const LogEvent& event, const std::vector<MatchingState>& eventMatcherValues,
         const std::vector<sp<ConditionTracker>>& mAllConditions,
         std::vector<ConditionState>& nonSlicedConditionCache,
-        std::vector<bool>& conditionChangedCache) {
+        std::vector<uint8_t>& conditionChangedCache) {
     // value is up to date.
     if (nonSlicedConditionCache[mIndex] != ConditionState::kNotEvaluated) {
         return;
