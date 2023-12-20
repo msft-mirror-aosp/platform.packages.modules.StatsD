@@ -30,21 +30,21 @@ namespace statsd {
 
 class SimpleAtomMatchingTracker : public AtomMatchingTracker {
 public:
-    SimpleAtomMatchingTracker(const int64_t& id, const int index, const uint64_t protoHash,
+    SimpleAtomMatchingTracker(const int64_t id, const uint64_t protoHash,
                               const SimpleAtomMatcher& matcher, const sp<UidMap>& uidMap);
 
     ~SimpleAtomMatchingTracker();
 
     optional<InvalidConfigReason> init(
-            const std::vector<AtomMatcher>& allAtomMatchers,
+            int matcherIndex, const std::vector<AtomMatcher>& allAtomMatchers,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& matcherMap, std::vector<bool>& stack) override;
 
     optional<InvalidConfigReason> onConfigUpdated(
-            const AtomMatcher& matcher, const int index,
+            const AtomMatcher& matcher,
             const std::unordered_map<int64_t, int>& atomMatchingTrackerMap) override;
 
-    void onLogEvent(const LogEvent& event,
+    void onLogEvent(const LogEvent& event, int matcherIndex,
                     const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
                     std::vector<MatchingState>& matcherResults) override;
 
