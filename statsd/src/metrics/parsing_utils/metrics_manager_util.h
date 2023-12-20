@@ -36,12 +36,11 @@ namespace statsd {
 // Create a AtomMatchingTracker.
 // input:
 // [logMatcher]: the input AtomMatcher from the StatsdConfig
-// [index]: the index of the matcher
 // [invalidConfigReason]: logging ids if config is invalid
 // output:
 // new AtomMatchingTracker, or null if the tracker is unable to be created
 sp<AtomMatchingTracker> createAtomMatchingTracker(
-        const AtomMatcher& logMatcher, const int index, const sp<UidMap>& uidMap,
+        const AtomMatcher& logMatcher, const sp<UidMap>& uidMap,
         optional<InvalidConfigReason>& invalidConfigReason);
 
 // Create a ConditionTracker.
