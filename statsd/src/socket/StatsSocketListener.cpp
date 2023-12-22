@@ -38,10 +38,10 @@ namespace android {
 namespace os {
 namespace statsd {
 
-StatsSocketListener::StatsSocketListener(std::shared_ptr<LogEventQueue> queue,
+StatsSocketListener::StatsSocketListener(const std::shared_ptr<LogEventQueue>& queue,
                                          const std::shared_ptr<LogEventFilter>& logEventFilter)
     : SocketListener(getLogSocket(), false /*start listen*/),
-      mQueue(std::move(queue)),
+      mQueue(queue),
       mLogEventFilter(logEventFilter) {
 }
 

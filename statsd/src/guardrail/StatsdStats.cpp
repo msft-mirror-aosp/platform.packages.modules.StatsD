@@ -1124,7 +1124,7 @@ int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
     }
 }
 
-bool StatsdStats::hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const {
+bool StatsdStats::hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const {
     return configStats->device_info_table_creation_failed || configStats->db_corrupted_count ||
            configStats->db_deletion_size_exceeded_limit || configStats->db_deletion_stat_failed ||
            configStats->db_deletion_config_invalid || configStats->db_deletion_too_old ||

@@ -824,7 +824,7 @@ private:
 
     // Stores the stats for the configs that are no longer in use.
     // The size of the vector is capped by kMaxIceBoxSize.
-    std::list<const std::shared_ptr<ConfigStats>> mIceBox;
+    std::list<std::shared_ptr<ConfigStats>> mIceBox;
 
     // Stores the number of times a pushed atom is logged and skipped (if skipped).
     // The size of the vector is the largest pushed atom id in atoms.proto + 1. Atoms
@@ -1001,7 +1001,7 @@ private:
 
     int getPushedAtomDropsLocked(int atomId) const;
 
-    bool hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const;
+    bool hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const;
 
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference

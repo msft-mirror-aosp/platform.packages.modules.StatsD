@@ -38,7 +38,7 @@ namespace statsd {
 
 class StatsSocketListener : public SocketListener, public virtual RefBase {
 public:
-    explicit StatsSocketListener(std::shared_ptr<LogEventQueue> queue,
+    explicit StatsSocketListener(const std::shared_ptr<LogEventQueue>& queue,
                                  const std::shared_ptr<LogEventFilter>& logEventFilter);
 
     virtual ~StatsSocketListener() = default;
