@@ -2155,7 +2155,7 @@ PackageInfo buildPackageInfo(const string& name, const int32_t uid, const int64_
 vector<PackageInfo> buildPackageInfos(
         const vector<string>& names, const vector<int32_t>& uids, const vector<int64_t>& versions,
         const vector<string>& versionStrings, const vector<string>& installers,
-        const vector<vector<uint8_t>>& certHashes, const vector<bool>& deleted,
+        const vector<vector<uint8_t>>& certHashes, const vector<uint8_t>& deleted,
         const vector<uint32_t>& installerIndices, const bool hashStrings) {
     vector<PackageInfo> packageInfos;
     for (int i = 0; i < uids.size(); i++) {

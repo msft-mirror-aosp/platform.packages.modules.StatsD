@@ -127,7 +127,7 @@ TEST_F(EventMetricE2eTest, TestRepeatedFieldsAndEmptyArrays) {
     bool boolArray[boolArrayLength];
     boolArray[0] = 1;
     boolArray[1] = 0;
-    vector<bool> boolArrayVector = {1, 0};
+    vector<uint8_t> boolArrayVector = {1, 0};
     vector<int> enumArray = {TestAtomReported::ON, TestAtomReported::OFF};
 
     events.push_back(CreateTestAtomReportedEventVariableRepeatedFields(
