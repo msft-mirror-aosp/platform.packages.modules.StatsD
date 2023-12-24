@@ -31,7 +31,7 @@ public:
 
     virtual ~EventMatcherWizard(){};
 
-    MatchingState matchLogEvent(const LogEvent& event, int matcher_index);
+    MatchingState matchLogEvent(const LogEvent& event, int matcherIndex);
 
 private:
     std::vector<sp<AtomMatchingTracker>> mAllEventMatchers;
