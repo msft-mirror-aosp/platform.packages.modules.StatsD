@@ -31,7 +31,6 @@ namespace {
 
 StatsdConfig CreateStatsdConfigForPushedEvent(const GaugeMetric::SamplingType sampling_type) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     *config.add_atom_matcher() = CreateMoveToBackgroundAtomMatcher();
     *config.add_atom_matcher() = CreateMoveToForegroundAtomMatcher();
 
@@ -72,7 +71,6 @@ StatsdConfig CreateStatsdConfigForPushedEvent(const GaugeMetric::SamplingType sa
 StatsdConfig CreateStatsdConfigForRepeatedFieldsPushedEvent(
         const GaugeMetric::SamplingType sampling_type) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedAtomMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -343,7 +341,7 @@ TEST_F(GaugeMetricE2ePushedTest, TestRepeatedFieldsForPushedEvent) {
         bool boolArray[boolArrayLength];
         boolArray[0] = 1;
         boolArray[1] = 0;
-        vector<bool> boolArrayVector = {1, 0};
+        vector<uint8_t> boolArrayVector = {1, 0};
         vector<int> enumArray = {TestAtomReported::ON, TestAtomReported::OFF};
 
         events.push_back(CreateTestAtomReportedEventVariableRepeatedFields(
@@ -418,7 +416,6 @@ TEST_F(GaugeMetricE2ePushedTest, TestDimensionalSampling) {
     ShardOffsetProvider::getInstance().setShardOffset(5);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher appCrashMatcher =
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
