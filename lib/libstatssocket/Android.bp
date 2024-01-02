@@ -52,25 +52,12 @@ cc_defaults {
     ],
 }
 
-cc_library {
+cc_library_shared {
     name: "libstatssocket",
     defaults: [
         "libstatssocket_defaults",
     ],
     host_supported: true,
-    target: {
-        // On android, libstatssocket should only be linked as a shared lib
-        android: {
-            static: {
-                enabled: false,
-            },
-        },
-        host: {
-            shared: {
-                enabled: false,
-            },
-        },
-    },
     stl: "libc++_static",
 
     // enumerate stable entry points for APEX use
