@@ -50,7 +50,7 @@ optional<InvalidConfigReason> determineMatcherUpdateStatus(
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
         const std::vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-        std::vector<UpdateStatus>& matchersToUpdate, std::vector<bool>& cycleTracker);
+        std::vector<UpdateStatus>& matchersToUpdate, std::vector<uint8_t>& cycleTracker);
 
 // Updates the AtomMatchingTrackers.
 // input:
@@ -91,7 +91,7 @@ optional<InvalidConfigReason> determineConditionUpdateStatus(
         const std::vector<sp<ConditionTracker>>& oldConditionTrackers,
         const std::unordered_map<int64_t, int>& newConditionTrackerMap,
         const std::set<int64_t>& replacedMatchers, std::vector<UpdateStatus>& conditionsToUpdate,
-        std::vector<bool>& cycleTracker);
+        std::vector<uint8_t>& cycleTracker);
 
 // Updates ConditionTrackers
 // input:
