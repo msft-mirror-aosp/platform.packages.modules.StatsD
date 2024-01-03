@@ -35,7 +35,6 @@ const int64_t metricId = 123456;
 
 StatsdConfig CreateStatsdConfig(bool useCondition = true) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
     auto pulledAtomMatcher =
             CreateSimpleAtomMatcher("TestMatcher", util::SUBSYSTEM_SLEEP_STATE);
@@ -67,7 +66,6 @@ StatsdConfig CreateStatsdConfig(bool useCondition = true) {
 
 StatsdConfig CreateStatsdConfigWithStates() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");     // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     auto pulledAtomMatcher = CreateSimpleAtomMatcher("TestMatcher", util::SUBSYSTEM_SLEEP_STATE);
@@ -652,7 +650,6 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
 TEST(ValueMetricE2eTest, TestInitWithSlicedState) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto pulledAtomMatcher =
             CreateSimpleAtomMatcher("TestMatcher", util::SUBSYSTEM_SLEEP_STATE);
@@ -706,7 +703,6 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState) {
 TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto cpuTimePerUidMatcher =
             CreateSimpleAtomMatcher("CpuTimePerUidMatcher", util::CPU_TIME_PER_UID);
@@ -766,7 +762,6 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions) {
 TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto cpuTimePerUidMatcher =
             CreateSimpleAtomMatcher("CpuTimePerUidMatcher", util::CPU_TIME_PER_UID);
@@ -809,7 +804,6 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions) {
 TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);

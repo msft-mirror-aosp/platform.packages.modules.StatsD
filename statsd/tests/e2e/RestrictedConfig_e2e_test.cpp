@@ -34,7 +34,6 @@ int64_t anotherMetricId;
 
 StatsdConfig CreateConfigWithOneMetric() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     AtomMatcher atomMatcher = CreateSimpleAtomMatcher("testmatcher", atomTag);
     *config.add_atom_matcher() = atomMatcher;
 
@@ -45,7 +44,6 @@ StatsdConfig CreateConfigWithOneMetric() {
 }
 StatsdConfig CreateConfigWithTwoMetrics() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     AtomMatcher atomMatcher = CreateSimpleAtomMatcher("testmatcher", atomTag);
     *config.add_atom_matcher() = atomMatcher;
 
@@ -320,7 +318,8 @@ TEST_F(RestrictedConfigE2ETest, TestSendRestrictedMetricsChangedBroadcast) {
     EXPECT_THAT(receivedMetricIds, UnorderedElementsAre(metricId));
 
     // Send an invalid config. Should receive empty list.
-    config.clear_allowed_log_source();
+    auto invalidCountMetric = config.add_count_metric();
+    invalidCountMetric->set_what(0);
     sendConfig(config);
     EXPECT_EQ(receiveCount, 5);
     EXPECT_THAT(receivedMetricIds, IsEmpty());
