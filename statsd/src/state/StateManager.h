@@ -65,7 +65,7 @@ public:
     // original state value mapped to the given query key. The state value is
     // stored and output in a FieldValue class.
     // Returns false if the StateTracker doesn't exist.
-    bool getStateValue(const int32_t atomId, const HashableDimensionKey& queryKey,
+    bool getStateValue(int32_t atomId, const HashableDimensionKey& queryKey,
                        FieldValue* output) const;
 
     // Updates mAllowedLogSources with the latest uids for the packages that are allowed to log.
@@ -77,7 +77,7 @@ public:
         return mStateTrackers.size();
     }
 
-    inline int getListenersCount(const int32_t atomId) const {
+    inline int getListenersCount(int32_t atomId) const {
         auto it = mStateTrackers.find(atomId);
         if (it != mStateTrackers.end()) {
             return it->second->getListenersCount();

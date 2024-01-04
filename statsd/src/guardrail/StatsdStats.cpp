@@ -545,7 +545,7 @@ void StatsdStats::setCurrentUidMapMemory(int bytes) {
     mUidMapStats.bytes_used = bytes;
 }
 
-void StatsdStats::noteConditionDimensionSize(const ConfigKey& key, const int64_t& id, int size) {
+void StatsdStats::noteConditionDimensionSize(const ConfigKey& key, const int64_t id, int size) {
     lock_guard<std::mutex> lock(mLock);
     // if name doesn't exist before, it will create the key with count 0.
     auto statsIt = mConfigStats.find(key);
@@ -559,7 +559,7 @@ void StatsdStats::noteConditionDimensionSize(const ConfigKey& key, const int64_t
     }
 }
 
-void StatsdStats::noteMetricDimensionSize(const ConfigKey& key, const int64_t& id, int size) {
+void StatsdStats::noteMetricDimensionSize(const ConfigKey& key, const int64_t id, int size) {
     lock_guard<std::mutex> lock(mLock);
     // if name doesn't exist before, it will create the key with count 0.
     auto statsIt = mConfigStats.find(key);
@@ -572,8 +572,8 @@ void StatsdStats::noteMetricDimensionSize(const ConfigKey& key, const int64_t& i
     }
 }
 
-void StatsdStats::noteMetricDimensionInConditionSize(
-        const ConfigKey& key, const int64_t& id, int size) {
+void StatsdStats::noteMetricDimensionInConditionSize(const ConfigKey& key, const int64_t id,
+                                                     int size) {
     lock_guard<std::mutex> lock(mLock);
     // if name doesn't exist before, it will create the key with count 0.
     auto statsIt = mConfigStats.find(key);
@@ -586,7 +586,7 @@ void StatsdStats::noteMetricDimensionInConditionSize(
     }
 }
 
-void StatsdStats::noteMatcherMatched(const ConfigKey& key, const int64_t& id) {
+void StatsdStats::noteMatcherMatched(const ConfigKey& key, const int64_t id) {
     lock_guard<std::mutex> lock(mLock);
 
     auto statsIt = mConfigStats.find(key);
@@ -596,7 +596,7 @@ void StatsdStats::noteMatcherMatched(const ConfigKey& key, const int64_t& id) {
     statsIt->second->matcher_stats[id]++;
 }
 
-void StatsdStats::noteAnomalyDeclared(const ConfigKey& key, const int64_t& id) {
+void StatsdStats::noteAnomalyDeclared(const ConfigKey& key, const int64_t id) {
     lock_guard<std::mutex> lock(mLock);
     auto statsIt = mConfigStats.find(key);
     if (statsIt == mConfigStats.end()) {

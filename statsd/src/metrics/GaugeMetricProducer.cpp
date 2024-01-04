@@ -617,7 +617,7 @@ void GaugeMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
 // bucket.
 // if data is pushed, onMatchedLogEvent will only be called through onConditionChanged() inside
 // the GaugeMetricProducer while holding the lock.
-void GaugeMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void GaugeMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
 
     if (eventTimeNs < currentBucketEndTimeNs) {
@@ -636,8 +636,8 @@ void GaugeMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
          (long long)mCurrentBucketStartTimeNs);
 }
 
-void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                   const int64_t& nextBucketStartTimeNs) {
+void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                   const int64_t nextBucketStartTimeNs) {
     int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
     int64_t bucketEndTime = eventTimeNs < fullBucketEndTimeNs ? eventTimeNs : fullBucketEndTimeNs;
 
