@@ -171,7 +171,6 @@ TEST(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
 
 StatsdConfig MakeConfig(bool includeMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     if (includeMetric) {
         auto appCrashMatcher = CreateProcessCrashAtomMatcher();
@@ -186,7 +185,6 @@ StatsdConfig MakeConfig(bool includeMetric) {
 
 StatsdConfig makeRestrictedConfig(bool includeMetric = false) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     config.set_restricted_metrics_delegate_package_name("delegate");
 
     if (includeMetric) {
@@ -313,7 +311,6 @@ TEST(StatsLogProcessorTest, TestReportIncludesSubConfig) {
     auto annotation = config.add_annotation();
     annotation->set_field_int64(1);
     annotation->set_field_int32(2);
-    config.add_allowed_log_source("AID_ROOT");
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
@@ -353,7 +350,6 @@ TEST(StatsLogProcessorTest, TestReportIncludesSubConfig) {
 TEST(StatsLogProcessorTest, TestOnDumpReportEraseData) {
     // Setup a simple config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = wakelockAcquireMatcher;
 
@@ -470,7 +466,8 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
     EXPECT_EQ(0, StatsdStats::getInstance().mIceBox.size());
 
     StatsdConfig invalidConfig = MakeConfig(true);
-    invalidConfig.clear_allowed_log_source();
+    auto invalidCountMetric = invalidConfig.add_count_metric();
+    invalidCountMetric->set_what(0);
     p.OnConfigUpdated(0, key, invalidConfig);
     EXPECT_EQ(0, p.mMetricsManagers.size());
     // The current configs should not contain the invalid config.
@@ -489,7 +486,6 @@ TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
     StatsdConfig config1;
     int64_t cfgId1 = 12341;
     config1.set_id(cfgId1);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config1.add_atom_matcher() = wakelockAcquireMatcher;
 
@@ -511,7 +507,6 @@ TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
     StatsdConfig config2;
     int64_t cfgId2 = 12342;
     config2.set_id(cfgId2);
-    config2.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     *config2.add_atom_matcher() = wakelockAcquireMatcher;
 
     long metricId3 = 1234561;
@@ -540,7 +535,6 @@ TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
     StatsdConfig config3;
     int64_t cfgId3 = 12343;
     config3.set_id(cfgId3);
-    config3.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     *config3.add_atom_matcher() = wakelockAcquireMatcher;
 
     long metricId5 = 1234565;
@@ -840,7 +834,6 @@ TEST(StatsLogProcessorTest, TestActivationOnBoot) {
 
     StatsdConfig config1;
     config1.set_id(12341);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config1.add_atom_matcher() = wakelockAcquireMatcher;
 
@@ -964,7 +957,6 @@ TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivations) {
     // Metric 2: Always active
     StatsdConfig config1;
     config1.set_id(12341);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     *config1.add_atom_matcher() = wakelockAcquireMatcher;
@@ -1365,7 +1357,6 @@ TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivationsDifferentActi
     // Metric 2: Always active
     StatsdConfig config1;
     config1.set_id(12341);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     *config1.add_atom_matcher() = wakelockAcquireMatcher;
@@ -1629,7 +1620,6 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
     // Metric 3: Always active
     StatsdConfig config1;
     config1.set_id(configId);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     auto jobStartMatcher = CreateStartScheduledJobAtomMatcher();

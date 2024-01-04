@@ -15,25 +15,20 @@
  */
 package android.cts.statsd.metadata;
 
+import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 
-import android.cts.statsd.atom.AtomTestCase;
-
-import com.android.internal.os.StatsdConfigProto;
+import com.android.compatibility.common.util.ApiLevelUtil;
 import com.android.internal.os.StatsdConfigProto.StatsdConfig;
-import com.android.internal.os.StatsdConfigProto.Subscription;
-import com.android.internal.os.StatsdConfigProto.TimeUnit;
-import com.android.internal.os.StatsdConfigProto.ValueMetric;
-import com.android.os.AtomsProto.AnomalyDetected;
-import com.android.os.AtomsProto.AppBreadcrumbReported;
 import com.android.os.AtomsProto.Atom;
-import com.android.os.StatsLog.EventMetricData;
 import com.android.os.StatsLog.StatsdStatsReport;
 import com.android.os.StatsLog.StatsdStatsReport.ConfigStats;
+import com.android.os.StatsLog.StatsdStatsReport.LogLossStats;
+import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats;
+import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid;
+import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid.AtomIdLossStats;
 import com.android.tradefed.log.LogUtil;
-
-
-import java.util.List;
+import java.util.HashSet;
 
 /**
  * Statsd Metadata tests.
@@ -106,5 +101,109 @@ public class MetadataTests extends MetadataTestCase {
         }
         assertWithMessage("Did not find an active CTS config after the TTL")
                 .that(foundActiveConfig).isTrue();
+    }
+
+    private static final int LIB_STATS_SOCKET_QUEUE_OVERFLOW_ERROR_CODE = 1;
+    private static final int EVENT_STORM_ITERATIONS_COUNT = 10;
+
+    /** Tests that logging many atoms back to back leads to socket overflow and data loss. */
+    public void testAtomLossInfoCollection() throws Exception {
+        runDeviceTests(DEVICE_SIDE_TEST_PACKAGE, ".StatsdStressLogging", "testLogAtomsBackToBack");
+
+        StatsdStatsReport report = getStatsdStatsReport();
+        assertThat(report).isNotNull();
+        boolean detectedLossEventForAppBreadcrumbAtom = false;
+        for (LogLossStats lossStats : report.getDetectedLogLossList()) {
+            if (lossStats.getLastTag() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
+                detectedLossEventForAppBreadcrumbAtom = true;
+            }
+        }
+
+        assertThat(detectedLossEventForAppBreadcrumbAtom).isTrue();
+    }
+
+    /** Tests that SystemServer logged atoms in case of loss event has error code 1. */
+    public void testSystemServerLossErrorCode() throws Exception {
+        // Starting from VanillaIceCream libstatssocket uses worker thread & dedicated logging queue
+        // to handle atoms for system server (logged with UID 1000)
+        // this test might fail for previous versions due to loss stats last error code check
+        // will not pass
+
+        // Due to info about system server atom loss could be overwritten by APP_BREADCRUMB_REPORTED
+        // loss info run several iterations of this test
+        for (int i = 0; i < EVENT_STORM_ITERATIONS_COUNT; i++) {
+            LogUtil.CLog.d("testSystemServerLossErrorCode iteration #" + i);
+            // logging back to back many atoms to force socket overflow
+            runDeviceTests(
+                    DEVICE_SIDE_TEST_PACKAGE, ".StatsdStressLogging", "testLogAtomsBackToBack");
+
+            StatsdStatsReport report = getStatsdStatsReport();
+            assertThat(report).isNotNull();
+            boolean detectedLossEventForAppBreadcrumbAtom = false;
+            boolean detectedLossEventForSystemServer = false;
+            for (LogLossStats lossStats : report.getDetectedLogLossList()) {
+                if (lossStats.getLastTag() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
+                    detectedLossEventForAppBreadcrumbAtom = true;
+                }
+
+                // it should not happen due to atoms from system servers logged via queue
+                // which should be sufficient to hold them for some time to overcome the
+                // socket overflow time frame
+                if (lossStats.getUid() == 1000) {
+                    detectedLossEventForSystemServer = true;
+                    // but if loss happens it should be annotated with predefined error code == 1
+                    assertThat(lossStats.getLastError())
+                            .isEqualTo(LIB_STATS_SOCKET_QUEUE_OVERFLOW_ERROR_CODE);
+                }
+            }
+
+            assertThat(detectedLossEventForAppBreadcrumbAtom).isTrue();
+            assertThat(detectedLossEventForSystemServer).isFalse();
+
+            boolean detectedLossEventForAppBreadcrumbAtomViaSocketLossStats = false;
+            for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+                for (AtomIdLossStats atomLossStats : lossStats.getAtomIdLossStatsList()) {
+                    if (atomLossStats.getAtomId() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
+                        detectedLossEventForAppBreadcrumbAtomViaSocketLossStats = true;
+                    }
+                }
+            }
+
+            assertThat(detectedLossEventForAppBreadcrumbAtomViaSocketLossStats).isTrue();
+        }
+    }
+
+    /** Test libstatssocket logging queue atom id distribution collection */
+    public void testAtomIdLossDistributionCollection() throws Exception {
+        if (!ApiLevelUtil.codenameEquals(getDevice(), "VanillaIceCream")) {
+            return;
+        }
+
+        final String appTestApk = "StatsdAtomStormApp.apk";
+        final String app2TestApk = "StatsdAtomStormApp2.apk";
+
+        final String appTestPkg = "com.android.statsd.app.atomstorm";
+        final String app2TestPkg = "com.android.statsd.app.atomstorm.copy";
+
+        getDevice().uninstallPackage(appTestPkg);
+        getDevice().uninstallPackage(app2TestPkg);
+        installPackage(appTestApk, true);
+        installPackage(app2TestApk, true);
+
+        // run reference test app with UID 1
+        runDeviceTests(appTestPkg, null, null);
+        // run reference test app with UID 2
+        runDeviceTests(app2TestPkg, null, null);
+
+        StatsdStatsReport report = getStatsdStatsReport();
+        assertThat(report).isNotNull();
+        HashSet<Integer> reportedUids = new HashSet<Integer>();
+        for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+            reportedUids.add(lossStats.getUid());
+        }
+        assertThat(reportedUids.size()).isGreaterThan(1);
+
+        getDevice().uninstallPackage(appTestPkg);
+        getDevice().uninstallPackage(app2TestPkg);
     }
 }

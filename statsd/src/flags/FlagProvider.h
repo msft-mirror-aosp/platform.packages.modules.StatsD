@@ -136,11 +136,9 @@ private:
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlagDisabled);
     FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotation);
     FRIEND_TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation);
-    FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotationFlagDisabled);
     FRIEND_TEST(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation);
     FRIEND_TEST(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType);
     FRIEND_TEST(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel);
-    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestRestrictionCategoryAnnotationFlagDisabled);
 };
 
 }  // namespace statsd

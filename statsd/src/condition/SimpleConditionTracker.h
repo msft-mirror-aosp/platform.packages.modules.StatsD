@@ -38,8 +38,8 @@ public:
     optional<InvalidConfigReason> init(
             const std::vector<Predicate>& allConditionConfig,
             const std::vector<sp<ConditionTracker>>& allConditionTrackers,
-            const std::unordered_map<int64_t, int>& conditionIdIndexMap, std::vector<bool>& stack,
-            std::vector<ConditionState>& conditionCache) override;
+            const std::unordered_map<int64_t, int>& conditionIdIndexMap,
+            std::vector<uint8_t>& stack, std::vector<ConditionState>& conditionCache) override;
 
     optional<InvalidConfigReason> onConfigUpdated(
             const std::vector<Predicate>& allConditionProtos, const int index,
@@ -51,7 +51,7 @@ public:
                            const std::vector<MatchingState>& eventMatcherValues,
                            const std::vector<sp<ConditionTracker>>& mAllConditions,
                            std::vector<ConditionState>& conditionCache,
-                           std::vector<bool>& changedCache) override;
+                           std::vector<uint8_t>& changedCache) override;
 
     void isConditionMet(const ConditionKey& conditionParameters,
                         const std::vector<sp<ConditionTracker>>& allConditions,
@@ -120,12 +120,12 @@ private:
                            const std::unordered_map<int64_t, int>& logTrackerMap);
 
     void handleStopAll(std::vector<ConditionState>& conditionCache,
-                       std::vector<bool>& changedCache);
+                       std::vector<uint8_t>& changedCache);
 
     void handleConditionEvent(const HashableDimensionKey& outputKey, bool matchStart,
                               ConditionState* conditionCache, bool* changedCache);
 
-    bool hitGuardRail(const HashableDimensionKey& newKey);
+    bool hitGuardRail(const HashableDimensionKey& newKey) const;
 
     void dumpState();
 

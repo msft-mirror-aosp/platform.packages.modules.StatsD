@@ -37,7 +37,8 @@ using ::util::ProtoReader;
 
 namespace {
 
-Field getField(int32_t tag, const vector<int32_t>& pos, int32_t depth, const vector<bool>& last) {
+Field getField(int32_t tag, const vector<int32_t>& pos, int32_t depth,
+               const vector<uint8_t>& last) {
     Field f(tag, (int32_t*)pos.data(), depth);
 
     // only decorate last position for depths with repeated fields (depth 1)
