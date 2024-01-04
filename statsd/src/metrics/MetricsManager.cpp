@@ -213,27 +213,20 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 
 void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
     // Init allowed pushed atom uids.
-    if (config.allowed_log_source_size() == 0) {
-        ALOGE("Log source allowlist is empty! This config won't get any data. Suggest adding at "
-              "least AID_SYSTEM and AID_STATSD to the allowed_log_source field.");
-        mInvalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_LOG_SOURCE_ALLOWLIST_EMPTY);
-    } else {
-        for (const auto& source : config.allowed_log_source()) {
-            auto it = UidMap::sAidToUidMapping.find(source);
-            if (it != UidMap::sAidToUidMapping.end()) {
-                mAllowedUid.push_back(it->second);
-            } else {
-                mAllowedPkg.push_back(source);
-            }
-        }
-
-        if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
-            ALOGE("Too many log sources. This is likely to be an error in the config.");
-            mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    for (const auto& source : config.allowed_log_source()) {
+        auto it = UidMap::sAidToUidMapping.find(source);
+        if (it != UidMap::sAidToUidMapping.end()) {
+            mAllowedUid.push_back(it->second);
         } else {
-            initAllowedLogSources();
+            mAllowedPkg.push_back(source);
         }
+    }
+
+    if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
+        ALOGE("Too many log sources. This is likely to be an error in the config.");
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    } else {
+        initAllowedLogSources();
     }
 
     // Init default allowed pull atom uids.
@@ -519,7 +512,8 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
         return true;
     }
 
-    if (event.GetUid() > AID_ROOT && event.GetUid() < AID_SHELL) {
+    if (event.GetUid() == AID_ROOT ||
+        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL)) {
         // enable atoms logged from pre-installed Android system services
         return true;
     }
@@ -624,8 +618,8 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
                                        MatchingState::kNotComputed);
 
     for (const auto& matcherIndex : matchersIt->second) {
-        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                           matcherCache);
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, matcherIndex,
+                                                           mAllAtomMatchingTrackers, matcherCache);
     }
 
     // Set of metrics that received an activation cancellation.
@@ -666,7 +660,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     mIsActive = isActive;
 
     // A bitmap to see which ConditionTracker needs to be re-evaluated.
-    vector<bool> conditionToBeEvaluated(mAllConditionTrackers.size(), false);
+    vector<uint8_t> conditionToBeEvaluated(mAllConditionTrackers.size(), false);
 
     for (const auto& pair : mTrackerToConditionMap) {
         if (matcherCache[pair.first] == MatchingState::kMatched) {
@@ -680,7 +674,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     vector<ConditionState> conditionCache(mAllConditionTrackers.size(),
                                           ConditionState::kNotEvaluated);
     // A bitmap to track if a condition has changed value.
-    vector<bool> changedCache(mAllConditionTrackers.size(), false);
+    vector<uint8_t> changedCache(mAllConditionTrackers.size(), false);
     for (size_t i = 0; i < mAllConditionTrackers.size(); i++) {
         if (conditionToBeEvaluated[i] == false) {
             continue;

@@ -986,7 +986,9 @@ std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs) {
     return logEvent;
 }
 
-std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs, const BatteryPluggedStateEnum state) {
+std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs,
+                                                         const BatteryPluggedStateEnum state,
+                                                         int32_t uid) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, util::PLUGGED_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
@@ -994,7 +996,7 @@ std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestam
     AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
     AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
-    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/uid, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
     return logEvent;
 }
@@ -1489,8 +1491,8 @@ sp<EventMatcherWizard> createEventMatcherWizard(
     }
     uint64_t matcherHash = 0x12345678;
     int64_t matcherId = 678;
-    return new EventMatcherWizard({new SimpleAtomMatchingTracker(
-            matcherId, matcherIndex, matcherHash, atomMatcher, uidMap)});
+    return new EventMatcherWizard(
+            {new SimpleAtomMatchingTracker(matcherId, matcherHash, atomMatcher, uidMap)});
 }
 
 StatsDimensionsValueParcel CreateAttributionUidDimensionsValueParcel(const int atomId,
@@ -2153,7 +2155,7 @@ PackageInfo buildPackageInfo(const string& name, const int32_t uid, const int64_
 vector<PackageInfo> buildPackageInfos(
         const vector<string>& names, const vector<int32_t>& uids, const vector<int64_t>& versions,
         const vector<string>& versionStrings, const vector<string>& installers,
-        const vector<vector<uint8_t>>& certHashes, const vector<bool>& deleted,
+        const vector<vector<uint8_t>>& certHashes, const vector<uint8_t>& deleted,
         const vector<uint32_t>& installerIndices, const bool hashStrings) {
     vector<PackageInfo> packageInfos;
     for (int i = 0; i < uids.size(); i++) {
