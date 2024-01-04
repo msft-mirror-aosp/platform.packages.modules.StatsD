@@ -30,7 +30,6 @@ namespace {
 
 StatsdConfig CreateStatsdConfig() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     auto saverModeMatcher = CreateBatterySaverModeStartAtomMatcher();
     auto crashMatcher = CreateProcessCrashAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
@@ -62,7 +61,6 @@ StatsdConfig CreateStatsdConfig() {
 
 StatsdConfig CreateStatsdConfigWithOneDeactivation() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     auto saverModeMatcher = CreateBatterySaverModeStartAtomMatcher();
     auto crashMatcher = CreateProcessCrashAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
@@ -97,7 +95,6 @@ StatsdConfig CreateStatsdConfigWithOneDeactivation() {
 
 StatsdConfig CreateStatsdConfigWithTwoDeactivations() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     auto saverModeMatcher = CreateBatterySaverModeStartAtomMatcher();
     auto crashMatcher = CreateProcessCrashAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
@@ -136,7 +133,6 @@ StatsdConfig CreateStatsdConfigWithTwoDeactivations() {
 
 StatsdConfig CreateStatsdConfigWithSameDeactivations() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     auto saverModeMatcher = CreateBatterySaverModeStartAtomMatcher();
     auto crashMatcher = CreateProcessCrashAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
@@ -172,7 +168,6 @@ StatsdConfig CreateStatsdConfigWithSameDeactivations() {
 
 StatsdConfig CreateStatsdConfigWithTwoMetricsTwoDeactivations() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     auto saverModeMatcher = CreateBatterySaverModeStartAtomMatcher();
     auto crashMatcher = CreateProcessCrashAtomMatcher();
     auto foregroundMatcher = CreateMoveToForegroundAtomMatcher();

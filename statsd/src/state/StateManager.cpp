@@ -43,8 +43,9 @@ void StateManager::clear() {
 void StateManager::onLogEvent(const LogEvent& event) {
     // Only process state events from uids in AID_* and packages that are whitelisted in
     // mAllowedPkg.
-    // Whitelisted AIDs are AID_ROOT and all AIDs in [1000, 2000)
-    if (event.GetUid() == AID_ROOT || (event.GetUid() >= 1000 && event.GetUid() < 2000) ||
+    // Allowlisted AIDs are AID_ROOT and all AIDs in [1000, 2000) which is [AID_SYSTEM, AID_SHELL)
+    if (event.GetUid() == AID_ROOT ||
+        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL) ||
         mAllowedLogSources.find(event.GetUid()) != mAllowedLogSources.end()) {
         if (mStateTrackers.find(event.GetTagId()) != mStateTrackers.end()) {
             mStateTrackers[event.GetTagId()]->onLogEvent(event);

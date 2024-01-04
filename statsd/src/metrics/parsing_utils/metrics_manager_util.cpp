@@ -67,7 +67,7 @@ bool hasLeafNode(const FieldMatcher& matcher) {
 }  // namespace
 
 sp<AtomMatchingTracker> createAtomMatchingTracker(
-        const AtomMatcher& logMatcher, const int index, const sp<UidMap>& uidMap,
+        const AtomMatcher& logMatcher, const sp<UidMap>& uidMap,
         optional<InvalidConfigReason>& invalidConfigReason) {
     string serializedMatcher;
     if (!logMatcher.SerializeToString(&serializedMatcher)) {
@@ -80,11 +80,11 @@ sp<AtomMatchingTracker> createAtomMatchingTracker(
     switch (logMatcher.contents_case()) {
         case AtomMatcher::ContentsCase::kSimpleAtomMatcher: {
             sp<AtomMatchingTracker> simpleAtomMatcher = new SimpleAtomMatchingTracker(
-                    logMatcher.id(), index, protoHash, logMatcher.simple_atom_matcher(), uidMap);
+                    logMatcher.id(), protoHash, logMatcher.simple_atom_matcher(), uidMap);
             return simpleAtomMatcher;
         }
         case AtomMatcher::ContentsCase::kCombination:
-            return new CombinationAtomMatchingTracker(logMatcher.id(), index, protoHash);
+            return new CombinationAtomMatchingTracker(logMatcher.id(), protoHash);
         default:
             ALOGE("Matcher \"%lld\" malformed", (long long)logMatcher.id());
             invalidConfigReason = createInvalidConfigReasonWithMatcher(
@@ -1313,7 +1313,7 @@ optional<InvalidConfigReason> initAtomMatchingTrackers(
     for (int i = 0; i < atomMatcherCount; i++) {
         const AtomMatcher& logMatcher = config.atom_matcher(i);
         sp<AtomMatchingTracker> tracker =
-                createAtomMatchingTracker(logMatcher, i, uidMap, invalidConfigReason);
+                createAtomMatchingTracker(logMatcher, uidMap, invalidConfigReason);
         if (tracker == nullptr) {
             return invalidConfigReason;
         }
@@ -1327,10 +1327,10 @@ optional<InvalidConfigReason> initAtomMatchingTrackers(
         matcherConfigs.push_back(logMatcher);
     }
 
-    vector<bool> stackTracker2(allAtomMatchingTrackers.size(), false);
+    vector<uint8_t> stackTracker2(allAtomMatchingTrackers.size(), false);
     for (size_t matcherIndex = 0; matcherIndex < allAtomMatchingTrackers.size(); matcherIndex++) {
         auto& matcher = allAtomMatchingTrackers[matcherIndex];
-        invalidConfigReason = matcher->init(matcherConfigs, allAtomMatchingTrackers,
+        invalidConfigReason = matcher->init(matcherIndex, matcherConfigs, allAtomMatchingTrackers,
                                             atomMatchingTrackerMap, stackTracker2);
         if (invalidConfigReason.has_value()) {
             return invalidConfigReason;
@@ -1388,7 +1388,7 @@ optional<InvalidConfigReason> initConditions(
         conditionConfigs.push_back(condition);
     }
 
-    vector<bool> stackTracker(allConditionTrackers.size(), false);
+    vector<uint8_t> stackTracker(allConditionTrackers.size(), false);
     for (size_t i = 0; i < allConditionTrackers.size(); i++) {
         auto& conditionTracker = allConditionTrackers[i];
         invalidConfigReason =

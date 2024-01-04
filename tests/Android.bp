@@ -29,6 +29,7 @@ java_test_host {
         "cts",
         "general-tests",
         "mts-statsd",
+        "mcts-statsd",
     ],
 
     libs: [
@@ -46,5 +47,7 @@ java_test_host {
     data: [
         "**/*.pbtxt",
         ":CtsStatsdApp",
+        ":StatsdAtomStormApp",
+        ":StatsdAtomStormApp2",
     ],
 }
