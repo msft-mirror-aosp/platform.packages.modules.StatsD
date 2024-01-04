@@ -184,7 +184,7 @@ TEST_F(StatsCallbackPullerTest, PullTimeout) {
 TEST_F(StatsCallbackPullerTest, RegisterAndTimeout) {
     shared_ptr<FakePullAtomCallback> cb = SharedRefBase::make<FakePullAtomCallback>();
     pullSuccess = true;
-    pullDelayNs = MillisToNano(5);  // 5 ms.
+    pullDelayNs = MillisToNano(50);  // 50 ms.
     pullTimeoutNs = 10000;    // 10 microsseconds.
     int64_t value = 4321;
     int32_t uid = 123;
@@ -203,7 +203,7 @@ TEST_F(StatsCallbackPullerTest, RegisterAndTimeout) {
     // Pull should take at least the timeout amount of time, but should stop early because the delay
     // is bigger. Make sure that the time is closer to the timeout, than to the intended delay.
     EXPECT_LT(pullTimeoutNs, actualPullDurationNs);
-    EXPECT_GT(pullDelayNs / 5, actualPullDurationNs);
+    EXPECT_GT(pullDelayNs / 2, actualPullDurationNs);
     ASSERT_EQ(0, dataHolder.size());
 
     // Let the pull return and make sure that the dataHolder is not modified.

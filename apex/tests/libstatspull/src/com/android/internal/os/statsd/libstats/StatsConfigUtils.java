@@ -34,6 +34,7 @@ import com.android.os.StatsLog.GaugeMetricData;
 import com.android.os.StatsLog.StatsLogReport;
 import com.android.os.StatsLog.StatsdStatsReport;
 import com.android.os.StatsLog.StatsdStatsReport.ConfigStats;
+import com.android.os.StatsLogEnums;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -101,7 +102,7 @@ public class StatsConfigUtils {
         assertThat(reportList.getReportsCount()).isEqualTo(1);
         ConfigMetricsReport report = reportList.getReports(0);
         assertThat(report.getDumpReportReason())
-                .isEqualTo(ConfigMetricsReport.DumpReportReason.GET_DATA_CALLED);
+                .isEqualTo(StatsLogEnums.DumpReportReason.GET_DATA_CALLED);
         return report;
 
     }

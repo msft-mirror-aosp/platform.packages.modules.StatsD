@@ -186,6 +186,15 @@ public:
     // Adds all atom ids referenced by matchers in the MetricsManager's config
     void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
 
+    // Gets the memory limit for the MetricsManager's config
+    inline size_t getMaxMetricsBytes() const {
+        return mMaxMetricsBytes;
+    }
+
+    inline size_t getTriggerGetDataBytes() const {
+        return mTriggerGetDataBytes;
+    }
+
 private:
     // For test only.
     inline int64_t getTtlEndNs() const { return mTtlEndNs; }
@@ -346,7 +355,19 @@ private:
     // If set, restricted metrics are only uploaded to the delegate.
     optional<string> mRestrictedMetricsDelegatePackageName = nullopt;
 
-    FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensions);
+    // Only called on config creation/update. Sets the memory limit in bytes for storing metrics.
+    void setMaxMetricsBytesFromConfig(const StatsdConfig& config);
+
+    // Only called on config creation/update. Sets the soft memory limit in bytes for storing
+    // metrics.
+    void setTriggerGetDataBytesFromConfig(const StatsdConfig& config);
+
+    // The memory limit in bytes for storing metrics
+    size_t mMaxMetricsBytes;
+
+    // The memory limit in bytes for triggering get data.
+    size_t mTriggerGetDataBytes;
+
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
@@ -381,7 +402,6 @@ private:
 
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
-    FRIEND_TEST(MetricsManagerTest, TestOnMetricRemoveCalled);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
@@ -408,7 +428,6 @@ private:
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedState);
     FRIEND_TEST(DurationMetricE2eTest, TestWithConditionAndSlicedState);
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStateMapped);
-    FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSuperset);
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset);
     FRIEND_TEST(DurationMetricE2eTest, TestUploadThreshold);
 

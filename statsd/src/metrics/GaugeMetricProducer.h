@@ -224,6 +224,9 @@ private:
 
     const size_t mGaugeAtomsPerDimensionLimit;
 
+    // Tracks if the dimension guardrail has been hit in the current report.
+    bool mDimensionGuardrailHit;
+
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsNoCondition);
@@ -239,6 +242,10 @@ private:
     FRIEND_TEST(GaugeMetricProducerTest_PartialBucket, TestPulled);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateGaugeMetrics);
+
+    FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
 };
 
 }  // namespace statsd

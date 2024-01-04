@@ -21,6 +21,8 @@
 #include <stdatomic.h>
 #include <sys/socket.h>
 
+__BEGIN_DECLS
+
 /**
  * Internal lock should not be exposed. This is bad design.
  * TODO: rewrite it in c++ code and encapsulate the functionality in a
@@ -43,5 +45,7 @@ struct android_log_transport_write {
     /* checks if the socket is closed */
     int (*isClosed)();
 };
+
+__END_DECLS
 
 #endif  // ANDROID_STATS_LOG_STATS_WRITER_H

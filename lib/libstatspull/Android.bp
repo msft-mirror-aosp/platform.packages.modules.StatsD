@@ -31,6 +31,7 @@ cc_defaults {
     cflags: [
         "-Wall",
         "-Werror",
+        "-Wthread-safety",
     ],
     export_include_dirs: ["include"],
     shared_libs: [
@@ -164,6 +165,7 @@ cc_test {
         "-Wno-unused-function",
         "-Wno-unused-parameter",
         "-Wno-deprecated-declarations",
+        "-Wthread-safety",
     ],
     require_root: true,
     min_sdk_version: "30",

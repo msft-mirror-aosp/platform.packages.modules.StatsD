@@ -148,7 +148,7 @@ protected:
 
     virtual shared_ptr<StatsService> createStatsService() {
         return SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
-                                                 /* LogEventFilter */ nullptr);
+                                                 std::make_shared<LogEventFilter>());
     }
 
     bool sendConfig(const StatsdConfig& config);
@@ -470,7 +470,12 @@ std::unique_ptr<LogEvent> CreateBatterySaverOnEvent(uint64_t timestampNs);
 std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs);
 
 // Create log event when battery state changes.
-std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs, const BatteryPluggedStateEnum state);
+std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs,
+                                                         const BatteryPluggedStateEnum state,
+                                                         int32_t uid = AID_ROOT);
+
+// Create malformed log event for battery state change.
+std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs);
 
 // Create log event for app moving to background.
 std::unique_ptr<LogEvent> CreateMoveToBackgroundEvent(uint64_t timestampNs, const int uid);
@@ -563,7 +568,7 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(
         const int64_t timeBaseNs, const int64_t currentTimeNs, const StatsdConfig& config,
         const ConfigKey& key, const shared_ptr<IPullAtomCallback>& puller = nullptr,
         const int32_t atomTag = 0 /*for puller only*/, const sp<UidMap> = new UidMap(),
-        const shared_ptr<LogEventFilter>& logEventFilter = nullptr);
+        const shared_ptr<LogEventFilter>& logEventFilter = std::make_shared<LogEventFilter>());
 
 LogEventFilter::AtomIdSet CreateAtomIdSetDefault();
 LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config);
@@ -798,7 +803,7 @@ std::vector<PackageInfo> buildPackageInfos(
         const std::vector<string>& names, const std::vector<int32_t>& uids,
         const std::vector<int64_t>& versions, const std::vector<std::string>& versionStrings,
         const std::vector<std::string>& installers,
-        const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<bool>& deleted,
+        const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<uint8_t>& deleted,
         const std::vector<uint32_t>& installerIndices, const bool hashStrings);
 
 template <typename T>
@@ -807,6 +812,10 @@ std::vector<T> concatenate(const vector<T>& a, const vector<T>& b) {
     result.insert(result.end(), b.begin(), b.end());
     return result;
 }
+
+StatsdStatsReport getStatsdStatsReport(bool resetStats = false);
+
+StatsdStatsReport getStatsdStatsReport(StatsdStats& stats, bool resetStats = false);
 
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int atom_id);
 
@@ -817,6 +826,11 @@ std::vector<uint8_t> protoToBytes(const P& proto) {
     proto.SerializeToArray(bytes.data(), byteSize);
     return bytes;
 }
+
+StatsdConfig buildGoodConfig(int configId);
+
+StatsdConfig buildGoodConfig(int configId, int alertId);
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

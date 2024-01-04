@@ -217,7 +217,6 @@ protected:
 
     FRIEND_TEST(AnomalyTrackerTest, TestConsecutiveBuckets);
     FRIEND_TEST(AnomalyTrackerTest, TestSparseBuckets);
-    FRIEND_TEST(GaugeMetricProducerTest, TestAnomalyDetection);
     FRIEND_TEST(CountMetricProducerTest, TestAnomalyDetectionUnSliced);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_single_bucket);
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket);

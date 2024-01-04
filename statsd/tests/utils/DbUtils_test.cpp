@@ -16,7 +16,6 @@
 
 #include "utils/DbUtils.h"
 
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "android-base/stringprintf.h"
@@ -32,7 +31,6 @@ namespace os {
 namespace statsd {
 namespace dbutils {
 
-using android::modules::sdklevel::IsAtLeastU;
 using base::StringPrintf;
 
 namespace {
@@ -56,12 +54,12 @@ LogEvent makeLogEvent(AStatsEvent* statsEvent) {
 class DbUtilsTest : public ::testing::Test {
 public:
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
     }
     void TearDown() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         deleteDb(key);

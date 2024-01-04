@@ -59,13 +59,14 @@ import com.android.os.wearsysui.WearsysuiAtoms;
 import com.android.os.wifi.WifiExtensionAtoms;
 import android.os.statsd.media.MediaCodecExtensionAtoms;
 import com.android.os.credentials.CredentialsExtensionAtoms;
+import com.android.os.sdksandbox.SdksandboxExtensionAtoms;
 
 import com.google.protobuf.ExtensionRegistry;
 
 /**
  * CustomExtensionRegistry for local use of statsd.
  */
-public class CustomExtensionRegistry {
+public class ExtensionAtomsRegistry {
 
     public static ExtensionRegistry REGISTRY;
 
@@ -132,5 +133,6 @@ public class CustomExtensionRegistry {
         WifiExtensionAtoms.registerAllExtensions(extensionRegistry);
         MediaCodecExtensionAtoms.registerAllExtensions(extensionRegistry);
         CredentialsExtensionAtoms.registerAllExtensions(extensionRegistry);
+        SdksandboxExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
