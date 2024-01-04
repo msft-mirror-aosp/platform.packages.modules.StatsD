@@ -337,16 +337,8 @@ bool HashableDimensionKey::operator!=(const HashableDimensionKey& that) const {
 }
 
 bool HashableDimensionKey::operator==(const HashableDimensionKey& that) const {
-    if (mValues.size() != that.getValues().size()) {
-        return false;
-    }
-    size_t count = mValues.size();
-    for (size_t i = 0; i < count; i++) {
-        if (mValues[i] != (that.getValues())[i]) {
-            return false;
-        }
-    }
-    return true;
+    // according to http://go/cppref/cpp/container/vector/operator_cmp
+    return mValues == that.mValues;
 };
 
 bool HashableDimensionKey::operator<(const HashableDimensionKey& that) const {

@@ -73,17 +73,10 @@ int64_t StrToInt64(const string& str);
 
 /**
  * A hash function for ConfigKey so it can be used for unordered_map/set.
- * Unfortunately this has to go in std namespace because C++ is fun!
  */
-namespace std {
-
-using android::os::statsd::ConfigKey;
-
 template <>
-struct hash<ConfigKey> {
-    std::size_t operator()(const ConfigKey& key) const {
+struct std::hash<android::os::statsd::ConfigKey> {
+    std::size_t operator()(const android::os::statsd::ConfigKey& key) const {
         return (7 * key.GetUid()) ^ ((hash<long long>()(key.GetId())));
     }
 };
-
-}  // namespace std

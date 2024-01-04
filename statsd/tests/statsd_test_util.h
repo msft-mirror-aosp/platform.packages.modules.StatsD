@@ -470,7 +470,9 @@ std::unique_ptr<LogEvent> CreateBatterySaverOnEvent(uint64_t timestampNs);
 std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs);
 
 // Create log event when battery state changes.
-std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs, const BatteryPluggedStateEnum state);
+std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs,
+                                                         const BatteryPluggedStateEnum state,
+                                                         int32_t uid = AID_ROOT);
 
 // Create malformed log event for battery state change.
 std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs);
@@ -801,7 +803,7 @@ std::vector<PackageInfo> buildPackageInfos(
         const std::vector<string>& names, const std::vector<int32_t>& uids,
         const std::vector<int64_t>& versions, const std::vector<std::string>& versionStrings,
         const std::vector<std::string>& installers,
-        const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<bool>& deleted,
+        const std::vector<std::vector<uint8_t>>& certHashes, const std::vector<uint8_t>& deleted,
         const std::vector<uint32_t>& installerIndices, const bool hashStrings);
 
 template <typename T>
