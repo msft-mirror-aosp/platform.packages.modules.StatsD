@@ -28,26 +28,26 @@ using std::set;
 using std::unordered_map;
 using std::vector;
 
-CombinationAtomMatchingTracker::CombinationAtomMatchingTracker(const int64_t& id, const int index,
+CombinationAtomMatchingTracker::CombinationAtomMatchingTracker(const int64_t id,
                                                                const uint64_t protoHash)
-    : AtomMatchingTracker(id, index, protoHash) {
+    : AtomMatchingTracker(id, protoHash) {
 }
 
 CombinationAtomMatchingTracker::~CombinationAtomMatchingTracker() {
 }
 
 optional<InvalidConfigReason> CombinationAtomMatchingTracker::init(
-        const vector<AtomMatcher>& allAtomMatchers,
+        int matcherIndex, const vector<AtomMatcher>& allAtomMatchers,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-        const unordered_map<int64_t, int>& matcherMap, vector<bool>& stack) {
+        const unordered_map<int64_t, int>& matcherMap, vector<uint8_t>& stack) {
     if (mInitialized) {
         return nullopt;
     }
 
     // mark this node as visited in the recursion stack.
-    stack[mIndex] = true;
+    stack[matcherIndex] = true;
 
-    AtomMatcher_Combination matcher = allAtomMatchers[mIndex].combination();
+    AtomMatcher_Combination matcher = allAtomMatchers[matcherIndex].combination();
 
     // LogicalOperation is missing in the config
     if (!matcher.has_operation()) {
@@ -84,8 +84,8 @@ optional<InvalidConfigReason> CombinationAtomMatchingTracker::init(
             return invalidConfigReason;
         }
         optional<InvalidConfigReason> invalidConfigReason =
-                allAtomMatchingTrackers[childIndex]->init(allAtomMatchers, allAtomMatchingTrackers,
-                                                          matcherMap, stack);
+                allAtomMatchingTrackers[childIndex]->init(
+                        childIndex, allAtomMatchers, allAtomMatchingTrackers, matcherMap, stack);
         if (invalidConfigReason.has_value()) {
             ALOGW("child matcher init failed %lld", (long long)child);
             invalidConfigReason->matcherIds.push_back(mId);
@@ -100,14 +100,12 @@ optional<InvalidConfigReason> CombinationAtomMatchingTracker::init(
 
     mInitialized = true;
     // unmark this node in the recursion stack.
-    stack[mIndex] = false;
+    stack[matcherIndex] = false;
     return nullopt;
 }
 
 optional<InvalidConfigReason> CombinationAtomMatchingTracker::onConfigUpdated(
-        const AtomMatcher& matcher, const int index,
-        const unordered_map<int64_t, int>& atomMatchingTrackerMap) {
-    mIndex = index;
+        const AtomMatcher& matcher, const unordered_map<int64_t, int>& atomMatchingTrackerMap) {
     mChildren.clear();
     AtomMatcher_Combination combinationMatcher = matcher.combination();
     for (const int64_t child : combinationMatcher.matcher()) {
@@ -126,15 +124,16 @@ optional<InvalidConfigReason> CombinationAtomMatchingTracker::onConfigUpdated(
 }
 
 void CombinationAtomMatchingTracker::onLogEvent(
-        const LogEvent& event, const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const LogEvent& event, int matcherIndex,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         vector<MatchingState>& matcherResults) {
     // this event has been processed.
-    if (matcherResults[mIndex] != MatchingState::kNotComputed) {
+    if (matcherResults[matcherIndex] != MatchingState::kNotComputed) {
         return;
     }
 
     if (mAtomIds.find(event.GetTagId()) == mAtomIds.end()) {
-        matcherResults[mIndex] = MatchingState::kNotMatched;
+        matcherResults[matcherIndex] = MatchingState::kNotMatched;
         return;
     }
 
@@ -142,12 +141,12 @@ void CombinationAtomMatchingTracker::onLogEvent(
     for (const int childIndex : mChildren) {
         if (matcherResults[childIndex] == MatchingState::kNotComputed) {
             const sp<AtomMatchingTracker>& child = allAtomMatchingTrackers[childIndex];
-            child->onLogEvent(event, allAtomMatchingTrackers, matcherResults);
+            child->onLogEvent(event, childIndex, allAtomMatchingTrackers, matcherResults);
         }
     }
 
     bool matched = combinationMatch(mChildren, mLogicalOperation, matcherResults);
-    matcherResults[mIndex] = matched ? MatchingState::kMatched : MatchingState::kNotMatched;
+    matcherResults[matcherIndex] = matched ? MatchingState::kMatched : MatchingState::kNotMatched;
 }
 
 }  // namespace statsd
