@@ -364,7 +364,7 @@ TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
             .Times(1)
             .RetiresOnSaturation();
 
-    vector<bool> results(maxSubs, false);
+    vector<uint8_t> results(maxSubs, false);
 
     std::shared_ptr<MockStatsSubscriptionCallback> callbacks[maxSubs];
     for (int i = 0; i < maxSubs; i++) {
