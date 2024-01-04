@@ -21,13 +21,14 @@ namespace statsd {
 
 using std::vector;
 
-MatchingState EventMatcherWizard::matchLogEvent(const LogEvent& event, int matcher_index) {
-    if (matcher_index < 0 || matcher_index >= (int)mAllEventMatchers.size()) {
+MatchingState EventMatcherWizard::matchLogEvent(const LogEvent& event, int matcherIndex) {
+    if (matcherIndex < 0 || matcherIndex >= (int)mAllEventMatchers.size()) {
         return MatchingState::kNotComputed;
     }
     std::fill(mMatcherCache.begin(), mMatcherCache.end(), MatchingState::kNotComputed);
-    mAllEventMatchers[matcher_index]->onLogEvent(event, mAllEventMatchers, mMatcherCache);
-    return mMatcherCache[matcher_index];
+    mAllEventMatchers[matcherIndex]->onLogEvent(event, matcherIndex, mAllEventMatchers,
+                                                mMatcherCache);
+    return mMatcherCache[matcherIndex];
 }
 
 }  // namespace statsd

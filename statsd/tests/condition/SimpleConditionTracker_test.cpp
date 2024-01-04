@@ -146,7 +146,7 @@ TEST(SimpleConditionTrackerTest, TestNonSlicedInitialValueFalse) {
     EXPECT_EQ(ConditionState::kFalse, conditionCache[0]);
 
     vector<MatchingState> matcherState;
-    vector<bool> changedCache(1, false);
+    vector<uint8_t> changedCache(1, false);
 
     // Matched stop event.
     // Check that condition is still false.
@@ -200,7 +200,7 @@ TEST(SimpleConditionTrackerTest, TestNonSlicedInitialValueUnknown) {
     EXPECT_EQ(ConditionState::kUnknown, conditionCache[0]);
 
     vector<MatchingState> matcherState;
-    vector<bool> changedCache(1, false);
+    vector<uint8_t> changedCache(1, false);
 
     // Matched stop event.
     // Check that condition is changed to false.
@@ -256,7 +256,7 @@ TEST(SimpleConditionTrackerTest, TestNonSlicedCondition) {
 
     vector<sp<ConditionTracker>> allPredicates;
     vector<ConditionState> conditionCache(1, ConditionState::kNotEvaluated);
-    vector<bool> changedCache(1, false);
+    vector<uint8_t> changedCache(1, false);
 
     conditionTracker.evaluateCondition(event, matcherState, allPredicates, conditionCache,
                                        changedCache);
@@ -343,7 +343,7 @@ TEST(SimpleConditionTrackerTest, TestNonSlicedConditionNestCounting) {
     matcherState.push_back(MatchingState::kNotMatched);
     vector<sp<ConditionTracker>> allPredicates;
     vector<ConditionState> conditionCache(1, ConditionState::kNotEvaluated);
-    vector<bool> changedCache(1, false);
+    vector<uint8_t> changedCache(1, false);
 
     conditionTracker.evaluateCondition(event, matcherState, allPredicates, conditionCache,
                                        changedCache);
@@ -419,7 +419,7 @@ TEST_P(SimpleConditionTrackerTest, TestSlicedCondition) {
         matcherState.push_back(MatchingState::kNotMatched);
         vector<sp<ConditionTracker>> allPredicates;
         vector<ConditionState> conditionCache(1, ConditionState::kNotEvaluated);
-        vector<bool> changedCache(1, false);
+        vector<uint8_t> changedCache(1, false);
 
         conditionTracker.evaluateCondition(event1, matcherState, allPredicates, conditionCache,
                                            changedCache);
@@ -524,7 +524,7 @@ TEST(SimpleConditionTrackerTest, TestSlicedWithNoOutputDim) {
     matcherState.push_back(MatchingState::kNotMatched);
     vector<sp<ConditionTracker>> allPredicates;
     vector<ConditionState> conditionCache(1, ConditionState::kNotEvaluated);
-    vector<bool> changedCache(1, false);
+    vector<uint8_t> changedCache(1, false);
 
     conditionTracker.evaluateCondition(event1, matcherState, allPredicates, conditionCache,
                                        changedCache);
@@ -616,7 +616,7 @@ TEST_P(SimpleConditionTrackerTest, TestStopAll) {
         matcherState.push_back(MatchingState::kNotMatched);
         vector<sp<ConditionTracker>> allPredicates;
         vector<ConditionState> conditionCache(1, ConditionState::kNotEvaluated);
-        vector<bool> changedCache(1, false);
+        vector<uint8_t> changedCache(1, false);
 
         conditionTracker.evaluateCondition(event1, matcherState, allPredicates, conditionCache,
                                            changedCache);
@@ -714,7 +714,7 @@ TEST(SimpleConditionTrackerTest, TestGuardrailNotHitWhenDefaultFalse) {
         matcherState.push_back(MatchingState::kNotMatched);
         vector<sp<ConditionTracker>> allPredicates;
         vector<ConditionState> conditionCache(1, ConditionState::kNotEvaluated);
-        vector<bool> changedCache(1, false);
+        vector<uint8_t> changedCache(1, false);
 
         conditionTracker.evaluateCondition(event, matcherState, allPredicates, conditionCache,
                                            changedCache);
@@ -761,7 +761,7 @@ TEST(SimpleConditionTrackerTest, TestGuardrailHitWhenDefaultUnknown) {
         matcherState.push_back(MatchingState::kNotMatched);
         vector<sp<ConditionTracker>> allPredicates;
         vector<ConditionState> conditionCache(1, ConditionState::kNotEvaluated);
-        vector<bool> changedCache(1, false);
+        vector<uint8_t> changedCache(1, false);
 
         conditionTracker.evaluateCondition(event, matcherState, allPredicates, conditionCache,
                                            changedCache);
@@ -791,7 +791,7 @@ TEST(SimpleConditionTrackerTest, TestGuardrailHitWhenDefaultUnknown) {
     matcherState.push_back(MatchingState::kNotMatched);
     vector<sp<ConditionTracker>> allPredicates;
     vector<ConditionState> conditionCache(1, ConditionState::kNotEvaluated);
-    vector<bool> changedCache(1, false);
+    vector<uint8_t> changedCache(1, false);
 
     conditionTracker.evaluateCondition(event3, matcherState, allPredicates, conditionCache,
                                        changedCache);

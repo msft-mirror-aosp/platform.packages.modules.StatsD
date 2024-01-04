@@ -248,9 +248,10 @@ TEST_P(ConfigUpdateE2eAbTest, TestAtomsAllowedFromAnyUid) {
     ConfigKey cfgKey(0, 12345);
     sp<StatsLogProcessor> processor =
             CreateStatsLogProcessor(baseTimeNs, baseTimeNs, config, cfgKey);
-    // Uses AID_ROOT, which isn't in allowed log sources.
+    const int32_t customAppUid = AID_APP_START + 1;
+    // override default uid (which is user running the test)
     unique_ptr<LogEvent> event = CreateBatteryStateChangedEvent(
-            baseTimeNs + 2, BatteryPluggedStateEnum::BATTERY_PLUGGED_USB);
+            baseTimeNs + 2, BatteryPluggedStateEnum::BATTERY_PLUGGED_USB, customAppUid);
     processor->OnLogEvent(event.get());
     ConfigMetricsReportList reports;
     vector<uint8_t> buffer;
@@ -304,7 +305,6 @@ TEST_P(ConfigUpdateE2eAbTest, TestConfigTtl) {
 
 TEST_P(ConfigUpdateE2eAbTest, TestExistingGaugePullRandomOneSample) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     AtomMatcher subsystemSleepMatcher =
