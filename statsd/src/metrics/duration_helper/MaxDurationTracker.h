@@ -29,7 +29,7 @@ namespace statsd {
 class MaxDurationTracker : public DurationTracker {
 public:
     MaxDurationTracker(const ConfigKey& key, const int64_t& id, const MetricDimensionKey& eventKey,
-                       sp<ConditionWizard> wizard, int conditionIndex, bool nesting,
+                       const sp<ConditionWizard>& wizard, int conditionIndex, bool nesting,
                        int64_t currentBucketStartNs, int64_t currentBucketNum, int64_t startTimeNs,
                        int64_t bucketSizeNs, bool conditionSliced, bool fullLink,
                        const std::vector<sp<AnomalyTracker>>& anomalyTrackers);

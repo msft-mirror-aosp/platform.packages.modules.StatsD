@@ -34,18 +34,18 @@ public:
 class MockStatsPullerManager : public StatsPullerManager {
 public:
     MOCK_METHOD5(RegisterReceiver,
-                 void(int tagId, const ConfigKey& key, wp<PullDataReceiver> receiver,
+                 void(int tagId, const ConfigKey& key, const wp<PullDataReceiver>& receiver,
                       int64_t nextPulltimeNs, int64_t intervalNs));
     MOCK_METHOD3(UnRegisterReceiver,
-                 void(int tagId, const ConfigKey& key, wp<PullDataReceiver> receiver));
+                 void(int tagId, const ConfigKey& key, const wp<PullDataReceiver>& receiver));
     MOCK_METHOD4(Pull, bool(const int pullCode, const ConfigKey& key, const int64_t eventTimeNs,
                             vector<std::shared_ptr<LogEvent>>* data));
     MOCK_METHOD4(Pull, bool(const int pullCode, const vector<int32_t>& uids,
                             const int64_t eventTimeNs, vector<std::shared_ptr<LogEvent>>* data));
     MOCK_METHOD2(RegisterPullUidProvider,
-                 void(const ConfigKey& configKey, wp<PullUidProvider> provider));
+                 void(const ConfigKey& configKey, const wp<PullUidProvider>& provider));
     MOCK_METHOD2(UnregisterPullUidProvider,
-                 void(const ConfigKey& configKey, wp<PullUidProvider> provider));
+                 void(const ConfigKey& configKey, const wp<PullUidProvider>& provider));
 };
 
 HashableDimensionKey getMockedDimensionKey(int tagId, int key, std::string value);
