@@ -148,6 +148,7 @@ void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
 
     const int32_t atomId = logEvent->GetTagId();
     const bool isAtomSkipped = logEvent->isParsedHeaderOnly();
+    const int64_t atomTimestamp = logEvent->GetElapsedTimestampNs();
 
     if (atomId == util::STATS_SOCKET_LOSS_REPORTED) {
         if (isAtomSkipped) {
@@ -164,9 +165,12 @@ void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
         }
     }
 
-    int64_t oldestTimestamp;
-    if (!queue->push(std::move(logEvent), &oldestTimestamp)) {
+    int64_t oldestTimestamp = 0;
+    int32_t queueSize = 0;
+    if (!queue->push(std::move(logEvent), oldestTimestamp, queueSize)) {
         StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId, isAtomSkipped);
+    } else {
+        StatsdStats::getInstance().noteEventQueueSize(queueSize, atomTimestamp);
     }
 }
 
