@@ -39,7 +39,7 @@ unique_ptr<LogEvent> LogEventQueue::waitPop() {
     return item;
 }
 
-bool LogEventQueue::push(unique_ptr<LogEvent> item, int64_t* oldestTimestampNs) {
+bool LogEventQueue::push(unique_ptr<LogEvent> item, int64_t& oldestTimestampNs, int32_t& newSize) {
     bool success;
     {
         std::unique_lock<std::mutex> lock(mMutex);
@@ -48,9 +48,10 @@ bool LogEventQueue::push(unique_ptr<LogEvent> item, int64_t* oldestTimestampNs) 
             success = true;
         } else {
             // safe operation as queue must not be empty.
-            *oldestTimestampNs = mQueue.front()->GetElapsedTimestampNs();
+            oldestTimestampNs = mQueue.front()->GetElapsedTimestampNs();
             success = false;
         }
+        newSize = mQueue.size();
     }
 
     mCondition.notify_one();

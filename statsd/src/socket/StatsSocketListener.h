@@ -81,6 +81,7 @@ private:
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterCompleteSet);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterPartialSet);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterToggle);
+    FRIEND_TEST(LogEventQueue_test, TestQueueMaxSize);
 };
 
 }  // namespace statsd
