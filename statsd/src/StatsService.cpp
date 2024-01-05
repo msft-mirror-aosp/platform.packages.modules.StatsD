@@ -1514,10 +1514,8 @@ void StatsService::stopReadingLogs() {
     mIsStopRequested = true;
     // Push this event so that readLogs will process and break out of the loop
     // after the stop is requested.
-    int64_t timeStamp;
-    int32_t newSize;
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
-    mEventQueue->push(std::move(logEvent), timeStamp, newSize);
+    mEventQueue->push(std::move(logEvent));
 }
 
 }  // namespace statsd

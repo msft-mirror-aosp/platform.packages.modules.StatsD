@@ -165,12 +165,11 @@ void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
         }
     }
 
-    int64_t oldestTimestamp = 0;
-    int32_t queueSize = 0;
-    if (!queue->push(std::move(logEvent), oldestTimestamp, queueSize)) {
-        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId, isAtomSkipped);
-    } else {
+    const auto [success, oldestTimestamp, queueSize] = queue->push(std::move(logEvent));
+    if (success) {
         StatsdStats::getInstance().noteEventQueueSize(queueSize, atomTimestamp);
+    } else {
+        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId, isAtomSkipped);
     }
 }
 
