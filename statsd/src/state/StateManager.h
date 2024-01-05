@@ -55,11 +55,11 @@ public:
     // If the correct StateTracker does not exist, a new StateTracker is created.
     // Note: StateTrackers can be created for non-state atoms. They are essentially empty and
     // do not perform any actions.
-    void registerListener(const int32_t atomId, wp<StateListener> listener);
+    void registerListener(const int32_t atomId, const wp<StateListener>& listener);
 
     // Notifies the correct StateTracker to unregister a listener
     // and removes the tracker if it no longer has any listeners.
-    void unregisterListener(const int32_t atomId, wp<StateListener> listener);
+    void unregisterListener(const int32_t atomId, const wp<StateListener>& listener);
 
     // Returns true if the StateTracker exists and queries for the
     // original state value mapped to the given query key. The state value is

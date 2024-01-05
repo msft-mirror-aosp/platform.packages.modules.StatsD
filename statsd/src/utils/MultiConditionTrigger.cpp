@@ -28,7 +28,7 @@ namespace statsd {
 MultiConditionTrigger::MultiConditionTrigger(const set<string>& conditionNames,
                                              function<void()> trigger)
     : mRemainingConditionNames(conditionNames),
-      mTrigger(trigger),
+      mTrigger(std::move(trigger)),
       mCompleted(mRemainingConditionNames.empty()) {
     if (mCompleted) {
         thread executorThread([this] { mTrigger(); });
