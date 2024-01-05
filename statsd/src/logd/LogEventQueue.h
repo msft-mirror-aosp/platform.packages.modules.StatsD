@@ -45,7 +45,7 @@ public:
      * Returns false on failure when the queue is full, and output the oldest event timestamp
      * in the queue.
      */
-    bool push(std::unique_ptr<LogEvent> event, int64_t* oldestTimestampNs);
+    bool push(std::unique_ptr<LogEvent> event, int64_t& oldestTimestampNs, int32_t& newSize);
 
 private:
     const size_t mQueueLimit;

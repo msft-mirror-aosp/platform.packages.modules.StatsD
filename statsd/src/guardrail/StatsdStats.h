@@ -614,6 +614,9 @@ public:
      * in the queue */
     void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId, bool isSkipped);
 
+    /* Notes queue max size seen so far and associated timestamp */
+    void noteEventQueueSize(int32_t size, int64_t eventTimestampNs);
+
     /**
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
      * should have been sent, but instead was skipped due to hitting the guardrail.
@@ -922,6 +925,12 @@ private:
     // Total number of events that are lost due to queue overflow.
     int32_t mOverflowCount = 0;
 
+    // Max number of events stored into the queue seen so far.
+    int32_t mEventQueueMaxSizeObserved = 0;
+
+    // Event timestamp for associated max size hit.
+    int64_t mEventQueueMaxSizeObservedElapsedNanos = 0;
+
     // Timestamps when we detect log loss, and the number of logs lost.
     std::list<LogLossStats> mLogLossStats;
 
@@ -1009,40 +1018,42 @@ private:
      */
     StatsdStats::AtomMetricStats& getAtomMetricStats(int64_t metricId);
 
-    FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
+    FRIEND_TEST(LogEventQueue_test, TestQueueMaxSize);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessage);
+    FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
+    FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
+    FRIEND_TEST(StatsdStatsTest, TestAnomalyMonitor);
+    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLog);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
+    FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigAdd);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId);
-    FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
-    FRIEND_TEST(StatsdStatsTest, TestSubStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLog);
     FRIEND_TEST(StatsdStatsTest, TestNonPlatformAtomLog);
-    FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
-    FRIEND_TEST(StatsdStatsTest, TestAnomalyMonitor);
-    FRIEND_TEST(StatsdStatsTest, TestSystemServerCrash);
     FRIEND_TEST(StatsdStatsTest, TestPullAtomStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
-    FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
-    FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
-    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
+    FRIEND_TEST(StatsdStatsTest, TestQueueStats);
     FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
-    FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStarted);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionFlushed);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionEnded);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionAtomPulled);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription);
     FRIEND_TEST(StatsdStatsTest, TestSocketLossStats);
     FRIEND_TEST(StatsdStatsTest, TestSocketLossStatsOverflowCounter);
-
-    FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
+    FRIEND_TEST(StatsdStatsTest, TestSubStats);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionAtomPulled);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionEnded);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionFlushed);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStarted);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription);
+    FRIEND_TEST(StatsdStatsTest, TestSystemServerCrash);
+    FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
+    FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
 };
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
