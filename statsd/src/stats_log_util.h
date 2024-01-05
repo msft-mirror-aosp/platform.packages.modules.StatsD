@@ -117,7 +117,7 @@ inline bool isPulledAtom(int atomId) {
     return atomId >= StatsdStats::kPullAtomStartTag && atomId < StatsdStats::kVendorAtomStartTag;
 }
 
-void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event);
+void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap>& uidMap, LogEvent& event);
 
 std::string toHexString(const string& bytes);
 

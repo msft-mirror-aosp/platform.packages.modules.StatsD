@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 #include <vector>
-#include "benchmark/benchmark.h"
+
 #include "FieldValue.h"
 #include "HashableDimensionKey.h"
+#include "benchmark/benchmark.h"
 #include "logd/LogEvent.h"
 #include "stats_log_util.h"
-#include "metric_util.h"
+#include "tests/statsd_test_util.h"
 
 namespace android {
 namespace os {
@@ -39,15 +40,15 @@ static StatsdConfig CreateDurationMetricConfig_NoLink_AND_CombinationCondition(
 
     auto scheduledJobPredicate = CreateScheduledJobPredicate();
     auto dimensions = scheduledJobPredicate.mutable_simple_predicate()->mutable_dimensions();
-    dimensions->set_field(android::util::SCHEDULED_JOB_STATE_CHANGED);
+    dimensions->set_field(util::SCHEDULED_JOB_STATE_CHANGED);
     dimensions->add_child()->set_field(2);  // job name field.
 
     auto screenIsOffPredicate = CreateScreenIsOffPredicate();
 
     auto isSyncingPredicate = CreateIsSyncingPredicate();
     auto syncDimension = isSyncingPredicate.mutable_simple_predicate()->mutable_dimensions();
-    *syncDimension = CreateAttributionUidAndTagDimensions(android::util::SYNC_STATE_CHANGED,
-                                                          {Position::FIRST});
+    *syncDimension =
+            CreateAttributionUidAndTagDimensions(util::SYNC_STATE_CHANGED, {Position::FIRST});
     if (addExtraDimensionInCondition) {
         syncDimension->add_child()->set_field(2 /* name field*/);
     }
@@ -68,10 +69,10 @@ static StatsdConfig CreateDurationMetricConfig_NoLink_AND_CombinationCondition(
     metric->set_condition(combinationPredicate->id());
     metric->set_aggregation_type(aggregationType);
     auto dimensionWhat = metric->mutable_dimensions_in_what();
-    dimensionWhat->set_field(android::util::SCHEDULED_JOB_STATE_CHANGED);
+    dimensionWhat->set_field(util::SCHEDULED_JOB_STATE_CHANGED);
     dimensionWhat->add_child()->set_field(2);  // job name field.
-    *metric->mutable_dimensions_in_condition() = CreateAttributionUidAndTagDimensions(
-            android::util::SYNC_STATE_CHANGED, {Position::FIRST});
+    *metric->mutable_dimensions_in_condition() =
+            CreateAttributionUidAndTagDimensions(util::SYNC_STATE_CHANGED, {Position::FIRST});
     return config;
 }
 
@@ -87,14 +88,13 @@ static StatsdConfig CreateDurationMetricConfig_Link_AND_CombinationCondition(
 
     auto scheduledJobPredicate = CreateScheduledJobPredicate();
     auto dimensions = scheduledJobPredicate.mutable_simple_predicate()->mutable_dimensions();
-    *dimensions = CreateAttributionUidDimensions(
-                android::util::SCHEDULED_JOB_STATE_CHANGED, {Position::FIRST});
+    *dimensions =
+            CreateAttributionUidDimensions(util::SCHEDULED_JOB_STATE_CHANGED, {Position::FIRST});
     dimensions->add_child()->set_field(2);  // job name field.
 
     auto isSyncingPredicate = CreateIsSyncingPredicate();
     auto syncDimension = isSyncingPredicate.mutable_simple_predicate()->mutable_dimensions();
-    *syncDimension = CreateAttributionUidDimensions(
-            android::util::SYNC_STATE_CHANGED, {Position::FIRST});
+    *syncDimension = CreateAttributionUidDimensions(util::SYNC_STATE_CHANGED, {Position::FIRST});
     if (addExtraDimensionInCondition) {
         syncDimension->add_child()->set_field(2 /* name field*/);
     }
@@ -116,16 +116,15 @@ static StatsdConfig CreateDurationMetricConfig_Link_AND_CombinationCondition(
     metric->set_what(scheduledJobPredicate.id());
     metric->set_condition(combinationPredicate->id());
     metric->set_aggregation_type(aggregationType);
-    *metric->mutable_dimensions_in_what() = CreateAttributionUidDimensions(
-            android::util::SCHEDULED_JOB_STATE_CHANGED, {Position::FIRST});
+    *metric->mutable_dimensions_in_what() =
+            CreateAttributionUidDimensions(util::SCHEDULED_JOB_STATE_CHANGED, {Position::FIRST});
 
     auto links = metric->add_links();
     links->set_condition(isSyncingPredicate.id());
     *links->mutable_fields_in_what() =
-            CreateAttributionUidDimensions(
-                android::util::SCHEDULED_JOB_STATE_CHANGED, {Position::FIRST});
+            CreateAttributionUidDimensions(util::SCHEDULED_JOB_STATE_CHANGED, {Position::FIRST});
     *links->mutable_fields_in_condition() =
-            CreateAttributionUidDimensions(android::util::SYNC_STATE_CHANGED, {Position::FIRST});
+            CreateAttributionUidDimensions(util::SYNC_STATE_CHANGED, {Position::FIRST});
     return config;
 }
 
@@ -208,8 +207,8 @@ static void BM_DurationMetricNoLink(benchmark::State& state) {
     sortLogEventsByTimestamp(&events);
 
     while (state.KeepRunning()) {
-        auto processor = CreateStatsLogProcessor(
-                bucketStartTimeNs / NS_PER_SEC, config, cfgKey);
+        auto processor =
+                CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
         for (const auto& event : events) {
             processor->OnLogEvent(event.get());
         }
@@ -299,8 +298,8 @@ static void BM_DurationMetricLink(benchmark::State& state) {
     sortLogEventsByTimestamp(&events);
 
     while (state.KeepRunning()) {
-        auto processor = CreateStatsLogProcessor(
-                bucketStartTimeNs / NS_PER_SEC, config, cfgKey);
+        auto processor =
+                CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
         for (const auto& event : events) {
             processor->OnLogEvent(event.get());
         }

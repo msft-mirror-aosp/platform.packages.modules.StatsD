@@ -34,7 +34,7 @@ namespace os {
 namespace statsd {
 
 struct GaugeAtom {
-    GaugeAtom(std::shared_ptr<vector<FieldValue>> fields, int64_t elapsedTimeNs)
+    GaugeAtom(const std::shared_ptr<vector<FieldValue>>& fields, int64_t elapsedTimeNs)
         : mFields(fields), mElapsedTimestampNs(elapsedTimeNs) {
     }
     std::shared_ptr<vector<FieldValue>> mFields;
@@ -226,6 +226,8 @@ private:
 
     // Tracks if the dimension guardrail has been hit in the current report.
     bool mDimensionGuardrailHit;
+
+    const int mSamplingPercentage;
 
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition);

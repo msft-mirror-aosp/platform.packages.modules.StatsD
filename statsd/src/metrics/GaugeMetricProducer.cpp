@@ -100,7 +100,8 @@ GaugeMetricProducer::GaugeMetricProducer(
       mDimensionSoftLimit(dimensionSoftLimit),
       mDimensionHardLimit(dimensionHardLimit),
       mGaugeAtomsPerDimensionLimit(metric.max_num_gauge_atoms_per_bucket()),
-      mDimensionGuardrailHit(false) {
+      mDimensionGuardrailHit(false),
+      mSamplingPercentage(metric.sampling_percentage()) {
     mCurrentSlicedBucket = std::make_shared<DimToGaugeAtomsMap>();
     mCurrentSlicedBucketForAnomaly = std::make_shared<DimToValMap>();
     int64_t bucketSizeMills = 0;
@@ -409,10 +410,10 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         return;
     }
     for (const auto& data : allData) {
-        LogEvent localCopy = *data;
-        localCopy.setElapsedTimestampNs(timestampNs);
-        if (mEventMatcherWizard->matchLogEvent(localCopy, mWhatMatcherIndex) ==
+        if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) ==
             MatchingState::kMatched) {
+            LogEvent localCopy = *data;
+            localCopy.setElapsedTimestampNs(timestampNs);
             onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
         }
     }
@@ -539,6 +540,12 @@ void GaugeMetricProducer::onMatchedLogEventInternalLocked(
     if (condition == false) {
         return;
     }
+
+    if (mPullTagId == -1 && mSamplingPercentage < 100 &&
+        !shouldKeepRandomSample(mSamplingPercentage)) {
+        return;
+    }
+
     int64_t eventTimeNs = event.GetElapsedTimestampNs();
     if (eventTimeNs < mCurrentBucketStartTimeNs) {
         VLOG("Gauge Skip event due to late arrival: %lld vs %lld", (long long)eventTimeNs,
