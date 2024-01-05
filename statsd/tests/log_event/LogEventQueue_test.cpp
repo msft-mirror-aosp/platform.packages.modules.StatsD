@@ -58,11 +58,10 @@ TEST(LogEventQueue_test, TestGoodConsumer) {
     LogEventQueue queue(50);
     int64_t eventTimeNs = 100;
     std::thread writer([&queue, eventTimeNs] {
-        int64_t oldestEventNs = 0;
-        int32_t newSize = 0;
+        LogEventQueue::Result result;
         for (int i = 0; i < 100; i++) {
-            bool success = queue.push(makeLogEvent(eventTimeNs + i * 1000), oldestEventNs, newSize);
-            EXPECT_TRUE(success);
+            result = queue.push(makeLogEvent(eventTimeNs + i * 1000));
+            EXPECT_TRUE(result.success);
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     });
@@ -85,11 +84,10 @@ TEST(LogEventQueue_test, TestSlowConsumer) {
     int64_t eventTimeNs = 100;
     std::thread writer([&queue, eventTimeNs] {
         int failure_count = 0;
-        int64_t oldestEventNs = 0;
-        int32_t newSize = 0;
+        LogEventQueue::Result result;
         for (int i = 0; i < 100; i++) {
-            bool success = queue.push(makeLogEvent(eventTimeNs + i * 1000), oldestEventNs, newSize);
-            if (!success) {
+            result = queue.push(makeLogEvent(eventTimeNs + i * 1000));
+            if (!result.success) {
                 failure_count++;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -100,7 +98,7 @@ TEST(LogEventQueue_test, TestSlowConsumer) {
         // There will be at least 45 events lost due to overflow.
         EXPECT_TRUE(failure_count >= 45);
         // The oldest event must be at least the 6th event.
-        EXPECT_TRUE(oldestEventNs <= (100 + 5 * 1000));
+        EXPECT_TRUE(result.oldestTimestampNs <= (100 + 5 * 1000));
     });
 
     std::thread reader([&queue, eventTimeNs] {
