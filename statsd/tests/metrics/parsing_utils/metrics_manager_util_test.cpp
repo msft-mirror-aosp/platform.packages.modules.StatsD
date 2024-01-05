@@ -628,7 +628,7 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentage) {
                                   StringToId("Event")));
 }
 
-TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentage2) {
+TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentageZero) {
     StatsdConfig config;
     EventMetric* metric = config.add_event_metric();
     *metric = createEventMetric(/*name=*/"Event", /*what=*/StringToId("ScreenTurnedOn"),
@@ -641,7 +641,7 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentage2) {
                                   StringToId("Event")));
 }
 
-TEST_F(MetricsManagerUtilTest, TestEventMetricValidSamplingPercentage2) {
+TEST_F(MetricsManagerUtilTest, TestEventMetricValidSamplingPercentage) {
     StatsdConfig config;
     EventMetric* metric = config.add_event_metric();
     *metric = createEventMetric(/*name=*/"Event", /*what=*/StringToId("ScreenTurnedOn"),
@@ -650,6 +650,61 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricValidSamplingPercentage2) {
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
     EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidSamplingPercentage) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_sampling_percentage(101);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidSamplingPercentageZero) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_sampling_percentage(0);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricValidSamplingPercentage) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_sampling_percentage(50);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestPulledGaugeMetricWithSamplingPercentage) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_sampling_percentage(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING,
+                                  StringToId("Gauge")));
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingIdOrWhat) {
