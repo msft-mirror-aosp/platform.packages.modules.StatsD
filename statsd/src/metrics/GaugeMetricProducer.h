@@ -227,6 +227,8 @@ private:
     // Tracks if the dimension guardrail has been hit in the current report.
     bool mDimensionGuardrailHit;
 
+    const int mSamplingPercentage;
+
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsNoCondition);
