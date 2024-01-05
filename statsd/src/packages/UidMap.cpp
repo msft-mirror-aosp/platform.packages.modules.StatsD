@@ -260,7 +260,7 @@ void UidMap::removeApp(const int64_t& timestamp, const string& app, const int32_
     }
 }
 
-void UidMap::setListener(wp<PackageInfoListener> listener) {
+void UidMap::setListener(const wp<PackageInfoListener>& listener) {
     lock_guard<mutex> lock(mMutex);  // Lock for updates
     mSubscriber = listener;
 }

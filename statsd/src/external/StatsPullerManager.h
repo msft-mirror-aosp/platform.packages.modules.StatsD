@@ -70,20 +70,21 @@ public:
     // Registers a receiver for tagId. It will be pulled on the nextPullTimeNs
     // and then every intervalNs thereafter.
     virtual void RegisterReceiver(int tagId, const ConfigKey& configKey,
-                                  wp<PullDataReceiver> receiver, int64_t nextPullTimeNs,
+                                  const wp<PullDataReceiver>& receiver, int64_t nextPullTimeNs,
                                   int64_t intervalNs);
 
     // Stop listening on a tagId.
     virtual void UnRegisterReceiver(int tagId, const ConfigKey& configKey,
-                                    wp<PullDataReceiver> receiver);
+                                    const wp<PullDataReceiver>& receiver);
 
     // Registers a pull uid provider for the config key. When pulling atoms, it will be used to
     // determine which uids to pull from.
-    virtual void RegisterPullUidProvider(const ConfigKey& configKey, wp<PullUidProvider> provider);
+    virtual void RegisterPullUidProvider(const ConfigKey& configKey,
+                                         const wp<PullUidProvider>& provider);
 
     // Unregister a pull uid provider.
     virtual void UnregisterPullUidProvider(const ConfigKey& configKey,
-                                           wp<PullUidProvider> provider);
+                                           const wp<PullUidProvider>& provider);
 
     // Verify if we know how to pull for this matcher
     bool PullerForMatcherExists(int tagId) const;
@@ -114,7 +115,7 @@ public:
     // Clear pull data cache if it is beyond respective cool down time.
     int ClearPullerCacheIfNecessary(int64_t timestampNs);
 
-    void SetStatsCompanionService(shared_ptr<IStatsCompanionService> statsCompanionService);
+    void SetStatsCompanionService(const shared_ptr<IStatsCompanionService>& statsCompanionService);
 
     void RegisterPullAtomCallback(const int uid, const int32_t atomTag, const int64_t coolDownNs,
                                   const int64_t timeoutNs, const vector<int32_t>& additiveFields,
