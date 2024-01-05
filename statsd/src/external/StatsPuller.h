@@ -41,10 +41,9 @@ enum PullErrorCode {
 
 class StatsPuller : public virtual RefBase {
 public:
-    explicit StatsPuller(const int tagId,
-                         const int64_t coolDownNs = NS_PER_SEC,
+    explicit StatsPuller(const int tagId, const int64_t coolDownNs = NS_PER_SEC,
                          const int64_t pullTimeoutNs = StatsdStats::kPullMaxDelayNs,
-                         const std::vector<int> additiveFields = std::vector<int>());
+                         const std::vector<int>& additiveFields = std::vector<int>());
 
     virtual ~StatsPuller() {}
 
@@ -69,7 +68,7 @@ public:
     static void SetUidMap(const sp<UidMap>& uidMap);
 
     virtual void SetStatsCompanionService(
-            shared_ptr<IStatsCompanionService> statsCompanionService) {};
+            const shared_ptr<IStatsCompanionService>& statsCompanionService){};
 
 protected:
     const int mTagId;
