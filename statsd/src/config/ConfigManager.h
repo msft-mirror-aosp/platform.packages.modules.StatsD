@@ -116,14 +116,14 @@ public:
     /**
      * Sets the pending intent that is notified whenever the list of restricted metrics changes
      */
-    void SetRestrictedMetricsChangedReceiver(const string& configPackage, const int64_t configId,
+    void SetRestrictedMetricsChangedReceiver(const string& configPackage, int64_t configId,
                                              const int32_t callingUid,
                                              const shared_ptr<IPendingIntentRef>& pir);
 
     /**
      * Erase any restricted metrics changed pending intents associated with this config key & uid.
      */
-    void RemoveRestrictedMetricsChangedReceiver(const string& configPackage, const int64_t configId,
+    void RemoveRestrictedMetricsChangedReceiver(const string& configPackage, int64_t configId,
                                                 const int32_t callingUid);
 
     /**

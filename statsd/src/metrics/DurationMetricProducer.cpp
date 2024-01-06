@@ -603,7 +603,7 @@ void DurationMetricProducer::onDumpReportLocked(
     }
 }
 
-void DurationMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void DurationMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
 
     if (currentBucketEndTimeNs > eventTimeNs) {
@@ -617,8 +617,8 @@ void DurationMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
     mCurrentBucketNum += numBucketsForward;
 }
 
-void DurationMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                      const int64_t& nextBucketStartTimeNs) {
+void DurationMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                      const int64_t nextBucketStartTimeNs) {
     const auto [globalConditionTrueNs, globalConditionCorrectionNs] =
             mConditionTimer.newBucketStart(eventTimeNs, nextBucketStartTimeNs);
 
