@@ -519,7 +519,7 @@ optional<InvalidConfigReason> determineMetricUpdateStatus(
     if (invalidConfigReason.has_value()) {
         return invalidConfigReason;
     }
-    const sp<MetricProducer> oldMetricProducer = oldMetricProducers[oldMetricProducerIt->second];
+    const sp<MetricProducer>& oldMetricProducer = oldMetricProducers[oldMetricProducerIt->second];
     if (oldMetricProducer->getMetricType() != metricType ||
         oldMetricProducer->getProtoHash() != metricHash) {
         updateStatus = UPDATE_REPLACE;

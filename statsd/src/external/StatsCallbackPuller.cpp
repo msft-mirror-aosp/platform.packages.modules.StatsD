@@ -37,7 +37,7 @@ namespace statsd {
 
 StatsCallbackPuller::StatsCallbackPuller(int tagId, const shared_ptr<IPullAtomCallback>& callback,
                                          const int64_t coolDownNs, int64_t timeoutNs,
-                                         const vector<int> additiveFields)
+                                         const vector<int>& additiveFields)
     : StatsPuller(tagId, coolDownNs, timeoutNs, additiveFields), mCallback(callback) {
     VLOG("StatsCallbackPuller created for tag %d", tagId);
 }
