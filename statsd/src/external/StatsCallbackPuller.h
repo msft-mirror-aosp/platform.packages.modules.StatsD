@@ -29,7 +29,7 @@ namespace statsd {
 class StatsCallbackPuller : public StatsPuller {
 public:
     explicit StatsCallbackPuller(int tagId, const shared_ptr<IPullAtomCallback>& callback,
-                                 const int64_t coolDownNs, const int64_t timeoutNs,
+                                 const int64_t coolDownNs, int64_t timeoutNs,
                                  const std::vector<int>& additiveFields);
 
 private:

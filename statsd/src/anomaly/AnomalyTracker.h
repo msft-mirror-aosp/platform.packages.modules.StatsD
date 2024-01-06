@@ -55,32 +55,30 @@ public:
     // If a bucket for bucketNum already exists, it will be replaced.
     // Also, advances to bucketNum (if not in the past), effectively filling any intervening
     // buckets with 0s.
-    void addPastBucket(const std::shared_ptr<DimToValMap>& bucket, const int64_t& bucketNum);
+    void addPastBucket(const std::shared_ptr<DimToValMap>& bucket, const int64_t bucketNum);
 
     // Inserts (or replaces) the bucket entry for the given bucketNum at the given key to be the
     // given bucketValue. If the bucket does not exist, it will be created.
     // Also, advances to bucketNum (if not in the past), effectively filling any intervening
     // buckets with 0s.
-    void addPastBucket(const MetricDimensionKey& key, const int64_t& bucketValue,
-                       const int64_t& bucketNum);
+    void addPastBucket(const MetricDimensionKey& key, int64_t bucketValue, int64_t bucketNum);
 
     // Returns true if, based on past buckets plus the new currentBucketValue (which generally
     // represents the partially-filled current bucket), an anomaly has happened.
     // Also advances to currBucketNum-1.
-    bool detectAnomaly(const int64_t& currBucketNum, const MetricDimensionKey& key,
-                       const int64_t& currentBucketValue);
+    bool detectAnomaly(int64_t currBucketNum, const MetricDimensionKey& key,
+                       int64_t currentBucketValue);
 
     // Informs incidentd about the detected alert.
-    void declareAnomaly(const int64_t& timestampNs, int64_t metricId, const MetricDimensionKey& key,
+    void declareAnomaly(int64_t timestampNs, int64_t metricId, const MetricDimensionKey& key,
                         int64_t metricValue);
 
     // Detects if, based on past buckets plus the new currentBucketValue (which generally
     // represents the partially-filled current bucket), an anomaly has happened, and if so,
     // declares an anomaly and informs relevant subscribers.
     // Also advances to currBucketNum-1.
-    void detectAndDeclareAnomaly(const int64_t& timestampNs, const int64_t& currBucketNum,
-                                 int64_t metricId, const MetricDimensionKey& key,
-                                 const int64_t& currentBucketValue);
+    void detectAndDeclareAnomaly(int64_t timestampNs, int64_t currBucketNum, int64_t metricId,
+                                 const MetricDimensionKey& key, int64_t currentBucketValue);
 
     // Init the AlarmMonitor which is shared across anomaly trackers.
     virtual void setAlarmMonitor(const sp<AlarmMonitor>& alarmMonitor) {
@@ -91,7 +89,7 @@ public:
     int64_t getSumOverPastBuckets(const MetricDimensionKey& key) const;
 
     // Returns the value for a past bucket, or 0 if that bucket doesn't exist.
-    int64_t getPastBucketValue(const MetricDimensionKey& key, const int64_t& bucketNum) const;
+    int64_t getPastBucketValue(const MetricDimensionKey& key, int64_t bucketNum) const;
 
     // Returns the anomaly threshold set in the configuration.
     inline int64_t getAnomalyThreshold() const {
@@ -115,14 +113,14 @@ public:
 
     // Sets an alarm for the given timestamp.
     // Replaces previous alarm if one already exists.
-    virtual void startAlarm(const MetricDimensionKey& dimensionKey, const int64_t& eventTime) {
+    virtual void startAlarm(const MetricDimensionKey& dimensionKey, int64_t eventTime) {
         return;  // The base AnomalyTracker class doesn't have alarms.
     }
 
     // Stops the alarm.
     // If it should have already fired, but hasn't yet (e.g. because the AlarmManager is delayed),
     // declare the anomaly now.
-    virtual void stopAlarm(const MetricDimensionKey& dimensionKey, const int64_t& timestampNs) {
+    virtual void stopAlarm(const MetricDimensionKey& dimensionKey, int64_t timestampNs) {
         return;  // The base AnomalyTracker class doesn't have alarms.
     }
 
@@ -133,7 +131,8 @@ public:
 
     // Declares an anomaly for each alarm in firedAlarms that belongs to this AnomalyTracker,
     // and removes it from firedAlarms. Does NOT remove the alarm from the AlarmMonitor.
-    virtual void informAlarmsFired(const int64_t& timestampNs,
+    virtual void informAlarmsFired(
+            int64_t timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& firedAlarms) {
         return; // The base AnomalyTracker class doesn't have alarms.
     }
@@ -190,7 +189,7 @@ protected:
     // Advances mMostRecentBucketNum to bucketNum, deleting any data that is now too old.
     // Specifically, since it is now too old, removes the data for
     //   [mMostRecentBucketNum - mNumOfPastBuckets + 1, bucketNum - mNumOfPastBuckets].
-    void advanceMostRecentBucketTo(const int64_t& bucketNum);
+    void advanceMostRecentBucketTo(int64_t bucketNum);
 
     // Add the information in the given bucket to mSumOverPastBuckets.
     void addBucketToSum(const shared_ptr<DimToValMap>& bucket);
@@ -200,10 +199,10 @@ protected:
     void subtractBucketFromSum(const shared_ptr<DimToValMap>& bucket);
 
     // From mSumOverPastBuckets[key], subtracts bucketValue, removing it if it is now 0.
-    void subtractValueFromSum(const MetricDimensionKey& key, const int64_t& bucketValue);
+    void subtractValueFromSum(const MetricDimensionKey& key, int64_t bucketValue);
 
     // Returns true if in the refractory period, else false.
-    bool isInRefractoryPeriod(const int64_t& timestampNs, const MetricDimensionKey& key) const;
+    bool isInRefractoryPeriod(int64_t timestampNs, const MetricDimensionKey& key) const;
 
     // Calculates the corresponding bucket index within the circular array.
     // Requires bucketNum >= 0.

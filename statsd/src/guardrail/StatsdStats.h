@@ -395,7 +395,7 @@ public:
      * [id]: The id of the condition.
      * [size]: The output tuple size.
      */
-    void noteConditionDimensionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteConditionDimensionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report the size of output tuple of a metric.
@@ -407,7 +407,7 @@ public:
      * [id]: The id of the metric.
      * [size]: The output tuple size.
      */
-    void noteMetricDimensionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteMetricDimensionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report the max size of output tuple of dimension in condition across dimensions in what.
@@ -419,7 +419,7 @@ public:
      * [id]: The id of the metric.
      * [size]: The output tuple size.
      */
-    void noteMetricDimensionInConditionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteMetricDimensionInConditionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report a matcher has been matched.
@@ -427,7 +427,7 @@ public:
      * [key]: The config key that this matcher belongs to.
      * [id]: The id of the matcher.
      */
-    void noteMatcherMatched(const ConfigKey& key, const int64_t& id);
+    void noteMatcherMatched(const ConfigKey& key, int64_t id);
 
     /**
      * Report that an anomaly detection alert has been declared.
@@ -435,7 +435,7 @@ public:
      * [key]: The config key that this alert belongs to.
      * [id]: The id of the alert.
      */
-    void noteAnomalyDeclared(const ConfigKey& key, const int64_t& id);
+    void noteAnomalyDeclared(const ConfigKey& key, int64_t id);
 
     /**
      * Report an atom event has been logged.
@@ -636,7 +636,7 @@ public:
     /** Report query of restricted metric succeed **/
     void noteQueryRestrictedMetricSucceed(const int64_t configId, const string& configPackage,
                                           const std::optional<int32_t> configUid,
-                                          const int32_t callingUid, const int64_t queryLatencyNs);
+                                          const int32_t callingUid, int64_t queryLatencyNs);
 
     /** Report query of restricted metric failed **/
     void noteQueryRestrictedMetricFailed(const int64_t configId, const string& configPackage,
@@ -653,24 +653,24 @@ public:
     void noteRestrictedMetricInsertError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports that a restricted metric fails to create table in database.
-    void noteRestrictedMetricTableCreationError(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricTableCreationError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports that a restricted metric fails to delete table in database.
-    void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports the time it takes for a restricted metric to flush the data to the database.
-    void noteRestrictedMetricFlushLatency(const ConfigKey& configKey, const int64_t metricId,
+    void noteRestrictedMetricFlushLatency(const ConfigKey& configKey, int64_t metricId,
                                           const int64_t flushLatencyNs);
 
     // Reports that a restricted metric had a category change.
-    void noteRestrictedMetricCategoryChanged(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricCategoryChanged(const ConfigKey& configKey, int64_t metricId);
 
     // Reports the time is takes to flush a restricted config to the database.
     void noteRestrictedConfigFlushLatency(const ConfigKey& configKey,
                                           const int64_t totalFlushLatencyNs);
 
     // Reports the size of the internal sqlite db.
-    void noteRestrictedConfigDbSize(const ConfigKey& configKey, const int64_t elapsedTimeNs,
+    void noteRestrictedConfigDbSize(const ConfigKey& configKey, int64_t elapsedTimeNs,
                                     const int64_t dbSize);
 
     /**
@@ -1088,10 +1088,10 @@ InvalidConfigReason createInvalidConfigReasonWithSubscription(const InvalidConfi
                                                               const int64_t subscriptionId);
 
 InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlarm(
-        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alarmId);
+        const InvalidConfigReasonEnum reason, int64_t subscriptionId, int64_t alarmId);
 
 InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlert(
-        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alertId);
+        const InvalidConfigReasonEnum reason, int64_t subscriptionId, int64_t alertId);
 
 }  // namespace statsd
 }  // namespace os
