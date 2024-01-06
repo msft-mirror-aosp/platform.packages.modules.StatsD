@@ -87,8 +87,11 @@ INSTANTIATE_TEST_SUITE_P(SocketParseMessageTest, SocketParseMessageTest, testing
                          SocketParseMessageTest::ToString);
 
 TEST_P(SocketParseMessageTest, TestProcessMessage) {
+    StatsdStats::getInstance().reset();
+
     generateAtomLogging(mEventQueue, mLogEventFilter, kEventCount, kAtomId);
 
+    int64_t lastEventTs = 0;
     // check content of the queue
     EXPECT_EQ(kEventCount, mEventQueue->mQueue.size());
     for (int i = 0; i < kEventCount; i++) {
@@ -96,7 +99,11 @@ TEST_P(SocketParseMessageTest, TestProcessMessage) {
         EXPECT_TRUE(logEvent->isValid());
         EXPECT_EQ(kAtomId + i, logEvent->GetTagId());
         EXPECT_EQ(logEvent->isParsedHeaderOnly(), GetParam());
+        lastEventTs = logEvent->GetElapsedTimestampNs();
     }
+
+    EXPECT_EQ(StatsdStats::getInstance().mEventQueueMaxSizeObserved, kEventCount);
+    EXPECT_EQ(StatsdStats::getInstance().mEventQueueMaxSizeObservedElapsedNanos, lastEventTs);
 }
 
 TEST_P(SocketParseMessageTest, TestProcessMessageEmptySetExplicitSet) {

@@ -119,7 +119,7 @@ void AnomalyTracker::addPastBucket(const MetricDimensionKey& key,
     }
 }
 
-void AnomalyTracker::addPastBucket(std::shared_ptr<DimToValMap> bucket,
+void AnomalyTracker::addPastBucket(const std::shared_ptr<DimToValMap>& bucket,
                                    const int64_t& bucketNum) {
     VLOG("addPastBucket(bucket) called.");
     if (mNumOfPastBuckets == 0 ||

@@ -243,7 +243,7 @@ void MetricProducer::cancelEventActivationLocked(int deactivationTrackerIndex) {
     if (it == mEventDeactivationMap.end()) {
         return;
     }
-    for (auto activationToCancelIt : it->second)  {
+    for (auto& activationToCancelIt : it->second) {
         activationToCancelIt->state = ActivationState::kNotActive;
     }
 }

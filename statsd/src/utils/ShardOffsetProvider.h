@@ -51,6 +51,7 @@ private:
     FRIEND_TEST(CountMetricE2eTest, TestDimensionalSampling);
     FRIEND_TEST(DurationMetricE2eTest, TestDimensionalSampling);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestDimensionalSampling);
+    FRIEND_TEST(GaugeMetricE2ePushedTest, TestPushedGaugeMetricSamplingWithDimensionalSampling);
     FRIEND_TEST(GaugeMetricProducerTest, TestPullDimensionalSampling);
     FRIEND_TEST(KllMetricE2eTest, TestDimensionalSampling);
     FRIEND_TEST(NumericValueMetricProducerTest, TestDimensionalSampling);
