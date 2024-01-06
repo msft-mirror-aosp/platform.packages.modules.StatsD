@@ -73,8 +73,8 @@ struct ChangeRecord {
     const string versionString;
     const string prevVersionString;
 
-    ChangeRecord(const bool isDeletion, const int64_t timestampNs, const string& package,
-                 const int32_t uid, const int64_t version, const string& versionString,
+    ChangeRecord(const bool isDeletion, int64_t timestampNs, const string& package,
+                 const int32_t uid, int64_t version, const string& versionString,
                  const int64_t prevVersion, const string& prevVersionString)
         : deletion(isDeletion),
           timestampNs(timestampNs),
@@ -99,18 +99,18 @@ public:
 
     static sp<UidMap> getInstance();
 
-    void updateMap(const int64_t& timestamp, const UidData& uidData);
+    void updateMap(const int64_t timestamp, const UidData& uidData);
 
-    void updateApp(const int64_t& timestamp, const string& appName, const int32_t& uid,
-                   const int64_t& versionCode, const string& versionString, const string& installer,
+    void updateApp(const int64_t timestamp, const string& appName, const int32_t uid,
+                   const int64_t versionCode, const string& versionString, const string& installer,
                    const vector<uint8_t>& certificateHash);
-    void removeApp(const int64_t& timestamp, const string& app, const int32_t& uid);
+    void removeApp(const int64_t timestamp, const string& app, const int32_t uid);
 
     // Returns true if the given uid contains the specified app (eg. com.google.android.gms).
     bool hasApp(int uid, const string& packageName) const;
 
     // Returns the app names from uid.
-    std::set<string> getAppNamesFromUid(const int32_t& uid, bool returnNormalized) const;
+    std::set<string> getAppNamesFromUid(int32_t uid, bool returnNormalized) const;
 
     int64_t getAppVersion(int uid, const string& packageName) const;
 
@@ -138,10 +138,9 @@ public:
     // Gets all snapshots and changes that have occurred since the last output.
     // If every config key has received a change or snapshot record, then this
     // record is deleted.
-    void appendUidMap(const int64_t& timestamp, const ConfigKey& key,
-                      const bool includeVersionStrings, const bool includeInstaller,
-                      const uint8_t truncatedCertificateHashSize, std::set<string>* str_set,
-                      ProtoOutputStream* proto);
+    void appendUidMap(int64_t timestamp, const ConfigKey& key, const bool includeVersionStrings,
+                      const bool includeInstaller, const uint8_t truncatedCertificateHashSize,
+                      std::set<string>* str_set, ProtoOutputStream* proto);
 
     // Forces the output to be cleared. We still generate a snapshot based on the current state.
     // This results in extra data uploaded but helps us reconstruct the uid mapping on the server
@@ -165,7 +164,7 @@ public:
                              ProtoOutputStream* proto) const;
 
 private:
-    std::set<string> getAppNamesFromUidLocked(const int32_t& uid, bool returnNormalized) const;
+    std::set<string> getAppNamesFromUidLocked(int32_t uid, bool returnNormalized) const;
     string normalizeAppName(const string& appName) const;
 
     void writeUidMapSnapshotLocked(const int64_t timestamp, const bool includeVersionStrings,

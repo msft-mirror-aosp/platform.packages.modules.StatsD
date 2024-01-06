@@ -146,7 +146,7 @@ public:
     /**
      * Binder call to remove the active configs changed operation for the specified package..
      */
-    virtual Status removeActiveConfigsChangedOperation(const int32_t callingUid) override;
+    virtual Status removeActiveConfigsChangedOperation(int32_t callingUid) override;
     /**
      * Binder call to allow clients to remove the specified configuration.
      */

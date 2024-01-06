@@ -127,13 +127,13 @@ public:
     }
 
     // ValueMetric needs special logic if it's a pulled atom.
-    void onStatsdInitCompleted(const int64_t& eventTimeNs) override;
+    void onStatsdInitCompleted(int64_t eventTimeNs) override;
 
     void onStateChanged(int64_t eventTimeNs, int32_t atomId, const HashableDimensionKey& primaryKey,
                         const FieldValue& oldState, const FieldValue& newState) override;
 
 protected:
-    ValueMetricProducer(const int64_t& metricId, const ConfigKey& key, const uint64_t protoHash,
+    ValueMetricProducer(int64_t metricId, const ConfigKey& key, uint64_t protoHash,
                         const PullOptions& pullOptions, const BucketOptions& bucketOptions,
                         const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
                         const StateOptions& stateOptions,
@@ -178,7 +178,7 @@ protected:
     }
 
     // ValueMetricProducer internal interface to handle condition change.
-    void onConditionChangedLocked(const bool condition, const int64_t eventTimeNs) override;
+    void onConditionChangedLocked(const bool condition, int64_t eventTimeNs) override;
 
     // Only called when mIsActive, the event is NOT too late, and after pulling.
     virtual void onConditionChangedInternalLocked(const ConditionState oldCondition,
@@ -187,7 +187,7 @@ protected:
     }
 
     // Internal interface to handle sliced condition change.
-    void onSlicedConditionMayChangeLocked(bool overallCondition, const int64_t eventTime) override;
+    void onSlicedConditionMayChangeLocked(bool overallCondition, int64_t eventTime) override;
 
     void dumpStatesLocked(int out, bool verbose) const override;
 
@@ -195,12 +195,11 @@ protected:
 
     // For pulled metrics, this method should only be called if a pull has been done. Else we will
     // not have complete data for the bucket.
-    void flushIfNeededLocked(const int64_t& eventTime) override;
+    void flushIfNeededLocked(int64_t eventTime) override;
 
     // For pulled metrics, this method should only be called if a pulled has been done. Else we will
     // not have complete data for the bucket.
-    void flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                  const int64_t& nextBucketStartTimeNs) override;
+    void flushCurrentBucketLocked(int64_t eventTimeNs, int64_t nextBucketStartTimeNs) override;
 
     void dropDataLocked(const int64_t dropTimeNs) override;
 
@@ -216,7 +215,7 @@ protected:
     void skipCurrentBucket(const int64_t dropTimeNs, const BucketDropReason reason);
 
     optional<InvalidConfigReason> onConfigUpdatedLocked(
-            const StatsdConfig& config, const int configIndex, const int metricIndex,
+            const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -332,7 +331,7 @@ protected:
     virtual PastBucket<AggregatedValue> buildPartialBucket(int64_t bucketEndTime,
                                                            std::vector<Interval>& intervals) = 0;
 
-    virtual void closeCurrentBucket(const int64_t eventTimeNs, const int64_t nextBucketStartTimeNs);
+    virtual void closeCurrentBucket(const int64_t eventTimeNs, int64_t nextBucketStartTimeNs);
 
     virtual void initNextSlicedBucket(int64_t nextBucketStartTimeNs);
 

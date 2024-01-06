@@ -334,31 +334,29 @@ FieldMatcher CreateAttributionUidAndOtherDimensions(const int atomId,
                                                     const std::vector<Position>& positions,
                                                     const std::vector<int>& fields);
 
-EventMetric createEventMetric(const string& name, const int64_t what,
-                              const optional<int64_t>& condition);
+EventMetric createEventMetric(const string& name, int64_t what, const optional<int64_t>& condition);
 
-CountMetric createCountMetric(const string& name, const int64_t what,
-                              const optional<int64_t>& condition, const vector<int64_t>& states);
+CountMetric createCountMetric(const string& name, int64_t what, const optional<int64_t>& condition,
+                              const vector<int64_t>& states);
 
-DurationMetric createDurationMetric(const string& name, const int64_t what,
+DurationMetric createDurationMetric(const string& name, int64_t what,
                                     const optional<int64_t>& condition,
                                     const vector<int64_t>& states);
 
-GaugeMetric createGaugeMetric(const string& name, const int64_t what,
+GaugeMetric createGaugeMetric(const string& name, int64_t what,
                               const GaugeMetric::SamplingType samplingType,
                               const optional<int64_t>& condition,
                               const optional<int64_t>& triggerEvent);
 
-ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const int valueField,
+ValueMetric createValueMetric(const string& name, const AtomMatcher& what, int valueField,
                               const optional<int64_t>& condition, const vector<int64_t>& states);
 
-KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int kllField,
+KllMetric createKllMetric(const string& name, const AtomMatcher& what, int kllField,
                           const optional<int64_t>& condition);
 
-Alert createAlert(const string& name, const int64_t metricId, const int buckets,
-                  const int64_t triggerSum);
+Alert createAlert(const string& name, int64_t metricId, int buckets, const int64_t triggerSum);
 
-Alarm createAlarm(const string& name, const int64_t offsetMillis, const int64_t periodMillis);
+Alarm createAlarm(const string& name, int64_t offsetMillis, int64_t periodMillis);
 
 Subscription createSubscription(const string& name, const Subscription_RuleType type,
                                 const int64_t ruleId);
@@ -478,10 +476,10 @@ std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestam
 std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs);
 
 // Create log event for app moving to background.
-std::unique_ptr<LogEvent> CreateMoveToBackgroundEvent(uint64_t timestampNs, const int uid);
+std::unique_ptr<LogEvent> CreateMoveToBackgroundEvent(uint64_t timestampNs, int uid);
 
 // Create log event for app moving to foreground.
-std::unique_ptr<LogEvent> CreateMoveToForegroundEvent(uint64_t timestampNs, const int uid);
+std::unique_ptr<LogEvent> CreateMoveToForegroundEvent(uint64_t timestampNs, int uid);
 
 // Create log event when the app sync starts.
 std::unique_ptr<LogEvent> CreateSyncStartEvent(uint64_t timestampNs, const vector<int>& uids,
@@ -492,10 +490,10 @@ std::unique_ptr<LogEvent> CreateSyncEndEvent(uint64_t timestampNs, const vector<
                                              const vector<string>& tags, const string& name);
 
 // Create log event when the app sync ends.
-std::unique_ptr<LogEvent> CreateAppCrashEvent(uint64_t timestampNs, const int uid);
+std::unique_ptr<LogEvent> CreateAppCrashEvent(uint64_t timestampNs, int uid);
 
 // Create log event for an app crash.
-std::unique_ptr<LogEvent> CreateAppCrashOccurredEvent(uint64_t timestampNs, const int uid);
+std::unique_ptr<LogEvent> CreateAppCrashOccurredEvent(uint64_t timestampNs, int uid);
 
 // Create log event for acquiring wakelock.
 std::unique_ptr<LogEvent> CreateAcquireWakelockEvent(uint64_t timestampNs, const vector<int>& uids,
@@ -528,7 +526,7 @@ std::unique_ptr<LogEvent> CreateOverlayStateChangedEvent(int64_t timestampNs, co
                                                          const OverlayStateChanged::State state);
 
 std::unique_ptr<LogEvent> CreateAppStartOccurredEvent(
-        uint64_t timestampNs, const int uid, const string& pkg_name,
+        uint64_t timestampNs, int uid, const string& pkg_name,
         AppStartOccurred::TransitionType type, const string& activity_name,
         const string& calling_pkg_name, const bool is_instant_app, int64_t activity_start_msec);
 
@@ -551,7 +549,7 @@ std::unique_ptr<LogEvent> CreatePhoneSignalStrengthChangedEvent(
 
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         uint64_t timestampNs, const vector<int>& attributionUids,
-        const vector<string>& attributionTags, const int intField, const long longField,
+        const vector<string>& attributionTags, int intField, const long longField,
         const float floatField, const string& stringField, const bool boolField,
         const TestAtomReported::State enumField, const vector<uint8_t>& bytesField,
         const vector<int>& repeatedIntField, const vector<int64_t>& repeatedLongField,
@@ -565,7 +563,7 @@ void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId);
 
 // Create a statsd log event processor upon the start time in seconds, config and key.
 sp<StatsLogProcessor> CreateStatsLogProcessor(
-        const int64_t timeBaseNs, const int64_t currentTimeNs, const StatsdConfig& config,
+        const int64_t timeBaseNs, int64_t currentTimeNs, const StatsdConfig& config,
         const ConfigKey& key, const shared_ptr<IPullAtomCallback>& puller = nullptr,
         const int32_t atomTag = 0 /*for puller only*/, const sp<UidMap> = new UidMap(),
         const shared_ptr<LogEventFilter>& logEventFilter = std::make_shared<LogEventFilter>());
@@ -585,7 +583,7 @@ StatsDimensionsValueParcel CreateAttributionUidDimensionsValueParcel(const int a
                                                                      const int uid);
 
 void ValidateUidDimension(const DimensionsValue& value, int atomId, int uid);
-void ValidateWakelockAttributionUidAndTagDimension(const DimensionsValue& value, const int atomId,
+void ValidateWakelockAttributionUidAndTagDimension(const DimensionsValue& value, int atomId,
                                                    const int uid, const string& tag);
 void ValidateUidDimension(const DimensionsValue& value, int node_idx, int atomId, int uid);
 void ValidateAttributionUidDimension(const DimensionsValue& value, int atomId, int uid);
@@ -712,8 +710,8 @@ void sortMetricDataByFirstDimensionLeafValue(const T& metricData, T* sortedMetri
 }
 
 template <typename T>
-void backfillStartEndTimestampForFullBucket(
-    const int64_t timeBaseNs, const int64_t bucketSizeNs, T* bucket) {
+void backfillStartEndTimestampForFullBucket(const int64_t timeBaseNs, int64_t bucketSizeNs,
+                                            T* bucket) {
     bucket->set_start_bucket_elapsed_nanos(timeBaseNs + bucketSizeNs * bucket->bucket_num());
     bucket->set_end_bucket_elapsed_nanos(
         timeBaseNs + bucketSizeNs * bucket->bucket_num() + bucketSizeNs);
@@ -735,7 +733,7 @@ void backfillStartEndTimestampForPartialBucket(const int64_t timeBaseNs, T* buck
 }
 
 template <typename T>
-void backfillStartEndTimestampForMetrics(const int64_t timeBaseNs, const int64_t bucketSizeNs,
+void backfillStartEndTimestampForMetrics(const int64_t timeBaseNs, int64_t bucketSizeNs,
                                          T* metrics) {
     for (int i = 0; i < metrics->data_size(); ++i) {
         auto data = metrics->mutable_data(i);
@@ -790,10 +788,10 @@ void writeBootFlag(const std::string& flagName, const std::string& flagValue);
 
 PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap);
 
-ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
-                                      const string& versionString, const string& package);
+ApplicationInfo createApplicationInfo(int32_t uid, int64_t version, const string& versionString,
+                                      const string& package);
 
-PackageInfo buildPackageInfo(const std::string& name, const int32_t uid, const int64_t version,
+PackageInfo buildPackageInfo(const std::string& name, const int32_t uid, int64_t version,
                              const std::string& versionString,
                              const std::optional<std::string> installer,
                              const std::vector<uint8_t>& certHash, const bool deleted,
