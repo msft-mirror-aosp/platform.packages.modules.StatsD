@@ -55,7 +55,7 @@ public:
     // If a bucket for bucketNum already exists, it will be replaced.
     // Also, advances to bucketNum (if not in the past), effectively filling any intervening
     // buckets with 0s.
-    void addPastBucket(std::shared_ptr<DimToValMap> bucket, const int64_t& bucketNum);
+    void addPastBucket(const std::shared_ptr<DimToValMap>& bucket, const int64_t& bucketNum);
 
     // Inserts (or replaces) the bucket entry for the given bucketNum at the given key to be the
     // given bucketValue. If the bucket does not exist, it will be created.

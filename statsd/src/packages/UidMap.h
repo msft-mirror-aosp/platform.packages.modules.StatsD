@@ -74,8 +74,8 @@ struct ChangeRecord {
     const string prevVersionString;
 
     ChangeRecord(const bool isDeletion, const int64_t timestampNs, const string& package,
-                 const int32_t uid, const int64_t version, const string versionString,
-                 const int64_t prevVersion, const string prevVersionString)
+                 const int32_t uid, const int64_t version, const string& versionString,
+                 const int64_t prevVersion, const string& prevVersionString)
         : deletion(isDeletion),
           timestampNs(timestampNs),
           package(package),
@@ -121,7 +121,7 @@ public:
     // Command for indicating to the map that StatsLogProcessor should be notified if an app is
     // updated. This allows metric producers and managers to distinguish when the same uid or app
     // represents a different version of an app.
-    void setListener(wp<PackageInfoListener> listener);
+    void setListener(const wp<PackageInfoListener>& listener);
 
     // Informs uid map that a config is added/updated. Used for keeping mConfigKeys up to date.
     void OnConfigUpdated(const ConfigKey& key);
@@ -179,7 +179,7 @@ private:
     mutable mutex mIsolatedMutex;
 
     struct PairHash {
-        size_t operator()(std::pair<int, string> p) const noexcept {
+        size_t operator()(const std::pair<int, string>& p) const noexcept {
             std::hash<std::string> hash_fn;
             return hash_fn(std::to_string(p.first) + p.second);
         }
