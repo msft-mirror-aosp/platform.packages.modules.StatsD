@@ -41,7 +41,7 @@ enum PullErrorCode {
 
 class StatsPuller : public virtual RefBase {
 public:
-    explicit StatsPuller(const int tagId, const int64_t coolDownNs = NS_PER_SEC,
+    explicit StatsPuller(const int tagId, int64_t coolDownNs = NS_PER_SEC,
                          const int64_t pullTimeoutNs = StatsdStats::kPullMaxDelayNs,
                          const std::vector<int>& additiveFields = std::vector<int>());
 
