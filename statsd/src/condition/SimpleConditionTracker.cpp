@@ -27,7 +27,7 @@ namespace statsd {
 using std::unordered_map;
 
 SimpleConditionTracker::SimpleConditionTracker(
-        const ConfigKey& key, const int64_t& id, const uint64_t protoHash, const int index,
+        const ConfigKey& key, const int64_t id, const uint64_t protoHash, const int index,
         const SimplePredicate& simplePredicate,
         const unordered_map<int64_t, int>& atomMatchingTrackerMap)
     : ConditionTracker(id, index, protoHash),

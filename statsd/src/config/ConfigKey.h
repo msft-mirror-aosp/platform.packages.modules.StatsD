@@ -34,13 +34,13 @@ class ConfigKey {
 public:
     ConfigKey();
     ConfigKey(const ConfigKey& that);
-    ConfigKey(int uid, const int64_t& id);
+    ConfigKey(int uid, int64_t id);
     ~ConfigKey();
 
     inline int GetUid() const {
         return mUid;
     }
-    inline const int64_t& GetId() const {
+    inline int64_t GetId() const {
         return mId;
     }
 

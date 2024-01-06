@@ -31,7 +31,7 @@ namespace statsd {
 
 class ConditionTracker : public virtual RefBase {
 public:
-    ConditionTracker(const int64_t& id, const int index, const uint64_t protoHash)
+    ConditionTracker(int64_t id, int index, const uint64_t protoHash)
         : mConditionId(id),
           mIndex(index),
           mInitialized(false),
@@ -73,7 +73,7 @@ public:
     // conditionTrackerMap: map of condition tracker id to index after the config update.
     // returns whether or not the update is successful.
     virtual optional<InvalidConfigReason> onConfigUpdated(
-            const std::vector<Predicate>& allConditionProtos, const int index,
+            const std::vector<Predicate>& allConditionProtos, int index,
             const std::vector<sp<ConditionTracker>>& allConditionTrackers,
             const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& conditionTrackerMap) {
