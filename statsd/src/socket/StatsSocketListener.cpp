@@ -38,10 +38,10 @@ namespace android {
 namespace os {
 namespace statsd {
 
-StatsSocketListener::StatsSocketListener(std::shared_ptr<LogEventQueue> queue,
+StatsSocketListener::StatsSocketListener(const std::shared_ptr<LogEventQueue>& queue,
                                          const std::shared_ptr<LogEventFilter>& logEventFilter)
     : SocketListener(getLogSocket(), false /*start listen*/),
-      mQueue(std::move(queue)),
+      mQueue(queue),
       mLogEventFilter(logEventFilter) {
 }
 
@@ -148,6 +148,7 @@ void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
 
     const int32_t atomId = logEvent->GetTagId();
     const bool isAtomSkipped = logEvent->isParsedHeaderOnly();
+    const int64_t atomTimestamp = logEvent->GetElapsedTimestampNs();
 
     if (atomId == util::STATS_SOCKET_LOSS_REPORTED) {
         if (isAtomSkipped) {
@@ -164,8 +165,10 @@ void StatsSocketListener::processMessage(const uint8_t* msg, uint32_t len, uint3
         }
     }
 
-    int64_t oldestTimestamp;
-    if (!queue->push(std::move(logEvent), &oldestTimestamp)) {
+    const auto [success, oldestTimestamp, queueSize] = queue->push(std::move(logEvent));
+    if (success) {
+        StatsdStats::getInstance().noteEventQueueSize(queueSize, atomTimestamp);
+    } else {
         StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId, isAtomSkipped);
     }
 }

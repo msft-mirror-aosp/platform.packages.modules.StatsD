@@ -53,7 +53,7 @@ void StateManager::onLogEvent(const LogEvent& event) {
     }
 }
 
-void StateManager::registerListener(const int32_t atomId, wp<StateListener> listener) {
+void StateManager::registerListener(const int32_t atomId, const wp<StateListener>& listener) {
     // Check if state tracker already exists.
     if (mStateTrackers.find(atomId) == mStateTrackers.end()) {
         mStateTrackers[atomId] = new StateTracker(atomId);
@@ -61,7 +61,7 @@ void StateManager::registerListener(const int32_t atomId, wp<StateListener> list
     mStateTrackers[atomId]->registerListener(listener);
 }
 
-void StateManager::unregisterListener(const int32_t atomId, wp<StateListener> listener) {
+void StateManager::unregisterListener(const int32_t atomId, const wp<StateListener>& listener) {
     std::unique_lock<std::mutex> lock(mMutex);
 
     // Hold the sp<> until the lock is released so that ~StateTracker() is
