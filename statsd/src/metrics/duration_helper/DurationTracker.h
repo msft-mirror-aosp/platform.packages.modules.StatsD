@@ -73,7 +73,7 @@ struct DurationValues {
 
 class DurationTracker {
 public:
-    DurationTracker(const ConfigKey& key, const int64_t& id, const MetricDimensionKey& eventKey,
+    DurationTracker(const ConfigKey& key, const int64_t id, const MetricDimensionKey& eventKey,
                     const sp<ConditionWizard>& wizard, int conditionIndex, bool nesting,
                     int64_t currentBucketStartNs, int64_t currentBucketNum, int64_t startTimeNs,
                     int64_t bucketSizeNs, bool conditionSliced, bool fullLink,
@@ -95,21 +95,21 @@ public:
 
     virtual ~DurationTracker(){};
 
-    void onConfigUpdated(const sp<ConditionWizard>& wizard, const int conditionTrackerIndex) {
+    void onConfigUpdated(const sp<ConditionWizard>& wizard, int conditionTrackerIndex) {
         sp<ConditionWizard> tmpWizard = mWizard;
         mWizard = wizard;
         mConditionTrackerIndex = conditionTrackerIndex;
         mAnomalyTrackers.clear();
     };
 
-    virtual void noteStart(const HashableDimensionKey& key, bool condition, const int64_t eventTime,
+    virtual void noteStart(const HashableDimensionKey& key, bool condition, int64_t eventTime,
                            const ConditionKey& conditionKey, size_t dimensionHardLimit) = 0;
-    virtual void noteStop(const HashableDimensionKey& key, const int64_t eventTime,
+    virtual void noteStop(const HashableDimensionKey& key, int64_t eventTime,
                           const bool stopAll) = 0;
     virtual void noteStopAll(const int64_t eventTime) = 0;
 
     virtual void onSlicedConditionMayChange(const int64_t timestamp) = 0;
-    virtual void onConditionChanged(bool condition, const int64_t timestamp) = 0;
+    virtual void onConditionChanged(bool condition, int64_t timestamp) = 0;
 
     virtual void onStateChanged(const int64_t timestamp, const int32_t atomId,
                                 const FieldValue& newState) = 0;
@@ -123,7 +123,7 @@ public:
     // Should only be called during an app upgrade or from this tracker's flushIfNeeded. If from
     // an app upgrade, we assume that we're trying to form a partial bucket.
     virtual bool flushCurrentBucket(
-            const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+            int64_t eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
             const int64_t globalConditionTrueNs,
             std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) = 0;
 
@@ -138,7 +138,7 @@ public:
     virtual int64_t getCurrentStateKeyFullBucketDuration() const = 0;
 
     // Replace old value with new value for the given state atom.
-    virtual void updateCurrentStateKey(const int32_t atomId, const FieldValue& newState) = 0;
+    virtual void updateCurrentStateKey(int32_t atomId, const FieldValue& newState) = 0;
 
     virtual bool hasAccumulatedDuration() const = 0;
 
@@ -188,8 +188,8 @@ protected:
         }
     }
 
-    void addPastBucketToAnomalyTrackers(const MetricDimensionKey& eventKey,
-                                        const int64_t& bucketValue, const int64_t& bucketNum) {
+    void addPastBucketToAnomalyTrackers(const MetricDimensionKey& eventKey, int64_t bucketValue,
+                                        int64_t bucketNum) {
         for (auto& anomalyTracker : mAnomalyTrackers) {
             if (anomalyTracker != nullptr) {
                 anomalyTracker->addPastBucket(eventKey, bucketValue, bucketNum);
@@ -197,8 +197,8 @@ protected:
         }
     }
 
-    void detectAndDeclareAnomaly(const int64_t& timestamp, const int64_t& currBucketNum,
-                                 const int64_t& currentBucketValue) {
+    void detectAndDeclareAnomaly(int64_t timestamp, int64_t currBucketNum,
+                                 int64_t currentBucketValue) {
         for (auto& anomalyTracker : mAnomalyTrackers) {
             if (anomalyTracker != nullptr) {
                 anomalyTracker->detectAndDeclareAnomaly(timestamp, currBucketNum, mTrackerId,

@@ -26,7 +26,7 @@ namespace statsd {
 
 class CombinationConditionTracker : public ConditionTracker {
 public:
-    CombinationConditionTracker(const int64_t& id, const int index, const uint64_t protoHash);
+    CombinationConditionTracker(int64_t id, int index, const uint64_t protoHash);
 
     ~CombinationConditionTracker();
 
@@ -37,7 +37,7 @@ public:
             std::vector<uint8_t>& stack, std::vector<ConditionState>& conditionCache) override;
 
     optional<InvalidConfigReason> onConfigUpdated(
-            const std::vector<Predicate>& allConditionProtos, const int index,
+            const std::vector<Predicate>& allConditionProtos, int index,
             const std::vector<sp<ConditionTracker>>& allConditionTrackers,
             const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& conditionTrackerMap) override;

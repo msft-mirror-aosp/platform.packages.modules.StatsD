@@ -38,7 +38,7 @@ public:
                       int64_t nextPulltimeNs, int64_t intervalNs));
     MOCK_METHOD3(UnRegisterReceiver,
                  void(int tagId, const ConfigKey& key, const wp<PullDataReceiver>& receiver));
-    MOCK_METHOD4(Pull, bool(const int pullCode, const ConfigKey& key, const int64_t eventTimeNs,
+    MOCK_METHOD4(Pull, bool(const int pullCode, const ConfigKey& key, int64_t eventTimeNs,
                             vector<std::shared_ptr<LogEvent>>* data));
     MOCK_METHOD4(Pull, bool(const int pullCode, const vector<int32_t>& uids,
                             const int64_t eventTimeNs, vector<std::shared_ptr<LogEvent>>* data));
@@ -55,7 +55,7 @@ HashableDimensionKey getMockedDimensionKeyLongValue(int tagId, int key, int64_t 
 MetricDimensionKey getMockedStateDimensionKey(int tagId, int key, int64_t value);
 
 // Utils to build FieldMatcher proto for simple one-depth atoms.
-void buildSimpleAtomFieldMatcher(const int tagId, const int atomFieldNum, FieldMatcher* matcher);
+void buildSimpleAtomFieldMatcher(const int tagId, int atomFieldNum, FieldMatcher* matcher);
 void buildSimpleAtomFieldMatcher(const int tagId, FieldMatcher* matcher);
 
 }  // namespace statsd

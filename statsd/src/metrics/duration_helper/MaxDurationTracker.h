@@ -28,7 +28,7 @@ namespace statsd {
 // they stop or bucket expires.
 class MaxDurationTracker : public DurationTracker {
 public:
-    MaxDurationTracker(const ConfigKey& key, const int64_t& id, const MetricDimensionKey& eventKey,
+    MaxDurationTracker(const ConfigKey& key, const int64_t id, const MetricDimensionKey& eventKey,
                        const sp<ConditionWizard>& wizard, int conditionIndex, bool nesting,
                        int64_t currentBucketStartNs, int64_t currentBucketNum, int64_t startTimeNs,
                        int64_t bucketSizeNs, bool conditionSliced, bool fullLink,
@@ -36,22 +36,21 @@ public:
 
     MaxDurationTracker(const MaxDurationTracker& tracker) = default;
 
-    void noteStart(const HashableDimensionKey& key, bool condition, const int64_t eventTime,
+    void noteStart(const HashableDimensionKey& key, bool condition, int64_t eventTime,
                    const ConditionKey& conditionKey, size_t dimensionHardLimit) override;
-    void noteStop(const HashableDimensionKey& key, const int64_t eventTime,
-                  const bool stopAll) override;
+    void noteStop(const HashableDimensionKey& key, int64_t eventTime, const bool stopAll) override;
     void noteStopAll(const int64_t eventTime) override;
 
     bool flushIfNeeded(
             int64_t timestampNs, const optional<UploadThreshold>& uploadThreshold,
             std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) override;
     bool flushCurrentBucket(
-            const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+            int64_t eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
             const int64_t globalConditionTrueNs,
             std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>*) override;
 
     void onSlicedConditionMayChange(const int64_t timestamp) override;
-    void onConditionChanged(bool condition, const int64_t timestamp) override;
+    void onConditionChanged(bool condition, int64_t timestamp) override;
 
     void onStateChanged(const int64_t timestamp, const int32_t atomId,
                         const FieldValue& newState) override;
@@ -64,7 +63,7 @@ public:
 
     int64_t getCurrentStateKeyFullBucketDuration() const override;
 
-    void updateCurrentStateKey(const int32_t atomId, const FieldValue& newState);
+    void updateCurrentStateKey(int32_t atomId, const FieldValue& newState);
 
     bool hasAccumulatedDuration() const override;
 
