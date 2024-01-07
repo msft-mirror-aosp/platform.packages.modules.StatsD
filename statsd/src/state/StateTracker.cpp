@@ -25,7 +25,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
-StateTracker::StateTracker(const int32_t atomId) : mField(atomId, 0) {
+StateTracker::StateTracker(int32_t atomId) : mField(atomId, 0) {
 }
 
 void StateTracker::onLogEvent(const LogEvent& event) {
@@ -62,11 +62,11 @@ void StateTracker::onLogEvent(const LogEvent& event) {
     updateStateForPrimaryKey(eventTimeNs, primaryKey, newState, nested, mStateMap[primaryKey]);
 }
 
-void StateTracker::registerListener(wp<StateListener> listener) {
+void StateTracker::registerListener(const wp<StateListener>& listener) {
     mListeners.insert(listener);
 }
 
-void StateTracker::unregisterListener(wp<StateListener> listener) {
+void StateTracker::unregisterListener(const wp<StateListener>& listener) {
     mListeners.erase(listener);
 }
 
@@ -165,7 +165,7 @@ void StateTracker::updateStateForPrimaryKey(const int64_t eventTimeNs,
 void StateTracker::notifyListeners(const int64_t eventTimeNs,
                                    const HashableDimensionKey& primaryKey,
                                    const FieldValue& oldState, const FieldValue& newState) {
-    for (auto l : mListeners) {
+    for (const auto& l : mListeners) {
         auto sl = l.promote();
         if (sl != nullptr) {
             sl->onStateChanged(eventTimeNs, mField.getTag(), primaryKey, oldState, newState);
