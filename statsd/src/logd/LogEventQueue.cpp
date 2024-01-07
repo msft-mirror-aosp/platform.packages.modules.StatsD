@@ -39,22 +39,23 @@ unique_ptr<LogEvent> LogEventQueue::waitPop() {
     return item;
 }
 
-bool LogEventQueue::push(unique_ptr<LogEvent> item, int64_t* oldestTimestampNs) {
-    bool success;
+LogEventQueue::Result LogEventQueue::push(unique_ptr<LogEvent> item) {
+    Result result;
     {
         std::unique_lock<std::mutex> lock(mMutex);
         if (mQueue.size() < mQueueLimit) {
             mQueue.push(std::move(item));
-            success = true;
+            result.success = true;
         } else {
             // safe operation as queue must not be empty.
-            *oldestTimestampNs = mQueue.front()->GetElapsedTimestampNs();
-            success = false;
+            result.oldestTimestampNs = mQueue.front()->GetElapsedTimestampNs();
+            result.success = false;
         }
+        result.size = mQueue.size();
     }
 
     mCondition.notify_one();
-    return success;
+    return result;
 }
 
 }  // namespace statsd
