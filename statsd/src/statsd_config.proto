@@ -343,6 +343,8 @@ message GaugeMetric {
 
   optional int32 max_dimensions_per_bucket = 16;
 
+  optional int32 sampling_percentage = 17 [default = 100];
+
   reserved 100;
   reserved 101;
 }

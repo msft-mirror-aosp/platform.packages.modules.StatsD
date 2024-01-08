@@ -42,7 +42,7 @@ const uint32_t TRAIN_INFO_FILE_MAGIC = 0xfb7447bf;
 class StorageManager : public virtual RefBase {
 public:
     struct FileInfo {
-        FileInfo(std::string name, bool isHistory, int fileSize, long fileAge)
+        FileInfo(const std::string& name, bool isHistory, int fileSize, long fileAge)
             : mFileName(name),
               mIsHistory(isHistory),
               mFileSizeBytes(fileSize),
@@ -162,8 +162,7 @@ public:
 
     static void sortFiles(vector<FileInfo>* fileNames);
 
-    static void enforceDbGuardrails(const char* path, const int64_t wallClockSec,
-                                    const int64_t maxBytes);
+    static void enforceDbGuardrails(const char* path, int64_t wallClockSec, int64_t maxBytes);
 
     static bool hasFile(const char* file);
 

@@ -620,7 +620,7 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
         }
     }
 
-    FieldMatcher internalDimensions = simplePredicate.dimensions();
+    const FieldMatcher& internalDimensions = simplePredicate.dimensions();
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
@@ -860,7 +860,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
-    sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
+    const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     int atomTagId = *(atomMatcher->getAtomIds().begin());
     int pullTagId = pullerManager->PullerForMatcherExists(atomTagId) ? atomTagId : -1;
 
@@ -1089,7 +1089,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
     const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
-    sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
+    const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
     const auto [dimensionSoftLimit, dimensionHardLimit] =
             StatsdStats::getAtomDimensionKeySizeLimits(
@@ -1167,7 +1167,7 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
-    sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
+    const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     int atomTagId = *(atomMatcher->getAtomIds().begin());
     int pullTagId = pullerManager->PullerForMatcherExists(atomTagId) ? atomTagId : -1;
 
@@ -1194,7 +1194,7 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
-        sp<AtomMatchingTracker> triggerAtomMatcher =
+        const sp<AtomMatchingTracker>& triggerAtomMatcher =
                 allAtomMatchingTrackers.at(triggerTrackerIndex);
         triggerAtomId = *(triggerAtomMatcher->getAtomIds().begin());
     }
@@ -1214,6 +1214,18 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
                     INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
             return nullopt;
         }
+    }
+
+    if (pullTagId != -1 && metric.sampling_percentage() != 100) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING, metric.id());
+        return nullopt;
+    }
+
+    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE, metric.id());
+        return nullopt;
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
@@ -1423,8 +1435,8 @@ optional<InvalidConfigReason> initStates(
         stateProtoHashes[stateId] = Hash64(serializedState);
 
         const StateMap& stateMap = state.map();
-        for (auto group : stateMap.group()) {
-            for (auto value : group.value()) {
+        for (const auto& group : stateMap.group()) {
+            for (const auto& value : group.value()) {
                 allStateGroupMaps[stateId][value] = group.group_id();
             }
         }
