@@ -23,6 +23,7 @@
 #include <android/binder_manager.h>
 #include <android/binder_process.h>
 #include <stdio.h>
+#include <sys/random.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -66,6 +67,18 @@ void registerSignalHandlers()
     sigaction(SIGTERM, &sa, nullptr);
 }
 
+void initSeedRandom() {
+    unsigned int seed = 0;
+    // getrandom() reads bytes from urandom source into buf. If getrandom()
+    // is unable to read from urandom source, then it returns -1 and we set
+    // out seed to be time(nullptr) as a fallback.
+    if (TEMP_FAILURE_RETRY(
+                getrandom(static_cast<void*>(&seed), sizeof(unsigned int), GRND_NONBLOCK)) < 0) {
+        seed = time(nullptr);
+    }
+    srand(seed);
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     // Set up the looper
     sp<Looper> looper(Looper::prepare(0 /* opts */));
@@ -75,26 +88,20 @@ int main(int /*argc*/, char** /*argv*/) {
     ABinderProcess_startThreadPool();
 
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags({OPTIMIZATION_SOCKET_PARSING_FLAG,
-                                               STATSD_INIT_COMPLETED_NO_DELAY_FLAG,
-                                               INCREASE_EVENT_QUEUE_50000_FLAG});
+    FlagProvider::getInstance().initBootFlags({STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
 
-    std::shared_ptr<LogEventQueue> eventQueue = std::make_shared<LogEventQueue>(
-            FlagProvider::getInstance().getBootFlagBool(INCREASE_EVENT_QUEUE_50000_FLAG, FLAG_FALSE)
-                    ? 50000
-                    : 8000 /*buffer limit. Buffer is NOT pre-allocated*/);
+    std::shared_ptr<LogEventQueue> eventQueue =
+            std::make_shared<LogEventQueue>(50000); /*buffer limit. Buffer is NOT pre-allocated*/
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
-    const bool logsFilteringEnabled = FlagProvider::getInstance().getBootFlagBool(
-            OPTIMIZATION_SOCKET_PARSING_FLAG, FLAG_FALSE);
-    std::shared_ptr<LogEventFilter> logEventFilter =
-            logsFilteringEnabled ? std::make_shared<LogEventFilter>() : nullptr;
+    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
 
     const int initEventDelay = FlagProvider::getInstance().getBootFlagBool(
                                        STATSD_INIT_COMPLETED_NO_DELAY_FLAG, FLAG_FALSE)
                                        ? 0
                                        : StatsService::kStatsdInitDelaySecs;
+    initSeedRandom();
     // Create the service
     gStatsService =
             SharedRefBase::make<StatsService>(uidMap, eventQueue, logEventFilter, initEventDelay);
@@ -137,7 +144,11 @@ int main(int /*argc*/, char** /*argv*/) {
             }
             gSocketListener->stopListener();
             gStatsService->Terminate();
-            exit(1);
+            // return the signal handler to its default disposition, then raise the signal again
+            signal(SIGTERM, SIG_DFL);
+            // this is a sync call which leads to immediate process termination and
+            // no destructors are called, semantically similar to call exit(1) here
+            raise(SIGTERM);
         }
     }).detach();
 

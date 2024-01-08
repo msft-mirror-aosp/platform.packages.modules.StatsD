@@ -13,27 +13,44 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <statslog_statsdtest.h>
+
 #include "benchmark/benchmark.h"
-#include <statslog.h>
 
 namespace android {
 namespace os {
 namespace statsd {
 
-static void BM_StatsWrite(benchmark::State& state) {
-    const char* reason = "test";
-    int64_t boot_end_time = 1234567;
-    int64_t total_duration = 100;
-    int64_t bootloader_duration = 10;
-    int64_t time_since_last_boot = 99999999;
+static void BM_StatsEventObtain(benchmark::State& state) {
     while (state.KeepRunning()) {
-        android::util::stats_write(
-                android::util::BOOT_SEQUENCE_REPORTED, reason, reason,
-                boot_end_time, total_duration, bootloader_duration, time_since_last_boot);
-        total_duration++;
+        AStatsEvent* event = AStatsEvent_obtain();
+        benchmark::DoNotOptimize(event);
+        AStatsEvent_release(event);
+    }
+}
+BENCHMARK(BM_StatsEventObtain);
+
+static void BM_StatsWrite(benchmark::State& state) {
+    int32_t parent_uid = 0;
+    int32_t isolated_uid = 100;
+    int32_t event = 1;
+    while (state.KeepRunning()) {
+        util::stats_write(util::ISOLATED_UID_CHANGED, parent_uid, isolated_uid, event++);
     }
 }
 BENCHMARK(BM_StatsWrite);
+
+static void BM_StatsWriteViaQueue(benchmark::State& state) {
+    // writes dedicated atom which known to be put into the queue for the test purpose
+    int32_t uid = 0;
+    int32_t label = 100;
+    int32_t a_state = 1;
+    while (state.KeepRunning()) {
+        benchmark::DoNotOptimize(
+                util::stats_write(util::APP_BREADCRUMB_REPORTED, uid, label, a_state++));
+    }
+}
+BENCHMARK(BM_StatsWriteViaQueue);
 
 }  //  namespace statsd
 }  //  namespace os

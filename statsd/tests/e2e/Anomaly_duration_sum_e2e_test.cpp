@@ -40,7 +40,6 @@ StatsdConfig CreateStatsdConfig(int num_buckets,
                                 DurationMetric::AggregationType aggregationType,
                                 bool nesting) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
     *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();

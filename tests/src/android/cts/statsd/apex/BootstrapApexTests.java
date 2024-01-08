@@ -33,8 +33,11 @@ import java.util.List;
 public class BootstrapApexTests extends BaseTestCase {
     private static final String TAG = "Statsd.BootstrapApexTests";
 
-    // Constants
-    private static final String BOOTSTRAP_APEX_FILE = "/apex/.bootstrap-apex-info-list.xml";
+    // Constants for the paths to apex-info-list.xml
+    // - new location
+    private static final String BOOTSTRAP_APEX_FILE1 = "/bootstrap-apex/apex-info-list.xml";
+    // - legacy location
+    private static final String BOOTSTRAP_APEX_FILE2 = "/apex/.bootstrap-apex-info-list.xml";
 
     private boolean sdkLevelAtLeast(int sdkLevel, String codename) throws Exception {
         return ApiLevelUtil.isAtLeast(getDevice(), sdkLevel)
@@ -47,7 +50,10 @@ public class BootstrapApexTests extends BaseTestCase {
     }
 
     private List<ApexInfo> readBootstrapApexes() throws Exception {
-        File file = getDevice().pullFile(BOOTSTRAP_APEX_FILE);
+        File file = getDevice().pullFile(BOOTSTRAP_APEX_FILE1);
+        if (file == null) {
+            file = getDevice().pullFile(BOOTSTRAP_APEX_FILE2);
+        }
         try (FileInputStream stream = new FileInputStream(file)) {
             return XmlParser.readApexInfoList(stream).getApexInfo();
         }

@@ -26,6 +26,7 @@
 #include "src/condition/CombinationConditionTracker.h"
 #include "src/condition/SimpleConditionTracker.h"
 #include "src/matchers/CombinationAtomMatchingTracker.h"
+#include "src/metrics/CountMetricProducer.h"
 #include "src/metrics/DurationMetricProducer.h"
 #include "src/metrics/GaugeMetricProducer.h"
 #include "src/metrics/KllMetricProducer.h"
@@ -52,7 +53,8 @@ namespace statsd {
 
 namespace {
 
-ConfigKey key(123, 456);
+const int configId = 456;
+const ConfigKey key(123, configId);
 const int64_t timeBaseNs = 1000 * NS_PER_SEC;
 
 sp<UidMap> uidMap = new UidMap();
@@ -109,8 +111,6 @@ vector<int> filterMatcherIndexesById(const vector<sp<AtomMatchingTracker>>& atom
     return result;
 }
 
-}  // anonymous namespace
-
 class ConfigUpdateTest : public ::testing::Test {
 public:
     void SetUp() override {
@@ -136,6 +136,29 @@ public:
     }
 };
 
+struct DimLimitTestCase {
+    int oldLimit;
+    int newLimit;
+    int actualLimit;
+
+    friend void PrintTo(const DimLimitTestCase& testCase, ostream* os) {
+        *os << testCase.oldLimit << "To" << testCase.newLimit;
+    }
+};
+
+class ConfigUpdateDimLimitTest : public ConfigUpdateTest,
+                                 public WithParamInterface<DimLimitTestCase> {};
+
+const vector<DimLimitTestCase> dimLimitTestCases = {
+        {900, 900, 900}, {1000, 850, 850},   {1100, 1500, 1500},
+        {800, 799, 800}, {3000, 3001, 3000}, {800, 0, 800},
+};
+
+INSTANTIATE_TEST_SUITE_P(DimLimit, ConfigUpdateDimLimitTest, ValuesIn(dimLimitTestCases),
+                         PrintToStringParamName());
+
+}  // anonymous namespace
+
 TEST_F(ConfigUpdateTest, TestSimpleMatcherPreserve) {
     StatsdConfig config;
     AtomMatcher matcher = CreateSimpleAtomMatcher("TEST", /*atom=*/10);
@@ -146,7 +169,7 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherPreserve) {
     EXPECT_TRUE(initConfig(config));
 
     vector<UpdateStatus> matchersToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
     EXPECT_EQ(determineMatcherUpdateStatus(config, 0, oldAtomMatchingTrackerMap,
@@ -171,7 +194,7 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherReplace) {
     *newConfig.add_atom_matcher() = newMatcher;
 
     vector<UpdateStatus> matchersToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 0, oldAtomMatchingTrackerMap,
@@ -196,7 +219,7 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherNew) {
     *newConfig.add_atom_matcher() = newMatcher;
 
     vector<UpdateStatus> matchersToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 0, oldAtomMatchingTrackerMap,
@@ -238,7 +261,7 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherPreserve) {
     newAtomMatchingTrackerMap[matcher1Id] = 2;
 
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. It should recurse the two child matchers and preserve all 3.
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
                                            oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
@@ -283,7 +306,7 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherReplace) {
     newAtomMatchingTrackerMap[matcher1Id] = 2;
 
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. The simple matchers should not be evaluated.
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
                                            oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
@@ -328,7 +351,7 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherDepsChange) {
     newAtomMatchingTrackerMap[matcher1Id] = 2;
 
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination.
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
                                            oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
@@ -452,19 +475,13 @@ TEST_F(ConfigUpdateTest, TestUpdateMatchers) {
     EXPECT_NE(oldAtomMatchingTrackers[oldAtomMatchingTrackerMap.at(combination2Id)],
               newAtomMatchingTrackers[newAtomMatchingTrackerMap.at(combination2Id)]);
 
-    // Validation, make sure the matchers have the proper ids/indices. Could do more checks here.
+    // Validation, make sure the matchers have the proper ids. Could do more checks here.
     EXPECT_EQ(newAtomMatchingTrackers[0]->getId(), combination3Id);
-    EXPECT_EQ(newAtomMatchingTrackers[0]->mIndex, 0);
     EXPECT_EQ(newAtomMatchingTrackers[1]->getId(), simple2Id);
-    EXPECT_EQ(newAtomMatchingTrackers[1]->mIndex, 1);
     EXPECT_EQ(newAtomMatchingTrackers[2]->getId(), combination2Id);
-    EXPECT_EQ(newAtomMatchingTrackers[2]->mIndex, 2);
     EXPECT_EQ(newAtomMatchingTrackers[3]->getId(), simple1Id);
-    EXPECT_EQ(newAtomMatchingTrackers[3]->mIndex, 3);
     EXPECT_EQ(newAtomMatchingTrackers[4]->getId(), simple4Id);
-    EXPECT_EQ(newAtomMatchingTrackers[4]->mIndex, 4);
     EXPECT_EQ(newAtomMatchingTrackers[5]->getId(), combination1Id);
-    EXPECT_EQ(newAtomMatchingTrackers[5]->mIndex, 5);
 
     // Verify child indices of Combination Matchers are correct.
     CombinationAtomMatchingTracker* combinationTracker1 =
@@ -508,7 +525,7 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionPreserve) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
     EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
@@ -535,7 +552,7 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionReplace) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
     EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
@@ -563,7 +580,7 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionDepsChange) {
     replacedMatchers.insert(startMatcherId);
 
     vector<UpdateStatus> conditionsToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
     EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
@@ -607,7 +624,7 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionPreserve) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. It should recurse the two child predicates and preserve all 3.
     EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
                                              oldConditionTrackers, newConditionTrackerMap,
@@ -654,7 +671,7 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionReplace) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. The simple conditions should not be evaluated.
     EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
                                              oldConditionTrackers, newConditionTrackerMap,
@@ -700,7 +717,7 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionDepsChange) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. Simple2 and combination1 must be evaluated.
     EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
                                              oldConditionTrackers, newConditionTrackerMap,
@@ -792,7 +809,7 @@ TEST_F(ConfigUpdateTest, TestUpdateConditions) {
     vector<MatchingState> eventMatcherValues(6, MatchingState::kNotMatched);
     eventMatcherValues[1] = MatchingState::kMatched;
     vector<ConditionState> tmpConditionCache(6, ConditionState::kNotEvaluated);
-    vector<bool> conditionChangeCache(6, false);
+    vector<uint8_t> conditionChangeCache(6, false);
     oldConditionTrackers[0]->evaluateCondition(event, eventMatcherValues, oldConditionTrackers,
                                                tmpConditionCache, conditionChangeCache);
     EXPECT_EQ(tmpConditionCache[0], ConditionState::kFalse);
@@ -2607,7 +2624,7 @@ TEST_F(ConfigUpdateTest, TestUpdateDurationMetrics) {
     vector<MatchingState> matchingStates(8, MatchingState::kNotMatched);
     matchingStates[2] = kMatched;
     vector<ConditionState> conditionCache(5, ConditionState::kNotEvaluated);
-    vector<bool> changedCache(5, false);
+    vector<uint8_t> changedCache(5, false);
     unique_ptr<LogEvent> event = CreateAcquireWakelockEvent(timeBaseNs + 3, {uid1}, {"tag"}, "wl1");
     oldConditionTrackers[4]->evaluateCondition(*event.get(), matchingStates, oldConditionTrackers,
                                                conditionCache, changedCache);
@@ -2683,7 +2700,7 @@ TEST_F(ConfigUpdateTest, TestUpdateDurationMetrics) {
                                                            newConditionTrackerMap),
                   nullopt);
     }
-    vector<bool> cycleTracker(5, false);
+    vector<uint8_t> cycleTracker(5, false);
     fill(conditionCache.begin(), conditionCache.end(), ConditionState::kNotEvaluated);
     for (int i = 0; i < newConditionTrackers.size(); i++) {
         EXPECT_EQ(
@@ -4140,6 +4157,109 @@ TEST_F(ConfigUpdateTest, TestUpdateConfigNonEventMetricHasRestrictedDelegate) {
                             deactivationAtomTrackerToMetricMap, metricsWithActivation,
                             replacedMetrics),
               InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_P(ConfigUpdateDimLimitTest, TestDimLimit) {
+    StatsdConfig config = buildGoodConfig(configId);
+    const auto& [oldLimit, newLimit, actualLimit] = GetParam();
+    if (oldLimit > 0) {
+        config.mutable_count_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+        config.mutable_duration_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+        config.mutable_gauge_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+        config.mutable_value_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+        config.mutable_kll_metric(0)->set_max_dimensions_per_bucket(oldLimit);
+    }
+
+    EXPECT_TRUE(initConfig(config));
+
+    StatsdConfig newConfig = config;
+    if (newLimit == 0) {
+        newConfig.mutable_count_metric(0)->clear_max_dimensions_per_bucket();
+        newConfig.mutable_duration_metric(0)->clear_max_dimensions_per_bucket();
+        newConfig.mutable_gauge_metric(0)->clear_max_dimensions_per_bucket();
+        newConfig.mutable_value_metric(0)->clear_max_dimensions_per_bucket();
+        newConfig.mutable_kll_metric(0)->clear_max_dimensions_per_bucket();
+    } else {
+        newConfig.mutable_count_metric(0)->set_max_dimensions_per_bucket(newLimit);
+        newConfig.mutable_duration_metric(0)->set_max_dimensions_per_bucket(newLimit);
+        newConfig.mutable_gauge_metric(0)->set_max_dimensions_per_bucket(newLimit);
+        newConfig.mutable_value_metric(0)->set_max_dimensions_per_bucket(newLimit);
+        newConfig.mutable_kll_metric(0)->set_max_dimensions_per_bucket(newLimit);
+    }
+
+    unordered_map<int64_t, int> newMetricProducerMap;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    set<int64_t> noReportMetricIds;
+    vector<int> metricsWithActivation;
+    vector<sp<MetricProducer>> newMetricProducers;
+    set<int64_t> replacedMetrics;
+    EXPECT_EQ(updateMetrics(
+                      key, newConfig, /*timeBaseNs=*/123, /*currentTimeNs=*/12345,
+                      new StatsPullerManager(), oldAtomMatchingTrackerMap,
+                      oldAtomMatchingTrackerMap, /*replacedMatchers=*/{}, oldAtomMatchingTrackers,
+                      oldConditionTrackerMap, /*replacedConditions=*/{}, oldConditionTrackers,
+                      /*conditionCache=*/{}, /*stateAtomIdMap=*/{}, /*allStateGroupMaps=*/{},
+                      /*replacedStates=*/{}, oldMetricProducerMap, oldMetricProducers,
+                      newMetricProducerMap, newMetricProducers, conditionToMetricMap,
+                      trackerToMetricMap, noReportMetricIds, activationAtomTrackerToMetricMap,
+                      deactivationAtomTrackerToMetricMap, metricsWithActivation, replacedMetrics),
+              nullopt);
+
+    ASSERT_EQ(5u, oldMetricProducers.size());
+    ASSERT_EQ(5u, newMetricProducers.size());
+
+    // Check that old MetricProducers have the old dimension limit and the new producers have the
+    // new dimension limit.
+
+    // Count
+    sp<MetricProducer> producer =
+            oldMetricProducers[oldMetricProducerMap.at(config.count_metric(0).id())];
+    CountMetricProducer* countProducer = static_cast<CountMetricProducer*>(producer.get());
+    EXPECT_EQ(countProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.count_metric(0).id())];
+    countProducer = static_cast<CountMetricProducer*>(producer.get());
+    EXPECT_EQ(countProducer->mDimensionHardLimit, actualLimit);
+
+    // Duration
+    producer = oldMetricProducers[oldMetricProducerMap.at(config.duration_metric(0).id())];
+    DurationMetricProducer* durationProducer = static_cast<DurationMetricProducer*>(producer.get());
+    EXPECT_EQ(durationProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.duration_metric(0).id())];
+    durationProducer = static_cast<DurationMetricProducer*>(producer.get());
+    EXPECT_EQ(durationProducer->mDimensionHardLimit, actualLimit);
+
+    // Gauge
+    producer = oldMetricProducers[oldMetricProducerMap.at(config.gauge_metric(0).id())];
+    GaugeMetricProducer* gaugeProducer = static_cast<GaugeMetricProducer*>(producer.get());
+    EXPECT_EQ(gaugeProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.gauge_metric(0).id())];
+    gaugeProducer = static_cast<GaugeMetricProducer*>(producer.get());
+    EXPECT_EQ(gaugeProducer->mDimensionHardLimit, actualLimit);
+
+    // Value
+    producer = oldMetricProducers[oldMetricProducerMap.at(config.value_metric(0).id())];
+    NumericValueMetricProducer* numericValueProducer =
+            static_cast<NumericValueMetricProducer*>(producer.get());
+    EXPECT_EQ(numericValueProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.value_metric(0).id())];
+    numericValueProducer = static_cast<NumericValueMetricProducer*>(producer.get());
+    EXPECT_EQ(numericValueProducer->mDimensionHardLimit, actualLimit);
+
+    // KLL
+    producer = oldMetricProducers[oldMetricProducerMap.at(config.kll_metric(0).id())];
+    KllMetricProducer* kllProducer = static_cast<KllMetricProducer*>(producer.get());
+    EXPECT_EQ(kllProducer->mDimensionHardLimit, oldLimit);
+
+    producer = newMetricProducers[newMetricProducerMap.at(newConfig.kll_metric(0).id())];
+    kllProducer = static_cast<KllMetricProducer*>(producer.get());
+    EXPECT_EQ(kllProducer->mDimensionHardLimit, actualLimit);
 }
 
 }  // namespace statsd

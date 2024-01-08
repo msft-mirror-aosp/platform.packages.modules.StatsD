@@ -69,14 +69,20 @@ int64_t AlarmTracker::findNextAlarmSec(int64_t currentTimeSec) {
 }
 
 void AlarmTracker::informAlarmsFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& firedAlarms) {
     if (firedAlarms.empty() || mInternalAlarm == nullptr ||
         firedAlarms.find(mInternalAlarm) == firedAlarms.end()) {
         return;
     }
-    if (!mSubscriptions.empty()) {
-        VLOG("AlarmTracker triggers the subscribers.");
+    if (!mSubscriptions.empty() &&
+        (mAlarmConfig.probability_of_informing() >= 1 ||
+         (mAlarmConfig.probability_of_informing() < 1 &&
+          ((float)rand() / (float)RAND_MAX) < mAlarmConfig.probability_of_informing()))) {
+        // Note that due to float imprecision, 0.0 and 1.0 might not truly mean never/always.
+        // The config writer was advised to use -0.1 and 1.1 for never/always.
+
+        ALOGI("Fate decided that an alarm will trigger subscribers.");
         triggerSubscribers(mAlarmConfig.id(), 0 /*metricId N/A*/, DEFAULT_METRIC_DIMENSION_KEY,
                            0 /* metricValue N/A */, mConfigKey, mSubscriptions);
     }

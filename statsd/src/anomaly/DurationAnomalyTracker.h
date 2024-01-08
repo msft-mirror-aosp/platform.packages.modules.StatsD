@@ -34,12 +34,12 @@ public:
 
     // Sets an alarm for the given timestamp.
     // Replaces previous alarm if one already exists.
-    void startAlarm(const MetricDimensionKey& dimensionKey, const int64_t& eventTime) override;
+    void startAlarm(const MetricDimensionKey& dimensionKey, int64_t eventTime) override;
 
     // Stops the alarm.
     // If it should have already fired, but hasn't yet (e.g. because the AlarmManager is delayed),
     // declare the anomaly now.
-    void stopAlarm(const MetricDimensionKey& dimensionKey, const int64_t& timestampNs) override;
+    void stopAlarm(const MetricDimensionKey& dimensionKey, int64_t timestampNs) override;
 
     // Stop all the alarms owned by this tracker. Does not declare any anomalies.
     void cancelAllAlarms() override;
@@ -48,7 +48,8 @@ public:
     // and removes it from firedAlarms. The AlarmMonitor is not informed.
     // Note that this will generally be called from a different thread from the other functions;
     // the caller is responsible for thread safety.
-    void informAlarmsFired(const int64_t& timestampNs,
+    void informAlarmsFired(
+            int64_t timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& firedAlarms) override;
 
 protected:
@@ -69,6 +70,8 @@ protected:
     FRIEND_TEST(OringDurationTrackerTest, TestPredictAnomalyTimestamp);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionExpiredAlarm);
     FRIEND_TEST(OringDurationTrackerTest, TestAnomalyDetectionFiredAlarm);
+    FRIEND_TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenBucketFull);
+    FRIEND_TEST(OringDurationTrackerTest, TestClearStateKeyMapWhenNoTrackers);
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyDetection);
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp);
     FRIEND_TEST(MaxDurationTrackerTest, TestAnomalyPredictedTimestamp_UpdatedOnStop);

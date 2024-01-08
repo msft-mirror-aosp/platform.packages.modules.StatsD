@@ -63,7 +63,7 @@ size_t AnomalyTracker::index(int64_t bucketNum) const {
     return bucketNum % mNumOfPastBuckets;
 }
 
-void AnomalyTracker::advanceMostRecentBucketTo(const int64_t& bucketNum) {
+void AnomalyTracker::advanceMostRecentBucketTo(const int64_t bucketNum) {
     VLOG("advanceMostRecentBucketTo() called.");
     if (mNumOfPastBuckets <= 0) {
         return;
@@ -89,9 +89,8 @@ void AnomalyTracker::advanceMostRecentBucketTo(const int64_t& bucketNum) {
     mMostRecentBucketNum = bucketNum;
 }
 
-void AnomalyTracker::addPastBucket(const MetricDimensionKey& key,
-                                   const int64_t& bucketValue,
-                                   const int64_t& bucketNum) {
+void AnomalyTracker::addPastBucket(const MetricDimensionKey& key, const int64_t bucketValue,
+                                   const int64_t bucketNum) {
     VLOG("addPastBucket(bucketValue) called.");
     if (mNumOfPastBuckets == 0 ||
         bucketNum < 0 || bucketNum <= mMostRecentBucketNum - mNumOfPastBuckets) {
@@ -119,8 +118,8 @@ void AnomalyTracker::addPastBucket(const MetricDimensionKey& key,
     }
 }
 
-void AnomalyTracker::addPastBucket(std::shared_ptr<DimToValMap> bucket,
-                                   const int64_t& bucketNum) {
+void AnomalyTracker::addPastBucket(const std::shared_ptr<DimToValMap>& bucket,
+                                   const int64_t bucketNum) {
     VLOG("addPastBucket(bucket) called.");
     if (mNumOfPastBuckets == 0 ||
             bucketNum < 0 || bucketNum <= mMostRecentBucketNum - mNumOfPastBuckets) {
@@ -147,9 +146,8 @@ void AnomalyTracker::subtractBucketFromSum(const shared_ptr<DimToValMap>& bucket
     }
 }
 
-
 void AnomalyTracker::subtractValueFromSum(const MetricDimensionKey& key,
-                                          const int64_t& bucketValue) {
+                                          const int64_t bucketValue) {
     auto itr = mSumOverPastBuckets.find(key);
     if (itr == mSumOverPastBuckets.end()) {
         return;
@@ -171,7 +169,7 @@ void AnomalyTracker::addBucketToSum(const shared_ptr<DimToValMap>& bucket) {
 }
 
 int64_t AnomalyTracker::getPastBucketValue(const MetricDimensionKey& key,
-                                           const int64_t& bucketNum) const {
+                                           const int64_t bucketNum) const {
     if (bucketNum < 0 || mMostRecentBucketNum < 0
             || bucketNum <= mMostRecentBucketNum - mNumOfPastBuckets
             || bucketNum > mMostRecentBucketNum) {
@@ -194,10 +192,8 @@ int64_t AnomalyTracker::getSumOverPastBuckets(const MetricDimensionKey& key) con
     return 0;
 }
 
-bool AnomalyTracker::detectAnomaly(const int64_t& currentBucketNum,
-                                   const MetricDimensionKey& key,
-                                   const int64_t& currentBucketValue) {
-
+bool AnomalyTracker::detectAnomaly(const int64_t currentBucketNum, const MetricDimensionKey& key,
+                                   const int64_t currentBucketValue) {
     // currentBucketNum should be the next bucket after pastBuckets. If not, advance so that it is.
     if (currentBucketNum > mMostRecentBucketNum + 1) {
         advanceMostRecentBucketTo(currentBucketNum - 1);
@@ -206,7 +202,7 @@ bool AnomalyTracker::detectAnomaly(const int64_t& currentBucketNum,
            getSumOverPastBuckets(key) + currentBucketValue > mAlert.trigger_if_sum_gt();
 }
 
-void AnomalyTracker::declareAnomaly(const int64_t& timestampNs, int64_t metricId,
+void AnomalyTracker::declareAnomaly(const int64_t timestampNs, int64_t metricId,
                                     const MetricDimensionKey& key, int64_t metricValue) {
     // TODO(b/110563466): Why receive timestamp? RefractoryPeriod should always be based on
     // real time right now.
@@ -214,6 +210,19 @@ void AnomalyTracker::declareAnomaly(const int64_t& timestampNs, int64_t metricId
         VLOG("Skipping anomaly declaration since within refractory period");
         return;
     }
+
+    // TODO(b/110564268): This should also take in the const MetricDimensionKey& key?
+    util::stats_write(util::ANOMALY_DETECTED, mConfigKey.GetUid(), mConfigKey.GetId(), mAlert.id());
+
+    if (mAlert.probability_of_informing() < 1 &&
+        ((float)rand() / (float)RAND_MAX) >= mAlert.probability_of_informing()) {
+        // Note that due to float imprecision, 0.0 and 1.0 might not truly mean never/always.
+        // The config writer was advised to use -0.1 and 1.1 for never/always.
+        ALOGI("Fate decided that an alert will not trigger subscribers or start the refactory "
+              "period countdown.");
+        return;
+    }
+
     if (mAlert.has_refractory_period_secs()) {
         mRefractoryPeriodEndsSec[key] = ((timestampNs + NS_PER_SEC - 1) / NS_PER_SEC) // round up
                                         + mAlert.refractory_period_secs();
@@ -231,22 +240,17 @@ void AnomalyTracker::declareAnomaly(const int64_t& timestampNs, int64_t metricId
     }
 
     StatsdStats::getInstance().noteAnomalyDeclared(mConfigKey, mAlert.id());
-
-    // TODO(b/110564268): This should also take in the const MetricDimensionKey& key?
-    util::stats_write(util::ANOMALY_DETECTED, mConfigKey.GetUid(),
-                      mConfigKey.GetId(), mAlert.id());
 }
 
-void AnomalyTracker::detectAndDeclareAnomaly(const int64_t& timestampNs,
-                                             const int64_t& currBucketNum, int64_t metricId,
-                                             const MetricDimensionKey& key,
-                                             const int64_t& currentBucketValue) {
+void AnomalyTracker::detectAndDeclareAnomaly(const int64_t timestampNs, const int64_t currBucketNum,
+                                             int64_t metricId, const MetricDimensionKey& key,
+                                             const int64_t currentBucketValue) {
     if (detectAnomaly(currBucketNum, key, currentBucketValue)) {
         declareAnomaly(timestampNs, metricId, key, currentBucketValue);
     }
 }
 
-bool AnomalyTracker::isInRefractoryPeriod(const int64_t& timestampNs,
+bool AnomalyTracker::isInRefractoryPeriod(const int64_t timestampNs,
                                           const MetricDimensionKey& key) const {
     const auto& it = mRefractoryPeriodEndsSec.find(key);
     if (it != mRefractoryPeriodEndsSec.end()) {

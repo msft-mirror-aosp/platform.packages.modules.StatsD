@@ -121,6 +121,10 @@ private:
     FRIEND_TEST(KllMetricProducerTest_PartialBucket, TestPushedEventsMultipleBuckets);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateKllMetrics);
+
+    FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
 };
 
 }  // namespace statsd

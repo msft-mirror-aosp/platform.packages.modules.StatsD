@@ -49,6 +49,7 @@ const int FIELD_ID_TIME_BASE = 9;
 const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
+const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 // for GaugeMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 const int FIELD_ID_SKIPPED = 2;
@@ -98,7 +99,9 @@ GaugeMetricProducer::GaugeMetricProducer(
                                                       : StatsdStats::kPullMaxDelayNs),
       mDimensionSoftLimit(dimensionSoftLimit),
       mDimensionHardLimit(dimensionHardLimit),
-      mGaugeAtomsPerDimensionLimit(metric.max_num_gauge_atoms_per_bucket()) {
+      mGaugeAtomsPerDimensionLimit(metric.max_num_gauge_atoms_per_bucket()),
+      mDimensionGuardrailHit(false),
+      mSamplingPercentage(metric.sampling_percentage()) {
     mCurrentSlicedBucket = std::make_shared<DimToGaugeAtomsMap>();
     mCurrentSlicedBucketForAnomaly = std::make_shared<DimToValMap>();
     int64_t bucketSizeMills = 0;
@@ -259,6 +262,11 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
         return;
     }
 
+    if (mDimensionGuardrailHit) {
+        protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT,
+                           mDimensionGuardrailHit);
+    }
+
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
 
@@ -358,6 +366,7 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     if (erase_data) {
         mPastBuckets.clear();
         mSkippedBuckets.clear();
+        mDimensionGuardrailHit = false;
     }
 }
 
@@ -401,10 +410,10 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         return;
     }
     for (const auto& data : allData) {
-        LogEvent localCopy = *data;
-        localCopy.setElapsedTimestampNs(timestampNs);
-        if (mEventMatcherWizard->matchLogEvent(localCopy, mWhatMatcherIndex) ==
+        if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) ==
             MatchingState::kMatched) {
+            LogEvent localCopy = *data;
+            localCopy.setElapsedTimestampNs(timestampNs);
             onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
         }
     }
@@ -505,7 +514,7 @@ bool GaugeMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
         return false;
     }
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mCurrentSlicedBucket->size() > mDimensionSoftLimit - 1) {
+    if (mCurrentSlicedBucket->size() >= mDimensionSoftLimit) {
         size_t newTupleCount = mCurrentSlicedBucket->size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
@@ -515,6 +524,7 @@ bool GaugeMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
                       newKey.toString().c_str());
                 mHasHitGuardrail = true;
             }
+            mDimensionGuardrailHit = true;
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -530,6 +540,12 @@ void GaugeMetricProducer::onMatchedLogEventInternalLocked(
     if (condition == false) {
         return;
     }
+
+    if (mPullTagId == -1 && mSamplingPercentage < 100 &&
+        !shouldKeepRandomSample(mSamplingPercentage)) {
+        return;
+    }
+
     int64_t eventTimeNs = event.GetElapsedTimestampNs();
     if (eventTimeNs < mCurrentBucketStartTimeNs) {
         VLOG("Gauge Skip event due to late arrival: %lld vs %lld", (long long)eventTimeNs,
@@ -608,7 +624,7 @@ void GaugeMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
 // bucket.
 // if data is pushed, onMatchedLogEvent will only be called through onConditionChanged() inside
 // the GaugeMetricProducer while holding the lock.
-void GaugeMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void GaugeMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
 
     if (eventTimeNs < currentBucketEndTimeNs) {
@@ -627,8 +643,8 @@ void GaugeMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
          (long long)mCurrentBucketStartTimeNs);
 }
 
-void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                   const int64_t& nextBucketStartTimeNs) {
+void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                   const int64_t nextBucketStartTimeNs) {
     int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
     int64_t bucketEndTime = eventTimeNs < fullBucketEndTimeNs ? eventTimeNs : fullBucketEndTimeNs;
 

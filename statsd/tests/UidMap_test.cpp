@@ -52,7 +52,7 @@ const vector<string> kVersionStrings{"v1", "v1", "v2"};
 const vector<string> kApps{kApp1, kApp2, kApp3};
 const vector<string> kInstallers{"", "", "com.android.vending"};
 const vector<vector<uint8_t>> kCertificateHashes{{'a', 'z'}, {'b', 'c'}, {'d', 'e'}};
-const vector<bool> kDeleted(3, false);
+const vector<uint8_t> kDeleted(3, false);
 
 void sendPackagesToStatsd(shared_ptr<StatsService> service, const vector<int32_t>& uids,
                           const vector<int64_t>& versions, const vector<string>& versionStrings,
@@ -109,7 +109,8 @@ TEST(UidMapTest, TestIsolatedUID) {
             m, pullerManager, anomalyAlarmMonitor, subscriberAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     std::unique_ptr<LogEvent> addEvent = CreateIsolatedUidChangedEvent(
             1 /*timestamp*/, 100 /*hostUid*/, 101 /*isolatedUid*/, 1 /*is_create*/);
@@ -126,7 +127,7 @@ TEST(UidMapTest, TestIsolatedUID) {
 TEST(UidMapTest, TestUpdateMap) {
     const sp<UidMap> uidMap = new UidMap();
     const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                          kCertificateHashes);
 
@@ -158,7 +159,7 @@ TEST(UidMapTest, TestUpdateMap) {
 TEST(UidMapTest, TestUpdateMapMultiple) {
     const sp<UidMap> uidMap = new UidMap();
     const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                          kCertificateHashes);
 
@@ -202,7 +203,7 @@ TEST(UidMapTest, TestUpdateMapMultiple) {
 TEST(UidMapTest, TestRemoveApp) {
     const sp<UidMap> uidMap = new UidMap();
     const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                          kCertificateHashes);
 
@@ -213,7 +214,7 @@ TEST(UidMapTest, TestRemoveApp) {
     std::set<string> name_set = uidMap->getAppNamesFromUid(1000, true /* returnNormalized */);
     EXPECT_THAT(name_set, UnorderedElementsAre(kApp2));
 
-    vector<bool> deleted(kDeleted);
+    vector<uint8_t> deleted(kDeleted);
     deleted[0] = true;
     vector<PackageInfo> expectedPackageInfos =
             buildPackageInfos(kApps, kUids, kVersions, kVersionStrings, kInstallers,
@@ -259,7 +260,7 @@ TEST(UidMapTest, TestRemoveApp) {
 TEST(UidMapTest, TestUpdateApp) {
     const sp<UidMap> uidMap = new UidMap();
     const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
-            uidMap, /* queue */ nullptr, /* LogEventFilter */ nullptr);
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     sendPackagesToStatsd(service, kUids, kVersions, kVersionStrings, kApps, kInstallers,
                          kCertificateHashes);
 
@@ -298,7 +299,7 @@ TEST(UidMapTest, TestUpdateApp) {
     versionStrings[0] = "v40";
     vector<string> apps = concatenate(kApps, {"NeW_aPP1_NAmE", "NeW_aPP1_NAmE"});
     vector<string> installers = concatenate(kInstallers, {"com.android.vending", "new_installer"});
-    vector<bool> deleted = concatenate(kDeleted, {false, false});
+    vector<uint8_t> deleted = concatenate(kDeleted, {false, false});
     vector<vector<uint8_t>> certHashes = concatenate(kCertificateHashes, {{'a'}, {'b'}});
     vector<PackageInfo> expectedPackageInfos =
             buildPackageInfos(apps, uids, versions, versionStrings, installers, certHashes, deleted,
@@ -531,7 +532,7 @@ protected:
         : config1(1, StringToId("config1")),
           uidMap(new UidMap()),
           service(SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr,
-                                                    /* LogEventFilter */ nullptr)) {
+                                                    std::make_shared<LogEventFilter>())) {
     }
 
     void SetUp() override {
