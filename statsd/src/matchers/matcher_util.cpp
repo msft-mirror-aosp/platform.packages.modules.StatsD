@@ -84,8 +84,8 @@ bool combinationMatch(const vector<int>& children, const LogicalOperation& opera
     return matched;
 }
 
-bool tryMatchString(const sp<UidMap>& uidMap, const FieldValue& fieldValue,
-                    const string& str_match) {
+static bool tryMatchString(const sp<UidMap>& uidMap, const FieldValue& fieldValue,
+                           const string& str_match) {
     if (isAttributionUidField(fieldValue) || isUidField(fieldValue)) {
         int uid = fieldValue.mValue.int_value;
         auto aidIt = UidMap::sAidToUidMapping.find(str_match);
@@ -100,8 +100,8 @@ bool tryMatchString(const sp<UidMap>& uidMap, const FieldValue& fieldValue,
     return false;
 }
 
-bool tryMatchWildcardString(const sp<UidMap>& uidMap, const FieldValue& fieldValue,
-                            const string& wildcardPattern) {
+static bool tryMatchWildcardString(const sp<UidMap>& uidMap, const FieldValue& fieldValue,
+                                   const string& wildcardPattern) {
     if (isAttributionUidField(fieldValue) || isUidField(fieldValue)) {
         int uid = fieldValue.mValue.int_value;
         // TODO(b/236886985): replace aid/uid mapping with efficient bidirectional container
@@ -127,17 +127,8 @@ bool tryMatchWildcardString(const sp<UidMap>& uidMap, const FieldValue& fieldVal
     return false;
 }
 
-bool matchesSimple(const sp<UidMap>& uidMap, const FieldValueMatcher& matcher,
-                   const vector<FieldValue>& values, int start, int end, int depth) {
-    if (depth > 2) {
-        ALOGE("Depth > 3 not supported");
-        return false;
-    }
-
-    if (start >= end) {
-        return false;
-    }
-
+static pair<int, int> getStartEndAtDepth(int targetField, int start, int end, int depth,
+                                         const vector<FieldValue>& values) {
     // Filter by entry field first
     int newStart = -1;
     int newEnd = end;
@@ -145,31 +136,45 @@ bool matchesSimple(const sp<UidMap>& uidMap, const FieldValueMatcher& matcher,
     // break when pos is larger than the one we are searching for.
     for (int i = start; i < end; i++) {
         int pos = values[i].mField.getPosAtDepth(depth);
-        if (pos == matcher.field()) {
+        if (pos == targetField) {
             if (newStart == -1) {
                 newStart = i;
             }
             newEnd = i + 1;
-        } else if (pos > matcher.field()) {
+        } else if (pos > targetField) {
             break;
         }
     }
 
+    return {newStart, newEnd};
+}
+
+/*
+ * Returns pairs of start-end indices in vector<FieldValue> that pariticipate in matching.
+ * The returned vector is empty if an error was encountered.
+ * If Position is ANY and value_matcher is matches_tuple, the vector contains a start/end pair
+ * corresponding for each child FieldValueMatcher in matches_tuple. For all other cases, the
+ * returned vector is of size 1.
+ *
+ * Also updates the depth reference parameter if matcher has Position specified.
+ */
+static vector<pair<int, int>> computeRanges(const FieldValueMatcher& matcher,
+                                            const vector<FieldValue>& values, int start, int end,
+                                            int& depth) {
     // Now we have zoomed in to a new range
-    start = newStart;
-    end = newEnd;
+    std::tie(start, end) = getStartEndAtDepth(matcher.field(), start, end, depth, values);
 
     if (start == -1) {
         // No such field found.
-        return false;
+        return {};
     }
 
-    vector<pair<int, int>> ranges; // the ranges are for matching ANY position
+    vector<pair<int, int>> ranges;
     if (matcher.has_position()) {
         // Repeated fields position is stored as a node in the path.
         depth++;
         if (depth > 2) {
-            return false;
+            return ranges;
         }
         switch (matcher.position()) {
             case Position::FIRST: {
@@ -197,21 +202,22 @@ bool matchesSimple(const sp<UidMap>& uidMap, const FieldValueMatcher& matcher,
                 break;
             }
             case Position::ANY: {
-                // ANY means all the children matchers match in any of the sub trees, it's a match
-                newStart = start;
-                newEnd = end;
-                // Here start is guaranteed to be a valid index.
-                int currentPos = values[start].mField.getPosAtDepth(depth);
-                // Now find all sub trees ranges.
-                for (int i = start; i < end; i++) {
-                    int newPos = values[i].mField.getPosAtDepth(depth);
-                    if (newPos != currentPos) {
-                        ranges.push_back(std::make_pair(newStart, i));
-                        newStart = i;
-                        currentPos = newPos;
+                if (matcher.value_matcher_case() == FieldValueMatcher::kMatchesTuple) {
+                    // For ANY with matches_tuple, if all the children matchers match in any of the
+                    // sub trees, it's a match.
+                    // Here start is guaranteed to be a valid index.
+                    int currentPos = values[start].mField.getPosAtDepth(depth);
+                    // Now find all sub trees ranges.
+                    for (int i = start; i < end; i++) {
+                        int newPos = values[i].mField.getPosAtDepth(depth);
+                        if (newPos != currentPos) {
+                            ranges.push_back(std::make_pair(start, i));
+                            start = i;
+                            currentPos = newPos;
+                        }
                     }
                 }
-                ranges.push_back(std::make_pair(newStart, end));
+                ranges.push_back(std::make_pair(start, end));
                 break;
             }
             case Position::ALL:
@@ -224,16 +230,40 @@ bool matchesSimple(const sp<UidMap>& uidMap, const FieldValueMatcher& matcher,
         // No position
         ranges.push_back(std::make_pair(start, end));
     }
-    // start and end are still pointing to the matched range.
+
+    return ranges;
+}
+
+static bool matchesSimple(const sp<UidMap>& uidMap, const FieldValueMatcher& matcher,
+                          const vector<FieldValue>& values, int start, int end, int depth) {
+    if (depth > 2) {
+        ALOGE("Depth > 3 not supported");
+        return false;
+    }
+
+    if (start >= end) {
+        return false;
+    }
+
+    const vector<pair<int, int>> ranges = computeRanges(matcher, values, start, end, depth);
+
+    if (ranges.empty()) {
+        // No such field found.
+        return false;
+    }
+
+    // ranges should have exactly one start/end pair at this point unless position is ANY and
+    // value_matcher is matches_tuple.
+    std::tie(start, end) = ranges[0];
+
     switch (matcher.value_matcher_case()) {
         case FieldValueMatcher::kMatchesTuple: {
             ++depth;
             // If any range matches all matchers, good.
-            for (const auto& range : ranges) {
+            for (const auto& [rangeStart, rangeEnd] : ranges) {
                 bool matched = true;
                 for (const auto& subMatcher : matcher.matches_tuple().field_value_matcher()) {
-                    if (!matchesSimple(uidMap, subMatcher, values, range.first, range.second,
-                                       depth)) {
+                    if (!matchesSimple(uidMap, subMatcher, values, rangeStart, rangeEnd, depth)) {
                         matched = false;
                         break;
                     }
