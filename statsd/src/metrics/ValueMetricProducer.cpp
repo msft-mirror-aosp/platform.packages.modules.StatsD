@@ -72,7 +72,7 @@ const int FIELD_ID_SLICE_BY_STATE = 6;
 
 template <typename AggregatedValue, typename DimExtras>
 ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
-        const int64_t& metricId, const ConfigKey& key, const uint64_t protoHash,
+        const int64_t metricId, const ConfigKey& key, const uint64_t protoHash,
         const PullOptions& pullOptions, const BucketOptions& bucketOptions,
         const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
         const StateOptions& stateOptions, const ActivationOptions& activationOptions,
@@ -154,7 +154,7 @@ ValueMetricProducer<AggregatedValue, DimExtras>::~ValueMetricProducer() {
 
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onStatsdInitCompleted(
-        const int64_t& eventTimeNs) {
+        const int64_t eventTimeNs) {
     lock_guard<mutex> lock(mMutex);
 
     if (isPulled() && mCondition == ConditionState::kTrue && mIsActive) {
@@ -717,7 +717,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onMatchedLogEventInternalL
 // if mCondition and mIsActive are true!
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::flushIfNeededLocked(
-        const int64_t& eventTimeNs) {
+        const int64_t eventTimeNs) {
     const int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
     if (eventTimeNs < currentBucketEndTimeNs) {
         VLOG("eventTime is %lld, less than current bucket end time %lld", (long long)eventTimeNs,
@@ -742,7 +742,7 @@ int64_t ValueMetricProducer<AggregatedValue, DimExtras>::calcBucketsForwardCount
 
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::flushCurrentBucketLocked(
-        const int64_t& eventTimeNs, const int64_t& nextBucketStartTimeNs) {
+        const int64_t eventTimeNs, const int64_t nextBucketStartTimeNs) {
     if (mCondition == ConditionState::kUnknown) {
         StatsdStats::getInstance().noteBucketUnknownCondition(mMetricId);
         invalidateCurrentBucket(eventTimeNs, BucketDropReason::CONDITION_UNKNOWN);

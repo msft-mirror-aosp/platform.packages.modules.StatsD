@@ -213,27 +213,20 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 
 void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
     // Init allowed pushed atom uids.
-    if (config.allowed_log_source_size() == 0) {
-        ALOGE("Log source allowlist is empty! This config won't get any data. Suggest adding at "
-              "least AID_SYSTEM and AID_STATSD to the allowed_log_source field.");
-        mInvalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_LOG_SOURCE_ALLOWLIST_EMPTY);
-    } else {
-        for (const auto& source : config.allowed_log_source()) {
-            auto it = UidMap::sAidToUidMapping.find(source);
-            if (it != UidMap::sAidToUidMapping.end()) {
-                mAllowedUid.push_back(it->second);
-            } else {
-                mAllowedPkg.push_back(source);
-            }
-        }
-
-        if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
-            ALOGE("Too many log sources. This is likely to be an error in the config.");
-            mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    for (const auto& source : config.allowed_log_source()) {
+        auto it = UidMap::sAidToUidMapping.find(source);
+        if (it != UidMap::sAidToUidMapping.end()) {
+            mAllowedUid.push_back(it->second);
         } else {
-            initAllowedLogSources();
+            mAllowedPkg.push_back(source);
         }
+    }
+
+    if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
+        ALOGE("Too many log sources. This is likely to be an error in the config.");
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    } else {
+        initAllowedLogSources();
     }
 
     // Init default allowed pull atom uids.
@@ -371,7 +364,7 @@ bool MetricsManager::isConfigValid() const {
     return !mInvalidConfigReason.has_value();
 }
 
-void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
+void MetricsManager::notifyAppUpgrade(const int64_t eventTimeNs, const string& apk, const int uid,
                                       const int64_t version) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
@@ -392,8 +385,7 @@ void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& 
     }
 }
 
-void MetricsManager::notifyAppRemoved(const int64_t& eventTimeNs, const string& apk,
-                                      const int uid) {
+void MetricsManager::notifyAppRemoved(const int64_t eventTimeNs, const string& apk, const int uid) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
         it->notifyAppRemoved(eventTimeNs);
@@ -413,7 +405,7 @@ void MetricsManager::notifyAppRemoved(const int64_t& eventTimeNs, const string& 
     }
 }
 
-void MetricsManager::onUidMapReceived(const int64_t& eventTimeNs) {
+void MetricsManager::onUidMapReceived(const int64_t eventTimeNs) {
     // Purposefully don't inform metric producers on a new snapshot
     // because we don't need to flush partial buckets.
     // This occurs if a new user is added/removed or statsd crashes.
@@ -425,7 +417,7 @@ void MetricsManager::onUidMapReceived(const int64_t& eventTimeNs) {
     initAllowedLogSources();
 }
 
-void MetricsManager::onStatsdInitCompleted(const int64_t& eventTimeNs) {
+void MetricsManager::onStatsdInitCompleted(const int64_t eventTimeNs) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
         it->onStatsdInitCompleted(eventTimeNs);
@@ -519,7 +511,8 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
         return true;
     }
 
-    if (event.GetUid() > AID_ROOT && event.GetUid() < AID_SHELL) {
+    if (event.GetUid() == AID_ROOT ||
+        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL)) {
         // enable atoms logged from pre-installed Android system services
         return true;
     }
@@ -624,8 +617,8 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
                                        MatchingState::kNotComputed);
 
     for (const auto& matcherIndex : matchersIt->second) {
-        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                           matcherCache);
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, matcherIndex,
+                                                           mAllAtomMatchingTrackers, matcherCache);
     }
 
     // Set of metrics that received an activation cancellation.
@@ -666,7 +659,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     mIsActive = isActive;
 
     // A bitmap to see which ConditionTracker needs to be re-evaluated.
-    vector<bool> conditionToBeEvaluated(mAllConditionTrackers.size(), false);
+    vector<uint8_t> conditionToBeEvaluated(mAllConditionTrackers.size(), false);
 
     for (const auto& pair : mTrackerToConditionMap) {
         if (matcherCache[pair.first] == MatchingState::kMatched) {
@@ -680,7 +673,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     vector<ConditionState> conditionCache(mAllConditionTrackers.size(),
                                           ConditionState::kNotEvaluated);
     // A bitmap to track if a condition has changed value.
-    vector<bool> changedCache(mAllConditionTrackers.size(), false);
+    vector<uint8_t> changedCache(mAllConditionTrackers.size(), false);
     for (size_t i = 0; i < mAllConditionTrackers.size(); i++) {
         if (conditionToBeEvaluated[i] == false) {
             continue;
@@ -731,7 +724,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 }
 
 void MetricsManager::onAnomalyAlarmFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mAllAnomalyTrackers) {
         itr->informAlarmsFired(timestampNs, alarmSet);
@@ -739,7 +732,7 @@ void MetricsManager::onAnomalyAlarmFired(
 }
 
 void MetricsManager::onPeriodicAlarmFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mAllPeriodicAlarmTrackers) {
         itr->informAlarmsFired(timestampNs, alarmSet);

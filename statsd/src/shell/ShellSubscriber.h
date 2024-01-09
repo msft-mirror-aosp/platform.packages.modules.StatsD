@@ -56,7 +56,7 @@ namespace statsd {
  */
 class ShellSubscriber : public virtual RefBase {
 public:
-    ShellSubscriber(sp<UidMap> uidMap, sp<StatsPullerManager> pullerMgr,
+    ShellSubscriber(const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerMgr,
                     const std::shared_ptr<LogEventFilter>& logEventFilter)
         : mUidMap(uidMap), mPullerMgr(pullerMgr), mLogEventFilter(logEventFilter){};
 

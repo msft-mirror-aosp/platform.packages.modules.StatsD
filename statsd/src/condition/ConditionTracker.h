@@ -31,7 +31,7 @@ namespace statsd {
 
 class ConditionTracker : public virtual RefBase {
 public:
-    ConditionTracker(const int64_t& id, const int index, const uint64_t protoHash)
+    ConditionTracker(int64_t id, int index, const uint64_t protoHash)
         : mConditionId(id),
           mIndex(index),
           mInitialized(false),
@@ -57,8 +57,8 @@ public:
     virtual optional<InvalidConfigReason> init(
             const std::vector<Predicate>& allConditionConfig,
             const std::vector<sp<ConditionTracker>>& allConditionTrackers,
-            const std::unordered_map<int64_t, int>& conditionIdIndexMap, std::vector<bool>& stack,
-            std::vector<ConditionState>& conditionCache) = 0;
+            const std::unordered_map<int64_t, int>& conditionIdIndexMap,
+            std::vector<uint8_t>& stack, std::vector<ConditionState>& conditionCache) = 0;
 
     // Update appropriate state on config updates. Primarily, all indices need to be updated.
     // This predicate and all of its children are guaranteed to be preserved across the update.
@@ -73,7 +73,7 @@ public:
     // conditionTrackerMap: map of condition tracker id to index after the config update.
     // returns whether or not the update is successful.
     virtual optional<InvalidConfigReason> onConfigUpdated(
-            const std::vector<Predicate>& allConditionProtos, const int index,
+            const std::vector<Predicate>& allConditionProtos, int index,
             const std::vector<sp<ConditionTracker>>& allConditionTrackers,
             const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& conditionTrackerMap) {
@@ -95,7 +95,7 @@ public:
                                    const std::vector<MatchingState>& eventMatcherValues,
                                    const std::vector<sp<ConditionTracker>>& mAllConditions,
                                    std::vector<ConditionState>& conditionCache,
-                                   std::vector<bool>& conditionChanged) = 0;
+                                   std::vector<uint8_t>& conditionChanged) = 0;
 
     // Query the condition with parameters.
     // [conditionParameters]: a map from condition name to the HashableDimensionKey to query the

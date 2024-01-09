@@ -30,7 +30,6 @@ namespace {
 
 StatsdConfig CreateStatsdConfig(int num_buckets, int threshold) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
 
     *config.add_atom_matcher() = wakelockAcquireMatcher;

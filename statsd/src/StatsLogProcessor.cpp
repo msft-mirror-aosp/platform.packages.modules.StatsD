@@ -134,14 +134,14 @@ static void flushProtoToBuffer(ProtoOutputStream& proto, vector<uint8_t>* outDat
 }
 
 void StatsLogProcessor::processFiredAnomalyAlarmsLocked(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mMetricsManagers) {
         itr.second->onAnomalyAlarmFired(timestampNs, alarmSet);
     }
 }
 void StatsLogProcessor::onPeriodicAlarmFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     for (const auto& itr : mMetricsManagers) {
@@ -1415,7 +1415,7 @@ int64_t StatsLogProcessor::getLastReportTimeNs(const ConfigKey& key) {
     }
 }
 
-void StatsLogProcessor::notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk,
+void StatsLogProcessor::notifyAppUpgrade(const int64_t eventTimeNs, const string& apk,
                                          const int uid, const int64_t version) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received app upgrade");
@@ -1425,7 +1425,7 @@ void StatsLogProcessor::notifyAppUpgrade(const int64_t& eventTimeNs, const strin
     }
 }
 
-void StatsLogProcessor::notifyAppRemoved(const int64_t& eventTimeNs, const string& apk,
+void StatsLogProcessor::notifyAppRemoved(const int64_t eventTimeNs, const string& apk,
                                          const int uid) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received app removed");
@@ -1435,7 +1435,7 @@ void StatsLogProcessor::notifyAppRemoved(const int64_t& eventTimeNs, const strin
     }
 }
 
-void StatsLogProcessor::onUidMapReceived(const int64_t& eventTimeNs) {
+void StatsLogProcessor::onUidMapReceived(const int64_t eventTimeNs) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received uid map");
     StateManager::getInstance().updateLogSources(mUidMap);
@@ -1444,7 +1444,7 @@ void StatsLogProcessor::onUidMapReceived(const int64_t& eventTimeNs) {
     }
 }
 
-void StatsLogProcessor::onStatsdInitCompleted(const int64_t& elapsedTimeNs) {
+void StatsLogProcessor::onStatsdInitCompleted(const int64_t elapsedTimeNs) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received boot completed signal");
     for (const auto& it : mMetricsManagers) {
