@@ -56,6 +56,14 @@ message FieldMatcher {
   repeated FieldMatcher child = 3;
 }
 
+message StringReplacer {
+  // Regex for matching the string.
+  optional string regex = 1;
+
+  // String with which to replace the matched string.
+  optional string replacement = 2;
+}
+
 message FieldValueMatcher {
   optional int32 field = 1;
 
@@ -85,6 +93,11 @@ message FieldValueMatcher {
     StringListMatcher eq_any_wildcard_string = 18;
     StringListMatcher neq_any_wildcard_string = 19;
   }
+
+  // Can only be present if either:
+  // 1. value_matcher is not set.
+  // 2. value_matcher is set to one that is applicable to string fields.
+  optional StringReplacer replace_string = 20;
 }
 
 message MessageMatcher {
