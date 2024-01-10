@@ -19,9 +19,9 @@
 #include "HashableDimensionKey.h"
 #include "benchmark/benchmark.h"
 #include "logd/LogEvent.h"
-#include "metric_util.h"
 #include "stats_event.h"
 #include "stats_log_util.h"
+#include "tests/statsd_test_util.h"
 
 namespace android {
 namespace os {

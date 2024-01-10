@@ -32,14 +32,20 @@ namespace android {
 namespace os {
 namespace statsd {
 
+struct MatcherInitResult {
+    optional<InvalidConfigReason> invalidConfigReason;
+    bool hasStringTransformation;
+};
+
 class AtomMatchingTracker : public virtual RefBase {
 public:
-    AtomMatchingTracker(const int64_t& id, const int index, const uint64_t protoHash)
-        : mId(id), mIndex(index), mInitialized(false), mProtoHash(protoHash){};
+    AtomMatchingTracker(const int64_t id, const uint64_t protoHash)
+        : mId(id), mInitialized(false), mProtoHash(protoHash){};
 
     virtual ~AtomMatchingTracker(){};
 
     // Initialize this AtomMatchingTracker.
+    // matcherIndex: index of this AtomMatchingTracker in allAtomMatchingTrackers.
     // allAtomMatchers: the list of the AtomMatcher proto config. This is needed because we don't
     //                  store the proto object in memory. We only need it during initilization.
     // allAtomMatchingTrackers: the list of the AtomMatchingTracker objects. It's a one-to-one
@@ -48,30 +54,32 @@ public:
     //                          CombinationAtomMatchingTrackers using DFS.
     // stack: a bit map to record which matcher has been visited on the stack. This is for detecting
     //        circle dependency.
-    virtual optional<InvalidConfigReason> init(
-            const std::vector<AtomMatcher>& allAtomMatchers,
+    virtual MatcherInitResult init(
+            int matcherIndex, const std::vector<AtomMatcher>& allAtomMatchers,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-            const std::unordered_map<int64_t, int>& matcherMap, std::vector<bool>& stack) = 0;
+            const std::unordered_map<int64_t, int>& matcherMap, std::vector<uint8_t>& stack) = 0;
 
     // Update appropriate state on config updates. Primarily, all indices need to be updated.
     // This matcher and all of its children are guaranteed to be preserved across the update.
     // matcher: the AtomMatcher proto from the config.
-    // index: the index of this matcher in mAllAtomMatchingTrackers.
     // atomMatchingTrackerMap: map from matcher id to index in mAllAtomMatchingTrackers
     virtual optional<InvalidConfigReason> onConfigUpdated(
-            const AtomMatcher& matcher, const int index,
+            const AtomMatcher& matcher,
             const std::unordered_map<int64_t, int>& atomMatchingTrackerMap) = 0;
 
     // Called when a log event comes.
     // event: the log event.
+    // matcherIndex: index of this AtomMatchingTracker in allAtomMatchingTrackers.
     // allAtomMatchingTrackers: the list of all AtomMatchingTrackers. This is needed because the log
     //                          processing is done recursively.
     // matcherResults: The cached results for all matchers for this event. Parent matchers can
     //                 directly access the children's matching results if they have been evaluated.
     //                 Otherwise, call children matchers' onLogEvent.
-    virtual void onLogEvent(const LogEvent& event,
+    // matcherTransformations: the cached transformations for all matchers for this event.
+    virtual void onLogEvent(const LogEvent& event, int matcherIndex,
                             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                            std::vector<MatchingState>& matcherResults) = 0;
+                            std::vector<MatchingState>& matcherResults,
+                            std::vector<std::shared_ptr<LogEvent>>& matcherTransformations) = 0;
 
     // Get the tagIds that this matcher cares about. The combined collection is stored
     // in MetricMananger, so that we can pass any LogEvents that are not interest of us. It uses
@@ -95,9 +103,6 @@ public:
 protected:
     // Name of this matching. We don't really need the name, but it makes log message easy to debug.
     const int64_t mId;
-
-    // Index of this AtomMatchingTracker in MetricsManager's container.
-    int mIndex;
 
     // Whether this AtomMatchingTracker has been properly initialized.
     bool mInitialized;
