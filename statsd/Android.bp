@@ -418,6 +418,7 @@ cc_test {
 
     min_sdk_version: "30",
 
+    stl: "libc++_static",
 }
 
 //#############################
@@ -565,4 +566,3 @@ filegroup {
         "src/shell/shell_data.proto",
     ],
 }
-
