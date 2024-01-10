@@ -29,22 +29,23 @@ namespace statsd {
 // Represents a AtomMatcher_Combination in the StatsdConfig.
 class CombinationAtomMatchingTracker : public AtomMatchingTracker {
 public:
-    CombinationAtomMatchingTracker(const int64_t& id, const int index, const uint64_t protoHash);
+    CombinationAtomMatchingTracker(const int64_t id, const uint64_t protoHash);
 
-    optional<InvalidConfigReason> init(
-            const std::vector<AtomMatcher>& allAtomMatchers,
-            const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-            const std::unordered_map<int64_t, int>& matcherMap, std::vector<bool>& stack);
+    MatcherInitResult init(int matcherIndex, const std::vector<AtomMatcher>& allAtomMatchers,
+                           const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+                           const std::unordered_map<int64_t, int>& matcherMap,
+                           std::vector<uint8_t>& stack);
 
     optional<InvalidConfigReason> onConfigUpdated(
-            const AtomMatcher& matcher, const int index,
+            const AtomMatcher& matcher,
             const std::unordered_map<int64_t, int>& atomMatchingTrackerMap) override;
 
     ~CombinationAtomMatchingTracker();
 
-    void onLogEvent(const LogEvent& event,
+    void onLogEvent(const LogEvent& event, int matcherIndex,
                     const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                    std::vector<MatchingState>& matcherResults) override;
+                    std::vector<MatchingState>& matcherResults,
+                    std::vector<std::shared_ptr<LogEvent>>& matcherTransformations) override;
 
 private:
     LogicalOperation mLogicalOperation;
