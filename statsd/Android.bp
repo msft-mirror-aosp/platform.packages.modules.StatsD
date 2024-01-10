@@ -116,6 +116,7 @@ cc_defaults {
         "server_configurable_flags",
         "statsd-aidl-ndk",
         "libsqlite_static_noicu",
+        "libstats_regex",
     ],
     shared_libs: [
         "libbinder_ndk",
@@ -231,13 +232,60 @@ cc_binary {
     min_sdk_version: "30",
 }
 
+cc_defaults {
+    name: "statsd_test_defaults",
+    defaults: ["statsd_defaults"],
+    srcs: [
+        // atom_field_options.proto needs field_options.proto, but that is
+        // not included in libprotobuf-cpp-lite, so compile it here.
+        ":libprotobuf-internal-protos",
+        ":libstats_internal_protos",
+
+        "src/shell/shell_data.proto",
+        "src/stats_log.proto",
+    ],
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wno-enum-compare",
+        "-Wno-missing-field-initializers",
+        "-Wno-unused-function",
+        "-Wno-unused-parameter",
+        "-Wno-unused-variable",
+    ],
+    static_libs: [
+        "libgmock",
+        "libstatslog_statsdtest",
+        "libstatssocket_private",
+    ],
+    proto: {
+        type: "lite",
+        include_dirs: [
+            "external/protobuf/src",
+            "frameworks/proto_logging/stats",
+        ],
+        static: true,
+    },
+}
+
+cc_library_static {
+    name: "libstats_test_utils",
+    defaults: ["statsd_test_defaults"],
+    srcs: [
+        "tests/statsd_test_util.cpp",
+    ],
+    tidy_timeout_srcs: [
+        "tests/statsd_test_util.cpp",
+    ],
+}
+
 // ==============
 // statsd_test
 // ==============
 
 cc_test {
     name: "statsd_test",
-    defaults: ["statsd_defaults"],
+    defaults: ["statsd_test_defaults"],
     test_suites: [
         "device-tests",
         "mts-statsd",
@@ -255,16 +303,6 @@ cc_test {
             suffix: "32",
         },
     },
-
-    cflags: [
-        "-Wall",
-        "-Werror",
-        "-Wno-enum-compare",
-        "-Wno-missing-field-initializers",
-        "-Wno-unused-function",
-        "-Wno-unused-parameter",
-        "-Wno-unused-variable",
-    ],
 
     require_root: true,
 
@@ -300,19 +338,11 @@ cc_test {
         "tests/metrics/parsing_utils/config_update_utils_test.cpp",
         "tests/metrics/parsing_utils/metrics_manager_util_test.cpp",
         "tests/state/StateTracker_test.cpp",
-        "tests/statsd_test_util.cpp",
         "tests/StatsLogProcessor_test.cpp",
         "tests/UidMap_test.cpp",
     ],
 
     srcs: [
-        // atom_field_options.proto needs field_options.proto, but that is
-        // not included in libprotobuf-cpp-lite, so compile it here.
-        ":libprotobuf-internal-protos",
-        ":libstats_internal_protos",
-
-        "src/shell/shell_data.proto",
-        "src/stats_log.proto",
         "tests/AlarmMonitor_test.cpp",
         "tests/anomaly/AlarmTracker_test.cpp",
         "tests/anomaly/AnomalyTracker_test.cpp",
@@ -337,9 +367,10 @@ cc_test {
         "tests/e2e/MetricConditionLink_e2e_test.cpp",
         "tests/e2e/PartialBucket_e2e_test.cpp",
         "tests/e2e/RestrictedConfig_e2e_test.cpp",
+        "tests/e2e/RestrictedEventMetric_e2e_test.cpp",
+        "tests/e2e/StringReplace_e2e_test.cpp",
         "tests/e2e/ValueMetric_pull_e2e_test.cpp",
         "tests/e2e/WakelockDuration_e2e_test.cpp",
-        "tests/e2e/RestrictedEventMetric_e2e_test.cpp",
         "tests/external/puller_util_test.cpp",
         "tests/external/StatsCallbackPuller_test.cpp",
         "tests/external/StatsPuller_test.cpp",
@@ -370,7 +401,6 @@ cc_test {
         "tests/MetricsManager_test.cpp",
         "tests/shell/ShellSubscriber_test.cpp",
         "tests/state/StateTracker_test.cpp",
-        "tests/statsd_test_util.cpp",
         "tests/statsd_test_util_test.cpp",
         "tests/SocketListener_test.cpp",
         "tests/StatsLogProcessor_test.cpp",
@@ -382,20 +412,10 @@ cc_test {
     ],
 
     static_libs: [
-        "libgmock",
         "libstatsgtestmatchers",
-        "libstatslog_statsdtest",
-        "libstatssocket_private",
+        "libstats_test_utils",
     ],
 
-    proto: {
-        type: "lite",
-        include_dirs: [
-            "external/protobuf/src",
-            "frameworks/proto_logging/stats",
-        ],
-        static: true,
-    },
     min_sdk_version: "30",
 
 }
@@ -406,14 +426,10 @@ cc_test {
 
 cc_benchmark {
     name: "statsd_benchmark",
-    defaults: ["statsd_defaults"],
+    defaults: ["statsd_test_defaults"],
 
     srcs: [
-        // atom_field_options.proto needs field_options.proto, but that is
-        // not included in libprotobuf-cpp-lite, so compile it here.
-        ":libprotobuf-internal-protos",
-        ":libstats_internal_protos",
-
+        "benchmark/data_structures_benchmark.cpp",
         "benchmark/db_benchmark.cpp",
         "benchmark/duration_metric_benchmark.cpp",
         "benchmark/filter_value_benchmark.cpp",
@@ -422,43 +438,32 @@ cc_benchmark {
         "benchmark/log_event_benchmark.cpp",
         "benchmark/log_event_filter_benchmark.cpp",
         "benchmark/main.cpp",
-        "benchmark/metric_util.cpp",
+        "benchmark/on_log_event_benchmark.cpp",
         "benchmark/stats_write_benchmark.cpp",
         "benchmark/loss_info_container_benchmark.cpp",
-        "src/stats_log.proto",
     ],
 
-    proto: {
-        type: "lite",
-        include_dirs: [
-            "external/protobuf/src",
-            "frameworks/proto_logging/stats",
-        ],
-    },
-
     cflags: [
-        "-Wall",
-        "-Werror",
-        "-Wno-unused-parameter",
-        "-Wno-unused-variable",
-        "-Wno-unused-function",
-
         // Bug: http://b/29823425 Disable -Wvarargs for Clang update to r271374
         "-Wno-varargs",
     ],
 
     static_libs: [
-        "libplatformprotos",
-        "libstatssocket_private",
+        "libgtest",
+        "libstats_test_utils",
     ],
+}
 
-    shared_libs: [
-        "libprotobuf-cpp-lite",
-        "libstatslog",
-    ],
-
-    header_libs: [
-        "libgtest_prod_headers",
+// Build regex support in a separate library to catch std::regex_error exception.
+cc_library_static {
+    name: "libstats_regex",
+    srcs: ["lib/stats_regex.cpp"],
+    cppflags: ["-fexceptions"],
+    static_libs: ["libbase"],
+    min_sdk_version: "30",
+    apex_available: [
+        "com.android.os.statsd",
+        "test_com.android.os.statsd",
     ],
 }
 
@@ -549,6 +554,37 @@ filegroup {
         "src/uid_data.proto",
         "src/guardrail/stats_log_enums.proto",
     ],
+}
+
+cc_fuzz {
+    name: "statsd_service_fuzzer",
+    defaults: [
+        "statsd_defaults",
+        "service_fuzzer_defaults",
+    ],
+    srcs: [
+        "fuzzers/statsd_service_fuzzer.cpp"
+    ],
+    shared_libs: [
+        "libstatssocket",
+        "libvndksupport",
+    ],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+    fuzz_config: {
+        cc: [
+            "singhtejinder@google.com",
+            "sharaienko@google.com",
+        ]
+    },
+    proto: {
+        type: "lite",
+        static: true,
+    },
 }
 
 // Filegroup for subscription protos.

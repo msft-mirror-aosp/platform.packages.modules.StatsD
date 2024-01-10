@@ -169,7 +169,7 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherPreserve) {
     EXPECT_TRUE(initConfig(config));
 
     vector<UpdateStatus> matchersToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
     EXPECT_EQ(determineMatcherUpdateStatus(config, 0, oldAtomMatchingTrackerMap,
@@ -194,7 +194,7 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherReplace) {
     *newConfig.add_atom_matcher() = newMatcher;
 
     vector<UpdateStatus> matchersToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 0, oldAtomMatchingTrackerMap,
@@ -219,7 +219,7 @@ TEST_F(ConfigUpdateTest, TestSimpleMatcherNew) {
     *newConfig.add_atom_matcher() = newMatcher;
 
     vector<UpdateStatus> matchersToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
     newAtomMatchingTrackerMap[matcherId] = 0;
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 0, oldAtomMatchingTrackerMap,
@@ -261,7 +261,7 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherPreserve) {
     newAtomMatchingTrackerMap[matcher1Id] = 2;
 
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. It should recurse the two child matchers and preserve all 3.
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
                                            oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
@@ -306,7 +306,7 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherReplace) {
     newAtomMatchingTrackerMap[matcher1Id] = 2;
 
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. The simple matchers should not be evaluated.
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
                                            oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
@@ -351,7 +351,7 @@ TEST_F(ConfigUpdateTest, TestCombinationMatcherDepsChange) {
     newAtomMatchingTrackerMap[matcher1Id] = 2;
 
     vector<UpdateStatus> matchersToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination.
     EXPECT_EQ(determineMatcherUpdateStatus(newConfig, 1, oldAtomMatchingTrackerMap,
                                            oldAtomMatchingTrackers, newAtomMatchingTrackerMap,
@@ -475,19 +475,13 @@ TEST_F(ConfigUpdateTest, TestUpdateMatchers) {
     EXPECT_NE(oldAtomMatchingTrackers[oldAtomMatchingTrackerMap.at(combination2Id)],
               newAtomMatchingTrackers[newAtomMatchingTrackerMap.at(combination2Id)]);
 
-    // Validation, make sure the matchers have the proper ids/indices. Could do more checks here.
+    // Validation, make sure the matchers have the proper ids. Could do more checks here.
     EXPECT_EQ(newAtomMatchingTrackers[0]->getId(), combination3Id);
-    EXPECT_EQ(newAtomMatchingTrackers[0]->mIndex, 0);
     EXPECT_EQ(newAtomMatchingTrackers[1]->getId(), simple2Id);
-    EXPECT_EQ(newAtomMatchingTrackers[1]->mIndex, 1);
     EXPECT_EQ(newAtomMatchingTrackers[2]->getId(), combination2Id);
-    EXPECT_EQ(newAtomMatchingTrackers[2]->mIndex, 2);
     EXPECT_EQ(newAtomMatchingTrackers[3]->getId(), simple1Id);
-    EXPECT_EQ(newAtomMatchingTrackers[3]->mIndex, 3);
     EXPECT_EQ(newAtomMatchingTrackers[4]->getId(), simple4Id);
-    EXPECT_EQ(newAtomMatchingTrackers[4]->mIndex, 4);
     EXPECT_EQ(newAtomMatchingTrackers[5]->getId(), combination1Id);
-    EXPECT_EQ(newAtomMatchingTrackers[5]->mIndex, 5);
 
     // Verify child indices of Combination Matchers are correct.
     CombinationAtomMatchingTracker* combinationTracker1 =
@@ -531,7 +525,7 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionPreserve) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
     EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
@@ -558,7 +552,7 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionReplace) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
     EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
@@ -586,7 +580,7 @@ TEST_F(ConfigUpdateTest, TestSimpleConditionDepsChange) {
     replacedMatchers.insert(startMatcherId);
 
     vector<UpdateStatus> conditionsToUpdate(1, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(1, false);
+    vector<uint8_t> cycleTracker(1, false);
     unordered_map<int64_t, int> newConditionTrackerMap;
     newConditionTrackerMap[predicate.id()] = 0;
     EXPECT_EQ(determineConditionUpdateStatus(config, 0, oldConditionTrackerMap,
@@ -630,7 +624,7 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionPreserve) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. It should recurse the two child predicates and preserve all 3.
     EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
                                              oldConditionTrackers, newConditionTrackerMap,
@@ -677,7 +671,7 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionReplace) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. The simple conditions should not be evaluated.
     EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
                                              oldConditionTrackers, newConditionTrackerMap,
@@ -723,7 +717,7 @@ TEST_F(ConfigUpdateTest, TestCombinationConditionDepsChange) {
 
     set<int64_t> replacedMatchers;
     vector<UpdateStatus> conditionsToUpdate(3, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(3, false);
+    vector<uint8_t> cycleTracker(3, false);
     // Only update the combination. Simple2 and combination1 must be evaluated.
     EXPECT_EQ(determineConditionUpdateStatus(newConfig, 0, oldConditionTrackerMap,
                                              oldConditionTrackers, newConditionTrackerMap,
@@ -815,7 +809,7 @@ TEST_F(ConfigUpdateTest, TestUpdateConditions) {
     vector<MatchingState> eventMatcherValues(6, MatchingState::kNotMatched);
     eventMatcherValues[1] = MatchingState::kMatched;
     vector<ConditionState> tmpConditionCache(6, ConditionState::kNotEvaluated);
-    vector<bool> conditionChangeCache(6, false);
+    vector<uint8_t> conditionChangeCache(6, false);
     oldConditionTrackers[0]->evaluateCondition(event, eventMatcherValues, oldConditionTrackers,
                                                tmpConditionCache, conditionChangeCache);
     EXPECT_EQ(tmpConditionCache[0], ConditionState::kFalse);
@@ -2630,7 +2624,7 @@ TEST_F(ConfigUpdateTest, TestUpdateDurationMetrics) {
     vector<MatchingState> matchingStates(8, MatchingState::kNotMatched);
     matchingStates[2] = kMatched;
     vector<ConditionState> conditionCache(5, ConditionState::kNotEvaluated);
-    vector<bool> changedCache(5, false);
+    vector<uint8_t> changedCache(5, false);
     unique_ptr<LogEvent> event = CreateAcquireWakelockEvent(timeBaseNs + 3, {uid1}, {"tag"}, "wl1");
     oldConditionTrackers[4]->evaluateCondition(*event.get(), matchingStates, oldConditionTrackers,
                                                conditionCache, changedCache);
@@ -2706,7 +2700,7 @@ TEST_F(ConfigUpdateTest, TestUpdateDurationMetrics) {
                                                            newConditionTrackerMap),
                   nullopt);
     }
-    vector<bool> cycleTracker(5, false);
+    vector<uint8_t> cycleTracker(5, false);
     fill(conditionCache.begin(), conditionCache.end(), ConditionState::kNotEvaluated);
     for (int i = 0; i < newConditionTrackers.size(); i++) {
         EXPECT_EQ(
