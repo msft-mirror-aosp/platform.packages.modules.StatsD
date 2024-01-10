@@ -15,7 +15,7 @@
  */
 
 #include "benchmark/benchmark.h"
-#include "metric_util.h"
+#include "tests/statsd_test_util.h"
 #include "utils/DbUtils.h"
 
 using namespace std;

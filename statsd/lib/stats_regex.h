@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,40 +14,17 @@
  * limitations under the License.
  */
 
-#include "config/ConfigKey.h"
+#pragma once
+
+#include <regex>
 
 namespace android {
 namespace os {
 namespace statsd {
 
-ConfigKey::ConfigKey() {
-}
+std::unique_ptr<std::regex> createRegex(const std::string& pattern);
 
-ConfigKey::ConfigKey(const ConfigKey& that) : mId(that.mId), mUid(that.mUid) {
-}
-
-ConfigKey::ConfigKey(int uid, const int64_t id) : mId(id), mUid(uid) {
-}
-
-ConfigKey::~ConfigKey() {
-}
-
-string ConfigKey::ToString() const {
-    string s;
-    s += "(" + std::to_string(mUid) + " " + std::to_string(mId) + ")";
-    return s;
-}
-
-
-int64_t StrToInt64(const string& str) {
-    char* endp;
-    int64_t value;
-    value = strtoll(str.c_str(), &endp, 0);
-    if (endp == str.c_str() || *endp != '\0') {
-        value = 0;
-    }
-    return value;
-}
+std::string regexReplace(const std::string& input, const std::regex& re, const std::string& format);
 
 }  // namespace statsd
 }  // namespace os
