@@ -410,9 +410,10 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         return;
     }
     for (const auto& data : allData) {
-        if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) ==
-            MatchingState::kMatched) {
-            LogEvent localCopy = *data;
+        const auto [matchResult, transformedEvent] =
+                mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex);
+        if (matchResult == MatchingState::kMatched) {
+            LogEvent localCopy = transformedEvent == nullptr ? *data : *transformedEvent;
             localCopy.setElapsedTimestampNs(timestampNs);
             onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
         }
@@ -502,9 +503,11 @@ void GaugeMetricProducer::onDataPulled(const std::vector<std::shared_ptr<LogEven
         return;
     }
     for (const auto& data : allData) {
-        if (mEventMatcherWizard->matchLogEvent(
-                *data, mWhatMatcherIndex) == MatchingState::kMatched) {
-            onMatchedLogEventLocked(mWhatMatcherIndex, *data);
+        const auto [matchResult, transformedEvent] =
+                mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex);
+        if (matchResult == MatchingState::kMatched) {
+            onMatchedLogEventLocked(mWhatMatcherIndex,
+                                    transformedEvent == nullptr ? *data : *transformedEvent);
         }
     }
 }

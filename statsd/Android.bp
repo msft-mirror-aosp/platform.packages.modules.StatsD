@@ -116,6 +116,7 @@ cc_defaults {
         "server_configurable_flags",
         "statsd-aidl-ndk",
         "libsqlite_static_noicu",
+        "libstats_regex",
     ],
     shared_libs: [
         "libbinder_ndk",
@@ -230,7 +231,6 @@ cc_binary {
     ],
     min_sdk_version: "30",
 }
-
 
 cc_defaults {
     name: "statsd_test_defaults",
@@ -367,9 +367,10 @@ cc_test {
         "tests/e2e/MetricConditionLink_e2e_test.cpp",
         "tests/e2e/PartialBucket_e2e_test.cpp",
         "tests/e2e/RestrictedConfig_e2e_test.cpp",
+        "tests/e2e/RestrictedEventMetric_e2e_test.cpp",
+        "tests/e2e/StringReplace_e2e_test.cpp",
         "tests/e2e/ValueMetric_pull_e2e_test.cpp",
         "tests/e2e/WakelockDuration_e2e_test.cpp",
-        "tests/e2e/RestrictedEventMetric_e2e_test.cpp",
         "tests/external/puller_util_test.cpp",
         "tests/external/StatsCallbackPuller_test.cpp",
         "tests/external/StatsPuller_test.cpp",
@@ -449,6 +450,19 @@ cc_benchmark {
     static_libs: [
         "libgtest",
         "libstats_test_utils",
+    ],
+}
+
+// Build regex support in a separate library to catch std::regex_error exception.
+cc_library_static {
+    name: "libstats_regex",
+    srcs: ["lib/stats_regex.cpp"],
+    cppflags: ["-fexceptions"],
+    static_libs: ["libbase"],
+    min_sdk_version: "30",
+    apex_available: [
+        "com.android.os.statsd",
+        "test_com.android.os.statsd",
     ],
 }
 
