@@ -418,6 +418,7 @@ cc_test {
 
     min_sdk_version: "30",
 
+    stl: "libc++_static",
 }
 
 //#############################
@@ -438,6 +439,7 @@ cc_benchmark {
         "benchmark/log_event_benchmark.cpp",
         "benchmark/log_event_filter_benchmark.cpp",
         "benchmark/main.cpp",
+        "benchmark/on_log_event_benchmark.cpp",
         "benchmark/stats_write_benchmark.cpp",
         "benchmark/loss_info_container_benchmark.cpp",
     ],
@@ -596,4 +598,3 @@ filegroup {
         "src/shell/shell_data.proto",
     ],
 }
-
