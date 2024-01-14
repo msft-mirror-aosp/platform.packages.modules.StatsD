@@ -206,13 +206,30 @@ TYPE_PRINTER(CpuActiveTime,
 EQ_MATCHER(PluggedStateChanged, PROPERTY_EQ(PluggedStateChanged, state));
 TYPE_PRINTER(PluggedStateChanged, PROPERTY_PRINT(state));
 
+EQ_MATCHER(WakelockStateChanged,
+        REPEATED_PROPERTY_MATCHER(WakelockStateChanged, attribution_node, EqAttributionNode),
+        PROPERTY_EQ(WakelockStateChanged, type),
+        PROPERTY_EQ(WakelockStateChanged, tag),
+        PROPERTY_EQ(WakelockStateChanged, state),
+        PROPERTY_EQ(WakelockStateChanged, process_state)
+);
+TYPE_PRINTER(WakelockStateChanged,
+        REPEATED_PROPERTY_PRINT(attribution_node)
+        PROPERTY_PRINT(type)
+        PROPERTY_PRINT(tag)
+        PROPERTY_PRINT(state)
+        PROPERTY_PRINT(process_state)
+);
+
 EQ_MATCHER(Atom,
         PROPERTY_MATCHER(Atom, screen_state_changed, EqScreenStateChanged),
-        PROPERTY_MATCHER(Atom, test_atom_reported, EqTestAtomReported)
+        PROPERTY_MATCHER(Atom, test_atom_reported, EqTestAtomReported),
+        PROPERTY_MATCHER(Atom, wakelock_state_changed, EqWakelockStateChanged)
 );
 TYPE_PRINTER(Atom,
         PROPERTY_PRINT(screen_state_changed)
         PROPERTY_PRINT(test_atom_reported)
+        PROPERTY_PRINT(wakelock_state_changed)
 );
 
 EQ_MATCHER(ShellData,
