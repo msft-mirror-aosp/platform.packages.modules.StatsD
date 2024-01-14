@@ -23,6 +23,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using std::shared_ptr;
 using std::unordered_map;
 using std::vector;
 
@@ -41,16 +42,27 @@ SimpleAtomMatchingTracker::SimpleAtomMatchingTracker(const int64_t id, const uin
 SimpleAtomMatchingTracker::~SimpleAtomMatchingTracker() {
 }
 
-optional<InvalidConfigReason> SimpleAtomMatchingTracker::init(
+MatcherInitResult SimpleAtomMatchingTracker::init(
         int matcherIndex, const vector<AtomMatcher>& allAtomMatchers,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& matcherMap, vector<uint8_t>& stack) {
+    MatcherInitResult result{nullopt /* invalidConfigReason */,
+                             false /* hasStringTransformation */};
     // no need to do anything.
     if (!mInitialized) {
-        return createInvalidConfigReasonWithMatcher(
+        result.invalidConfigReason = createInvalidConfigReasonWithMatcher(
                 INVALID_CONFIG_REASON_MATCHER_TRACKER_NOT_INITIALIZED, mId);
+        return result;
     }
-    return nullopt;
+
+    for (const FieldValueMatcher& fvm : mMatcher.field_value_matcher()) {
+        if (fvm.has_replace_string()) {
+            result.hasStringTransformation = true;
+            break;
+        }
+    }
+
+    return result;
 }
 
 optional<InvalidConfigReason> SimpleAtomMatchingTracker::onConfigUpdated(
@@ -66,7 +78,8 @@ optional<InvalidConfigReason> SimpleAtomMatchingTracker::onConfigUpdated(
 void SimpleAtomMatchingTracker::onLogEvent(
         const LogEvent& event, int matcherIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-        vector<MatchingState>& matcherResults) {
+        vector<MatchingState>& matcherResults,
+        vector<shared_ptr<LogEvent>>& matcherTransformations) {
     if (matcherResults[matcherIndex] != MatchingState::kNotComputed) {
         VLOG("Matcher %lld already evaluated ", (long long)mId);
         return;
@@ -77,9 +90,13 @@ void SimpleAtomMatchingTracker::onLogEvent(
         return;
     }
 
-    bool matched = matchesSimple(mUidMap, mMatcher, event);
+    auto [matched, transformedEvent] = matchesSimple(mUidMap, mMatcher, event);
     matcherResults[matcherIndex] = matched ? MatchingState::kMatched : MatchingState::kNotMatched;
     VLOG("Stats SimpleAtomMatcher %lld matched? %d", (long long)mId, matched);
+
+    if (matched && transformedEvent != nullptr) {
+        matcherTransformations[matcherIndex] = std::move(transformedEvent);
+    }
 }
 
 }  // namespace statsd
