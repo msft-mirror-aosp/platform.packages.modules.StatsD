@@ -203,8 +203,9 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
     std::fill(cycleTracker.begin(), cycleTracker.end(), false);
     for (size_t matcherIndex = 0; matcherIndex < newAtomMatchingTrackers.size(); matcherIndex++) {
         auto& matcher = newAtomMatchingTrackers[matcherIndex];
-        invalidConfigReason = matcher->init(matcherIndex, matcherProtos, newAtomMatchingTrackers,
-                                            newAtomMatchingTrackerMap, cycleTracker);
+        const auto [invalidConfigReason, _] =
+                matcher->init(matcherIndex, matcherProtos, newAtomMatchingTrackers,
+                              newAtomMatchingTrackerMap, cycleTracker);
         if (invalidConfigReason.has_value()) {
             return invalidConfigReason;
         }
