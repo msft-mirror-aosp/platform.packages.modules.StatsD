@@ -1,11 +1,11 @@
 /*
- * Copyright (C) 2023, The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,14 +16,16 @@
 
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
-#include <sys/cdefs.h>
+#include <regex>
 
-__BEGIN_DECLS
+namespace android {
+namespace os {
+namespace statsd {
 
-int64_t get_elapsed_realtime_ns();
+std::unique_ptr<std::regex> createRegex(const std::string& pattern);
 
-int toSocketLossError(int errno_code);
+std::string regexReplace(const std::string& input, const std::regex& re, const std::string& format);
 
-__END_DECLS
+}  // namespace statsd
+}  // namespace os
+}  // namespace android

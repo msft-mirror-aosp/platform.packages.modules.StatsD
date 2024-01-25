@@ -15,7 +15,7 @@ public:
     RestrictedEventMetricProducer(
             const ConfigKey& key, const EventMetric& eventMetric, const int conditionIndex,
             const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
-            const uint64_t protoHash, const int64_t startTimeNs,
+            const uint64_t protoHash, int64_t startTimeNs,
             const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap = {},
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
@@ -24,7 +24,7 @@ public:
 
     void onMetricRemove() override;
 
-    void enforceRestrictedDataTtl(sqlite3* db, const int64_t wallClockNs);
+    void enforceRestrictedDataTtl(sqlite3* db, int64_t wallClockNs);
 
     void flushRestrictedData() override;
 
