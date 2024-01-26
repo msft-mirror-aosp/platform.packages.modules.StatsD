@@ -246,10 +246,10 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
 
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
             "pkg1");
@@ -263,10 +263,10 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "pkg0");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
             "pkg1");
@@ -277,10 +277,10 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "pkg0");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
             "pkg1");
@@ -306,17 +306,17 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "location2");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location1");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
@@ -338,17 +338,17 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "location2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location1");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
@@ -370,17 +370,17 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "location2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location1");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
@@ -420,8 +420,7 @@ TEST(AtomMatcherTest, TestUidFieldMatcher) {
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event2).matched);
 
     // Event has is_uid annotation, but uid maps to different package name.
-    simpleMatcher->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");  // package names are normalized
+    simpleMatcher->mutable_field_value_matcher(0)->set_eq_string("Pkg2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event2).matched);
 }
 
@@ -458,7 +457,7 @@ TEST(AtomMatcherTest, TestRepeatedUidFieldMatcher) {
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event1).matched);
 
     fieldValueMatcher->set_position(Position::ANY);
-    fieldValueMatcher->set_eq_string("pkg2");
+    fieldValueMatcher->set_eq_string("Pkg2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event1).matched);
 
     // is_uid annotation, mapping from uid to package name.
@@ -478,7 +477,7 @@ TEST(AtomMatcherTest, TestRepeatedUidFieldMatcher) {
     fieldValueMatcher->set_position(Position::ANY);
     fieldValueMatcher->set_eq_string("pkg");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event2).matched);
-    fieldValueMatcher->set_eq_string("pkg2");  // package names are normalized
+    fieldValueMatcher->set_eq_string("Pkg2");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event2).matched);
 }
 
@@ -545,8 +544,8 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_AttributionUids) {
     auto neqStringList = attributionMatcher->mutable_matches_tuple()
                                  ->mutable_field_value_matcher(0)
                                  ->mutable_neq_any_string();
-    neqStringList->add_str_value("pkg2");
-    neqStringList->add_str_value("pkg3");
+    neqStringList->add_str_value("Pkg2");
+    neqStringList->add_str_value("PkG3");
 
     auto fieldMatcher = simpleMatcher->add_field_value_matcher();
     fieldMatcher->set_field(FIELD_ID_2);
@@ -556,7 +555,7 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_AttributionUids) {
 
     neqStringList->Clear();
     neqStringList->add_str_value("pkg1");
-    neqStringList->add_str_value("pkg3");
+    neqStringList->add_str_value("PkG3");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
 
     attributionMatcher->set_position(Position::ANY);
