@@ -565,7 +565,7 @@ cc_fuzz {
         "fuzzer_disable_leaks",
     ],
     srcs: [
-        "fuzzers/statsd_service_fuzzer.cpp"
+        "fuzzers/statsd_service_fuzzer.cpp",
     ],
     shared_libs: [
         "libstatssocket",
@@ -582,7 +582,7 @@ cc_fuzz {
         cc: [
             "singhtejinder@google.com",
             "sharaienko@google.com",
-        ]
+        ],
     },
     proto: {
         type: "lite",
