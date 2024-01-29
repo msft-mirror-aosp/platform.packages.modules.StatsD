@@ -1517,7 +1517,7 @@ TEST(AtomMatcherTest, TestStringReplaceRoot) {
     FieldValueMatcher* fvm = matcher.mutable_simple_atom_matcher()->add_field_value_matcher();
     fvm->set_field(FIELD_ID_2);
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1555,7 +1555,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagFirst) {
             attributionFvm->mutable_matches_tuple()->add_field_value_matcher();
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1592,7 +1592,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagLast) {
             attributionFvm->mutable_matches_tuple()->add_field_value_matcher();
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1630,7 +1630,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagAll) {
             attributionFvm->mutable_matches_tuple()->add_field_value_matcher();
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1674,7 +1674,7 @@ TEST(AtomMatcherTest, TestStringReplaceNestedAllWithMultipleNestedStringFields) 
             attributionFvm->mutable_matches_tuple()->add_field_value_matcher();
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1702,7 +1702,7 @@ TEST(AtomMatcherTest, TestStringReplaceRootOnMatchedField) {
     fvm->set_field(FIELD_ID_2);
     fvm->set_eq_string("bar");
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     // Set up the log event.
@@ -1749,7 +1749,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagFirstOnMatchedField) {
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     // Set up the log event.
@@ -1797,7 +1797,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagLastOnMatchedField) {
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     // Set up the log event.
@@ -1845,7 +1845,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagAnyOnMatchedField) {
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     // Set up the log event.
@@ -1893,13 +1893,13 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagAnyAndRootOnMatchedFields) 
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
     FieldValueMatcher* rootFvm = matcher.mutable_simple_atom_matcher()->add_field_value_matcher();
     rootFvm->set_field(FIELD_ID_2);
     rootFvm->set_eq_string("blah");
     stringReplacer = rootFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     {
@@ -1956,7 +1956,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagAnyWithAttributionUidValueM
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     {
@@ -2009,7 +2009,31 @@ TEST(AtomMatcherTest, TestStringReplaceBadRegex) {
     FieldValueMatcher* fvm = matcher.mutable_simple_atom_matcher()->add_field_value_matcher();
     fvm->set_field(FIELD_ID_2);
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"(*[\d]+$)");  // bad regex: asterisk not preceded by any expression.
+    stringReplacer->set_regex(
+            R"(*[0-9]+$)");  // bad regex: asterisk not preceded by any expression.
+    stringReplacer->set_replacement("");
+
+    const auto [hasMatched, transformedEvent] =
+            matchesSimple(uidMap, matcher.simple_atom_matcher(), event);
+    EXPECT_TRUE(hasMatched);
+    ASSERT_EQ(transformedEvent, nullptr);
+}
+
+TEST(AtomMatcherTest, TestStringReplaceRegexWithSubgroup) {
+    sp<UidMap> uidMap = new UidMap();
+
+    // Set up the log event.
+    std::vector<int> attributionUids = {1111, 2222, 3333};
+    std::vector<string> attributionTags = {"location1", "location2", "location3"};
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    makeAttributionLogEvent(&event, TAG_ID, 0, attributionUids, attributionTags, "some value123");
+
+    // Set up the matcher. Replace second field.
+    AtomMatcher matcher = CreateSimpleAtomMatcher("matcher", TAG_ID);
+    FieldValueMatcher* fvm = matcher.mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(FIELD_ID_2);
+    StringReplacer* stringReplacer = fvm->mutable_replace_string();
+    stringReplacer->set_regex(R"(([a-z]+)[0-9]+$)");  // "([a-z]+)" is a subgroup.
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
