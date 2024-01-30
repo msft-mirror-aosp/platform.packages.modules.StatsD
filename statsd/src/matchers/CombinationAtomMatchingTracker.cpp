@@ -122,7 +122,7 @@ MatcherInitResult CombinationAtomMatchingTracker::init(
 optional<InvalidConfigReason> CombinationAtomMatchingTracker::onConfigUpdated(
         const AtomMatcher& matcher, const unordered_map<int64_t, int>& atomMatchingTrackerMap) {
     mChildren.clear();
-    AtomMatcher_Combination combinationMatcher = matcher.combination();
+    const AtomMatcher_Combination& combinationMatcher = matcher.combination();
     for (const int64_t child : combinationMatcher.matcher()) {
         const auto& pair = atomMatchingTrackerMap.find(child);
         if (pair == atomMatchingTrackerMap.end()) {
