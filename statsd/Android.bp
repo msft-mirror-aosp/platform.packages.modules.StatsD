@@ -39,10 +39,10 @@ cc_defaults {
         "google-*",
         "misc-*",
         "performance-*",
-        "-bugprone-narrowing-conversions",  // lots of unsigned -> int conversions
+        "-bugprone-narrowing-conversions", // lots of unsigned -> int conversions
         "-cert-err34-c",
-        "-cert-msc30-c", // warning: rand() has limited randomness; use C++11 random library instead
-        "-cert-msc50-cpp", // warning: rand() has limited randomness; use C++11 random library instead
+        "-cert-msc30-c", // warning: rand() has limited randomness; use C++11 random library
+        "-cert-msc50-cpp", // warning: rand() has limited randomness; use C++11 random library
     ],
     tidy_checks_as_errors: [
         "android-*",
@@ -158,7 +158,10 @@ cc_defaults {
 genrule {
     name: "statslog_statsd.h",
     tools: ["stats-log-api-gen"],
-    cmd: "$(location stats-log-api-gen) --header $(genDir)/statslog_statsd.h --module statsd --namespace android,os,statsd,util",
+    cmd: "$(location stats-log-api-gen) " +
+        "--header $(genDir)/statslog_statsd.h " +
+        "--module statsd " +
+        "--namespace android,os,statsd,util",
     out: [
         "statslog_statsd.h",
     ],
@@ -167,7 +170,11 @@ genrule {
 genrule {
     name: "statslog_statsd.cpp",
     tools: ["stats-log-api-gen"],
-    cmd: "$(location stats-log-api-gen) --cpp $(genDir)/statslog_statsd.cpp --module statsd --namespace android,os,statsd,util --importHeader statslog_statsd.h",
+    cmd: "$(location stats-log-api-gen) " +
+        "--cpp $(genDir)/statslog_statsd.cpp " +
+        "--module statsd " +
+        "--namespace android,os,statsd,util " +
+        "--importHeader statslog_statsd.h",
     out: [
         "statslog_statsd.cpp",
     ],
@@ -176,7 +183,10 @@ genrule {
 genrule {
     name: "statslog_statsdtest.h",
     tools: ["stats-log-api-gen"],
-    cmd: "$(location stats-log-api-gen) --header $(genDir)/statslog_statsdtest.h --module statsdtest --namespace android,os,statsd,util",
+    cmd: "$(location stats-log-api-gen) " +
+        "--header $(genDir)/statslog_statsdtest.h " +
+        "--module statsdtest " +
+        "--namespace android,os,statsd,util",
     out: [
         "statslog_statsdtest.h",
     ],
@@ -185,7 +195,11 @@ genrule {
 genrule {
     name: "statslog_statsdtest.cpp",
     tools: ["stats-log-api-gen"],
-    cmd: "$(location stats-log-api-gen) --cpp $(genDir)/statslog_statsdtest.cpp --module statsdtest --namespace android,os,statsd,util --importHeader statslog_statsdtest.h",
+    cmd: "$(location stats-log-api-gen) " +
+        "--cpp $(genDir)/statslog_statsdtest.cpp " +
+        "--module statsdtest " +
+        "--namespace android,os,statsd,util " +
+        "--importHeader statslog_statsdtest.h",
     out: [
         "statslog_statsdtest.cpp",
     ],
