@@ -96,6 +96,7 @@ cc_defaults {
         "src/uid_data.proto",
         "src/utils/MultiConditionTrigger.cpp",
         "src/utils/DbUtils.cpp",
+        "src/utils/Regex.cpp",
         "src/utils/RestrictedPolicyManager.cpp",
         "src/utils/ShardOffsetProvider.cpp",
     ],
@@ -116,7 +117,6 @@ cc_defaults {
         "server_configurable_flags",
         "statsd-aidl-ndk",
         "libsqlite_static_noicu",
-        "libstats_regex",
     ],
     shared_libs: [
         "libbinder_ndk",
@@ -417,8 +417,6 @@ cc_test {
     ],
 
     min_sdk_version: "30",
-
-    stl: "libc++_static",
 }
 
 //#############################
@@ -451,19 +449,6 @@ cc_benchmark {
     static_libs: [
         "libgtest",
         "libstats_test_utils",
-    ],
-}
-
-// Build regex support in a separate library to catch std::regex_error exception.
-cc_library_static {
-    name: "libstats_regex",
-    srcs: ["lib/stats_regex.cpp"],
-    cppflags: ["-fexceptions"],
-    static_libs: ["libbase"],
-    min_sdk_version: "30",
-    apex_available: [
-        "com.android.os.statsd",
-        "test_com.android.os.statsd",
     ],
 }
 

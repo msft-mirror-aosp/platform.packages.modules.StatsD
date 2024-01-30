@@ -258,7 +258,7 @@ protected:
         fvm = fvm->mutable_matches_tuple()->add_field_value_matcher();
         fvm->set_field(2);  // tag field
         fvm->mutable_replace_string()->set_regex(
-                R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+                R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
         fvm->mutable_replace_string()->set_replacement("");
 
         config.add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
