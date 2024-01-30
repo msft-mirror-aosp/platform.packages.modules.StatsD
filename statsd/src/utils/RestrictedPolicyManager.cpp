@@ -30,7 +30,7 @@ RestrictedPolicyManager& RestrictedPolicyManager::getInstance() {
 }
 
 int32_t RestrictedPolicyManager::getRestrictedCategoryTtl(
-        const StatsdRestrictionCategory categoryId) {
+        const StatsdRestrictionCategory categoryId) const {
     return mRestrictionCategoryTtlInDaysMap.find(categoryId) !=
                            mRestrictionCategoryTtlInDaysMap.end()
                    ? mRestrictionCategoryTtlInDaysMap.at(categoryId)

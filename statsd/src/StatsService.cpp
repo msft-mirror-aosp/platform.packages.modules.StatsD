@@ -876,8 +876,8 @@ status_t StatsService::cmd_log_binary_push(int out, const Vector<String8>& args)
     int32_t state = atoi(args[6].c_str());
     vector<int64_t> experimentIds;
     if (argCount == 8) {
-        vector<string> experimentIdsString = android::base::Split(string(args[7].c_str()), ",");
-        for (string experimentIdString : experimentIdsString) {
+        vector<string> experimentIdsStrings = android::base::Split(string(args[7].c_str()), ",");
+        for (const string& experimentIdString : experimentIdsStrings) {
             int64_t experimentId = strtoll(experimentIdString.c_str(), nullptr, 10);
             experimentIds.push_back(experimentId);
         }
