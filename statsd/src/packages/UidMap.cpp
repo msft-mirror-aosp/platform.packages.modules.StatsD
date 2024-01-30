@@ -25,7 +25,6 @@
 
 using namespace android;
 
-using android::base::StringPrintf;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
 using android::util::FIELD_TYPE_BYTES;
@@ -157,7 +156,7 @@ void UidMap::updateMap(const int64_t timestamp, const UidData& uidData) {
     // itself before we call it. It's then the listener's job to handle it (expect the callback to
     // be called after listener is removed, and the listener should properly ignore it).
     auto strongPtr = broadcast.promote();
-    if (strongPtr != NULL) {
+    if (strongPtr != nullptr) {
         strongPtr->onUidMapReceived(timestamp);
     }
 }
@@ -202,7 +201,7 @@ void UidMap::updateApp(const int64_t timestamp, const string& appName, const int
     }
 
     auto strongPtr = broadcast.promote();
-    if (strongPtr != NULL) {
+    if (strongPtr != nullptr) {
         strongPtr->notifyAppUpgrade(timestamp, appName, uid, versionCode);
     }
 }
@@ -255,7 +254,7 @@ void UidMap::removeApp(const int64_t timestamp, const string& app, const int32_t
     }
 
     auto strongPtr = broadcast.promote();
-    if (strongPtr != NULL) {
+    if (strongPtr != nullptr) {
         strongPtr->notifyAppRemoved(timestamp, app, uid);
     }
 }
