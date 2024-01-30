@@ -639,10 +639,10 @@ size_t StatsLogProcessor::GetMetricsSize(const ConfigKey& key) const {
     return it->second->byteSize();
 }
 
-void StatsLogProcessor::dumpStates(int out, bool verbose) {
+void StatsLogProcessor::dumpStates(int out, bool verbose) const {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     dprintf(out, "MetricsManager count: %lu\n", (unsigned long)mMetricsManagers.size());
-    for (auto metricsManager : mMetricsManagers) {
+    for (const auto& metricsManager : mMetricsManagers) {
         metricsManager.second->dumpStates(out, verbose);
     }
 }
@@ -866,7 +866,7 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
 
     int uid = key.GetUid();
     bool lastConfigForUid = true;
-    for (auto it : mMetricsManagers) {
+    for (const auto& it : mMetricsManagers) {
         if (it.first.GetUid() == uid) {
             lastConfigForUid = false;
             break;

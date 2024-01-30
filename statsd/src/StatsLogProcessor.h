@@ -140,7 +140,7 @@ public:
         return mUidMap;
     }
 
-    void dumpStates(int outFd, bool verbose);
+    void dumpStates(int outFd, bool verbose) const;
 
     void informPullAlarmFired(const int64_t timestampNs);
 

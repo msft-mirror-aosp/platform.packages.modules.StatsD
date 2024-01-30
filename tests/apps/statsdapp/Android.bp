@@ -51,7 +51,7 @@ android_test_helper_app {
         "androidx.legacy_legacy-support-v4",
         "androidx.test.rules",
         "cts-net-utils",
-        "BlobStoreTestUtils"
+        "BlobStoreTestUtils",
     ],
     jni_libs: ["liblmkhelper"],
     compile_multilib: "both",
@@ -60,6 +60,10 @@ android_test_helper_app {
 genrule {
     name: "statslog-statsd-cts-java-gen",
     tools: ["stats-log-api-gen"],
-    cmd: "$(location stats-log-api-gen) --java $(out) --module cts --javaPackage com.android.server.cts.device.statsd --javaClass StatsLogStatsdCts",
+    cmd: "$(location stats-log-api-gen) " +
+        "--java $(out) " +
+        "--module cts " +
+        "--javaPackage com.android.server.cts.device.statsd " +
+        "--javaClass StatsLogStatsdCts",
     out: ["com/android/server/cts/device/statsd/StatsLogStatsdCts.java"],
 }

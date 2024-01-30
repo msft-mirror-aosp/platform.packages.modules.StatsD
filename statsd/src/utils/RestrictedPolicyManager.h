@@ -21,8 +21,6 @@
 
 #include "stats_annotations.h"
 
-using std::map;
-
 namespace android {
 namespace os {
 namespace statsd {
@@ -41,13 +39,14 @@ enum StatsdRestrictionCategory : int32_t {
 
 // Single instance shared across the process.
 class RestrictedPolicyManager {
+    RestrictedPolicyManager() = default;
+
 public:
     static RestrictedPolicyManager& getInstance();
-    ~RestrictedPolicyManager(){};
 
     // Gets the TTL in days for a particular restricted category. Returns the default for unknown
     // categories.
-    int32_t getRestrictedCategoryTtl(const StatsdRestrictionCategory categoryId);
+    int32_t getRestrictedCategoryTtl(StatsdRestrictionCategory categoryId) const;
 
 private:
     std::map<StatsdRestrictionCategory, int32_t> mRestrictionCategoryTtlInDaysMap;
