@@ -40,7 +40,7 @@ public:
 
     // Mark a specific condition as true. If this condition has called markComplete already or if
     // the event was not specified in the constructor, the function is a no-op.
-    void markComplete(const std::string& eventName);
+    void markComplete(const std::string& conditionName);
 
 private:
     mutable std::mutex mMutex;
