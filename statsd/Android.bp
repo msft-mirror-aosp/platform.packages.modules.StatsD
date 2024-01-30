@@ -25,7 +25,34 @@ cc_defaults {
         "-Wno-deprecated-declarations",
         "-Wthread-safety",
     ],
+    tidy: true,
+    tidy_flags: [
+        // Only check our headers
+        "-header-filter=^packages/modules/StatsD/statsd",
+    ],
 
+    tidy_checks: [
+        "android-*",
+        "bugprone-*",
+        "cert-*",
+        "clang-analyzer-security*",
+        "google-*",
+        "misc-*",
+        "performance-*",
+        "-bugprone-narrowing-conversions",  // lots of unsigned -> int conversions
+        "-cert-err34-c",
+        "-cert-msc30-c", // warning: rand() has limited randomness; use C++11 random library instead
+        "-cert-msc50-cpp", // warning: rand() has limited randomness; use C++11 random library instead
+    ],
+    tidy_checks_as_errors: [
+        "android-*",
+        "bugprone-*",
+        "cert-*",
+        "clang-analyzer-security*",
+        "google-*",
+        "misc-*",
+        "performance-*",
+    ],
     srcs: [
         "src/active_config_list.proto",
         "src/anomaly/AlarmMonitor.cpp",
