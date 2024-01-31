@@ -74,8 +74,7 @@ int64_t getBucketValue(const std::shared_ptr<DimToValMap>& bucket,
 }
 
 // Returns true if keys in trueList are detected as anomalies and keys in falseList are not.
-bool detectAnomaliesPass(AnomalyTracker& tracker,
-                         const int64_t& bucketNum,
+bool detectAnomaliesPass(AnomalyTracker& tracker, int64_t bucketNum,
                          const std::shared_ptr<DimToValMap>& currentBucket,
                          const std::set<const MetricDimensionKey>& trueList,
                          const std::set<const MetricDimensionKey>& falseList) {
@@ -93,10 +92,8 @@ bool detectAnomaliesPass(AnomalyTracker& tracker,
 }
 
 // Calls tracker.detectAndDeclareAnomaly on each key in the bucket.
-void detectAndDeclareAnomalies(AnomalyTracker& tracker,
-                               const int64_t& bucketNum,
-                               const std::shared_ptr<DimToValMap>& bucket,
-                               const int64_t& eventTimestamp) {
+void detectAndDeclareAnomalies(AnomalyTracker& tracker, int64_t bucketNum,
+                               const std::shared_ptr<DimToValMap>& bucket, int64_t eventTimestamp) {
     for (const auto& kv : *bucket) {
         tracker.detectAndDeclareAnomaly(eventTimestamp, bucketNum, 0 /*metric_id*/, kv.first,
                                         kv.second);
@@ -107,9 +104,8 @@ void detectAndDeclareAnomalies(AnomalyTracker& tracker,
 // timestamp (in ns) + refractoryPeriodSec.
 // If a timestamp value is negative, instead asserts that the refractory period is inapplicable
 // (either non-existant or already past).
-void checkRefractoryTimes(AnomalyTracker& tracker,
-                          const int64_t& currTimestampNs,
-                          const int32_t& refractoryPeriodSec,
+void checkRefractoryTimes(AnomalyTracker& tracker, int64_t currTimestampNs,
+                          int32_t refractoryPeriodSec,
                           const std::unordered_map<MetricDimensionKey, int64_t>& timestamps) {
     for (const auto& kv : timestamps) {
         if (kv.second < 0) {
