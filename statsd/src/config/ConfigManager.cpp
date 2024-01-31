@@ -33,7 +33,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-using std::pair;
 using std::string;
 using std::vector;
 
@@ -42,7 +41,6 @@ using Status = ::ndk::ScopedAStatus;
 #define STATS_SERVICE_DIR "/data/misc/stats-service"
 
 using android::base::StringPrintf;
-using std::unique_ptr;
 
 ConfigManager::ConfigManager() {
 }
@@ -53,8 +51,8 @@ ConfigManager::~ConfigManager() {
 void ConfigManager::Startup() {
     map<ConfigKey, StatsdConfig> configsFromDisk;
     StorageManager::readConfigFromDisk(configsFromDisk);
-    for (const auto& pair : configsFromDisk) {
-        UpdateConfig(pair.first, pair.second);
+    for (const auto& config : configsFromDisk) {
+        UpdateConfig(config.first, config.second);
     }
 }
 

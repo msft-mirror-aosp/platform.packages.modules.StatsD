@@ -34,7 +34,6 @@ using android::util::FIELD_TYPE_INT64;
 using android::util::FIELD_TYPE_MESSAGE;
 using android::util::FIELD_TYPE_STRING;
 using android::util::ProtoOutputStream;
-using std::map;
 using std::optional;
 using std::shared_ptr;
 using std::string;
