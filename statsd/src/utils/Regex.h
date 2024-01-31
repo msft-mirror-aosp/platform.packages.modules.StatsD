@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,33 +16,32 @@
 
 #pragma once
 
-#include "logd/LogEvent.h"
+#include <regex.h>
 
-#include <vector>
-#include "src/statsd_config.pb.h"
-#include "packages/UidMap.h"
-#include "stats_util.h"
+#include <memory>
+#include <string>
 
 namespace android {
 namespace os {
 namespace statsd {
 
-enum MatchingState {
-    kNotComputed = -1,
-    kNotMatched = 0,
-    kMatched = 1,
+class Regex {
+public:
+    Regex(regex_t impl);  // Do not use. It is public for std::make_unique. Use Regex::create.
+    ~Regex();
+    Regex& operator=(const Regex&) = delete;
+    Regex(const Regex&) = delete;
+
+    // Returns nullptr if pattern is not valid POSIX regex.
+    static std::unique_ptr<Regex> create(const std::string& pattern);
+
+    // Looks for a regex match in str and replaces the matched portion with replacement in-place.
+    // Returns true if there was a match, false otherwise.
+    bool replace(std::string& str, const std::string& replacement);
+
+private:
+    regex_t mImpl;
 };
-
-struct MatchResult {
-    bool matched;
-    std::unique_ptr<LogEvent> transformedEvent;
-};
-
-bool combinationMatch(const std::vector<int>& children, const LogicalOperation& operation,
-                      const std::vector<MatchingState>& matcherResults);
-
-MatchResult matchesSimple(const sp<UidMap>& uidMap, const SimpleAtomMatcher& simpleMatcher,
-                          const LogEvent& wrapper);
 
 }  // namespace statsd
 }  // namespace os
