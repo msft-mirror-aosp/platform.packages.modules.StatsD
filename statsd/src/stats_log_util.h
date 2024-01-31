@@ -79,7 +79,7 @@ int64_t NanoToMillis(const int64_t nano);
 int64_t MillisToNano(const int64_t millis);
 
 // Helper function to write a stats field to ProtoOutputStream if it's a non-zero value.
-void writeNonZeroStatToStream(const uint64_t fieldId, const int64_t value,
+void writeNonZeroStatToStream(const uint64_t fieldId, int64_t value,
                               ProtoOutputStream* protoOutput);
 
 // Helper function to write PulledAtomStats to ProtoOutputStream
@@ -117,7 +117,7 @@ inline bool isPulledAtom(int atomId) {
     return atomId >= StatsdStats::kPullAtomStartTag && atomId < StatsdStats::kVendorAtomStartTag;
 }
 
-void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event);
+void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap>& uidMap, LogEvent& event);
 
 std::string toHexString(const string& bytes);
 

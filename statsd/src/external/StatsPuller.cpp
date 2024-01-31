@@ -33,7 +33,7 @@ sp<UidMap> StatsPuller::mUidMap = nullptr;
 void StatsPuller::SetUidMap(const sp<UidMap>& uidMap) { mUidMap = uidMap; }
 
 StatsPuller::StatsPuller(const int tagId, const int64_t coolDownNs, const int64_t pullTimeoutNs,
-                         const std::vector<int> additiveFields)
+                         const std::vector<int>& additiveFields)
     : mTagId(tagId),
       mPullTimeoutNs(pullTimeoutNs),
       mCoolDownNs(coolDownNs),

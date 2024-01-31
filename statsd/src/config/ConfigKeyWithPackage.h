@@ -31,7 +31,7 @@ using std::string;
  */
 class ConfigKeyWithPackage {
 public:
-    ConfigKeyWithPackage(const string& package, const int64_t id) : mPackage(package), mId(id) {
+    ConfigKeyWithPackage(const string& package, int64_t id) : mPackage(package), mId(id) {
     }
 
     inline string GetPackage() const {

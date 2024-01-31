@@ -395,7 +395,7 @@ public:
      * [id]: The id of the condition.
      * [size]: The output tuple size.
      */
-    void noteConditionDimensionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteConditionDimensionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report the size of output tuple of a metric.
@@ -407,7 +407,7 @@ public:
      * [id]: The id of the metric.
      * [size]: The output tuple size.
      */
-    void noteMetricDimensionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteMetricDimensionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report the max size of output tuple of dimension in condition across dimensions in what.
@@ -419,7 +419,7 @@ public:
      * [id]: The id of the metric.
      * [size]: The output tuple size.
      */
-    void noteMetricDimensionInConditionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteMetricDimensionInConditionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report a matcher has been matched.
@@ -427,7 +427,7 @@ public:
      * [key]: The config key that this matcher belongs to.
      * [id]: The id of the matcher.
      */
-    void noteMatcherMatched(const ConfigKey& key, const int64_t& id);
+    void noteMatcherMatched(const ConfigKey& key, int64_t id);
 
     /**
      * Report that an anomaly detection alert has been declared.
@@ -435,7 +435,7 @@ public:
      * [key]: The config key that this alert belongs to.
      * [id]: The id of the alert.
      */
-    void noteAnomalyDeclared(const ConfigKey& key, const int64_t& id);
+    void noteAnomalyDeclared(const ConfigKey& key, int64_t id);
 
     /**
      * Report an atom event has been logged.
@@ -614,6 +614,9 @@ public:
      * in the queue */
     void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId, bool isSkipped);
 
+    /* Notes queue max size seen so far and associated timestamp */
+    void noteEventQueueSize(int32_t size, int64_t eventTimestampNs);
+
     /**
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
      * should have been sent, but instead was skipped due to hitting the guardrail.
@@ -633,7 +636,7 @@ public:
     /** Report query of restricted metric succeed **/
     void noteQueryRestrictedMetricSucceed(const int64_t configId, const string& configPackage,
                                           const std::optional<int32_t> configUid,
-                                          const int32_t callingUid, const int64_t queryLatencyNs);
+                                          const int32_t callingUid, int64_t queryLatencyNs);
 
     /** Report query of restricted metric failed **/
     void noteQueryRestrictedMetricFailed(const int64_t configId, const string& configPackage,
@@ -650,24 +653,24 @@ public:
     void noteRestrictedMetricInsertError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports that a restricted metric fails to create table in database.
-    void noteRestrictedMetricTableCreationError(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricTableCreationError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports that a restricted metric fails to delete table in database.
-    void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports the time it takes for a restricted metric to flush the data to the database.
-    void noteRestrictedMetricFlushLatency(const ConfigKey& configKey, const int64_t metricId,
+    void noteRestrictedMetricFlushLatency(const ConfigKey& configKey, int64_t metricId,
                                           const int64_t flushLatencyNs);
 
     // Reports that a restricted metric had a category change.
-    void noteRestrictedMetricCategoryChanged(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricCategoryChanged(const ConfigKey& configKey, int64_t metricId);
 
     // Reports the time is takes to flush a restricted config to the database.
     void noteRestrictedConfigFlushLatency(const ConfigKey& configKey,
                                           const int64_t totalFlushLatencyNs);
 
     // Reports the size of the internal sqlite db.
-    void noteRestrictedConfigDbSize(const ConfigKey& configKey, const int64_t elapsedTimeNs,
+    void noteRestrictedConfigDbSize(const ConfigKey& configKey, int64_t elapsedTimeNs,
                                     const int64_t dbSize);
 
     /**
@@ -824,7 +827,7 @@ private:
 
     // Stores the stats for the configs that are no longer in use.
     // The size of the vector is capped by kMaxIceBoxSize.
-    std::list<const std::shared_ptr<ConfigStats>> mIceBox;
+    std::list<std::shared_ptr<ConfigStats>> mIceBox;
 
     // Stores the number of times a pushed atom is logged and skipped (if skipped).
     // The size of the vector is the largest pushed atom id in atoms.proto + 1. Atoms
@@ -922,6 +925,12 @@ private:
     // Total number of events that are lost due to queue overflow.
     int32_t mOverflowCount = 0;
 
+    // Max number of events stored into the queue seen so far.
+    int32_t mEventQueueMaxSizeObserved = 0;
+
+    // Event timestamp for associated max size hit.
+    int64_t mEventQueueMaxSizeObservedElapsedNanos = 0;
+
     // Timestamps when we detect log loss, and the number of logs lost.
     std::list<LogLossStats> mLogLossStats;
 
@@ -1001,7 +1010,7 @@ private:
 
     int getPushedAtomDropsLocked(int atomId) const;
 
-    bool hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const;
+    bool hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const;
 
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
@@ -1009,40 +1018,42 @@ private:
      */
     StatsdStats::AtomMetricStats& getAtomMetricStats(int64_t metricId);
 
-    FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
+    FRIEND_TEST(LogEventQueue_test, TestQueueMaxSize);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessage);
+    FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
+    FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
+    FRIEND_TEST(StatsdStatsTest, TestAnomalyMonitor);
+    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLog);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
+    FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigAdd);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId);
-    FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
-    FRIEND_TEST(StatsdStatsTest, TestSubStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLog);
     FRIEND_TEST(StatsdStatsTest, TestNonPlatformAtomLog);
-    FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
-    FRIEND_TEST(StatsdStatsTest, TestAnomalyMonitor);
-    FRIEND_TEST(StatsdStatsTest, TestSystemServerCrash);
     FRIEND_TEST(StatsdStatsTest, TestPullAtomStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
-    FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
-    FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
-    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
+    FRIEND_TEST(StatsdStatsTest, TestQueueStats);
     FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
-    FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStarted);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionFlushed);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionEnded);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionAtomPulled);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions);
-    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription);
     FRIEND_TEST(StatsdStatsTest, TestSocketLossStats);
     FRIEND_TEST(StatsdStatsTest, TestSocketLossStatsOverflowCounter);
-
-    FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
+    FRIEND_TEST(StatsdStatsTest, TestSubStats);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionAtomPulled);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionEnded);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionFlushed);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStarted);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription);
+    FRIEND_TEST(StatsdStatsTest, TestSystemServerCrash);
+    FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
+    FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
 };
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
@@ -1077,10 +1088,10 @@ InvalidConfigReason createInvalidConfigReasonWithSubscription(const InvalidConfi
                                                               const int64_t subscriptionId);
 
 InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlarm(
-        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alarmId);
+        const InvalidConfigReasonEnum reason, int64_t subscriptionId, int64_t alarmId);
 
 InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlert(
-        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alertId);
+        const InvalidConfigReasonEnum reason, int64_t subscriptionId, int64_t alertId);
 
 }  // namespace statsd
 }  // namespace os
