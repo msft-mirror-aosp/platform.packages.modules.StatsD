@@ -30,7 +30,7 @@ struct AATest : public RefBase {
     const std::string b;
 
     struct Smaller {
-        bool operator()(const sp<const AATest> a, const sp<const AATest> b) const {
+        bool operator()(const sp<const AATest>& a, const sp<const AATest>& b) const {
             return (a->val < b->val);
         }
     };

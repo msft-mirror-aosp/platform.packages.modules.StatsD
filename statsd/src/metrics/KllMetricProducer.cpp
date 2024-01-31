@@ -31,12 +31,9 @@ using android::util::FIELD_TYPE_BYTES;
 using android::util::FIELD_TYPE_INT32;
 using android::util::FIELD_TYPE_MESSAGE;
 using android::util::ProtoOutputStream;
-using std::map;
 using std::nullopt;
 using std::optional;
-using std::shared_ptr;
 using std::string;
-using std::unordered_map;
 using zetasketch::android::AggregatorStateProto;
 
 namespace android {
