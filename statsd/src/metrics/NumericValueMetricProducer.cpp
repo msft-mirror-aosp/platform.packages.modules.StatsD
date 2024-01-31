@@ -34,7 +34,6 @@ using android::util::FIELD_TYPE_INT64;
 using android::util::FIELD_TYPE_MESSAGE;
 using android::util::FIELD_TYPE_STRING;
 using android::util::ProtoOutputStream;
-using std::map;
 using std::optional;
 using std::shared_ptr;
 using std::string;
@@ -267,15 +266,17 @@ void NumericValueMetricProducer::accumulateEvents(const vector<shared_ptr<LogEve
         // before calculating the diff between sums of consecutive pulls.
         std::unordered_map<HashableDimensionKey, pair<LogEvent, vector<int>>> aggregateEvents;
         for (const auto& data : allData) {
-            if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) !=
-                MatchingState::kMatched) {
+            const auto [matchResult, transformedEvent] =
+                    mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex);
+            if (matchResult != MatchingState::kMatched) {
                 continue;
             }
 
             // Get dimensions_in_what key and value indices.
             HashableDimensionKey dimensionsInWhat;
             vector<int> valueIndices(mFieldMatchers.size(), -1);
-            if (!filterValues(mDimensionsInWhat, mFieldMatchers, data->getValues(),
+            const LogEvent& eventRef = transformedEvent == nullptr ? *data : *transformedEvent;
+            if (!filterValues(mDimensionsInWhat, mFieldMatchers, eventRef.getValues(),
                               dimensionsInWhat, valueIndices)) {
                 StatsdStats::getInstance().noteBadValueType(mMetricId);
             }
@@ -285,9 +286,9 @@ void NumericValueMetricProducer::accumulateEvents(const vector<shared_ptr<LogEve
             if (it == aggregateEvents.end()) {
                 aggregateEvents.emplace(std::piecewise_construct,
                                         std::forward_as_tuple(dimensionsInWhat),
-                                        std::forward_as_tuple(*data, valueIndices));
+                                        std::forward_as_tuple(eventRef, valueIndices));
             } else {
-                combineValueFields(it->second, *data, valueIndices);
+                combineValueFields(it->second, eventRef, valueIndices);
             }
         }
 
@@ -297,9 +298,10 @@ void NumericValueMetricProducer::accumulateEvents(const vector<shared_ptr<LogEve
         }
     } else {
         for (const auto& data : allData) {
-            if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) ==
-                MatchingState::kMatched) {
-                LogEvent localCopy = *data;
+            const auto [matchResult, transformedEvent] =
+                    mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex);
+            if (matchResult == MatchingState::kMatched) {
+                LogEvent localCopy = transformedEvent == nullptr ? *data : *transformedEvent;
                 localCopy.setElapsedTimestampNs(eventElapsedTimeNs);
                 onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
             }

@@ -62,6 +62,7 @@ const int FIELD_ID_SHARD_OFFSET = 21;
 const int FIELD_ID_STATSD_STATS_ID = 22;
 const int FIELD_ID_SUBSCRIPTION_STATS = 23;
 const int FIELD_ID_SOCKET_LOSS_STATS = 24;
+const int FIELD_ID_QUEUE_STATS = 25;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -92,6 +93,9 @@ const int FIELD_ID_LOG_LOSS_STATS_PID = 6;
 const int FIELD_ID_OVERFLOW_COUNT = 1;
 const int FIELD_ID_OVERFLOW_MAX_HISTORY = 2;
 const int FIELD_ID_OVERFLOW_MIN_HISTORY = 3;
+
+const int FIELD_ID_QUEUE_MAX_SIZE_OBSERVED = 1;
+const int FIELD_ID_QUEUE_MAX_SIZE_OBSERVED_ELAPSED_NANOS = 2;
 
 const int FIELD_ID_CONFIG_STATS_UID = 1;
 const int FIELD_ID_CONFIG_STATS_ID = 2;
@@ -361,6 +365,15 @@ void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t
     noteAtomDroppedLocked(atomId);
 }
 
+void StatsdStats::noteEventQueueSize(int32_t size, int64_t eventTimestampNs) {
+    lock_guard<std::mutex> lock(mLock);
+
+    if (mEventQueueMaxSizeObserved < size) {
+        mEventQueueMaxSizeObserved = size;
+        mEventQueueMaxSizeObservedElapsedNanos = eventTimestampNs;
+    }
+}
+
 void StatsdStats::noteAtomDroppedLocked(int32_t atomId) {
     constexpr int kMaxPushedAtomDroppedStatsSize = kMaxPushedAtomId + kMaxNonPlatformPushedAtoms;
     if (mPushedAtomDropsStats.size() < kMaxPushedAtomDroppedStatsSize ||
@@ -532,7 +545,7 @@ void StatsdStats::setCurrentUidMapMemory(int bytes) {
     mUidMapStats.bytes_used = bytes;
 }
 
-void StatsdStats::noteConditionDimensionSize(const ConfigKey& key, const int64_t& id, int size) {
+void StatsdStats::noteConditionDimensionSize(const ConfigKey& key, const int64_t id, int size) {
     lock_guard<std::mutex> lock(mLock);
     // if name doesn't exist before, it will create the key with count 0.
     auto statsIt = mConfigStats.find(key);
@@ -546,7 +559,7 @@ void StatsdStats::noteConditionDimensionSize(const ConfigKey& key, const int64_t
     }
 }
 
-void StatsdStats::noteMetricDimensionSize(const ConfigKey& key, const int64_t& id, int size) {
+void StatsdStats::noteMetricDimensionSize(const ConfigKey& key, const int64_t id, int size) {
     lock_guard<std::mutex> lock(mLock);
     // if name doesn't exist before, it will create the key with count 0.
     auto statsIt = mConfigStats.find(key);
@@ -559,8 +572,8 @@ void StatsdStats::noteMetricDimensionSize(const ConfigKey& key, const int64_t& i
     }
 }
 
-void StatsdStats::noteMetricDimensionInConditionSize(
-        const ConfigKey& key, const int64_t& id, int size) {
+void StatsdStats::noteMetricDimensionInConditionSize(const ConfigKey& key, const int64_t id,
+                                                     int size) {
     lock_guard<std::mutex> lock(mLock);
     // if name doesn't exist before, it will create the key with count 0.
     auto statsIt = mConfigStats.find(key);
@@ -573,7 +586,7 @@ void StatsdStats::noteMetricDimensionInConditionSize(
     }
 }
 
-void StatsdStats::noteMatcherMatched(const ConfigKey& key, const int64_t& id) {
+void StatsdStats::noteMatcherMatched(const ConfigKey& key, const int64_t id) {
     lock_guard<std::mutex> lock(mLock);
 
     auto statsIt = mConfigStats.find(key);
@@ -583,7 +596,7 @@ void StatsdStats::noteMatcherMatched(const ConfigKey& key, const int64_t& id) {
     statsIt->second->matcher_stats[id]++;
 }
 
-void StatsdStats::noteAnomalyDeclared(const ConfigKey& key, const int64_t& id) {
+void StatsdStats::noteAnomalyDeclared(const ConfigKey& key, const int64_t id) {
     lock_guard<std::mutex> lock(mLock);
     auto statsIt = mConfigStats.find(key);
     if (statsIt == mConfigStats.end()) {
@@ -1029,6 +1042,8 @@ void StatsdStats::resetInternalLocked() {
     mOverflowCount = 0;
     mMinQueueHistoryNs = kInt64Max;
     mMaxQueueHistoryNs = 0;
+    mEventQueueMaxSizeObserved = 0;
+    mEventQueueMaxSizeObservedElapsedNanos = 0;
     for (auto& config : mConfigStats) {
         config.second->broadcast_sent_time_sec.clear();
         config.second->activation_time_sec.clear();
@@ -1124,7 +1139,7 @@ int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
     }
 }
 
-bool StatsdStats::hasRestrictedConfigErrors(std::shared_ptr<ConfigStats> configStats) const {
+bool StatsdStats::hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const {
     return configStats->device_info_table_creation_failed || configStats->db_corrupted_count ||
            configStats->db_deletion_size_exceeded_limit || configStats->db_deletion_stat_failed ||
            configStats->db_deletion_config_invalid || configStats->db_deletion_too_old ||
@@ -1428,6 +1443,8 @@ void StatsdStats::dumpStats(int out) const {
     dprintf(out, "********EventQueueOverflow stats***********\n");
     dprintf(out, "Event queue overflow: %d; MaxHistoryNs: %lld; MinHistoryNs: %lld\n",
             mOverflowCount, (long long)mMaxQueueHistoryNs, (long long)mMinQueueHistoryNs);
+    dprintf(out, "Event queue max size: %d; Observed at : %lld\n", mEventQueueMaxSizeObserved,
+            (long long)mEventQueueMaxSizeObservedElapsedNanos);
 
     if (mActivationBroadcastGuardrailStats.size() > 0) {
         dprintf(out, "********mActivationBroadcastGuardrail stats***********\n");
@@ -1782,6 +1799,13 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
                     (long long)mMinQueueHistoryNs);
         proto.end(token);
     }
+
+    uint64_t queueStatsToken = proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_QUEUE_STATS);
+    proto.write(FIELD_TYPE_INT32 | FIELD_ID_QUEUE_MAX_SIZE_OBSERVED,
+                (int32_t)mEventQueueMaxSizeObserved);
+    proto.write(FIELD_TYPE_INT64 | FIELD_ID_QUEUE_MAX_SIZE_OBSERVED_ELAPSED_NANOS,
+                (long long)mEventQueueMaxSizeObservedElapsedNanos);
+    proto.end(queueStatsToken);
 
     for (const auto& restart : mSystemServerRestartSec) {
         proto.write(FIELD_TYPE_INT32 | FIELD_ID_SYSTEM_SERVER_RESTART | FIELD_COUNT_REPEATED,

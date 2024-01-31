@@ -617,7 +617,7 @@ bool checkPermissionForIds(const char* permission, pid_t pid, uid_t uid) {
     return success;
 }
 
-void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event) {
+void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap>& uidMap, LogEvent& event) {
     uint8_t remainingUidCount = event.getNumUidFields();
     vector<FieldValue>* fieldValues = event.getMutableValues();
     auto it = fieldValues->begin();

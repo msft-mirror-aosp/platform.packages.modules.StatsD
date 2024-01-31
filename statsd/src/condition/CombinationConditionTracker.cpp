@@ -25,7 +25,7 @@ namespace statsd {
 using std::unordered_map;
 using std::vector;
 
-CombinationConditionTracker::CombinationConditionTracker(const int64_t& id, const int index,
+CombinationConditionTracker::CombinationConditionTracker(const int64_t id, const int index,
                                                          const uint64_t protoHash)
     : ConditionTracker(id, index, protoHash) {
     VLOG("creating CombinationConditionTracker %lld", (long long)mConditionId);

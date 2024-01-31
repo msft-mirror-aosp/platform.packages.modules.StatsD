@@ -69,7 +69,7 @@ int64_t AlarmTracker::findNextAlarmSec(int64_t currentTimeSec) {
 }
 
 void AlarmTracker::informAlarmsFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& firedAlarms) {
     if (firedAlarms.empty() || mInternalAlarm == nullptr ||
         firedAlarms.find(mInternalAlarm) == firedAlarms.end()) {

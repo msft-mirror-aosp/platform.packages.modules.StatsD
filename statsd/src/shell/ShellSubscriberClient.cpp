@@ -24,7 +24,6 @@
 #include "stats_log_util.h"
 
 using android::base::unique_fd;
-using android::util::ProtoOutputStream;
 using Status = ::ndk::ScopedAStatus;
 
 namespace android {
@@ -177,23 +176,25 @@ unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
 bool ShellSubscriberClient::writeEventToProtoIfMatched(const LogEvent& event,
                                                        const SimpleAtomMatcher& matcher,
                                                        const sp<UidMap>& uidMap) {
-    if (!matchesSimple(uidMap, matcher, event)) {
+    auto [matched, transformedEvent] = matchesSimple(mUidMap, matcher, event);
+    if (!matched) {
         return false;
     }
+    const LogEvent& eventRef = transformedEvent == nullptr ? event : *transformedEvent;
 
     // Cache atom event in mProtoOut.
     uint64_t atomToken = mProtoOut.start(util::FIELD_TYPE_MESSAGE | util::FIELD_COUNT_REPEATED |
                                          FIELD_ID_SHELL_DATA__ATOM);
-    event.ToProto(mProtoOut);
+    eventRef.ToProto(mProtoOut);
     mProtoOut.end(atomToken);
 
-    const int64_t timestampNs = truncateTimestampIfNecessary(event);
+    const int64_t timestampNs = truncateTimestampIfNecessary(eventRef);
     mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
                             FIELD_ID_SHELL_DATA__ELAPSED_TIMESTAMP_NANOS,
                     static_cast<long long>(timestampNs));
 
     // Update byte size of cached data.
-    mCacheSize += getSize(event.getValues()) + sizeof(timestampNs);
+    mCacheSize += getSize(eventRef.getValues()) + sizeof(timestampNs);
 
     return true;
 }
