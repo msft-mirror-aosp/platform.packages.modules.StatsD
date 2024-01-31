@@ -24,7 +24,6 @@
 #include "stats_log_util.h"
 
 using android::base::unique_fd;
-using android::util::ProtoOutputStream;
 using Status = ::ndk::ScopedAStatus;
 
 namespace android {

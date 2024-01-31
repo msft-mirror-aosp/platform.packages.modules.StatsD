@@ -95,8 +95,7 @@ static bool tryMatchString(const sp<UidMap>& uidMap, const FieldValue& fieldValu
         if (aidIt != UidMap::sAidToUidMapping.end()) {
             return ((int)aidIt->second) == uid;
         }
-        std::set<string> packageNames = uidMap->getAppNamesFromUid(uid, true /* normalize*/);
-        return packageNames.find(str_match) != packageNames.end();
+        return uidMap->hasApp(uid, str_match);
     } else if (fieldValue.mValue.getType() == STRING) {
         return fieldValue.mValue.str_value == str_match;
     }
@@ -118,7 +117,7 @@ static bool tryMatchWildcardString(const sp<UidMap>& uidMap, const FieldValue& f
                 }
             }
         }
-        std::set<string> packageNames = uidMap->getAppNamesFromUid(uid, true /* normalize*/);
+        std::set<string> packageNames = uidMap->getAppNamesFromUid(uid, false /* normalize*/);
         for (const auto& packageName : packageNames) {
             if (fnmatch(wildcardPattern.c_str(), packageName.c_str(), 0) == 0) {
                 return true;
