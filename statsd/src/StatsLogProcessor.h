@@ -140,7 +140,7 @@ public:
         return mUidMap;
     }
 
-    void dumpStates(int outFd, bool verbose);
+    void dumpStates(int outFd, bool verbose) const;
 
     void informPullAlarmFired(const int64_t timestampNs);
 
@@ -487,6 +487,10 @@ private:
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
 
     FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
+
+    FRIEND_TEST(StringReplaceE2eTest, TestPulledDimension);
+    FRIEND_TEST(StringReplaceE2eTest, TestPulledWhat);
+    FRIEND_TEST(StringReplaceE2eTest, TestMultipleMatchersForAtom);
 };
 
 }  // namespace statsd

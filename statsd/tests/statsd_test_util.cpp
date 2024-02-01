@@ -1079,6 +1079,18 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
                                        repeatedBoolFieldLength, repeatedEnumField);
 }
 
+std::unique_ptr<LogEvent> CreateTestAtomReportedEventWithPrimitives(
+        uint64_t timestampNs, int intField, long longField, float floatField,
+        const string& stringField, bool boolField, TestAtomReported::State enumField) {
+    return CreateTestAtomReportedEvent(
+            timestampNs, /* attributionUids */ {1001},
+            /* attributionTags */ {"app1"}, intField, longField, floatField, stringField, boolField,
+            enumField, /* bytesField */ {},
+            /* repeatedIntField */ {}, /* repeatedLongField */ {}, /* repeatedFloatField */ {},
+            /* repeatedStringField */ {}, /* repeatedBoolField */ {},
+            /* repeatedBoolFieldLength */ 0, /* repeatedEnumField */ {});
+}
+
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
         uint64_t timestampNs, const vector<int>& attributionUids,
         const vector<string>& attributionTags, const int intField, const long longField,
@@ -1160,14 +1172,15 @@ std::unique_ptr<LogEvent> CreateReleaseWakelockEvent(uint64_t timestampNs,
 }
 
 std::unique_ptr<LogEvent> CreateActivityForegroundStateChangedEvent(
-        uint64_t timestampNs, const int uid, const ActivityForegroundStateChanged::State state) {
+        uint64_t timestampNs, const int uid, const string& pkgName, const string& className,
+        const ActivityForegroundStateChanged::State state) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, util::ACTIVITY_FOREGROUND_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     AStatsEvent_writeInt32(statsEvent, uid);
-    AStatsEvent_writeString(statsEvent, "pkg_name");
-    AStatsEvent_writeString(statsEvent, "class_name");
+    AStatsEvent_writeString(statsEvent, pkgName.c_str());
+    AStatsEvent_writeString(statsEvent, className.c_str());
     AStatsEvent_writeInt32(statsEvent, state);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
@@ -1176,12 +1189,12 @@ std::unique_ptr<LogEvent> CreateActivityForegroundStateChangedEvent(
 }
 
 std::unique_ptr<LogEvent> CreateMoveToBackgroundEvent(uint64_t timestampNs, const int uid) {
-    return CreateActivityForegroundStateChangedEvent(timestampNs, uid,
+    return CreateActivityForegroundStateChangedEvent(timestampNs, uid, "pkg_name", "class_name",
                                                      ActivityForegroundStateChanged::BACKGROUND);
 }
 
 std::unique_ptr<LogEvent> CreateMoveToForegroundEvent(uint64_t timestampNs, const int uid) {
-    return CreateActivityForegroundStateChangedEvent(timestampNs, uid,
+    return CreateActivityForegroundStateChangedEvent(timestampNs, uid, "pkg_name", "class_name",
                                                      ActivityForegroundStateChanged::FOREGROUND);
 }
 

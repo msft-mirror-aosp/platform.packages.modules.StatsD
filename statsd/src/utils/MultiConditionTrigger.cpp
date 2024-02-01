@@ -19,11 +19,13 @@
 
 #include <thread>
 
-using namespace std;
-
 namespace android {
 namespace os {
 namespace statsd {
+
+using std::function;
+using std::set;
+using std::string;
 
 MultiConditionTrigger::MultiConditionTrigger(const set<string>& conditionNames,
                                              function<void()> trigger)
@@ -31,7 +33,7 @@ MultiConditionTrigger::MultiConditionTrigger(const set<string>& conditionNames,
       mTrigger(std::move(trigger)),
       mCompleted(mRemainingConditionNames.empty()) {
     if (mCompleted) {
-        thread executorThread([this] { mTrigger(); });
+        std::thread executorThread([this] { mTrigger(); });
         executorThread.detach();
     }
 }
@@ -39,7 +41,7 @@ MultiConditionTrigger::MultiConditionTrigger(const set<string>& conditionNames,
 void MultiConditionTrigger::markComplete(const string& conditionName) {
     bool doTrigger = false;
     {
-        lock_guard<mutex> lg(mMutex);
+        std::lock_guard<std::mutex> lg(mMutex);
         if (mCompleted) {
             return;
         }
