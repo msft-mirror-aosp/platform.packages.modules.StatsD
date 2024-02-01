@@ -45,9 +45,9 @@ const int FIELD_ID_ACTIVE_EVENT_ACTIVATION_REMAINING_TTL_NANOS = 2;
 const int FIELD_ID_ACTIVE_EVENT_ACTIVATION_STATE = 3;
 
 MetricProducer::MetricProducer(
-        const int64_t& metricId, const ConfigKey& key, const int64_t timeBaseNs,
-        const int conditionIndex, const vector<ConditionState>& initialConditionCache,
-        const sp<ConditionWizard>& wizard, const uint64_t protoHash,
+        int64_t metricId, const ConfigKey& key, const int64_t timeBaseNs, const int conditionIndex,
+        const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
+        const uint64_t protoHash,
         const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap,
         const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                 eventDeactivationMap,
@@ -243,7 +243,7 @@ void MetricProducer::cancelEventActivationLocked(int deactivationTrackerIndex) {
     if (it == mEventDeactivationMap.end()) {
         return;
     }
-    for (auto activationToCancelIt : it->second)  {
+    for (auto& activationToCancelIt : it->second) {
         activationToCancelIt->state = ActivationState::kNotActive;
     }
 }
@@ -319,7 +319,7 @@ void MetricProducer::writeActiveMetricToProtoOutputStream(
     }
 }
 
-void MetricProducer::queryStateValue(const int32_t atomId, const HashableDimensionKey& queryKey,
+void MetricProducer::queryStateValue(int32_t atomId, const HashableDimensionKey& queryKey,
                                      FieldValue* value) {
     if (!StateManager::getInstance().getStateValue(atomId, queryKey, value)) {
         value->mValue = Value(StateTracker::kStateUnknown);
@@ -329,7 +329,7 @@ void MetricProducer::queryStateValue(const int32_t atomId, const HashableDimensi
     }
 }
 
-void MetricProducer::mapStateValue(const int32_t atomId, FieldValue* value) {
+void MetricProducer::mapStateValue(int32_t atomId, FieldValue* value) {
     // check if there is a state map for this atom
     auto atomIt = mStateGroupMap.find(atomId);
     if (atomIt == mStateGroupMap.end()) {
