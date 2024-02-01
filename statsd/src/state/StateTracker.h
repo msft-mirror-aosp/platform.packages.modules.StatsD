@@ -29,7 +29,7 @@ namespace statsd {
 
 class StateTracker : public virtual RefBase {
 public:
-    StateTracker(const int32_t atomId);
+    StateTracker(int32_t atomId);
 
     virtual ~StateTracker(){};
 
@@ -40,9 +40,9 @@ public:
 
     // Adds new listeners to set of StateListeners. If a listener is already
     // registered, it is ignored.
-    void registerListener(wp<StateListener> listener);
+    void registerListener(const wp<StateListener>& listener);
 
-    void unregisterListener(wp<StateListener> listener);
+    void unregisterListener(const wp<StateListener>& listener);
 
     // The output is a FieldValue object that has mStateField as the field and
     // the original state value (found using the given query key) as the value.

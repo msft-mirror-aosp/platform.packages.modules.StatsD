@@ -39,7 +39,7 @@ namespace statsd {
 // A MetricsManager is responsible for managing metrics from one single config source.
 class MetricsManager : public virtual RefBase, public virtual PullUidProvider {
 public:
-    MetricsManager(const ConfigKey& configKey, const StatsdConfig& config, const int64_t timeBaseNs,
+    MetricsManager(const ConfigKey& configKey, const StatsdConfig& config, int64_t timeBaseNs,
                    const int64_t currentTimeNs, const sp<UidMap>& uidMap,
                    const sp<StatsPullerManager>& pullerManager,
                    const sp<AlarmMonitor>& anomalyAlarmMonitor,
@@ -47,8 +47,8 @@ public:
 
     virtual ~MetricsManager();
 
-    bool updateConfig(const StatsdConfig& config, const int64_t timeBaseNs,
-                      const int64_t currentTimeNs, const sp<AlarmMonitor>& anomalyAlarmMonitor,
+    bool updateConfig(const StatsdConfig& config, int64_t timeBaseNs, const int64_t currentTimeNs,
+                      const sp<AlarmMonitor>& anomalyAlarmMonitor,
                       const sp<AlarmMonitor>& periodicAlarmMonitor);
 
     // Return whether the configuration is valid.
@@ -61,21 +61,20 @@ public:
     virtual void onLogEvent(const LogEvent& event);
 
     void onAnomalyAlarmFired(
-        const int64_t& timestampNs,
-        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
+            int64_t timestampNs,
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     void onPeriodicAlarmFired(
-        const int64_t& timestampNs,
-        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
+            int64_t timestampNs,
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
-    void notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
-                          const int64_t version);
+    void notifyAppUpgrade(int64_t eventTimeNs, const string& apk, int uid, int64_t version);
 
-    void notifyAppRemoved(const int64_t& eventTimeNs, const string& apk, const int uid);
+    void notifyAppRemoved(int64_t eventTimeNs, const string& apk, int uid);
 
-    void onUidMapReceived(const int64_t& eventTimeNs);
+    void onUidMapReceived(int64_t eventTimeNs);
 
-    void onStatsdInitCompleted(const int64_t& elapsedTimeNs);
+    void onStatsdInitCompleted(int64_t elapsedTimeNs);
 
     void init();
 
@@ -133,7 +132,7 @@ public:
 
     virtual void dropData(const int64_t dropTimeNs);
 
-    virtual void onDumpReport(const int64_t dumpTimeNs, const int64_t wallClockNs,
+    virtual void onDumpReport(const int64_t dumpTimeNs, int64_t wallClockNs,
                               const bool include_current_partial_bucket, const bool erase_data,
                               const DumpLatency dumpLatency, std::set<string>* str_set,
                               android::util::ProtoOutputStream* protoOutput);
@@ -176,7 +175,7 @@ public:
 
     void enforceRestrictedDataTtls(const int64_t wallClockNs);
 
-    bool validateRestrictedMetricsDelegate(const int32_t callingUid);
+    bool validateRestrictedMetricsDelegate(int32_t callingUid);
 
     virtual void flushRestrictedData();
 
