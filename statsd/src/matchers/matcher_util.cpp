@@ -20,12 +20,11 @@
 
 #include <fnmatch.h>
 
-#include "lib/stats_regex.h"
 #include "matchers/AtomMatchingTracker.h"
 #include "src/statsd_config.pb.h"
 #include "stats_util.h"
+#include "utils/Regex.h"
 
-using std::regex;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -95,8 +94,7 @@ static bool tryMatchString(const sp<UidMap>& uidMap, const FieldValue& fieldValu
         if (aidIt != UidMap::sAidToUidMapping.end()) {
             return ((int)aidIt->second) == uid;
         }
-        std::set<string> packageNames = uidMap->getAppNamesFromUid(uid, true /* normalize*/);
-        return packageNames.find(str_match) != packageNames.end();
+        return uidMap->hasApp(uid, str_match);
     } else if (fieldValue.mValue.getType() == STRING) {
         return fieldValue.mValue.str_value == str_match;
     }
@@ -118,7 +116,7 @@ static bool tryMatchWildcardString(const sp<UidMap>& uidMap, const FieldValue& f
                 }
             }
         }
-        std::set<string> packageNames = uidMap->getAppNamesFromUid(uid, true /* normalize*/);
+        std::set<string> packageNames = uidMap->getAppNamesFromUid(uid, false /* normalize*/);
         for (const auto& packageName : packageNames) {
             if (fnmatch(wildcardPattern.c_str(), packageName.c_str(), 0) == 0) {
                 return true;
@@ -136,7 +134,8 @@ static unique_ptr<LogEvent> getTransformedEvent(const FieldValueMatcher& matcher
         return nullptr;
     }
 
-    unique_ptr<regex> re = createRegex(matcher.replace_string().regex());
+    unique_ptr<Regex> re = Regex::create(matcher.replace_string().regex());
+
     if (re == nullptr) {
         return nullptr;
     }
@@ -149,9 +148,8 @@ static unique_ptr<LogEvent> getTransformedEvent(const FieldValueMatcher& matcher
         if (fieldValue.mValue.getType() != STRING) {
             continue;
         }
-        const string transformedString =
-                regexReplace(fieldValue.mValue.str_value, *re, replacement);
-        if (transformedString == fieldValue.mValue.str_value) {
+        string str = fieldValue.mValue.str_value;
+        if (!re->replace(str, replacement) || str == fieldValue.mValue.str_value) {
             continue;
         }
 
@@ -159,7 +157,7 @@ static unique_ptr<LogEvent> getTransformedEvent(const FieldValueMatcher& matcher
         if (transformedEvent == nullptr) {
             transformedEvent = std::make_unique<LogEvent>(event);
         }
-        (*transformedEvent->getMutableValues())[i].mValue.str_value = transformedString;
+        (*transformedEvent->getMutableValues())[i].mValue.str_value = str;
     }
     return transformedEvent;
 }

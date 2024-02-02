@@ -67,7 +67,7 @@ TEST(StringReplaceE2eTest, TestPushedDimension) {
                                      ->add_field_value_matcher();
     fvm->set_field(TEST_ATOM_REPORTED_STRING_FIELD_ID);
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     CountMetric* countMetric = config.add_count_metric();
@@ -167,7 +167,7 @@ TEST(StringReplaceE2eTest, TestPushedWhat) {
                                      ->add_field_value_matcher();
     fvm->set_field(TEST_ATOM_REPORTED_STRING_FIELD_ID);
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     *config.add_gauge_metric() = createGaugeMetric(
@@ -245,7 +245,7 @@ TEST(StringReplaceE2eTest, TestPulledDimension) {
                                      ->add_field_value_matcher();
     fvm->set_field(SUBSYSTEM_SLEEP_STATE_SUBSYSTEM_NAME_FIELD_ID);
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     *config.add_gauge_metric() = createGaugeMetric(
