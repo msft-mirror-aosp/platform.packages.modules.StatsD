@@ -158,6 +158,40 @@ TEST(AtomMatcherTest, TestFilter_ALL) {
     EXPECT_EQ("some value", output.getValues()[6].mValue.str_value);
 }
 
+TEST(AtomMatcherTest, TestFilter_FIRST) {
+    FieldMatcher matcher1;
+    matcher1.set_field(10);
+    FieldMatcher* child = matcher1.add_child();
+    child->set_field(1);
+    child->set_position(Position::FIRST);
+
+    child->add_child()->set_field(1);
+    child->add_child()->set_field(2);
+
+    child = matcher1.add_child();
+    child->set_field(2);
+
+    vector<Matcher> matchers;
+    translateFieldMatcher(matcher1, &matchers);
+
+    std::vector<int> attributionUids = {1111, 2222, 3333};
+    std::vector<string> attributionTags = {"location1", "location2", "location3"};
+
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event, 10 /*atomId*/, 1012345, attributionUids, attributionTags, "some value");
+    HashableDimensionKey output;
+
+    filterValues(matchers, event.getValues(), &output);
+
+    ASSERT_EQ((size_t)3, output.getValues().size());
+    EXPECT_EQ((int32_t)0x02010101, output.getValues()[0].mField.getField());
+    EXPECT_EQ((int32_t)1111, output.getValues()[0].mValue.int_value);
+    EXPECT_EQ((int32_t)0x02010102, output.getValues()[1].mField.getField());
+    EXPECT_EQ("location1", output.getValues()[1].mValue.str_value);
+    EXPECT_EQ((int32_t)0x00020000, output.getValues()[2].mField.getField());
+    EXPECT_EQ("some value", output.getValues()[2].mValue.str_value);
+};
+
 TEST(AtomMatcherTest, TestFilterRepeated_FIRST) {
     FieldMatcher matcher;
     matcher.set_field(123);
@@ -739,7 +773,7 @@ TEST(AtomMatcherTest, TestWriteAtomWithRepeatedFieldsToProto) {
     bool boolArray[boolArrayLength];
     boolArray[0] = 1;
     boolArray[1] = 0;
-    vector<bool> boolArrayVector = {1, 0};
+    vector<uint8_t> boolArrayVector = {1, 0};
     vector<int> enumArray = {TestAtomReported::ON, TestAtomReported::OFF};
 
     unique_ptr<LogEvent> event = CreateTestAtomReportedEventVariableRepeatedFields(

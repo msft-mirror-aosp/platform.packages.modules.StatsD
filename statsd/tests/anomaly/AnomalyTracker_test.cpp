@@ -20,10 +20,12 @@
 
 #include <vector>
 
+#include "src/subscriber/SubscriberReporter.h"
 #include "tests/statsd_test_util.h"
 
 using namespace testing;
 using android::sp;
+using ::ndk::SharedRefBase;
 using std::set;
 using std::unordered_map;
 using std::vector;
@@ -34,7 +36,11 @@ namespace android {
 namespace os {
 namespace statsd {
 
-const ConfigKey kConfigKey(0, 12345);
+namespace {
+const int kConfigUid = 0;
+const int kConfigId = 12345;
+const ConfigKey kConfigKey(kConfigUid, kConfigId);
+}  // anonymous namespace
 
 MetricDimensionKey getMockMetricDimensionKey(int key, string value) {
     int pos[] = {key, 0, 0};
@@ -68,8 +74,7 @@ int64_t getBucketValue(const std::shared_ptr<DimToValMap>& bucket,
 }
 
 // Returns true if keys in trueList are detected as anomalies and keys in falseList are not.
-bool detectAnomaliesPass(AnomalyTracker& tracker,
-                         const int64_t& bucketNum,
+bool detectAnomaliesPass(AnomalyTracker& tracker, int64_t bucketNum,
                          const std::shared_ptr<DimToValMap>& currentBucket,
                          const std::set<const MetricDimensionKey>& trueList,
                          const std::set<const MetricDimensionKey>& falseList) {
@@ -87,10 +92,8 @@ bool detectAnomaliesPass(AnomalyTracker& tracker,
 }
 
 // Calls tracker.detectAndDeclareAnomaly on each key in the bucket.
-void detectAndDeclareAnomalies(AnomalyTracker& tracker,
-                               const int64_t& bucketNum,
-                               const std::shared_ptr<DimToValMap>& bucket,
-                               const int64_t& eventTimestamp) {
+void detectAndDeclareAnomalies(AnomalyTracker& tracker, int64_t bucketNum,
+                               const std::shared_ptr<DimToValMap>& bucket, int64_t eventTimestamp) {
     for (const auto& kv : *bucket) {
         tracker.detectAndDeclareAnomaly(eventTimestamp, bucketNum, 0 /*metric_id*/, kv.first,
                                         kv.second);
@@ -101,9 +104,8 @@ void detectAndDeclareAnomalies(AnomalyTracker& tracker,
 // timestamp (in ns) + refractoryPeriodSec.
 // If a timestamp value is negative, instead asserts that the refractory period is inapplicable
 // (either non-existant or already past).
-void checkRefractoryTimes(AnomalyTracker& tracker,
-                          const int64_t& currTimestampNs,
-                          const int32_t& refractoryPeriodSec,
+void checkRefractoryTimes(AnomalyTracker& tracker, int64_t currTimestampNs,
+                          int32_t refractoryPeriodSec,
                           const std::unordered_map<MetricDimensionKey, int64_t>& timestamps) {
     for (const auto& kv : timestamps) {
         if (kv.second < 0) {
@@ -398,6 +400,115 @@ TEST(AnomalyTrackerTest, TestSparseBuckets) {
     ASSERT_EQ(anomalyTracker.mSumOverPastBuckets.size(), 0UL);
     checkRefractoryTimes(anomalyTracker, eventTimestamp6, refractoryPeriodSec,
             {{keyA, -1}, {keyB, -1}, {keyC, -1}, {keyD, -1}, {keyE, eventTimestamp6 + 7}});
+}
+
+TEST(AnomalyTrackerTest, TestProbabilityOfInforming) {
+    // Initiating StatsdStats at the start of this test, so it doesn't call rand() during the test
+    StatsdStats::getInstance();
+    srand(/*commonly used seed=*/0);
+    const int64_t bucketSizeNs = 30 * NS_PER_SEC;
+    const int32_t refractoryPeriodSec = bucketSizeNs / NS_PER_SEC;
+    int broadcastSubRandId = 1, broadcastSubAlwaysId = 2, broadcastSubNeverId = 3;
+
+    // Alert with probability of informing set to 0.5
+    Alert alertRand = createAlert("alertRand", /*metric id=*/0, /*buckets=*/1, /*triggerSum=*/0);
+    alertRand.set_refractory_period_secs(refractoryPeriodSec);
+    alertRand.set_probability_of_informing(0.5);
+    AnomalyTracker anomalyTrackerRand(alertRand, kConfigKey);
+
+    Subscription subRand = createSubscription("subRand", /*rule_type=*/Subscription::ALERT,
+                                              /*rule_id=*/alertRand.id());
+    subRand.mutable_broadcast_subscriber_details()->set_subscriber_id(broadcastSubRandId);
+    anomalyTrackerRand.addSubscription(subRand);
+
+    // Alert with probability of informing set to 1.1 (always; set by default)
+    Alert alertAlways =
+            createAlert("alertAlways", /*metric id=*/0, /*buckets=*/1, /*triggerSum=*/0);
+    alertAlways.set_refractory_period_secs(refractoryPeriodSec);
+    AnomalyTracker anomalyTrackerAlways(alertAlways, kConfigKey);
+
+    Subscription subAlways = createSubscription("subAlways", /*rule_type=*/Subscription::ALERT,
+                                                /*rule_id=*/alertAlways.id());
+    subAlways.mutable_broadcast_subscriber_details()->set_subscriber_id(broadcastSubAlwaysId);
+    anomalyTrackerAlways.addSubscription(subAlways);
+
+    // Alert with probability of informing set to -0.1 (never)
+    Alert alertNever = createAlert("alertNever", /*metric id=*/0, /*buckets=*/1, /*triggerSum=*/0);
+    alertNever.set_refractory_period_secs(refractoryPeriodSec);
+    alertNever.set_probability_of_informing(-0.1);
+    AnomalyTracker anomalyTrackerNever(alertNever, kConfigKey);
+
+    Subscription subNever = createSubscription("subNever", /*rule_type=*/Subscription::ALERT,
+                                               /*rule_id=*/alertNever.id());
+    subNever.mutable_broadcast_subscriber_details()->set_subscriber_id(broadcastSubNeverId);
+    anomalyTrackerNever.addSubscription(subNever);
+
+    // Bucket value needs to be greater than 0 to detect and declare anomaly
+    int bucketValue = 1;
+
+    int alertRandCount = 0, alertAlwaysCount = 0;
+    // The binder calls here will happen synchronously because they are in-process.
+    shared_ptr<MockPendingIntentRef> randBroadcast =
+            SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*randBroadcast,
+                sendSubscriberBroadcast(kConfigUid, kConfigId, subRand.id(), alertRand.id(), _, _))
+            .Times(3)
+            .WillRepeatedly([&alertRandCount] {
+                alertRandCount++;
+                return Status::ok();
+            });
+
+    shared_ptr<MockPendingIntentRef> alwaysBroadcast =
+            SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*alwaysBroadcast, sendSubscriberBroadcast(kConfigUid, kConfigId, subAlways.id(),
+                                                          alertAlways.id(), _, _))
+            .Times(10)
+            .WillRepeatedly([&alertAlwaysCount] {
+                alertAlwaysCount++;
+                return Status::ok();
+            });
+
+    shared_ptr<MockPendingIntentRef> neverBroadcast =
+            SharedRefBase::make<StrictMock<MockPendingIntentRef>>();
+    EXPECT_CALL(*neverBroadcast, sendSubscriberBroadcast(kConfigUid, kConfigId, subNever.id(),
+                                                         alertNever.id(), _, _))
+            .Times(0);
+
+    SubscriberReporter::getInstance().setBroadcastSubscriber(kConfigKey, broadcastSubRandId,
+                                                             randBroadcast);
+    SubscriberReporter::getInstance().setBroadcastSubscriber(kConfigKey, broadcastSubAlwaysId,
+                                                             alwaysBroadcast);
+    SubscriberReporter::getInstance().setBroadcastSubscriber(kConfigKey, broadcastSubNeverId,
+                                                             neverBroadcast);
+
+    // Trying to inform the subscription and start the refractory period countdown 10x.
+    // Deterministic sequence for anomalyTrackerRand:
+    // 0.96, 0.95, 0.95, 0.94, 0.43, 0.92, 0.92, 0.41, 0.39, 0.88
+    for (size_t i = 0; i < 10; i++) {
+        int64_t curEventTimestamp = bucketSizeNs * i;
+        anomalyTrackerRand.detectAndDeclareAnomaly(curEventTimestamp, /*bucketNum=*/i,
+                                                   /*metric_id=*/0, DEFAULT_METRIC_DIMENSION_KEY,
+                                                   bucketValue);
+        if (i <= 3) {
+            EXPECT_EQ(alertRandCount, 0);
+        } else if (i >= 4 && i <= 6) {
+            EXPECT_EQ(alertRandCount, 1);
+        } else if (i == 7) {
+            EXPECT_EQ(alertRandCount, 2);
+        } else {
+            EXPECT_EQ(alertRandCount, 3);
+        }
+        anomalyTrackerAlways.detectAndDeclareAnomaly(curEventTimestamp, /*bucketNum=*/i,
+                                                     /*metric_id=*/0, DEFAULT_METRIC_DIMENSION_KEY,
+                                                     bucketValue);
+        EXPECT_EQ(alertAlwaysCount, i + 1);
+        anomalyTrackerNever.detectAndDeclareAnomaly(curEventTimestamp, /*bucketNum=*/i,
+                                                    /*metric_id=*/0, DEFAULT_METRIC_DIMENSION_KEY,
+                                                    bucketValue);
+    }
+    SubscriberReporter::getInstance().unsetBroadcastSubscriber(kConfigKey, broadcastSubRandId);
+    SubscriberReporter::getInstance().unsetBroadcastSubscriber(kConfigKey, broadcastSubAlwaysId);
+    SubscriberReporter::getInstance().unsetBroadcastSubscriber(kConfigKey, broadcastSubNeverId);
 }
 
 }  // namespace statsd

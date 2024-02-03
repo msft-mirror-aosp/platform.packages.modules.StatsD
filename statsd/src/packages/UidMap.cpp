@@ -25,7 +25,6 @@
 
 using namespace android;
 
-using android::base::StringPrintf;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
 using android::util::FIELD_TYPE_BYTES;
@@ -94,12 +93,12 @@ string UidMap::normalizeAppName(const string& appName) const {
     return normalizedName;
 }
 
-std::set<string> UidMap::getAppNamesFromUid(const int32_t& uid, bool returnNormalized) const {
+std::set<string> UidMap::getAppNamesFromUid(const int32_t uid, bool returnNormalized) const {
     lock_guard<mutex> lock(mMutex);
     return getAppNamesFromUidLocked(uid,returnNormalized);
 }
 
-std::set<string> UidMap::getAppNamesFromUidLocked(const int32_t& uid, bool returnNormalized) const {
+std::set<string> UidMap::getAppNamesFromUidLocked(const int32_t uid, bool returnNormalized) const {
     std::set<string> names;
     for (const auto& kv : mMap) {
         if (kv.first.first == uid && !kv.second.deleted) {
@@ -119,7 +118,7 @@ int64_t UidMap::getAppVersion(int uid, const string& packageName) const {
     return it->second.versionCode;
 }
 
-void UidMap::updateMap(const int64_t& timestamp, const UidData& uidData) {
+void UidMap::updateMap(const int64_t timestamp, const UidData& uidData) {
     wp<PackageInfoListener> broadcast = NULL;
     {
         lock_guard<mutex> lock(mMutex);  // Exclusively lock for updates.
@@ -157,13 +156,13 @@ void UidMap::updateMap(const int64_t& timestamp, const UidData& uidData) {
     // itself before we call it. It's then the listener's job to handle it (expect the callback to
     // be called after listener is removed, and the listener should properly ignore it).
     auto strongPtr = broadcast.promote();
-    if (strongPtr != NULL) {
+    if (strongPtr != nullptr) {
         strongPtr->onUidMapReceived(timestamp);
     }
 }
 
-void UidMap::updateApp(const int64_t& timestamp, const string& appName, const int32_t& uid,
-                       const int64_t& versionCode, const string& versionString,
+void UidMap::updateApp(const int64_t timestamp, const string& appName, const int32_t uid,
+                       const int64_t versionCode, const string& versionString,
                        const string& installer, const vector<uint8_t>& certificateHash) {
     wp<PackageInfoListener> broadcast = NULL;
 
@@ -202,7 +201,7 @@ void UidMap::updateApp(const int64_t& timestamp, const string& appName, const in
     }
 
     auto strongPtr = broadcast.promote();
-    if (strongPtr != NULL) {
+    if (strongPtr != nullptr) {
         strongPtr->notifyAppUpgrade(timestamp, appName, uid, versionCode);
     }
 }
@@ -224,7 +223,7 @@ void UidMap::ensureBytesUsedBelowLimit() {
     }
 }
 
-void UidMap::removeApp(const int64_t& timestamp, const string& app, const int32_t& uid) {
+void UidMap::removeApp(const int64_t timestamp, const string& app, const int32_t uid) {
     wp<PackageInfoListener> broadcast = NULL;
     {
         lock_guard<mutex> lock(mMutex);
@@ -255,12 +254,12 @@ void UidMap::removeApp(const int64_t& timestamp, const string& app, const int32_
     }
 
     auto strongPtr = broadcast.promote();
-    if (strongPtr != NULL) {
+    if (strongPtr != nullptr) {
         strongPtr->notifyAppRemoved(timestamp, app, uid);
     }
 }
 
-void UidMap::setListener(wp<PackageInfoListener> listener) {
+void UidMap::setListener(const wp<PackageInfoListener>& listener) {
     lock_guard<mutex> lock(mMutex);  // Lock for updates
     mSubscriber = listener;
 }
@@ -409,7 +408,7 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
     }
 }
 
-void UidMap::appendUidMap(const int64_t& timestamp, const ConfigKey& key,
+void UidMap::appendUidMap(const int64_t timestamp, const ConfigKey& key,
                           const bool includeVersionStrings, const bool includeInstaller,
                           const uint8_t truncatedCertificateHashSize, std::set<string>* str_set,
                           ProtoOutputStream* proto) {

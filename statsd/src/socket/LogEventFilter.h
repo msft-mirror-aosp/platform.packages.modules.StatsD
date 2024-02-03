@@ -114,15 +114,12 @@ private:
     FRIEND_TEST(LogEventFilterTest, TestEmptyFilter);
     FRIEND_TEST(LogEventFilterTest, TestRemoveNonExistingEmptyFilter);
     FRIEND_TEST(LogEventFilterTest, TestEmptyFilterDisabled);
-    FRIEND_TEST(LogEventFilterTest, TestEmptyFilterDisabledSetter);
     FRIEND_TEST(LogEventFilterTest, TestNonEmptyFilterFullOverlap);
     FRIEND_TEST(LogEventFilterTest, TestNonEmptyFilterPartialOverlap);
     FRIEND_TEST(LogEventFilterTest, TestNonEmptyFilterDisabled);
     FRIEND_TEST(LogEventFilterTest, TestNonEmptyFilterDisabledPartialOverlap);
     FRIEND_TEST(LogEventFilterTest, TestMultipleConsumerOverlapIds);
-    FRIEND_TEST(LogEventFilterTest, TestMultipleConsumerNonOverlapIds);
     FRIEND_TEST(LogEventFilterTest, TestMultipleConsumerOverlapIdsRemoved);
-    FRIEND_TEST(LogEventFilterTest, TestMultipleConsumerNonOverlapIdsRemoved);
     FRIEND_TEST(LogEventFilterTest, TestMultipleConsumerEmptyFilter);
 };
 

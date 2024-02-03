@@ -56,6 +56,14 @@ message FieldMatcher {
   repeated FieldMatcher child = 3;
 }
 
+message StringReplacer {
+  // Regex for matching the string.
+  optional string regex = 1;
+
+  // String with which to replace the matched string.
+  optional string replacement = 2;
+}
+
 message FieldValueMatcher {
   optional int32 field = 1;
 
@@ -85,6 +93,11 @@ message FieldValueMatcher {
     StringListMatcher eq_any_wildcard_string = 18;
     StringListMatcher neq_any_wildcard_string = 19;
   }
+
+  // Can only be present if either:
+  // 1. value_matcher is not set.
+  // 2. value_matcher is set to one that is applicable to string fields.
+  optional StringReplacer replace_string = 20;
 }
 
 message MessageMatcher {
@@ -343,6 +356,8 @@ message GaugeMetric {
 
   optional int32 max_dimensions_per_bucket = 16;
 
+  optional int32 sampling_percentage = 17 [default = 100];
+
   reserved 100;
   reserved 101;
 }
@@ -453,6 +468,8 @@ message Alert {
   optional int32 refractory_period_secs = 4;
 
   optional double trigger_if_sum_gt = 5;
+
+  optional float probability_of_informing = 6 [default = 1.1];
 }
 
 message Alarm {
@@ -461,6 +478,8 @@ message Alarm {
   optional int64 offset_millis = 2;
 
   optional int64 period_millis = 3;
+
+  optional float probability_of_informing = 4 [default = 1.1];
 }
 
 message IncidentdDetails {

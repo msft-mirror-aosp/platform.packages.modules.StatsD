@@ -24,11 +24,14 @@ namespace statsd {
 
 using std::pair;
 
-OringDurationTracker::OringDurationTracker(
-        const ConfigKey& key, const int64_t& id, const MetricDimensionKey& eventKey,
-        sp<ConditionWizard> wizard, int conditionIndex, bool nesting, int64_t currentBucketStartNs,
-        int64_t currentBucketNum, int64_t startTimeNs, int64_t bucketSizeNs, bool conditionSliced,
-        bool fullLink, const vector<sp<AnomalyTracker>>& anomalyTrackers)
+OringDurationTracker::OringDurationTracker(const ConfigKey& key, const int64_t id,
+                                           const MetricDimensionKey& eventKey,
+                                           const sp<ConditionWizard>& wizard, int conditionIndex,
+                                           bool nesting, int64_t currentBucketStartNs,
+                                           int64_t currentBucketNum, int64_t startTimeNs,
+                                           int64_t bucketSizeNs, bool conditionSliced,
+                                           bool fullLink,
+                                           const vector<sp<AnomalyTracker>>& anomalyTrackers)
     : DurationTracker(key, id, eventKey, wizard, conditionIndex, nesting, currentBucketStartNs,
                       currentBucketNum, startTimeNs, bucketSizeNs, conditionSliced, fullLink,
                       anomalyTrackers),
@@ -38,13 +41,13 @@ OringDurationTracker::OringDurationTracker(
 }
 
 bool OringDurationTracker::hitGuardRail(const HashableDimensionKey& newKey,
-                                        size_t dimensionHardLimit) {
+                                        size_t dimensionHardLimit) const {
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
     if (mConditionKeyMap.find(newKey) != mConditionKeyMap.end()) {
         return false;
     }
-    if (mConditionKeyMap.size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mConditionKeyMap.size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mConditionKeyMap.size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
@@ -138,7 +141,7 @@ void OringDurationTracker::noteStopAll(const int64_t timestamp) {
 }
 
 bool OringDurationTracker::flushCurrentBucket(
-        const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+        const int64_t eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
         const int64_t globalConditionTrueNs,
         std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) {
     VLOG("OringDurationTracker Flushing.............");

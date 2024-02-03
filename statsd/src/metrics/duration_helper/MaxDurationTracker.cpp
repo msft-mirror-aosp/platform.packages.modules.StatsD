@@ -24,12 +24,12 @@ namespace android {
 namespace os {
 namespace statsd {
 
-MaxDurationTracker::MaxDurationTracker(const ConfigKey& key, const int64_t& id,
+MaxDurationTracker::MaxDurationTracker(const ConfigKey& key, const int64_t id,
                                        const MetricDimensionKey& eventKey,
-                                       sp<ConditionWizard> wizard, int conditionIndex, bool nesting,
-                                       int64_t currentBucketStartNs, int64_t currentBucketNum,
-                                       int64_t startTimeNs, int64_t bucketSizeNs,
-                                       bool conditionSliced, bool fullLink,
+                                       const sp<ConditionWizard>& wizard, int conditionIndex,
+                                       bool nesting, int64_t currentBucketStartNs,
+                                       int64_t currentBucketNum, int64_t startTimeNs,
+                                       int64_t bucketSizeNs, bool conditionSliced, bool fullLink,
                                        const vector<sp<AnomalyTracker>>& anomalyTrackers)
     : DurationTracker(key, id, eventKey, wizard, conditionIndex, nesting, currentBucketStartNs,
                       currentBucketNum, startTimeNs, bucketSizeNs, conditionSliced, fullLink,
@@ -38,14 +38,14 @@ MaxDurationTracker::MaxDurationTracker(const ConfigKey& key, const int64_t& id,
 }
 
 bool MaxDurationTracker::hitGuardRail(const HashableDimensionKey& newKey,
-                                      size_t dimensionHardLimit) {
+                                      size_t dimensionHardLimit) const {
     // ===========GuardRail==============
     if (mInfos.find(newKey) != mInfos.end()) {
         // if the key existed, we are good!
         return false;
     }
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mInfos.size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mInfos.size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mInfos.size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mTrackerId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
@@ -175,7 +175,7 @@ void MaxDurationTracker::noteStopAll(const int64_t eventTime) {
 }
 
 bool MaxDurationTracker::flushCurrentBucket(
-        const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+        const int64_t eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
         const int64_t globalConditionTrueNs,
         std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) {
     VLOG("MaxDurationTracker flushing.....");

@@ -20,12 +20,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-ConfigListener::ConfigListener() {
-}
-
-ConfigListener::~ConfigListener() {
-}
-
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

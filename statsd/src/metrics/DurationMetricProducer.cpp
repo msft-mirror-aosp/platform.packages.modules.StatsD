@@ -603,7 +603,7 @@ void DurationMetricProducer::onDumpReportLocked(
     }
 }
 
-void DurationMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void DurationMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
 
     if (currentBucketEndTimeNs > eventTimeNs) {
@@ -617,8 +617,8 @@ void DurationMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
     mCurrentBucketNum += numBucketsForward;
 }
 
-void DurationMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                      const int64_t& nextBucketStartTimeNs) {
+void DurationMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                      const int64_t nextBucketStartTimeNs) {
     const auto [globalConditionTrueNs, globalConditionCorrectionNs] =
             mConditionTimer.newBucketStart(eventTimeNs, nextBucketStartTimeNs);
 
@@ -654,11 +654,11 @@ void DurationMetricProducer::dumpStatesLocked(int out, bool verbose) const {
     }
 }
 
-bool DurationMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
+bool DurationMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) const {
     auto whatIt = mCurrentSlicedDurationTrackerMap.find(newKey.getDimensionKeyInWhat());
     if (whatIt == mCurrentSlicedDurationTrackerMap.end()) {
         // 1. Report the tuple count if the tuple count > soft limit
-        if (mCurrentSlicedDurationTrackerMap.size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+        if (mCurrentSlicedDurationTrackerMap.size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
             size_t newTupleCount = mCurrentSlicedDurationTrackerMap.size() + 1;
             StatsdStats::getInstance().noteMetricDimensionSize(
                     mConfigKey, mMetricId, newTupleCount);

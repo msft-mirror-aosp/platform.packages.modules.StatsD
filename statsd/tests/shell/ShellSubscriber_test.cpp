@@ -222,7 +222,7 @@ TestAtomReported createTestAtomReportedProto(const int32_t intFieldValue,
     TestAtomReported t;
     auto* attributionNode = t.add_attribution_node();
     attributionNode->set_uid(1001);
-    attributionNode->set_tag("app1");
+    attributionNode->set_tag("app");  // String transformation removes trailing digits.
     t.set_int_field(intFieldValue);
     t.set_long_field(0);
     t.set_float_field(0.0f);
@@ -252,6 +252,15 @@ protected:
 
         ShellSubscription config;
         config.add_pushed()->set_atom_id(TEST_ATOM_REPORTED);
+        FieldValueMatcher* fvm = config.mutable_pushed(0)->add_field_value_matcher();
+        fvm->set_field(1);  // attribution_chain
+        fvm->set_position(Position::FIRST);
+        fvm = fvm->mutable_matches_tuple()->add_field_value_matcher();
+        fvm->set_field(2);  // tag field
+        fvm->mutable_replace_string()->set_regex(
+                R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
+        fvm->mutable_replace_string()->set_replacement("");
+
         config.add_pushed()->set_atom_id(SCREEN_STATE_CHANGED);
         config.add_pushed()->set_atom_id(PHONE_SIGNAL_STRENGTH_CHANGED);
         configBytes = protoToBytes(config);
@@ -364,7 +373,7 @@ TEST_F(ShellSubscriberCallbackTest, testAddSubscriptionExceedMax) {
             .Times(1)
             .RetiresOnSaturation();
 
-    vector<bool> results(maxSubs, false);
+    vector<uint8_t> results(maxSubs, false);
 
     std::shared_ptr<MockStatsSubscriptionCallback> callbacks[maxSubs];
     for (int i = 0; i < maxSubs; i++) {

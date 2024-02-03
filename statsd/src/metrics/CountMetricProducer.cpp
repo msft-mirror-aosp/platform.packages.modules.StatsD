@@ -341,7 +341,7 @@ bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
     }
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mCurrentSlicedCounter->size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mCurrentSlicedCounter->size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mCurrentSlicedCounter->size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
@@ -400,7 +400,7 @@ void CountMetricProducer::onMatchedLogEventInternalLocked(
 
 // When a new matched event comes in, we check if event falls into the current
 // bucket. If not, flush the old counter to past buckets and initialize the new bucket.
-void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void CountMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
     if (eventTimeNs < currentBucketEndTimeNs) {
         return;
@@ -416,7 +416,7 @@ void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
          (long long)mCurrentBucketStartTimeNs);
 }
 
-bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
+bool CountMetricProducer::countPassesThreshold(const int64_t count) {
     if (mUploadThreshold == nullopt) {
         return true;
     }
@@ -436,8 +436,8 @@ bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
     }
 }
 
-void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                   const int64_t& nextBucketStartTimeNs) {
+void CountMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                   const int64_t nextBucketStartTimeNs) {
     int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
     CountBucket info;
     info.mBucketStartNs = mCurrentBucketStartTimeNs;

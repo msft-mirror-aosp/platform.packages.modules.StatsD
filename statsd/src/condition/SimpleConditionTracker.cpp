@@ -27,7 +27,7 @@ namespace statsd {
 using std::unordered_map;
 
 SimpleConditionTracker::SimpleConditionTracker(
-        const ConfigKey& key, const int64_t& id, const uint64_t protoHash, const int index,
+        const ConfigKey& key, const int64_t id, const uint64_t protoHash, const int index,
         const SimplePredicate& simplePredicate,
         const unordered_map<int64_t, int>& atomMatchingTrackerMap)
     : ConditionTracker(id, index, protoHash),
@@ -59,7 +59,7 @@ SimpleConditionTracker::~SimpleConditionTracker() {
 optional<InvalidConfigReason> SimpleConditionTracker::init(
         const vector<Predicate>& allConditionConfig,
         const vector<sp<ConditionTracker>>& allConditionTrackers,
-        const unordered_map<int64_t, int>& conditionIdIndexMap, vector<bool>& stack,
+        const unordered_map<int64_t, int>& conditionIdIndexMap, vector<uint8_t>& stack,
         vector<ConditionState>& conditionCache) {
     // SimpleConditionTracker does not have dependency on other conditions, thus we just return
     // if the initialization was successful.
@@ -145,7 +145,7 @@ void SimpleConditionTracker::dumpState() {
 }
 
 void SimpleConditionTracker::handleStopAll(std::vector<ConditionState>& conditionCache,
-                                           std::vector<bool>& conditionChangedCache) {
+                                           std::vector<uint8_t>& conditionChangedCache) {
     // Unless the default condition is false, and there was nothing started, otherwise we have
     // triggered a condition change.
     conditionChangedCache[mIndex] =
@@ -164,13 +164,13 @@ void SimpleConditionTracker::handleStopAll(std::vector<ConditionState>& conditio
     conditionCache[mIndex] = ConditionState::kFalse;
 }
 
-bool SimpleConditionTracker::hitGuardRail(const HashableDimensionKey& newKey) {
+bool SimpleConditionTracker::hitGuardRail(const HashableDimensionKey& newKey) const {
     if (!mSliced || mSlicedConditionState.find(newKey) != mSlicedConditionState.end()) {
         // if the condition is not sliced or the key is not new, we are good!
         return false;
     }
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mSlicedConditionState.size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mSlicedConditionState.size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mSlicedConditionState.size() + 1;
         StatsdStats::getInstance().noteConditionDimensionSize(mConfigKey, mConditionId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
@@ -265,12 +265,11 @@ void SimpleConditionTracker::handleConditionEvent(const HashableDimensionKey& ou
          *conditionChangedCache);
 }
 
-void SimpleConditionTracker::evaluateCondition(
-        const LogEvent& event,
-        const vector<MatchingState>& eventMatcherValues,
-        const vector<sp<ConditionTracker>>& mAllConditions,
-        vector<ConditionState>& conditionCache,
-        vector<bool>& conditionChangedCache) {
+void SimpleConditionTracker::evaluateCondition(const LogEvent& event,
+                                               const vector<MatchingState>& eventMatcherValues,
+                                               const vector<sp<ConditionTracker>>& mAllConditions,
+                                               vector<ConditionState>& conditionCache,
+                                               vector<uint8_t>& conditionChangedCache) {
     if (conditionCache[mIndex] != ConditionState::kNotEvaluated) {
         // it has been evaluated.
         VLOG("Yes, already evaluated, %lld %d",

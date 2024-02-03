@@ -229,12 +229,15 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
     init_system_properties();
 
     if (mEventQueue != nullptr) {
-        std::thread pushedEventThread([this] { readLogs(); });
-        pushedEventThread.detach();
+        mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
     }
 }
 
 StatsService::~StatsService() {
+    if (mEventQueue != nullptr) {
+        stopReadingLogs();
+        mLogsReaderThread->join();
+    }
 }
 
 /* Runs on a dedicated thread to process pushed events. */
@@ -243,6 +246,13 @@ void StatsService::readLogs() {
     while (1) {
         // Block until an event is available.
         auto event = mEventQueue->waitPop();
+
+        // Below flag will be set when statsd is exiting and log event will be pushed to break
+        // out of waitPop.
+        if (mIsStopRequested) {
+            break;
+        }
+
         // Pass it to StatsLogProcess to all configs/metrics
         // At this point, the LogEventQueue is not blocked, so that the socketListener
         // can read events from the socket and write to buffer to avoid data drop.
@@ -866,8 +876,8 @@ status_t StatsService::cmd_log_binary_push(int out, const Vector<String8>& args)
     int32_t state = atoi(args[6].c_str());
     vector<int64_t> experimentIds;
     if (argCount == 8) {
-        vector<string> experimentIdsString = android::base::Split(string(args[7].c_str()), ",");
-        for (string experimentIdString : experimentIdsString) {
+        vector<string> experimentIdsStrings = android::base::Split(string(args[7].c_str()), ",");
+        for (const string& experimentIdString : experimentIdsStrings) {
             int64_t experimentId = strtoll(experimentIdString.c_str(), nullptr, 10);
             experimentIds.push_back(experimentId);
         }
@@ -1498,6 +1508,14 @@ void StatsService::initShellSubscriber() {
     if (mShellSubscriber == nullptr) {
         mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager, mLogEventFilter);
     }
+}
+
+void StatsService::stopReadingLogs() {
+    mIsStopRequested = true;
+    // Push this event so that readLogs will process and break out of the loop
+    // after the stop is requested.
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    mEventQueue->push(std::move(logEvent));
 }
 
 }  // namespace statsd
