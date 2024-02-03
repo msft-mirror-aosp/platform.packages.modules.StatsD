@@ -75,6 +75,7 @@ cc_defaults {
         "src/external/StatsPuller.cpp",
         "src/external/StatsPullerManager.cpp",
         "src/external/TrainInfoPuller.cpp",
+        "src/external/Uprobestats.cpp",
         "src/FieldValue.cpp",
         "src/flags/FlagProvider.cpp",
         "src/guardrail/StatsdStats.cpp",
