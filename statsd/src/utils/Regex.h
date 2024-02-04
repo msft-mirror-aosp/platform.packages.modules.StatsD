@@ -16,15 +16,32 @@
 
 #pragma once
 
-#include <regex>
+#include <regex.h>
+
+#include <memory>
+#include <string>
 
 namespace android {
 namespace os {
 namespace statsd {
 
-std::unique_ptr<std::regex> createRegex(const std::string& pattern);
+class Regex {
+public:
+    Regex(regex_t impl);  // Do not use. It is public for std::make_unique. Use Regex::create.
+    ~Regex();
+    Regex& operator=(const Regex&) = delete;
+    Regex(const Regex&) = delete;
 
-std::string regexReplace(const std::string& input, const std::regex& re, const std::string& format);
+    // Returns nullptr if pattern is not valid POSIX regex.
+    static std::unique_ptr<Regex> create(const std::string& pattern);
+
+    // Looks for a regex match in str and replaces the matched portion with replacement in-place.
+    // Returns true if there was a match, false otherwise.
+    bool replace(std::string& str, const std::string& replacement);
+
+private:
+    regex_t mImpl;
+};
 
 }  // namespace statsd
 }  // namespace os
