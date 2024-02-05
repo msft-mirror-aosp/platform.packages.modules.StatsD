@@ -2027,7 +2027,7 @@ TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplacerOnly) {
     matcher->mutable_simple_atom_matcher()->set_atom_id(SCREEN_STATE_ATOM_ID);
     FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
     fvm->set_field(5 /*string_field*/);
-    fvm->mutable_replace_string()->set_regex(R"([\d]+$)");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("#");
 
     optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
@@ -2066,7 +2066,7 @@ TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAll) 
     fvm->set_field(12 /*repeated_string_field*/);
     fvm->set_position(Position::ALL);
     fvm->set_eq_string("foo");
-    fvm->mutable_replace_string()->set_regex(R"([\d]+$)");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("");
 
     optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
@@ -2115,7 +2115,7 @@ TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAllNe
     fvm->mutable_matches_tuple()
             ->mutable_field_value_matcher(0)
             ->mutable_replace_string()
-            ->set_regex(R"([\d]+$)");
+            ->set_regex(R"([0-9]+$)");
     fvm->mutable_matches_tuple()
             ->mutable_field_value_matcher(0)
             ->mutable_replace_string()
@@ -2139,7 +2139,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAn
     FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
     fvm->set_field(12 /*repeated_string_field*/);
     fvm->set_position(Position::ANY);
-    fvm->mutable_replace_string()->set_regex(R"([\d]+$)");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("");
 
     optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
@@ -2165,7 +2165,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAn
     fvm->mutable_matches_tuple()
             ->mutable_field_value_matcher(0)
             ->mutable_replace_string()
-            ->set_regex(R"([\d]+$)");
+            ->set_regex(R"([0-9]+$)");
     fvm->mutable_matches_tuple()
             ->mutable_field_value_matcher(0)
             ->mutable_replace_string()
@@ -2190,7 +2190,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAny)
     fvm->set_field(12 /*repeated_string_field*/);
     fvm->set_position(Position::ANY);
     fvm->set_eq_string("bar");
-    fvm->mutable_replace_string()->set_regex(R"([\d]+$)");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("");
 
     optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
@@ -2214,7 +2214,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAnyN
     fvm->mutable_matches_tuple()
             ->mutable_field_value_matcher(0)
             ->mutable_replace_string()
-            ->set_regex(R"([\d]+$)");
+            ->set_regex(R"([0-9]+$)");
     fvm->mutable_matches_tuple()
             ->mutable_field_value_matcher(0)
             ->mutable_replace_string()
@@ -2229,7 +2229,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithPositionAllNested) {
     StatsdConfig config;
     config.set_id(12345);
 
-    // Replace attribution_node[ALL].tag using "[\d]+$" -> "".
+    // Replace attribution_node[ALL].tag using "[0-9]+$" -> "".
     AtomMatcher* matcher = config.add_atom_matcher();
     matcher->set_id(111);
     matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
@@ -2238,7 +2238,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithPositionAllNested) {
     fvm->set_position(Position::ALL);
     fvm = fvm->mutable_matches_tuple()->add_field_value_matcher();
     fvm->set_field(2 /* tag */);
-    fvm->mutable_replace_string()->set_regex(R"([\d]+$)");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("");
 
     optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
@@ -2256,7 +2256,7 @@ TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplaceAndNonStringValueMatc
     FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
     fvm->set_field(2 /*int_field*/);
     fvm->set_eq_int(1);
-    fvm->mutable_replace_string()->set_regex(R"([\d]+$)");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("#");
 
     optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
@@ -2276,7 +2276,7 @@ TEST_F(MetricsManagerUtilTest, TestCombinationMatcherWithStringReplace) {
     matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
     FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
     fvm->set_field(5 /*string_field*/);
-    fvm->mutable_replace_string()->set_regex(R"([\d]+$)");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("#");
 
     matcher = config.add_atom_matcher();
