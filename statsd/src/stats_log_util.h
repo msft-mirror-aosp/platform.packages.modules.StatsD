@@ -76,6 +76,8 @@ int64_t getWallClockSec();
 
 int64_t NanoToMillis(const int64_t nano);
 
+int64_t NanoToSeconds(const int64_t nano);
+
 int64_t MillisToNano(const int64_t millis);
 
 // Helper function to write a stats field to ProtoOutputStream if it's a non-zero value.
