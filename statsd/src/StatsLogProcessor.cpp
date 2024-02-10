@@ -450,7 +450,7 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         informAnomalyAlarmFiredLocked(NanoToMillis(elapsedRealtimeNs));
     }
 
-    const int64_t curTimeSec = getElapsedRealtimeSec();
+    const int64_t curTimeSec = NanoToSeconds(elapsedRealtimeNs);
     if (curTimeSec - mLastPullerCacheClearTimeSec > StatsdStats::kPullerCacheClearIntervalSec) {
         mPullerManager->ClearPullerCacheIfNecessary(curTimeSec * NS_PER_SEC);
         mLastPullerCacheClearTimeSec = curTimeSec;
