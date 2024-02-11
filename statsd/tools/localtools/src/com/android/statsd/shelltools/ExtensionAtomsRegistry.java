@@ -20,6 +20,7 @@ import com.android.internal.os.UidDataProto;
 import com.android.os.ActiveConfigProto;
 import com.android.os.ShellConfig;
 import com.android.os.adservices.AdservicesExtensionAtoms;
+import com.android.os.art.ArtExtensionAtoms;
 import com.android.os.automotive.caruilib.AutomotiveCaruilibAtoms;
 import com.android.os.devicelogs.DeviceLogsAtoms;
 import com.android.os.dnd.DndAtoms;
@@ -134,5 +135,6 @@ public class ExtensionAtomsRegistry {
         MediaCodecExtensionAtoms.registerAllExtensions(extensionRegistry);
         CredentialsExtensionAtoms.registerAllExtensions(extensionRegistry);
         SdksandboxExtensionAtoms.registerAllExtensions(extensionRegistry);
+        ArtExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
