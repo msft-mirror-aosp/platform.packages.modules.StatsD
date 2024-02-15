@@ -22,20 +22,27 @@ namespace android {
 namespace os {
 namespace statsd {
 
+struct MatchLogEventResult {
+    MatchingState matchingState;
+    std::shared_ptr<LogEvent> transformedEvent;
+};
+
 class EventMatcherWizard : public virtual RefBase {
 public:
     EventMatcherWizard(){};  // for testing
     EventMatcherWizard(const std::vector<sp<AtomMatchingTracker>>& eventTrackers)
         : mAllEventMatchers(eventTrackers),
-          mMatcherCache(eventTrackers.size(), MatchingState::kNotComputed){};
+          mMatcherCache(eventTrackers.size(), MatchingState::kNotComputed),
+          mMatcherTransformations(eventTrackers.size(), nullptr){};
 
     virtual ~EventMatcherWizard(){};
 
-    MatchingState matchLogEvent(const LogEvent& event, int matcher_index);
+    MatchLogEventResult matchLogEvent(const LogEvent& event, int matcherIndex);
 
 private:
     std::vector<sp<AtomMatchingTracker>> mAllEventMatchers;
     std::vector<MatchingState> mMatcherCache;
+    std::vector<std::shared_ptr<LogEvent>> mMatcherTransformations;
 };
 
 }  // namespace statsd

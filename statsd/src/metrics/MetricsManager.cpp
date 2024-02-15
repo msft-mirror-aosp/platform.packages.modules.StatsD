@@ -18,7 +18,6 @@
 
 #include "MetricsManager.h"
 
-#include <android-modules-utils/sdk_level.h>
 #include <private/android_filesystem_config.h>
 
 #include "CountMetricProducer.h"
@@ -36,8 +35,6 @@
 #include "statslog_statsd.h"
 #include "utils/DbUtils.h"
 
-using android::modules::sdklevel::IsAtLeastU;
-
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_INT32;
 using android::util::FIELD_TYPE_INT64;
@@ -47,6 +44,7 @@ using android::util::ProtoOutputStream;
 
 using std::set;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace android {
@@ -81,7 +79,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
       mShouldPersistHistory(config.persist_locally()) {
-    if (!IsAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
+    if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return;
@@ -105,6 +103,8 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
     mInstallerInReport = config.installer_in_metric_report();
 
     createAllLogSourcesFromConfig(config);
+    setMaxMetricsBytesFromConfig(config);
+    setTriggerGetDataBytesFromConfig(config);
     mPullerManager->RegisterPullUidProvider(mConfigKey, this);
 
     // Store the sub-configs used.
@@ -130,7 +130,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
                                   const int64_t currentTimeNs,
                                   const sp<AlarmMonitor>& anomalyAlarmMonitor,
                                   const sp<AlarmMonitor>& periodicAlarmMonitor) {
-    if (!IsAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
+    if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return false;
@@ -204,6 +204,8 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mPullAtomUids.clear();
     mPullAtomPackages.clear();
     createAllLogSourcesFromConfig(config);
+    setMaxMetricsBytesFromConfig(config);
+    setTriggerGetDataBytesFromConfig(config);
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
@@ -212,27 +214,20 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 
 void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
     // Init allowed pushed atom uids.
-    if (config.allowed_log_source_size() == 0) {
-        ALOGE("Log source allowlist is empty! This config won't get any data. Suggest adding at "
-              "least AID_SYSTEM and AID_STATSD to the allowed_log_source field.");
-        mInvalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_LOG_SOURCE_ALLOWLIST_EMPTY);
-    } else {
-        for (const auto& source : config.allowed_log_source()) {
-            auto it = UidMap::sAidToUidMapping.find(source);
-            if (it != UidMap::sAidToUidMapping.end()) {
-                mAllowedUid.push_back(it->second);
-            } else {
-                mAllowedPkg.push_back(source);
-            }
-        }
-
-        if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
-            ALOGE("Too many log sources. This is likely to be an error in the config.");
-            mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    for (const auto& source : config.allowed_log_source()) {
+        auto it = UidMap::sAidToUidMapping.find(source);
+        if (it != UidMap::sAidToUidMapping.end()) {
+            mAllowedUid.push_back(it->second);
         } else {
-            initAllowedLogSources();
+            mAllowedPkg.push_back(source);
         }
+    }
+
+    if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
+        ALOGE("Too many log sources. This is likely to be an error in the config.");
+        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+    } else {
+        initAllowedLogSources();
     }
 
     // Init default allowed pull atom uids.
@@ -268,6 +263,36 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
                 InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_SOURCES_IN_PULL_PACKAGES);
     } else {
         initPullAtomSources();
+    }
+}
+
+void MetricsManager::setMaxMetricsBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_max_metrics_memory_kb()) {
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+        return;
+    }
+    if (config.max_metrics_memory_kb() <= 0 ||
+        static_cast<size_t>(config.max_metrics_memory_kb() * 1024) >
+                StatsdStats::kHardMaxMetricsBytesPerConfig) {
+        ALOGW("Memory limit must be between 0KB and 20MB. Setting to default value (2MB).");
+        mMaxMetricsBytes = StatsdStats::kDefaultMaxMetricsBytesPerConfig;
+    } else {
+        mMaxMetricsBytes = config.max_metrics_memory_kb() * 1024;
+    }
+}
+
+void MetricsManager::setTriggerGetDataBytesFromConfig(const StatsdConfig& config) {
+    if (!config.has_soft_metrics_memory_kb()) {
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
+        return;
+    }
+    if (config.soft_metrics_memory_kb() <= 0 ||
+        static_cast<size_t>(config.soft_metrics_memory_kb() * 1024) >
+                StatsdStats::kHardMaxTriggerGetDataBytes) {
+        ALOGW("Memory limit ust be between 0KB and 10MB. Setting to default value (192KB).");
+        mTriggerGetDataBytes = StatsdStats::kDefaultBytesPerConfigTriggerGetData;
+    } else {
+        mTriggerGetDataBytes = config.soft_metrics_memory_kb() * 1024;
     }
 }
 
@@ -340,7 +365,7 @@ bool MetricsManager::isConfigValid() const {
     return !mInvalidConfigReason.has_value();
 }
 
-void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
+void MetricsManager::notifyAppUpgrade(const int64_t eventTimeNs, const string& apk, const int uid,
                                       const int64_t version) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
@@ -361,8 +386,7 @@ void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& 
     }
 }
 
-void MetricsManager::notifyAppRemoved(const int64_t& eventTimeNs, const string& apk,
-                                      const int uid) {
+void MetricsManager::notifyAppRemoved(const int64_t eventTimeNs, const string& apk, const int uid) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
         it->notifyAppRemoved(eventTimeNs);
@@ -382,7 +406,7 @@ void MetricsManager::notifyAppRemoved(const int64_t& eventTimeNs, const string& 
     }
 }
 
-void MetricsManager::onUidMapReceived(const int64_t& eventTimeNs) {
+void MetricsManager::onUidMapReceived(const int64_t eventTimeNs) {
     // Purposefully don't inform metric producers on a new snapshot
     // because we don't need to flush partial buckets.
     // This occurs if a new user is added/removed or statsd crashes.
@@ -394,7 +418,7 @@ void MetricsManager::onUidMapReceived(const int64_t& eventTimeNs) {
     initAllowedLogSources();
 }
 
-void MetricsManager::onStatsdInitCompleted(const int64_t& eventTimeNs) {
+void MetricsManager::onStatsdInitCompleted(const int64_t eventTimeNs) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
         it->onStatsdInitCompleted(eventTimeNs);
@@ -418,15 +442,15 @@ vector<int32_t> MetricsManager::getPullAtomUids(int32_t atomId) {
     return uids;
 }
 
-void MetricsManager::dumpStates(FILE* out, bool verbose) {
-    fprintf(out, "ConfigKey %s, allowed source:", mConfigKey.ToString().c_str());
+void MetricsManager::dumpStates(int out, bool verbose) {
+    dprintf(out, "ConfigKey %s, allowed source:", mConfigKey.ToString().c_str());
     {
         std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
         for (const auto& source : mAllowedLogSources) {
-            fprintf(out, "%d ", source);
+            dprintf(out, "%d ", source);
         }
     }
-    fprintf(out, "\n");
+    dprintf(out, "\n");
     for (const auto& producer : mAllMetricProducers) {
         producer->dumpStates(out, verbose);
     }
@@ -487,6 +511,13 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
     if (mWhitelistedAtomIds.find(event.GetTagId()) != mWhitelistedAtomIds.end()) {
         return true;
     }
+
+    if (event.GetUid() == AID_ROOT ||
+        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL)) {
+        // enable atoms logged from pre-installed Android system services
+        return true;
+    }
+
     std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
     if (mAllowedLogSources.find(event.GetUid()) == mAllowedLogSources.end()) {
         VLOG("log source %d not on the whitelist", event.GetUid());
@@ -524,32 +555,6 @@ bool MetricsManager::eventSanityCheck(const LogEvent& event) {
             return false;
         } else if (appHookState < 0 || appHookState > 3) {
             VLOG("APP_BREADCRUMB_REPORTED does not have valid state %ld", appHookState);
-            return false;
-        }
-    } else if (event.GetTagId() == util::DAVEY_OCCURRED) {
-        // Daveys can be logged from any app since they are logged in libs/hwui/JankTracker.cpp.
-        // Check that the davey duration is reasonable. Max length check is for privacy.
-        status_t err = NO_ERROR;
-
-        // Uid is the first field provided.
-        long jankUid = event.GetLong(1, &err);
-        if (err != NO_ERROR) {
-            VLOG("Davey occurred had error when parsing the uid");
-            return false;
-        }
-        int32_t loggerUid = event.GetUid();
-        if (loggerUid != jankUid && loggerUid != AID_STATSD) {
-            VLOG("DAVEY_OCCURRED has invalid uid: claimed %ld but caller is %d", jankUid,
-                 loggerUid);
-            return false;
-        }
-
-        long duration = event.GetLong(event.size(), &err);
-        if (err != NO_ERROR) {
-            VLOG("Davey occurred had error when parsing the duration");
-            return false;
-        } else if (duration > 100000) {
-            VLOG("Davey duration is unreasonably long: %ld", duration);
             return false;
         }
     }
@@ -611,10 +616,12 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     vector<MatchingState> matcherCache(mAllAtomMatchingTrackers.size(),
                                        MatchingState::kNotComputed);
+    vector<shared_ptr<LogEvent>> matcherTransformations(matcherCache.size(), nullptr);
 
     for (const auto& matcherIndex : matchersIt->second) {
-        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, mAllAtomMatchingTrackers,
-                                                           matcherCache);
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, matcherIndex,
+                                                           mAllAtomMatchingTrackers, matcherCache,
+                                                           matcherTransformations);
     }
 
     // Set of metrics that received an activation cancellation.
@@ -655,13 +662,16 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     mIsActive = isActive;
 
     // A bitmap to see which ConditionTracker needs to be re-evaluated.
-    vector<bool> conditionToBeEvaluated(mAllConditionTrackers.size(), false);
+    vector<uint8_t> conditionToBeEvaluated(mAllConditionTrackers.size(), false);
+    vector<shared_ptr<LogEvent>> conditionToTransformedLogEvents(mAllConditionTrackers.size(),
+                                                                 nullptr);
 
-    for (const auto& pair : mTrackerToConditionMap) {
-        if (matcherCache[pair.first] == MatchingState::kMatched) {
-            const auto& conditionList = pair.second;
+    for (const auto& [matcherIndex, conditionList] : mTrackerToConditionMap) {
+        if (matcherCache[matcherIndex] == MatchingState::kMatched) {
             for (const int conditionIndex : conditionList) {
                 conditionToBeEvaluated[conditionIndex] = true;
+                conditionToTransformedLogEvents[conditionIndex] =
+                        matcherTransformations[matcherIndex];
             }
         }
     }
@@ -669,36 +679,40 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     vector<ConditionState> conditionCache(mAllConditionTrackers.size(),
                                           ConditionState::kNotEvaluated);
     // A bitmap to track if a condition has changed value.
-    vector<bool> changedCache(mAllConditionTrackers.size(), false);
+    vector<uint8_t> changedCache(mAllConditionTrackers.size(), false);
     for (size_t i = 0; i < mAllConditionTrackers.size(); i++) {
-        if (conditionToBeEvaluated[i] == false) {
+        if (!conditionToBeEvaluated[i]) {
             continue;
         }
         sp<ConditionTracker>& condition = mAllConditionTrackers[i];
-        condition->evaluateCondition(event, matcherCache, mAllConditionTrackers, conditionCache,
-                                     changedCache);
+        const LogEvent& conditionEvent = conditionToTransformedLogEvents[i] == nullptr
+                                                 ? event
+                                                 : *conditionToTransformedLogEvents[i];
+        condition->evaluateCondition(conditionEvent, matcherCache, mAllConditionTrackers,
+                                     conditionCache, changedCache);
     }
 
     for (size_t i = 0; i < mAllConditionTrackers.size(); i++) {
-        if (changedCache[i] == false) {
+        if (!changedCache[i]) {
             continue;
         }
-        auto pair = mConditionToMetricMap.find(i);
-        if (pair != mConditionToMetricMap.end()) {
-            auto& metricList = pair->second;
-            for (auto metricIndex : metricList) {
-                // Metric cares about non sliced condition, and it's changed.
-                // Push the new condition to it directly.
-                if (!mAllMetricProducers[metricIndex]->isConditionSliced()) {
-                    mAllMetricProducers[metricIndex]->onConditionChanged(conditionCache[i],
-                                                                         eventTimeNs);
-                    // Metric cares about sliced conditions, and it may have changed. Send
-                    // notification, and the metric can query the sliced conditions that are
-                    // interesting to it.
-                } else {
-                    mAllMetricProducers[metricIndex]->onSlicedConditionMayChange(conditionCache[i],
-                                                                                 eventTimeNs);
-                }
+        auto it = mConditionToMetricMap.find(i);
+        if (it == mConditionToMetricMap.end()) {
+            continue;
+        }
+        auto& metricList = it->second;
+        for (auto metricIndex : metricList) {
+            // Metric cares about non sliced condition, and it's changed.
+            // Push the new condition to it directly.
+            if (!mAllMetricProducers[metricIndex]->isConditionSliced()) {
+                mAllMetricProducers[metricIndex]->onConditionChanged(conditionCache[i],
+                                                                     eventTimeNs);
+                // Metric cares about sliced conditions, and it may have changed. Send
+                // notification, and the metric can query the sliced conditions that are
+                // interesting to it.
+            } else {
+                mAllMetricProducers[metricIndex]->onSlicedConditionMayChange(conditionCache[i],
+                                                                             eventTimeNs);
             }
         }
     }
@@ -707,20 +721,23 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
         if (matcherCache[i] == MatchingState::kMatched) {
             StatsdStats::getInstance().noteMatcherMatched(mConfigKey,
                                                           mAllAtomMatchingTrackers[i]->getId());
-            auto pair = mTrackerToMetricMap.find(i);
-            if (pair != mTrackerToMetricMap.end()) {
-                auto& metricList = pair->second;
-                for (const int metricIndex : metricList) {
-                    // pushed metrics are never scheduled pulls
-                    mAllMetricProducers[metricIndex]->onMatchedLogEvent(i, event);
-                }
+            auto it = mTrackerToMetricMap.find(i);
+            if (it == mTrackerToMetricMap.end()) {
+                continue;
+            }
+            auto& metricList = it->second;
+            const LogEvent& metricEvent =
+                    matcherTransformations[i] == nullptr ? event : *matcherTransformations[i];
+            for (const int metricIndex : metricList) {
+                // pushed metrics are never scheduled pulls
+                mAllMetricProducers[metricIndex]->onMatchedLogEvent(i, metricEvent);
             }
         }
     }
 }
 
 void MetricsManager::onAnomalyAlarmFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mAllAnomalyTrackers) {
         itr->informAlarmsFired(timestampNs, alarmSet);
@@ -728,7 +745,7 @@ void MetricsManager::onAnomalyAlarmFired(
 }
 
 void MetricsManager::onPeriodicAlarmFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mAllPeriodicAlarmTrackers) {
         itr->informAlarmsFired(timestampNs, alarmSet);

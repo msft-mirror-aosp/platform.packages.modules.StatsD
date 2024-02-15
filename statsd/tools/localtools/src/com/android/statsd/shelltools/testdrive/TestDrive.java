@@ -98,6 +98,7 @@ public class TestDrive {
             "com.google.android.wearable.media.routing",
             "com.google.android.healthconnect.controller",
             "com.android.telephony.qns",
+            "com.android.car",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",
@@ -666,7 +667,8 @@ public class TestDrive {
 
     private static String dumpAtom(AtomsProto.Atom atom,
             Descriptors.Descriptor externalDescriptor) {
-        if (atom.getPushedCase().getNumber() != 0 || atom.getPulledCase().getNumber() != 0) {
+        if (atom.getPushedCase().getNumber() != 0 || atom.getPulledCase().getNumber() != 0 ||
+                externalDescriptor == null) {
             return atom.toString();
         } else {
             try {

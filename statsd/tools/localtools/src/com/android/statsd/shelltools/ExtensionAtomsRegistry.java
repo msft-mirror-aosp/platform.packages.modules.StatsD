@@ -20,6 +20,7 @@ import com.android.internal.os.UidDataProto;
 import com.android.os.ActiveConfigProto;
 import com.android.os.ShellConfig;
 import com.android.os.adservices.AdservicesExtensionAtoms;
+import com.android.os.art.ArtExtensionAtoms;
 import com.android.os.automotive.caruilib.AutomotiveCaruilibAtoms;
 import com.android.os.devicelogs.DeviceLogsAtoms;
 import com.android.os.dnd.DndAtoms;
@@ -59,13 +60,14 @@ import com.android.os.wearsysui.WearsysuiAtoms;
 import com.android.os.wifi.WifiExtensionAtoms;
 import android.os.statsd.media.MediaCodecExtensionAtoms;
 import com.android.os.credentials.CredentialsExtensionAtoms;
+import com.android.os.sdksandbox.SdksandboxExtensionAtoms;
 
 import com.google.protobuf.ExtensionRegistry;
 
 /**
  * CustomExtensionRegistry for local use of statsd.
  */
-public class CustomExtensionRegistry {
+public class ExtensionAtomsRegistry {
 
     public static ExtensionRegistry REGISTRY;
 
@@ -132,5 +134,7 @@ public class CustomExtensionRegistry {
         WifiExtensionAtoms.registerAllExtensions(extensionRegistry);
         MediaCodecExtensionAtoms.registerAllExtensions(extensionRegistry);
         CredentialsExtensionAtoms.registerAllExtensions(extensionRegistry);
+        SdksandboxExtensionAtoms.registerAllExtensions(extensionRegistry);
+        ArtExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }

@@ -15,7 +15,6 @@
 #include "StatsLogProcessor.h"
 
 #include <android-base/stringprintf.h>
-#include <android-modules-utils/sdk_level.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <stdio.h>
@@ -43,7 +42,6 @@ namespace os {
 namespace statsd {
 
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::ProtoOutputStream;
 
 using ::testing::Expectation;
@@ -91,7 +89,8 @@ TEST(StatsLogProcessorTest, TestRateLimitByteSize) {
             m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
             [](const ConfigKey& key) { return true; },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
@@ -117,15 +116,16 @@ TEST(StatsLogProcessorTest, TestRateLimitBroadcast) {
                 return true;
             },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
     ConfigKey key(100, 12345);
     EXPECT_CALL(mockMetricsManager, byteSize())
             .Times(1)
-            .WillRepeatedly(::testing::Return(int(
-                    StatsdStats::kMaxMetricsBytesPerConfig * .95)));
+            .WillRepeatedly(
+                    ::testing::Return(int(StatsdStats::kDefaultMaxMetricsBytesPerConfig * .95)));
 
     // Expect only one broadcast despite always returning a size that should trigger broadcast.
     p.flushIfNecessaryLocked(key, mockMetricsManager);
@@ -151,14 +151,16 @@ TEST(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
                 return true;
             },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, nullptr);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
 
     MockMetricsManager mockMetricsManager;
 
     ConfigKey key(100, 12345);
     EXPECT_CALL(mockMetricsManager, byteSize())
             .Times(1)
-            .WillRepeatedly(::testing::Return(int(StatsdStats::kMaxMetricsBytesPerConfig * 1.2)));
+            .WillRepeatedly(
+                    ::testing::Return(int(StatsdStats::kDefaultMaxMetricsBytesPerConfig * 1.2)));
 
     EXPECT_CALL(mockMetricsManager, dropData(_)).Times(1);
 
@@ -169,7 +171,6 @@ TEST(StatsLogProcessorTest, TestDropWhenByteSizeTooLarge) {
 
 StatsdConfig MakeConfig(bool includeMetric) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     if (includeMetric) {
         auto appCrashMatcher = CreateProcessCrashAtomMatcher();
@@ -184,7 +185,6 @@ StatsdConfig MakeConfig(bool includeMetric) {
 
 StatsdConfig makeRestrictedConfig(bool includeMetric = false) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     config.set_restricted_metrics_delegate_package_name("delegate");
 
     if (includeMetric) {
@@ -227,9 +227,10 @@ TEST(StatsLogProcessorTest, TestUidMapHasSnapshot) {
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -269,9 +270,10 @@ TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap) {
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     int broadcastCount = 0;
@@ -309,7 +311,6 @@ TEST(StatsLogProcessorTest, TestReportIncludesSubConfig) {
     auto annotation = config.add_annotation();
     annotation->set_field_int64(1);
     annotation->set_field_int32(2);
-    config.add_allowed_log_source("AID_ROOT");
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
@@ -349,7 +350,6 @@ TEST(StatsLogProcessorTest, TestReportIncludesSubConfig) {
 TEST(StatsLogProcessorTest, TestOnDumpReportEraseData) {
     // Setup a simple config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = wakelockAcquireMatcher;
 
@@ -432,9 +432,10 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
@@ -465,7 +466,8 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
     EXPECT_EQ(0, StatsdStats::getInstance().mIceBox.size());
 
     StatsdConfig invalidConfig = MakeConfig(true);
-    invalidConfig.clear_allowed_log_source();
+    auto invalidCountMetric = invalidConfig.add_count_metric();
+    invalidCountMetric->set_what(0);
     p.OnConfigUpdated(0, key, invalidConfig);
     EXPECT_EQ(0, p.mMetricsManagers.size());
     // The current configs should not contain the invalid config.
@@ -484,7 +486,6 @@ TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
     StatsdConfig config1;
     int64_t cfgId1 = 12341;
     config1.set_id(cfgId1);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config1.add_atom_matcher() = wakelockAcquireMatcher;
 
@@ -506,7 +507,6 @@ TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
     StatsdConfig config2;
     int64_t cfgId2 = 12342;
     config2.set_id(cfgId2);
-    config2.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     *config2.add_atom_matcher() = wakelockAcquireMatcher;
 
     long metricId3 = 1234561;
@@ -535,7 +535,6 @@ TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead) {
     StatsdConfig config3;
     int64_t cfgId3 = 12343;
     config3.set_id(cfgId3);
-    config3.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     *config3.add_atom_matcher() = wakelockAcquireMatcher;
 
     long metricId5 = 1234565;
@@ -835,7 +834,6 @@ TEST(StatsLogProcessorTest, TestActivationOnBoot) {
 
     StatsdConfig config1;
     config1.set_id(12341);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     *config1.add_atom_matcher() = wakelockAcquireMatcher;
 
@@ -959,7 +957,6 @@ TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivations) {
     // Metric 2: Always active
     StatsdConfig config1;
     config1.set_id(12341);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     *config1.add_atom_matcher() = wakelockAcquireMatcher;
@@ -1360,7 +1357,6 @@ TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivationsDifferentActi
     // Metric 2: Always active
     StatsdConfig config1;
     config1.set_id(12341);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     *config1.add_atom_matcher() = wakelockAcquireMatcher;
@@ -1624,7 +1620,6 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
     // Metric 3: Always active
     StatsdConfig config1;
     config1.set_id(configId);
-    config1.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     auto wakelockAcquireMatcher = CreateAcquireWakelockAtomMatcher();
     auto screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
     auto jobStartMatcher = CreateStartScheduledJobAtomMatcher();
@@ -1679,8 +1674,8 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
 
     // Send the config.
     const sp<UidMap> uidMap = new UidMap();
-    const shared_ptr<StatsService> service =
-            SharedRefBase::make<StatsService>(uidMap, /* queue */ nullptr, nullptr);
+    const shared_ptr<StatsService> service = SharedRefBase::make<StatsService>(
+            uidMap, /* queue */ nullptr, std::make_shared<LogEventFilter>());
     string serialized = config1.SerializeAsString();
     service->addConfigurationChecked(uid, configId, {serialized.begin(), serialized.end()});
 
@@ -2148,16 +2143,36 @@ TEST(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimesta
     EXPECT_EQ(output.reports(0).last_report_elapsed_nanos(), dumpTime1Ns);
 }
 
+TEST(StatsLogProcessorTest, TestDataCorruptedEnum) {
+    ConfigKey cfgKey;
+    StatsdConfig config = MakeConfig(true);
+    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(1, 1, config, cfgKey);
+
+    StatsdStats::getInstance().noteEventQueueOverflow(/*oldestEventTimestampNs=*/0, /*atomId=*/100,
+                                                      /*isSkipped=*/false);
+    StatsdStats::getInstance().noteLogLost(/*wallClockTimeSec=*/0, /*count=*/1, /*lastError=*/0,
+                                           /*lastTag=*/0, /*uid=*/0, /*pid=*/0);
+    vector<uint8_t> bytes;
+    ConfigMetricsReportList output;
+    processor->onDumpReport(cfgKey, 3, true, true, ADB_DUMP, FAST, &bytes);
+
+    output.ParseFromArray(bytes.data(), bytes.size());
+    ASSERT_EQ(output.reports_size(), 1);
+    ASSERT_EQ(output.reports(0).data_corrupted_reason().size(), 2);
+    EXPECT_EQ(output.reports(0).data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    EXPECT_EQ(output.reports(0).data_corrupted_reason(1), DATA_CORRUPTED_SOCKET_LOSS);
+}
+
 class StatsLogProcessorTestRestricted : public Test {
 protected:
     const ConfigKey mConfigKey = ConfigKey(1, 12345);
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
     }
     void TearDown() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         FlagProvider::getInstance().resetOverrides();
@@ -2173,9 +2188,10 @@ TEST_F(StatsLogProcessorTestRestricted, TestInconsistentRestrictedMetricsConfigU
 
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    m->updateMap(1, {1, 2}, {1, 2}, {String16("v1"), String16("v2")},
-                 {String16("p1"), String16("p2")}, {String16(""), String16("")},
-                 /* certificateHash */ {{}, {}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "p1");
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 2, /*version*/ 2, "v2", "p2");
+    m->updateMap(1, uidData);
     sp<AlarmMonitor> anomalyAlarmMonitor;
     sp<AlarmMonitor> subscriberAlarmMonitor;
     std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();

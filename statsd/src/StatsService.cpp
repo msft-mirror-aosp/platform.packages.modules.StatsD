@@ -21,7 +21,6 @@
 
 #include <android-base/file.h>
 #include <android-base/strings.h>
-#include <android-modules-utils/sdk_level.h>
 #include <android/binder_ibinder_platform.h>
 #include <cutils/multiuser.h>
 #include <private/android_filesystem_config.h>
@@ -30,6 +29,7 @@
 #include <statslog_statsd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/random.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <utils/String16.h>
@@ -47,7 +47,6 @@
 using namespace android;
 
 using android::base::StringPrintf;
-using android::modules::sdklevel::IsAtLeastU;
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_MESSAGE;
 
@@ -230,12 +229,15 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
     init_system_properties();
 
     if (mEventQueue != nullptr) {
-        std::thread pushedEventThread([this] { readLogs(); });
-        pushedEventThread.detach();
+        mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
     }
 }
 
 StatsService::~StatsService() {
+    if (mEventQueue != nullptr) {
+        stopReadingLogs();
+        mLogsReaderThread->join();
+    }
 }
 
 /* Runs on a dedicated thread to process pushed events. */
@@ -244,6 +246,13 @@ void StatsService::readLogs() {
     while (1) {
         // Block until an event is available.
         auto event = mEventQueue->waitPop();
+
+        // Below flag will be set when statsd is exiting and log event will be pushed to break
+        // out of waitPop.
+        if (mIsStopRequested) {
+            break;
+        }
+
         // Pass it to StatsLogProcess to all configs/metrics
         // At this point, the LogEventQueue is not blocked, so that the socketListener
         // can read events from the socket and write to buffer to avoid data drop.
@@ -867,8 +876,8 @@ status_t StatsService::cmd_log_binary_push(int out, const Vector<String8>& args)
     int32_t state = atoi(args[6].c_str());
     vector<int64_t> experimentIds;
     if (argCount == 8) {
-        vector<string> experimentIdsString = android::base::Split(string(args[7].c_str()), ",");
-        for (string experimentIdString : experimentIdsString) {
+        vector<string> experimentIdsStrings = android::base::Split(string(args[7].c_str()), ",");
+        for (const string& experimentIdString : experimentIdsStrings) {
             int64_t experimentId = strtoll(experimentIdString.c_str(), nullptr, 10);
             experimentIds.push_back(experimentId);
         }
@@ -876,7 +885,8 @@ status_t StatsService::cmd_log_binary_push(int out, const Vector<String8>& args)
     dprintf(out, "Logging BinaryPushStateChanged\n");
     vector<uint8_t> experimentIdBytes;
     writeExperimentIdsToProto(experimentIds, &experimentIdBytes);
-    LogEvent event(trainName, trainVersion, args[3], args[4], args[5], state, experimentIdBytes, 0);
+    LogEvent event(trainName, trainVersion, args[3].c_str(), args[4].c_str(), args[5].c_str(),
+                   state, experimentIdBytes, 0);
     mProcessor->OnLogEvent(&event);
     return NO_ERROR;
 }
@@ -975,47 +985,14 @@ bool StatsService::getUidFromString(const char* s, int32_t& uid) {
 
 Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
     ENFORCE_UID(AID_SYSTEM);
-    // Read stream into buffer.
-    string buffer;
-    if (!android::base::ReadFdToString(fd.get(), &buffer)) {
-        return exception(EX_ILLEGAL_ARGUMENT, "Failed to read all data from the pipe.");
-    }
 
-    // Parse buffer.
+    // Parse fd into proto.
     UidData uidData;
-    if (!uidData.ParseFromString(buffer)) {
+    if (!uidData.ParseFromFileDescriptor(fd.get())) {
         return exception(EX_ILLEGAL_ARGUMENT, "Error parsing proto stream for UidData.");
     }
 
-    vector<String16> versionStrings;
-    vector<String16> installers;
-    vector<String16> packageNames;
-    vector<int32_t> uids;
-    vector<int64_t> versions;
-    vector<vector<uint8_t>> certificateHashes;
-
-    const auto numEntries = uidData.app_info_size();
-    versionStrings.reserve(numEntries);
-    installers.reserve(numEntries);
-    packageNames.reserve(numEntries);
-    uids.reserve(numEntries);
-    versions.reserve(numEntries);
-    certificateHashes.reserve(numEntries);
-
-    for (const auto& appInfo: uidData.app_info()) {
-        packageNames.emplace_back(String16(appInfo.package_name().c_str()));
-        uids.push_back(appInfo.uid());
-        versions.push_back(appInfo.version());
-        versionStrings.emplace_back(String16(appInfo.version_string().c_str()));
-        installers.emplace_back(String16(appInfo.installer().c_str()));
-
-        const string& certHash = appInfo.certificate_hash();
-        certificateHashes.emplace_back(certHash.begin(), certHash.end());
-    }
-
-    mUidMap->updateMap(getElapsedRealtimeNs(), uids, versions, versionStrings, packageNames,
-                       installers, certificateHashes);
-
+    mUidMap->updateMap(getElapsedRealtimeNs(), uidData);
     mBootCompleteTrigger.markComplete(kUidMapReceivedTag);
     VLOG("StatsService::informAllUidData UidData proto parsed successfully.");
     return Status::ok();
@@ -1027,12 +1004,9 @@ Status StatsService::informOnePackage(const string& app, int32_t uid, int64_t ve
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackage was called");
-    String16 utf16App = String16(app.c_str());
-    String16 utf16VersionString = String16(versionString.c_str());
-    String16 utf16Installer = String16(installer.c_str());
 
-    mUidMap->updateApp(getElapsedRealtimeNs(), utf16App, uid, version, utf16VersionString,
-                       utf16Installer, certificateHash);
+    mUidMap->updateApp(getElapsedRealtimeNs(), app, uid, version, versionString, installer,
+                       certificateHash);
     return Status::ok();
 }
 
@@ -1040,8 +1014,7 @@ Status StatsService::informOnePackageRemoved(const string& app, int32_t uid) {
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackageRemoved was called");
-    String16 utf16App = String16(app.c_str());
-    mUidMap->removeApp(getElapsedRealtimeNs(), utf16App, uid);
+    mUidMap->removeApp(getElapsedRealtimeNs(), app, uid);
     mConfigManager->RemoveConfigs(uid);
     return Status::ok();
 }
@@ -1179,7 +1152,38 @@ void StatsService::OnLogEvent(LogEvent* event) {
 
 Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
+    getDataChecked(key, callingUid, output);
+    return Status::ok();
+}
 
+Status StatsService::getDataFd(int64_t key, const int32_t callingUid,
+                               const ScopedFileDescriptor& fd) {
+    ENFORCE_UID(AID_SYSTEM);
+    vector<uint8_t> reportData;
+    getDataChecked(key, callingUid, &reportData);
+
+    if (reportData.size() >= std::numeric_limits<int32_t>::max()) {
+        ALOGE("Report size is infeasible big and can not be returned");
+        return exception(EX_ILLEGAL_STATE, "Report size is infeasible big.");
+    }
+
+    const uint32_t bytesToWrite = static_cast<uint32_t>(reportData.size());
+    VLOG("StatsService::getDataFd report size %d", bytesToWrite);
+
+    // write 4 bytes of report size for correct buffer allocation
+    const uint32_t bytesToWriteBE = htonl(bytesToWrite);
+    if (!android::base::WriteFully(fd.get(), &bytesToWriteBE, sizeof(uint32_t))) {
+        return exception(EX_ILLEGAL_STATE, "Failed to write report data size to file descriptor");
+    }
+    if (!android::base::WriteFully(fd.get(), reportData.data(), reportData.size())) {
+        return exception(EX_ILLEGAL_STATE, "Failed to write report data to file descriptor");
+    }
+
+    VLOG("StatsService::getDataFd written");
+    return Status::ok();
+}
+
+void StatsService::getDataChecked(int64_t key, const int32_t callingUid, vector<uint8_t>* output) {
     VLOG("StatsService::getData with Uid %i", callingUid);
     ConfigKey configKey(callingUid, key);
     // The dump latency does not matter here since we do not include the current bucket, we do not
@@ -1187,7 +1191,6 @@ Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8
     mProcessor->onDumpReport(configKey, getElapsedRealtimeNs(), getWallClockNs(),
                              false /* include_current_bucket*/, true /* erase_data */,
                              GET_DATA_CALLED, FAST, output);
-    return Status::ok();
 }
 
 Status StatsService::getMetadata(vector<uint8_t>* output) {
@@ -1276,9 +1279,14 @@ Status StatsService::setBroadcastSubscriber(int64_t configId,
                                             int64_t subscriberId,
                                             const shared_ptr<IPendingIntentRef>& pir,
                                             const int32_t callingUid) {
+    VLOG("StatsService::setBroadcastSubscriber called.");
     ENFORCE_UID(AID_SYSTEM);
 
-    VLOG("StatsService::setBroadcastSubscriber called.");
+    if (pir == nullptr) {
+        return exception(EX_NULL_POINTER,
+                         "setBroadcastSubscriber provided with null PendingIntentRef");
+    }
+
     ConfigKey configKey(callingUid, configId);
     SubscriberReporter::getInstance()
             .setBroadcastSubscriber(configKey, subscriberId, pir);
@@ -1424,7 +1432,7 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId
                                                           const int32_t callingUid,
                                                           vector<int64_t>* output) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("setRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
@@ -1441,7 +1449,7 @@ Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t confi
                                                              const string& configPackage,
                                                              const int32_t callingUid) {
     ENFORCE_UID(AID_SYSTEM);
-    if (!IsAtLeastU()) {
+    if (!isAtLeastU()) {
         ALOGW("removeRestrictedMetricsChangedOperation invoked on U- device");
         return Status::ok();
     }
@@ -1500,6 +1508,14 @@ void StatsService::initShellSubscriber() {
     if (mShellSubscriber == nullptr) {
         mShellSubscriber = new ShellSubscriber(mUidMap, mPullerManager, mLogEventFilter);
     }
+}
+
+void StatsService::stopReadingLogs() {
+    mIsStopRequested = true;
+    // Push this event so that readLogs will process and break out of the loop
+    // after the stop is requested.
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
+    mEventQueue->push(std::move(logEvent));
 }
 
 }  // namespace statsd

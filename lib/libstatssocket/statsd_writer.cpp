@@ -15,6 +15,7 @@
  */
 #include "statsd_writer.h"
 
+#include <android-base/threads.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -32,12 +33,11 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "stats_socket_loss_reporter.h"
+#include "utils.h"
 
 // Compatibility shims for glibc-2.17 in the Android tree.
 #ifndef __BIONIC__
-
-// gettid() is not present in unistd.h for glibc-2.17.
-extern pid_t gettid();
 
 // TEMP_FAILURE_RETRY is not present in unistd.h for glibc-2.17.
 #ifndef TEMP_FAILURE_RETRY
@@ -125,7 +125,7 @@ static int statsdOpen() {
                     case -ECONNREFUSED:
                     case -ENOENT:
                         i = atomic_exchange(&statsdLoggerWrite.sock, ret);
-                    /* FALLTHRU */
+                        break;
                     default:
                         break;
                 }
@@ -168,6 +168,8 @@ static void statsdNoteDrop(int error, int tag) {
     atomic_fetch_add_explicit(&dropped, 1, memory_order_relaxed);
     atomic_exchange_explicit(&log_error, error, memory_order_relaxed);
     atomic_exchange_explicit(&atom_tag, tag, memory_order_relaxed);
+
+    StatsSocketLossReporter::getInstance().noteDrop(error, tag);
 }
 
 static int statsdIsClosed() {
@@ -212,7 +214,7 @@ static int statsdWrite(struct timespec* ts, struct iovec* vec, size_t nr) {
      *  };
      */
 
-    header.tid = gettid();
+    header.tid = android::base::GetThreadId();
     header.realtime.tv_sec = ts->tv_sec;
     header.realtime.tv_nsec = ts->tv_nsec;
 
@@ -241,6 +243,10 @@ static int statsdWrite(struct timespec* ts, struct iovec* vec, size_t nr) {
             ret = TEMP_FAILURE_RETRY(writev(sock, newVec, 2));
             if (ret != (ssize_t)(sizeof(header) + sizeof(buffer))) {
                 atomic_fetch_add_explicit(&dropped, snapshot, memory_order_relaxed);
+            } else {
+                // try to send socket loss info only when socket connection established
+                // and it is proved by previous write that socket is available
+                StatsSocketLossReporter::getInstance().dumpAtomsLossStats();
             }
         }
     }
@@ -296,7 +302,7 @@ static int statsdWrite(struct timespec* ts, struct iovec* vec, size_t nr) {
             if (ret < 0) {
                 ret = -errno;
             }
-        /* FALLTHRU */
+            break;
         default:
             break;
     }

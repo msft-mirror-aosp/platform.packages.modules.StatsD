@@ -19,11 +19,11 @@ package {
 android_test {
     name: "FrameworkStatsdTest",
     sdk_version: "module_current",
-    srcs: [ "**/*.java" ],
+    srcs: ["**/*.java"],
     manifest: "AndroidManifest.xml",
     static_libs: [
         "androidx.test.rules",
-        "truth-prebuilt",
+        "truth",
         "modules-utils-build",
     ],
     libs: [

@@ -59,7 +59,7 @@ MATCHER_P2(ConfigKeyEq, uid, id, "") {
 /**
  * Validate that the StatsdConfig is the one we wanted.
  */
-MATCHER_P(StatsdConfigEq, id, 0) {
+MATCHER_P(StatsdConfigEq, id, "") {
     return (long long)arg.id() == (long long)id;
 }
 

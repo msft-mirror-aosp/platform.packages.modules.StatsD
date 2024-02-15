@@ -107,6 +107,7 @@ interface IStatsManagerService {
      * wire-encoded of ConfigMetricsReportList.
      *
      * Requires Manifest.permission.DUMP and Manifest.permission.PACKAGE_USAGE_STATS.
+     * @deprecated use #getDataFd() instead
      */
     byte[] getData(in long key, in String packageName);
 
@@ -159,4 +160,12 @@ interface IStatsManagerService {
      * Requires Manifest.permission.READ_RESTRICTED_STATS.
      */
     void removeRestrictedMetricsChangedOperation(in long configKey, in String configPackage);
+
+    /**
+     * Same as #getData(in long key, in String packageName), but the data is stored in a file
+     * descriptor.
+     *
+     * Requires Manifest.permission.DUMP and Manifest.permission.PACKAGE_USAGE_STATS.
+     */
+    oneway void getDataFd(long key, in String packageName, in ParcelFileDescriptor fd);
 }

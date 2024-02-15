@@ -59,14 +59,11 @@ INSTANTIATE_TEST_SUITE_P(ConfigUpdateE2eAbTest, ConfigUpdateE2eAbTest, testing::
 
 TEST_P(ConfigUpdateE2eAbTest, TestUidMapVersionStringInstaller) {
     sp<UidMap> uidMap = new UidMap();
-    const vector<int32_t> uids{1000};
-    const vector<int64_t> versions{1};
-    const vector<String16> apps{String16("app1")};
-    const vector<String16> versionStrings{String16("v1")};
-    const vector<String16> installers{String16("installer1")};
-    const vector<vector<uint8_t>> certificateHashes{{}};
-    uidMap->updateMap(1 /* timestamp */, uids, versions, versionStrings, apps, installers,
-                      certificateHashes);
+    UidData uidData;
+    ApplicationInfo appInfo = createApplicationInfo(/*uid*/ 1000, /*version*/ 1, "v1", "app1");
+    appInfo.set_installer("installer1");
+    *uidData.add_app_info() = appInfo;
+    uidMap->updateMap(1 /* timestamp */, uidData);
 
     StatsdConfig config = CreateSimpleConfig();
     config.set_version_strings_in_metric_report(true);
@@ -104,14 +101,11 @@ TEST_P(ConfigUpdateE2eAbTest, TestUidMapVersionStringInstaller) {
 
 TEST_P(ConfigUpdateE2eAbTest, TestHashStrings) {
     sp<UidMap> uidMap = new UidMap();
-    const vector<int32_t> uids{1000};
-    const vector<int64_t> versions{1};
-    const vector<String16> apps{String16("app1")};
-    const vector<String16> versionStrings{String16("v1")};
-    const vector<String16> installers{String16("installer1")};
-    const vector<vector<uint8_t>> certificateHashes{{}};
-    uidMap->updateMap(1 /* timestamp */, uids, versions, versionStrings, apps, installers,
-                      certificateHashes);
+    UidData uidData;
+    ApplicationInfo appInfo = createApplicationInfo(/*uid*/ 1000, /*version*/ 1, "v1", "app1");
+    appInfo.set_installer("installer1");
+    *uidData.add_app_info() = appInfo;
+    uidMap->updateMap(1 /* timestamp */, uidData);
 
     StatsdConfig config = CreateSimpleConfig();
     config.set_version_strings_in_metric_report(true);
@@ -254,9 +248,10 @@ TEST_P(ConfigUpdateE2eAbTest, TestAtomsAllowedFromAnyUid) {
     ConfigKey cfgKey(0, 12345);
     sp<StatsLogProcessor> processor =
             CreateStatsLogProcessor(baseTimeNs, baseTimeNs, config, cfgKey);
-    // Uses AID_ROOT, which isn't in allowed log sources.
+    const int32_t customAppUid = AID_APP_START + 1;
+    // override default uid (which is user running the test)
     unique_ptr<LogEvent> event = CreateBatteryStateChangedEvent(
-            baseTimeNs + 2, BatteryPluggedStateEnum::BATTERY_PLUGGED_USB);
+            baseTimeNs + 2, BatteryPluggedStateEnum::BATTERY_PLUGGED_USB, customAppUid);
     processor->OnLogEvent(event.get());
     ConfigMetricsReportList reports;
     vector<uint8_t> buffer;
@@ -310,7 +305,6 @@ TEST_P(ConfigUpdateE2eAbTest, TestConfigTtl) {
 
 TEST_P(ConfigUpdateE2eAbTest, TestExistingGaugePullRandomOneSample) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     AtomMatcher subsystemSleepMatcher =

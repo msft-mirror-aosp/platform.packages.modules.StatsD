@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest.h>
 
 #include "flags/FlagProvider.h"
@@ -22,8 +21,6 @@
 namespace android {
 namespace os {
 namespace statsd {
-
-using android::modules::sdklevel::IsAtLeastU;
 
 #ifdef __ANDROID__
 
@@ -37,7 +34,6 @@ int64_t anotherMetricId;
 
 StatsdConfig CreateConfigWithOneMetric() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     AtomMatcher atomMatcher = CreateSimpleAtomMatcher("testmatcher", atomTag);
     *config.add_atom_matcher() = atomMatcher;
 
@@ -48,7 +44,6 @@ StatsdConfig CreateConfigWithOneMetric() {
 }
 StatsdConfig CreateConfigWithTwoMetrics() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     AtomMatcher atomMatcher = CreateSimpleAtomMatcher("testmatcher", atomTag);
     *config.add_atom_matcher() = atomMatcher;
 
@@ -83,7 +78,7 @@ protected:
     string error;
 
     void SetUp() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         StatsServiceConfigTest::SetUp();
@@ -113,14 +108,13 @@ protected:
                 }));
 
         int64_t startTimeNs = getElapsedRealtimeNs();
-        service->mUidMap->updateMap(
-                startTimeNs, {delegateUid, kCallingUid},
-                /*versionCode=*/{1, 1}, /*versionString=*/{String16("v2"), String16("v2")},
-                {String16(delegatePackageName.c_str()), String16(configPackageName.c_str())},
-                /*installer=*/{String16(), String16()}, /*certificateHash=*/{{}, {}});
+        UidData uidData;
+        *uidData.add_app_info() = createApplicationInfo(delegateUid, 1, "v2", delegatePackageName);
+        *uidData.add_app_info() = createApplicationInfo(kCallingUid, 1, "v2", configPackageName);
+        service->mUidMap->updateMap(startTimeNs, uidData);
     }
     void TearDown() override {
-        if (!IsAtLeastU()) {
+        if (!isAtLeastU()) {
             GTEST_SKIP();
         }
         Mock::VerifyAndClear(mockStatsQueryCallback.get());
@@ -324,7 +318,8 @@ TEST_F(RestrictedConfigE2ETest, TestSendRestrictedMetricsChangedBroadcast) {
     EXPECT_THAT(receivedMetricIds, UnorderedElementsAre(metricId));
 
     // Send an invalid config. Should receive empty list.
-    config.clear_allowed_log_source();
+    auto invalidCountMetric = config.add_count_metric();
+    invalidCountMetric->set_what(0);
     sendConfig(config);
     EXPECT_EQ(receiveCount, 5);
     EXPECT_THAT(receivedMetricIds, IsEmpty());

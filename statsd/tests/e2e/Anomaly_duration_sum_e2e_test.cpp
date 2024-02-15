@@ -40,7 +40,6 @@ StatsdConfig CreateStatsdConfig(int num_buckets,
                                 DurationMetric::AggregationType aggregationType,
                                 bool nesting) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
     *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
@@ -422,9 +421,9 @@ TEST_F(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
     int64_t roundedBucketStartTimeNs = bucketStartTimeNs / NS_PER_SEC * NS_PER_SEC;
     int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.duration_metric(0).bucket()) * 1e6;
 
-    service->mUidMap->updateMap(bucketStartTimeNs, {1}, {1}, {String16("v1")},
-                                {String16("randomApp")}, {String16("")},
-                                /* certificateHash */ {{}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", "randomApp");
+    processor->getUidMap()->updateMap(bucketStartTimeNs, uidData);
 
     sp<AnomalyTracker> anomalyTracker =
             processor->mMetricsManagers.begin()->second->mAllAnomalyTrackers[0];
@@ -459,8 +458,8 @@ TEST_F(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_partial_bucket) {
 
     // Partial bucket split.
     int64_t appUpgradeTimeNs = bucketStartTimeNs + 500;
-    service->mUidMap->updateApp(appUpgradeTimeNs, String16("randomApp"), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(appUpgradeTimeNs, "randomApp", 1, 2, "v2", "",
+                                /* certificateHash */ {});
     EXPECT_EQ(0u, anomalyTracker->getAlarmTimestampSec(dimensionKey1));
     EXPECT_EQ(0u, anomalyTracker->getRefractoryPeriodEndsSec(dimensionKey1));
     EXPECT_EQ((bucketStartTimeNs + 110 + threshold_ns) / NS_PER_SEC + 1,

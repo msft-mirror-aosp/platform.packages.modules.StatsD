@@ -37,7 +37,6 @@ const string kApp1 = "app1.sharing.1";
 
 StatsdConfig MakeCountMetricConfig(const std::optional<bool> splitBucket) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto appCrashMatcher = CreateProcessCrashAtomMatcher();
     *config.add_atom_matcher() = appCrashMatcher;
@@ -53,7 +52,6 @@ StatsdConfig MakeCountMetricConfig(const std::optional<bool> splitBucket) {
 
 StatsdConfig MakeValueMetricConfig(int64_t minTime) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     auto pulledAtomMatcher =
@@ -79,7 +77,6 @@ StatsdConfig MakeValueMetricConfig(int64_t minTime) {
 
 StatsdConfig MakeGaugeMetricConfig(int64_t minTime) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     auto pulledAtomMatcher =
@@ -127,8 +124,7 @@ TEST_F(PartialBucketE2eTest, TestCountMetricNoSplitOnNewApp) {
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 1, 100).get());
     // This is a new installation, so there shouldn't be a split (should be same as the without
     // split case).
-    service->mUidMap->updateApp(start + 2, String16(kApp1.c_str()), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(start + 2, kApp1, 1, 2, "v2", "", /* certificateHash */ {});
     // Goes into the second bucket.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 3, 100).get());
 
@@ -141,13 +137,13 @@ TEST_F(PartialBucketE2eTest, TestCountMetricSplitOnUpgrade) {
     sendConfig(MakeCountMetricConfig({true}));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
-    service->mUidMap->updateMap(start, {1}, {1}, {String16("v1")}, {String16(kApp1.c_str())},
-                                {String16("")}, /* certificateHash */ {{}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", kApp1);
+    service->mUidMap->updateMap(start, uidData);
 
     // Force the uidmap to update at timestamp 2.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 1, 100).get());
-    service->mUidMap->updateApp(start + 2, String16(kApp1.c_str()), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(start + 2, kApp1, 1, 2, "v2", "", /* certificateHash */ {});
     // Goes into the second bucket.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 3, 100).get());
 
@@ -174,12 +170,13 @@ TEST_F(PartialBucketE2eTest, TestCountMetricSplitOnRemoval) {
     sendConfig(MakeCountMetricConfig({true}));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
-    service->mUidMap->updateMap(start, {1}, {1}, {String16("v1")}, {String16(kApp1.c_str())},
-                                {String16("")}, /* certificateHash */ {{}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", kApp1);
+    service->mUidMap->updateMap(start, uidData);
 
     // Force the uidmap to update at timestamp 2.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 1, 100).get());
-    service->mUidMap->removeApp(start + 2, String16(kApp1.c_str()), 1);
+    service->mUidMap->removeApp(start + 2, kApp1, 1);
     // Goes into the second bucket.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 3, 100).get());
 
@@ -235,13 +232,13 @@ TEST_F(PartialBucketE2eTest, TestCountMetricNoSplitOnUpgradeWhenDisabled) {
     sendConfig(config);
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
-    service->mUidMap->updateMap(start, {1}, {1}, {String16("v1")}, {String16(kApp1.c_str())},
-                                {String16("")}, /* certificateHash */ {{}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", kApp1);
+    service->mUidMap->updateMap(start, uidData);
 
     // Force the uidmap to update at timestamp 2.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 1, 100).get());
-    service->mUidMap->updateApp(start + 2, String16(kApp1.c_str()), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(start + 2, kApp1, 1, 2, "v2", "", /* certificateHash */ {});
     // Still goes into the first bucket.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 3, 100).get());
 
@@ -262,16 +259,14 @@ TEST_F(PartialBucketE2eTest, TestValueMetricWithoutMinPartialBucket) {
             /*uid=*/0, util::SUBSYSTEM_SLEEP_STATE, NS_PER_SEC, NS_PER_SEC * 10, {},
             SharedRefBase::make<FakeSubsystemSleepCallback>());
     // Partial buckets don't occur when app is first installed.
-    service->mUidMap->updateApp(1, String16(kApp1.c_str()), 1, 1, String16("v1"), String16(""),
-                                /* certificateHash */ {});
+    service->mUidMap->updateApp(1, kApp1, 1, 1, "v1", "", /* certificateHash */ {});
     sendConfig(MakeValueMetricConfig(0));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
 
     service->mProcessor->informPullAlarmFired(5 * 60 * NS_PER_SEC + start);
     int64_t appUpgradeTimeNs = 5 * 60 * NS_PER_SEC + start + 2 * NS_PER_SEC;
-    service->mUidMap->updateApp(appUpgradeTimeNs, String16(kApp1.c_str()), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(appUpgradeTimeNs, kApp1, 1, 2, "v2", "", /* certificateHash */ {});
 
     ConfigMetricsReport report =
             getReports(service->mProcessor, 5 * 60 * NS_PER_SEC + start + 100 * NS_PER_SEC);
@@ -292,16 +287,14 @@ TEST_F(PartialBucketE2eTest, TestValueMetricWithMinPartialBucket) {
             /*uid=*/0, util::SUBSYSTEM_SLEEP_STATE, NS_PER_SEC, NS_PER_SEC * 10, {},
             SharedRefBase::make<FakeSubsystemSleepCallback>());
     // Partial buckets don't occur when app is first installed.
-    service->mUidMap->updateApp(1, String16(kApp1.c_str()), 1, 1, String16("v1"), String16(""),
-                                /* certificateHash */ {});
+    service->mUidMap->updateApp(1, kApp1, 1, 1, "v1", "", /* certificateHash */ {});
     sendConfig(MakeValueMetricConfig(60 * NS_PER_SEC /* One minute */));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
 
     const int64_t endSkipped = 5 * 60 * NS_PER_SEC + start + 2 * NS_PER_SEC;
     service->mProcessor->informPullAlarmFired(5 * 60 * NS_PER_SEC + start);
-    service->mUidMap->updateApp(endSkipped, String16(kApp1.c_str()), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(endSkipped, kApp1, 1, 2, "v2", "", /* certificateHash */ {});
 
     ConfigMetricsReport report =
             getReports(service->mProcessor, 5 * 60 * NS_PER_SEC + start + 100 * NS_PER_SEC);
@@ -355,15 +348,14 @@ TEST_F(PartialBucketE2eTest, TestGaugeMetricWithoutMinPartialBucket) {
             /*uid=*/0, util::SUBSYSTEM_SLEEP_STATE, NS_PER_SEC, NS_PER_SEC * 10, {},
             SharedRefBase::make<FakeSubsystemSleepCallback>());
     // Partial buckets don't occur when app is first installed.
-    service->mUidMap->updateApp(1, String16(kApp1.c_str()), 1, 1, String16("v1"), String16(""),
-                                /* certificateHash */ {});
+    service->mUidMap->updateApp(1, kApp1, 1, 1, "v1", "", /* certificateHash */ {});
     sendConfig(MakeGaugeMetricConfig(0));
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
 
     service->mProcessor->informPullAlarmFired(5 * 60 * NS_PER_SEC + start);
-    service->mUidMap->updateApp(5 * 60 * NS_PER_SEC + start + 2, String16(kApp1.c_str()), 1, 2,
-                                String16("v2"), String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(5 * 60 * NS_PER_SEC + start + 2, kApp1, 1, 2, "v2", "",
+                                /* certificateHash */ {});
 
     ConfigMetricsReport report = getReports(service->mProcessor, 5 * 60 * NS_PER_SEC + start + 100);
     backfillStartEndTimestamp(&report);
@@ -376,8 +368,7 @@ TEST_F(PartialBucketE2eTest, TestGaugeMetricWithoutMinPartialBucket) {
 
 TEST_F(PartialBucketE2eTest, TestGaugeMetricWithMinPartialBucket) {
     // Partial buckets don't occur when app is first installed.
-    service->mUidMap->updateApp(1, String16(kApp1.c_str()), 1, 1, String16("v1"), String16(""),
-                                /* certificateHash */ {});
+    service->mUidMap->updateApp(1, kApp1, 1, 1, "v1", "", /* certificateHash */ {});
     service->mPullerManager->RegisterPullAtomCallback(
             /*uid=*/0, util::SUBSYSTEM_SLEEP_STATE, NS_PER_SEC, NS_PER_SEC * 10, {},
             SharedRefBase::make<FakeSubsystemSleepCallback>());
@@ -387,8 +378,7 @@ TEST_F(PartialBucketE2eTest, TestGaugeMetricWithMinPartialBucket) {
 
     const int64_t endSkipped = 5 * 60 * NS_PER_SEC + start + 2;
     service->mProcessor->informPullAlarmFired(5 * 60 * NS_PER_SEC + start);
-    service->mUidMap->updateApp(endSkipped, String16(kApp1.c_str()), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(endSkipped, kApp1, 1, 2, "v2", "", /* certificateHash */ {});
 
     ConfigMetricsReport report =
             getReports(service->mProcessor, 5 * 60 * NS_PER_SEC + start + 100 * NS_PER_SEC);
@@ -437,13 +427,13 @@ TEST_F(PartialBucketE2eTest, TestCountMetricNoSplitByDefault) {
     sendConfig(config);
     int64_t start = getElapsedRealtimeNs();  // This is the start-time the metrics producers are
                                              // initialized with.
-    service->mUidMap->updateMap(start, {1}, {1}, {String16("v1")}, {String16(kApp1.c_str())},
-                                {String16("")}, /* certificateHash */ {{}});
+    UidData uidData;
+    *uidData.add_app_info() = createApplicationInfo(/*uid*/ 1, /*version*/ 1, "v1", kApp1);
+    service->mUidMap->updateMap(start, uidData);
 
     // Force the uidmap to update at timestamp 2.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 1, 100).get());
-    service->mUidMap->updateApp(start + 2, String16(kApp1.c_str()), 1, 2, String16("v2"),
-                                String16(""), /* certificateHash */ {});
+    service->mUidMap->updateApp(start + 2, kApp1, 1, 2, "v2", "", /* certificateHash */ {});
     // Still goes into the first bucket.
     service->mProcessor->OnLogEvent(CreateAppCrashEvent(start + 3, 100).get());
 

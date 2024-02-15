@@ -44,9 +44,9 @@ struct CountBucket {
 class CountMetricProducer : public MetricProducer {
 public:
     CountMetricProducer(
-            const ConfigKey& key, const CountMetric& countMetric, const int conditionIndex,
+            const ConfigKey& key, const CountMetric& countMetric, int conditionIndex,
             const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
-            const uint64_t protoHash, const int64_t timeBaseNs, const int64_t startTimeNs,
+            const uint64_t protoHash, int64_t timeBaseNs, int64_t startTimeNs,
             const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap = {},
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
@@ -81,28 +81,27 @@ private:
     void clearPastBucketsLocked(const int64_t dumpTimeNs) override;
 
     // Internal interface to handle condition change.
-    void onConditionChangedLocked(const bool conditionMet, const int64_t eventTime) override;
+    void onConditionChangedLocked(const bool conditionMet, int64_t eventTime) override;
 
     // Internal interface to handle sliced condition change.
-    void onSlicedConditionMayChangeLocked(bool overallCondition, const int64_t eventTime) override;
+    void onSlicedConditionMayChangeLocked(bool overallCondition, int64_t eventTime) override;
 
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
 
-    void dumpStatesLocked(FILE* out, bool verbose) const override;
+    void dumpStatesLocked(int out, bool verbose) const override;
 
     void dropDataLocked(const int64_t dropTimeNs) override;
 
     // Util function to flush the old packet.
-    void flushIfNeededLocked(const int64_t& newEventTime) override;
+    void flushIfNeededLocked(int64_t newEventTime) override;
 
-    void flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                  const int64_t& nextBucketStartTimeNs) override;
+    void flushCurrentBucketLocked(int64_t eventTimeNs, int64_t nextBucketStartTimeNs) override;
 
     void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) override;
 
     optional<InvalidConfigReason> onConfigUpdatedLocked(
-            const StatsdConfig& config, const int configIndex, const int metricIndex,
+            const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -130,7 +129,12 @@ private:
 
     bool hitGuardRailLocked(const MetricDimensionKey& newKey);
 
-    bool countPassesThreshold(const int64_t& count);
+    bool countPassesThreshold(int64_t count);
+
+    // Tracks if the dimension guardrail has been hit in the current report.
+    bool mDimensionGuardrailHit;
+
+    const size_t mDimensionHardLimit;
 
     FRIEND_TEST(CountMetricProducerTest, TestNonDimensionalEvents);
     FRIEND_TEST(CountMetricProducerTest, TestEventsWithNonSlicedCondition);
@@ -142,6 +146,10 @@ private:
 
     FRIEND_TEST(CountMetricProducerTest_PartialBucket, TestSplitInCurrentBucket);
     FRIEND_TEST(CountMetricProducerTest_PartialBucket, TestSplitInNextBucket);
+
+    FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
 };
 
 }  // namespace statsd

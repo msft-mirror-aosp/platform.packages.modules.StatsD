@@ -574,6 +574,46 @@ TEST(DurationMetricProducerTest, TestSumDurationAppUpgradeSplitDisabled) {
     EXPECT_EQ(1, durationProducer.getCurrentBucketNum());
 }
 
+TEST(DurationMetricProducerTest, TestClearCurrentSlicedTrackerMapWhenStop) {
+    int64_t bucketStartTimeNs = 10000000000;
+    int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(ONE_MINUTE) * 1000000LL;
+    int tagId = 1;
+
+    DurationMetric metric;
+    metric.set_id(1);
+    metric.set_bucket(ONE_MINUTE);
+    metric.set_aggregation_type(DurationMetric_AggregationType_SUM);
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    FieldMatcher dimensions;
+
+    LogEvent event1(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event1, bucketStartTimeNs + 50, tagId);
+    LogEvent event2(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event2, bucketStartTimeNs + 100, tagId);
+    LogEvent event3(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event3, bucketStartTimeNs + 150, tagId);
+    LogEvent event4(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event4, bucketStartTimeNs + bucketSizeNs + 5, tagId);
+
+    DurationMetricProducer durationProducer(
+            kConfigKey, metric, 0 /* condition index */, {ConditionState::kUnknown},
+            -1 /*what index not needed*/, 1 /* start index */, 2 /* stop index */,
+            3 /* stop_all index */, false /*nesting*/, wizard, protoHash, dimensions,
+            bucketStartTimeNs, bucketStartTimeNs);
+
+    durationProducer.onConditionChanged(true /* condition */, bucketStartTimeNs + 5);
+    durationProducer.onMatchedLogEvent(1 /* start index*/, event1);
+    durationProducer.onMatchedLogEvent(2 /* stop index*/, event2);
+    durationProducer.onMatchedLogEvent(1 /* start index*/, event3);
+    durationProducer.onConditionChanged(false /* condition */, bucketStartTimeNs + 200);
+    durationProducer.flushIfNeededLocked(bucketStartTimeNs + bucketSizeNs + 1);
+    durationProducer.onMatchedLogEvent(2 /* stop index*/, event4);
+
+    ASSERT_TRUE(durationProducer.mCurrentSlicedDurationTrackerMap.empty());
+    EXPECT_EQ(1UL, durationProducer.mPastBuckets.size());
+    EXPECT_EQ(1, durationProducer.getCurrentBucketNum());
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

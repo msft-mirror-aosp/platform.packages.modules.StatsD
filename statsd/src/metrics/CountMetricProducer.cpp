@@ -53,6 +53,7 @@ const int FIELD_ID_TIME_BASE = 9;
 const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
+const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 
 // for CountMetricDataWrapper
 const int FIELD_ID_DATA = 1;
@@ -78,7 +79,10 @@ CountMetricProducer::CountMetricProducer(
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap, getAppUpgradeBucketSplit(metric)) {
+                     stateGroupMap, getAppUpgradeBucketSplit(metric)),
+      mDimensionGuardrailHit(false),
+      mDimensionHardLimit(
+              StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket())) {
     if (metric.has_bucket()) {
         mBucketSizeNs =
                 TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), metric.bucket()) * 1000000;
@@ -173,6 +177,7 @@ optional<InvalidConfigReason> CountMetricProducer::onConfigUpdatedLocked(
             return invalidConfigReason;
         }
     }
+
     return nullopt;
 }
 
@@ -184,17 +189,17 @@ void CountMetricProducer::onStateChanged(const int64_t eventTimeNs, const int32_
          oldState.mValue.int_value, newState.mValue.int_value);
 }
 
-void CountMetricProducer::dumpStatesLocked(FILE* out, bool verbose) const {
+void CountMetricProducer::dumpStatesLocked(int out, bool verbose) const {
     if (mCurrentSlicedCounter == nullptr ||
         mCurrentSlicedCounter->size() == 0) {
         return;
     }
 
-    fprintf(out, "CountMetric %lld dimension size %lu\n", (long long)mMetricId,
+    dprintf(out, "CountMetric %lld dimension size %lu\n", (long long)mMetricId,
             (unsigned long)mCurrentSlicedCounter->size());
     if (verbose) {
         for (const auto& it : *mCurrentSlicedCounter) {
-            fprintf(out, "\t(what)%s\t(state)%s  %lld\n",
+            dprintf(out, "\t(what)%s\t(state)%s  %lld\n",
                     it.first.getDimensionKeyInWhat().toString().c_str(),
                     it.first.getStateValuesKey().toString().c_str(), (unsigned long long)it.second);
         }
@@ -213,22 +218,27 @@ void CountMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
 
 void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                              const bool include_current_partial_bucket,
-                                             const bool erase_data,
-                                             const DumpLatency dumpLatency,
-                                             std::set<string> *str_set,
+                                             const bool erase_data, const DumpLatency dumpLatency,
+                                             std::set<string>* str_set,
                                              ProtoOutputStream* protoOutput) {
     if (include_current_partial_bucket) {
         flushLocked(dumpTimeNs);
     } else {
         flushIfNeededLocked(dumpTimeNs);
     }
+
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
-
 
     if (mPastBuckets.empty()) {
         return;
     }
+
+    if (mDimensionGuardrailHit) {
+        protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT,
+                           mDimensionGuardrailHit);
+    }
+
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
 
@@ -303,6 +313,7 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 
     if (erase_data) {
         mPastBuckets.clear();
+        mDimensionGuardrailHit = false;
     }
 }
 
@@ -330,16 +341,17 @@ bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
     }
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mCurrentSlicedCounter->size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mCurrentSlicedCounter->size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mCurrentSlicedCounter->size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-        if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+        if (newTupleCount > mDimensionHardLimit) {
             if (!mHasHitGuardrail) {
                 ALOGE("CountMetric %lld dropping data for dimension key %s", (long long)mMetricId,
                       newKey.toString().c_str());
                 mHasHitGuardrail = true;
             }
+            mDimensionGuardrailHit = true;
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -388,7 +400,7 @@ void CountMetricProducer::onMatchedLogEventInternalLocked(
 
 // When a new matched event comes in, we check if event falls into the current
 // bucket. If not, flush the old counter to past buckets and initialize the new bucket.
-void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void CountMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
     if (eventTimeNs < currentBucketEndTimeNs) {
         return;
@@ -404,7 +416,7 @@ void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
          (long long)mCurrentBucketStartTimeNs);
 }
 
-bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
+bool CountMetricProducer::countPassesThreshold(const int64_t count) {
     if (mUploadThreshold == nullopt) {
         return true;
     }
@@ -424,8 +436,8 @@ bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
     }
 }
 
-void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                   const int64_t& nextBucketStartTimeNs) {
+void CountMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                   const int64_t nextBucketStartTimeNs) {
     int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
     CountBucket info;
     info.mBucketStartNs = mCurrentBucketStartTimeNs;

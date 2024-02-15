@@ -40,7 +40,7 @@ public:
     StatsLogProcessor(
             const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
             const sp<AlarmMonitor>& anomalyAlarmMonitor,
-            const sp<AlarmMonitor>& subscriberTriggerAlarmMonitor, const int64_t timeBaseNs,
+            const sp<AlarmMonitor>& subscriberTriggerAlarmMonitor, int64_t timeBaseNs,
             const std::function<bool(const ConfigKey&)>& sendBroadcast,
             const std::function<bool(const int&, const vector<int64_t>&)>& sendActivationBroadcast,
             const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
@@ -51,7 +51,7 @@ public:
 
     void OnLogEvent(LogEvent* event);
 
-    void OnConfigUpdated(const int64_t timestampNs, const int64_t wallClockNs, const ConfigKey& key,
+    void OnConfigUpdated(const int64_t timestampNs, int64_t wallClockNs, const ConfigKey& key,
                          const StatsdConfig& config, bool modularUpdate = true);
     // For testing only.
     void OnConfigUpdated(const int64_t timestampNs, const ConfigKey& key,
@@ -62,28 +62,28 @@ public:
 
     void GetActiveConfigs(const int uid, vector<int64_t>& outActiveConfigs);
 
-    void onDumpReport(const ConfigKey& key, const int64_t dumpTimeNs, const int64_t wallClockNs,
+    void onDumpReport(const ConfigKey& key, int64_t dumpTimeNs, int64_t wallClockNs,
                       const bool include_current_partial_bucket, const bool erase_data,
                       const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
                       vector<uint8_t>* outData);
-    void onDumpReport(const ConfigKey& key, const int64_t dumpTimeNs, const int64_t wallClockNs,
+    void onDumpReport(const ConfigKey& key, int64_t dumpTimeNs, int64_t wallClockNs,
                       const bool include_current_partial_bucket, const bool erase_data,
                       const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
                       ProtoOutputStream* proto);
     // For testing only.
-    void onDumpReport(const ConfigKey& key, const int64_t dumpTimeNs,
+    void onDumpReport(const ConfigKey& key, int64_t dumpTimeNs,
                       const bool include_current_partial_bucket, const bool erase_data,
                       const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
                       vector<uint8_t>* outData);
 
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies periodic alarmSet. */
     void onPeriodicAlarmFired(
-            const int64_t& timestampNs,
+            int64_t timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     /* Flushes data to disk. Data on memory will be gone after written to disk. */
     void WriteDataToDisk(const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
-                         const int64_t elapsedRealtimeNs, const int64_t wallClockNs);
+                         const int64_t elapsedRealtimeNs, int64_t wallClockNs);
 
     /* Persist configs containing metrics with active activations to disk. */
     void SaveActiveConfigsToDisk(int64_t currentTimeNs);
@@ -113,25 +113,25 @@ public:
                           int64_t systemElapsedTimeNs);
 
     /* Enforces ttls for restricted metrics */
-    void EnforceDataTtls(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
+    void EnforceDataTtls(const int64_t wallClockNs, int64_t elapsedRealtimeNs);
 
     /* Sets the active status/ttl for all configs and metrics to the status in ActiveConfigList. */
     void SetConfigsActiveState(const ActiveConfigList& activeConfigList, int64_t currentTimeNs);
 
     /* Notify all MetricsManagers of app upgrades */
-    void notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
-                          const int64_t version) override;
+    void notifyAppUpgrade(int64_t eventTimeNs, const string& apk, int uid,
+                          int64_t version) override;
 
     /* Notify all MetricsManagers of app removals */
-    void notifyAppRemoved(const int64_t& eventTimeNs, const string& apk, const int uid) override;
+    void notifyAppRemoved(int64_t eventTimeNs, const string& apk, int uid) override;
 
     /* Notify all MetricsManagers of uid map snapshots received */
-    void onUidMapReceived(const int64_t& eventTimeNs) override;
+    void onUidMapReceived(int64_t eventTimeNs) override;
 
     /* Notify all metrics managers of boot completed
      * This will force a bucket split when the boot is finished.
      */
-    void onStatsdInitCompleted(const int64_t& elapsedTimeNs);
+    void onStatsdInitCompleted(int64_t elapsedTimeNs);
 
     // Reset all configs.
     void resetConfigs();
@@ -140,7 +140,7 @@ public:
         return mUidMap;
     }
 
-    void dumpStates(int outFd, bool verbose);
+    void dumpStates(int outFd, bool verbose) const;
 
     void informPullAlarmFired(const int64_t timestampNs);
 
@@ -149,12 +149,9 @@ public:
     inline void setPrintLogs(bool enabled) {
         std::lock_guard<std::mutex> lock(mMetricsMutex);
         mPrintAllLogs = enabled;
-
-        if (mLogEventFilter) {
-            // Turning on print logs turns off pushed event filtering to enforce
-            // complete log event buffer parsing
-            mLogEventFilter->setFilteringEnabled(!enabled);
-        }
+        // Turning on print logs turns off pushed event filtering to enforce
+        // complete log event buffer parsing
+        mLogEventFilter->setFilteringEnabled(!enabled);
     }
 
     // Add a specific config key to the possible configs to dump ASAP.
@@ -202,6 +199,9 @@ private:
     // Tracks when we last checked the bytes consumed for each config key.
     std::unordered_map<ConfigKey, int64_t> mLastByteSizeTimes;
 
+    // Tracks the number of times a config with a specified config key has been dumped.
+    std::unordered_map<ConfigKey, int32_t> mDumpReportNumbers;
+
     // Tracks when we last checked the ttl for restricted metrics.
     int64_t mLastTtlTime;
 
@@ -248,15 +248,15 @@ private:
                                     metadata::StatsMetadataList* metadataList);
 
     void WriteDataToDiskLocked(const DumpReportReason dumpReportReason,
-                               const DumpLatency dumpLatency, const int64_t elapsedRealtimeNs,
+                               const DumpLatency dumpLatency, int64_t elapsedRealtimeNs,
                                const int64_t wallClockNs);
 
-    void WriteDataToDiskLocked(const ConfigKey& key, const int64_t timestampNs,
-                               const int64_t wallClockNs, const DumpReportReason dumpReportReason,
+    void WriteDataToDiskLocked(const ConfigKey& key, int64_t timestampNs, const int64_t wallClockNs,
+                               const DumpReportReason dumpReportReason,
                                const DumpLatency dumpLatency);
 
     void onConfigMetricsReportLocked(
-            const ConfigKey& key, const int64_t dumpTimeStampNs, const int64_t wallClockNs,
+            const ConfigKey& key, int64_t dumpTimeStampNs, int64_t wallClockNs,
             const bool include_current_partial_bucket, const bool erase_data,
             const DumpReportReason dumpReportReason, const DumpLatency dumpLatency,
             /*if dataSavedToDisk is true, it indicates the caller will write the data to disk
@@ -269,7 +269,7 @@ private:
                                           const int64_t elapsedRealtimeNs);
 
     // Enforces ttls on all restricted metrics.
-    void enforceDataTtlsLocked(const int64_t wallClockNs, const int64_t elapsedRealtimeNs);
+    void enforceDataTtlsLocked(const int64_t wallClockNs, int64_t elapsedRealtimeNs);
 
     // Enforces that dbs are within guardrail parameters.
     void enforceDbGuardrailsIfNecessaryLocked(const int64_t wallClockNs,
@@ -279,8 +279,7 @@ private:
      * actually delete the data. */
     void flushIfNecessaryLocked(const ConfigKey& key, MetricsManager& metricsManager);
 
-    set<ConfigKey> getRestrictedConfigKeysToQueryLocked(const int32_t callingUid,
-                                                        const int64_t configId,
+    set<ConfigKey> getRestrictedConfigKeysToQueryLocked(int32_t callingUid, const int64_t configId,
                                                         const set<int32_t>& configPackageUids,
                                                         string& err,
                                                         InvalidQueryReason& invalidQueryReason);
@@ -304,8 +303,8 @@ private:
     // Gets experiment ids on disk for associated train and updates them
     // depending on rollback type. Then writes them back to disk and returns
     // them.
-    std::vector<int64_t> processWatchdogRollbackOccurred(const int32_t rollbackTypeIn,
-                                                          const string& packageName);
+    std::vector<int64_t> processWatchdogRollbackOccurred(int32_t rollbackTypeIn,
+                                                         const string& packageName);
 
     // Reset all configs.
     void resetConfigsLocked(const int64_t timestampNs);
@@ -318,7 +317,7 @@ private:
 
     /* Tells MetricsManager that the alarms in alarmSet have fired. Modifies anomaly alarmSet. */
     void processFiredAnomalyAlarmsLocked(
-            const int64_t& timestampNs,
+            int64_t timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     void flushRestrictedDataLocked(const int64_t elapsedRealtimeNs);
@@ -327,6 +326,8 @@ private:
 
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
+
+    void writeDataCorruptedReasons(ProtoOutputStream& proto);
 
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
@@ -486,6 +487,10 @@ private:
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
 
     FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
+
+    FRIEND_TEST(StringReplaceE2eTest, TestPulledDimension);
+    FRIEND_TEST(StringReplaceE2eTest, TestPulledWhat);
+    FRIEND_TEST(StringReplaceE2eTest, TestMultipleMatchersForAtom);
 };
 
 }  // namespace statsd

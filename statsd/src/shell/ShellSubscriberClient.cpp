@@ -19,11 +19,11 @@
 #include "ShellSubscriberClient.h"
 
 #include "FieldValue.h"
+#include "guardrail/StatsdStats.h"
 #include "matchers/matcher_util.h"
 #include "stats_log_util.h"
 
 using android::base::unique_fd;
-using android::util::ProtoOutputStream;
 using Status = ::ndk::ScopedAStatus;
 
 namespace android {
@@ -32,6 +32,10 @@ namespace statsd {
 
 const static int FIELD_ID_SHELL_DATA__ATOM = 1;
 const static int FIELD_ID_SHELL_DATA__ELAPSED_TIMESTAMP_NANOS = 2;
+
+// Store next subscription ID for StatsdStats.
+// Not thread-safe; should only be accessed while holding ShellSubscriber::mMutex lock.
+static int nextSubId = 0;
 
 struct ReadConfigResult {
     vector<SimpleAtomMatcher> pushedMatchers;
@@ -86,11 +90,12 @@ ShellSubscriberClient::PullInfo::PullInfo(const SimpleAtomMatcher& matcher, int6
 }
 
 ShellSubscriberClient::ShellSubscriberClient(
-        int out, const std::shared_ptr<IStatsSubscriptionCallback>& callback,
+        int id, int out, const std::shared_ptr<IStatsSubscriptionCallback>& callback,
         const std::vector<SimpleAtomMatcher>& pushedMatchers,
         const std::vector<PullInfo>& pulledInfo, int64_t timeoutSec, int64_t startTimeSec,
         const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerMgr)
-    : mUidMap(uidMap),
+    : mId(id),
+      mUidMap(uidMap),
       mPullerMgr(pullerMgr),
       mDupOut(fcntl(out, F_DUPFD_CLOEXEC, 0)),
       mPushedMatchers(pushedMatchers),
@@ -132,8 +137,8 @@ unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
     }
 
     return make_unique<ShellSubscriberClient>(
-            out, /*callback=*/nullptr, readConfigResult->pushedMatchers, readConfigResult->pullInfo,
-            timeoutSec, startTimeSec, uidMap, pullerMgr);
+            nextSubId++, out, /*callback=*/nullptr, readConfigResult->pushedMatchers,
+            readConfigResult->pullInfo, timeoutSec, startTimeSec, uidMap, pullerMgr);
 }
 
 unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
@@ -159,31 +164,37 @@ unique_ptr<ShellSubscriberClient> ShellSubscriberClient::create(
         return nullptr;
     }
 
+    const int id = nextSubId++;
+
+    StatsdStats::getInstance().noteSubscriptionStarted(id, readConfigResult->pushedMatchers.size(),
+                                                       readConfigResult->pullInfo.size());
     return make_unique<ShellSubscriberClient>(
-            /*out=*/-1, callback, readConfigResult->pushedMatchers, readConfigResult->pullInfo,
+            id, /*out=*/-1, callback, readConfigResult->pushedMatchers, readConfigResult->pullInfo,
             /*timeoutSec=*/-1, startTimeSec, uidMap, pullerMgr);
 }
 
 bool ShellSubscriberClient::writeEventToProtoIfMatched(const LogEvent& event,
                                                        const SimpleAtomMatcher& matcher,
                                                        const sp<UidMap>& uidMap) {
-    if (!matchesSimple(uidMap, matcher, event)) {
+    auto [matched, transformedEvent] = matchesSimple(mUidMap, matcher, event);
+    if (!matched) {
         return false;
     }
+    const LogEvent& eventRef = transformedEvent == nullptr ? event : *transformedEvent;
 
     // Cache atom event in mProtoOut.
     uint64_t atomToken = mProtoOut.start(util::FIELD_TYPE_MESSAGE | util::FIELD_COUNT_REPEATED |
                                          FIELD_ID_SHELL_DATA__ATOM);
-    event.ToProto(mProtoOut);
+    eventRef.ToProto(mProtoOut);
     mProtoOut.end(atomToken);
 
-    const int64_t timestampNs = truncateTimestampIfNecessary(event);
+    const int64_t timestampNs = truncateTimestampIfNecessary(eventRef);
     mProtoOut.write(util::FIELD_TYPE_INT64 | util::FIELD_COUNT_REPEATED |
                             FIELD_ID_SHELL_DATA__ELAPSED_TIMESTAMP_NANOS,
                     static_cast<long long>(timestampNs));
 
     // Update byte size of cached data.
-    mCacheSize += getSize(event.getValues()) + sizeof(timestampNs);
+    mCacheSize += getSize(eventRef.getValues()) + sizeof(timestampNs);
 
     return true;
 }
@@ -218,6 +229,10 @@ int64_t ShellSubscriberClient::pullIfNeeded(int64_t nowSecs, int64_t nowMillis, 
             mPullerMgr->Pull(pullInfo.mPullerMatcher.atom_id(), uids, nowNanos, &data);
             VLOG("ShellSubscriberClient: pulled %zu atoms with id %d", data.size(),
                  pullInfo.mPullerMatcher.atom_id());
+            if (mCallback != nullptr) {  // Callback subscription
+                StatsdStats::getInstance().noteSubscriptionAtomPulled(
+                        pullInfo.mPullerMatcher.atom_id());
+            }
 
             writePulledAtomsLocked(data, pullInfo.mPullerMatcher);
             pullInfo.mPrevPullElapsedRealtimeMs = nowMillis;
@@ -334,6 +349,7 @@ void ShellSubscriberClient::triggerCallback(StatsSubscriptionCallbackReason reas
     // Invoke Binder callback with cached event data.
     vector<uint8_t> payloadBytes;
     mProtoOut.serializeToVector(&payloadBytes);
+    StatsdStats::getInstance().noteSubscriptionFlushed(mId);
     const Status status = mCallback->onSubscriptionData(reason, payloadBytes);
     if (status.getStatus() == STATUS_DEAD_OBJECT &&
         status.getExceptionCode() == EX_TRANSACTION_FAILED) {
@@ -350,7 +366,10 @@ void ShellSubscriberClient::flush() {
 }
 
 void ShellSubscriberClient::onUnsubscribe() {
-    triggerCallback(StatsSubscriptionCallbackReason::SUBSCRIPTION_ENDED);
+    StatsdStats::getInstance().noteSubscriptionEnded(mId);
+    if (mClientAlive) {
+        triggerCallback(StatsSubscriptionCallbackReason::SUBSCRIPTION_ENDED);
+    }
 }
 
 void ShellSubscriberClient::addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const {

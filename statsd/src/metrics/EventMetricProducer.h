@@ -35,9 +35,9 @@ namespace statsd {
 class EventMetricProducer : public MetricProducer {
 public:
     EventMetricProducer(
-            const ConfigKey& key, const EventMetric& eventMetric, const int conditionIndex,
+            const ConfigKey& key, const EventMetric& eventMetric, int conditionIndex,
             const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
-            const uint64_t protoHash, const int64_t startTimeNs,
+            const uint64_t protoHash, int64_t startTimeNs,
             const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap = {},
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
@@ -68,13 +68,13 @@ private:
     void clearPastBucketsLocked(const int64_t dumpTimeNs) override;
 
     // Internal interface to handle condition change.
-    void onConditionChangedLocked(const bool conditionMet, const int64_t eventTime) override;
+    void onConditionChangedLocked(const bool conditionMet, int64_t eventTime) override;
 
     // Internal interface to handle sliced condition change.
-    void onSlicedConditionMayChangeLocked(bool overallCondition, const int64_t eventTime) override;
+    void onSlicedConditionMayChangeLocked(bool overallCondition, int64_t eventTime) override;
 
     optional<InvalidConfigReason> onConfigUpdatedLocked(
-            const StatsdConfig& config, const int configIndex, const int metricIndex,
+            const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -94,10 +94,12 @@ private:
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
 
-    void dumpStatesLocked(FILE* out, bool verbose) const override{};
+    void dumpStatesLocked(int out, bool verbose) const override{};
 
     // Maps the field/value pairs of an atom to a list of timestamps used to deduplicate atoms.
     std::unordered_map<AtomDimensionKey, std::vector<int64_t>> mAggregatedAtoms;
+
+    const int mSamplingPercentage;
 };
 
 }  // namespace statsd

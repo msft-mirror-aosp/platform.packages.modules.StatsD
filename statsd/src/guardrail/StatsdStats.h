@@ -17,7 +17,7 @@
 
 #include <gtest/gtest_prod.h>
 #include <log/log_time.h>
-#include <src/guardrail/invalid_config_reason_enum.pb.h>
+#include <src/guardrail/stats_log_enums.pb.h>
 
 #include <list>
 #include <mutex>
@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "config/ConfigKey.h"
+#include "logd/logevent_util.h"
 
 namespace android {
 namespace os {
@@ -52,19 +53,6 @@ struct InvalidConfigReason {
     }
 };
 
-// Keep this in sync with InvalidQueryReason enum in stats_log.proto
-enum InvalidQueryReason {
-    UNKNOWN_REASON = 0,
-    FLAG_DISABLED = 1,
-    UNSUPPORTED_SQLITE_VERSION = 2,
-    AMBIGUOUS_CONFIG_KEY = 3,
-    CONFIG_KEY_NOT_FOUND = 4,
-    CONFIG_KEY_WITH_UNMATCHED_DELEGATE = 5,
-    QUERY_FAILURE = 6,
-    INCONSISTENT_ROW_SIZE = 7,
-    NULL_CALLBACK = 8
-};
-
 typedef struct {
     int64_t insertError = 0;
     int64_t tableCreationError = 0;
@@ -72,6 +60,17 @@ typedef struct {
     std::list<int64_t> flushLatencyNs;
     int64_t categoryChangedCount = 0;
 } RestrictedMetricStats;
+
+struct DumpReportStats {
+    DumpReportStats(int32_t dumpReportSec, int32_t dumpReportSize, int32_t reportNumber)
+        : mDumpReportTimeSec(dumpReportSec),
+          mDumpReportSizeBytes(dumpReportSize),
+          mDumpReportNumber(reportNumber) {
+    }
+    int32_t mDumpReportTimeSec = 0;
+    int32_t mDumpReportSizeBytes = 0;
+    int32_t mDumpReportNumber = 0;
+};
 
 struct ConfigStats {
     int32_t uid;
@@ -86,6 +85,12 @@ struct ConfigStats {
     bool is_valid;
     bool device_info_table_creation_failed = false;
     int32_t db_corrupted_count = 0;
+    int32_t db_deletion_stat_failed = 0;
+    int32_t db_deletion_size_exceeded_limit = 0;
+    int32_t db_deletion_config_invalid = 0;
+    int32_t db_deletion_too_old = 0;
+    int32_t db_deletion_config_removed = 0;
+    int32_t db_deletion_config_updated = 0;
 
     // Stores reasons for why config is valid or not
     std::optional<InvalidConfigReason> reason;
@@ -101,7 +106,8 @@ struct ConfigStats {
     std::list<int32_t> data_drop_time_sec;
     // Number of bytes dropped at corresponding time.
     std::list<int64_t> data_drop_bytes;
-    std::list<std::pair<int32_t, int64_t>> dump_report_stats;
+
+    std::list<DumpReportStats> dump_report_stats;
 
     // Stores how many times a matcher have been matched. The map size is capped by kMaxConfigCount.
     std::map<const int64_t, int> matcher_stats;
@@ -148,6 +154,14 @@ struct UidMapStats {
     int32_t deleted_apps = 0;
 };
 
+struct SubscriptionStats {
+    int32_t pushed_atom_count = 0;
+    int32_t pulled_atom_count = 0;
+    int32_t start_time_sec = 0;
+    int32_t end_time_sec = 0;
+    int32_t flush_count = 0;
+};
+
 // Keeps track of stats of statsd.
 // Single instance shared across the process. All public methods are thread safe.
 class StatsdStats {
@@ -157,6 +171,8 @@ public:
 
     const static int kDimensionKeySizeSoftLimit = 500;
     static constexpr int kDimensionKeySizeHardLimit = 800;
+    static constexpr int kDimensionKeySizeHardLimitMin = 800;
+    static constexpr int kDimensionKeySizeHardLimitMax = 3000;
 
     // Per atom dimension key size limit
     static const std::map<int, std::pair<size_t, size_t>> kAtomDimensionKeySizeLimitMap;
@@ -190,11 +206,18 @@ public:
 
     // Max memory allowed for storing metrics per configuration. If this limit is exceeded, statsd
     // drops the metrics data in memory.
-    static const size_t kMaxMetricsBytesPerConfig = 2 * 1024 * 1024;
+    static const size_t kDefaultMaxMetricsBytesPerConfig = 2 * 1024 * 1024;
+
+    // Hard limit for custom memory allowed for storing metrics per configuration.
+    static const size_t kHardMaxMetricsBytesPerConfig = 20 * 1024 * 1024;
+
+    // Max memory allowed for storing metrics per configuration before triggering a intent to fetch
+    // data.
+    static const size_t kHardMaxTriggerGetDataBytes = 10 * 1024 * 1024;
 
     // Soft memory limit per configuration. Once this limit is exceeded, we begin notifying the
     // data subscriber that it's time to call getData.
-    static const size_t kBytesPerConfigTriggerGetData = 192 * 1024;
+    static const size_t kDefaultBytesPerConfigTriggerGetData = 192 * 1024;
 
     // Soft memory limit per restricted configuration. Once this limit is exceeded,
     // we begin flush in-memory restricted metrics to database.
@@ -248,6 +271,9 @@ public:
 
     // Maximum number of pushed atoms error statsd stats will track.
     static const int kMaxPushedAtomErrorStatsSize = 100;
+
+    // Maximum number of socket loss stats to track.
+    static const int kMaxSocketLossStatsSize = 50;
 
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
@@ -316,7 +342,8 @@ public:
      *
      * The report may be requested via StatsManager API, or through adb cmd.
      */
-    void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes);
+    void noteMetricsReportSent(const ConfigKey& key, const size_t numBytes,
+                               const int32_t reportNumber);
 
     /**
      * Report failure in creating the device info metadata table for restricted configs.
@@ -329,6 +356,36 @@ public:
     void noteDbCorrupted(const ConfigKey& key);
 
     /**
+     * Report db exceeded the size limit for restricted configs.
+     */
+    void noteDbSizeExceeded(const ConfigKey& key);
+
+    /**
+     * Report db size check with stat for restricted configs failed.
+     */
+    void noteDbStatFailed(const ConfigKey& key);
+
+    /**
+     * Report restricted config is invalid.
+     */
+    void noteDbConfigInvalid(const ConfigKey& key);
+
+    /**
+     * Report db is too old for restricted configs.
+     */
+    void noteDbTooOld(const ConfigKey& key);
+
+    /**
+     * Report db was deleted due to config removal.
+     */
+    void noteDbDeletionConfigRemoved(const ConfigKey& key);
+
+    /**
+     * Report db was deleted due to config update.
+     */
+    void noteDbDeletionConfigUpdated(const ConfigKey& key);
+
+    /**
      * Report the size of output tuple of a condition.
      *
      * Note: only report when the condition has an output dimension, and the tuple
@@ -338,7 +395,7 @@ public:
      * [id]: The id of the condition.
      * [size]: The output tuple size.
      */
-    void noteConditionDimensionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteConditionDimensionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report the size of output tuple of a metric.
@@ -350,7 +407,7 @@ public:
      * [id]: The id of the metric.
      * [size]: The output tuple size.
      */
-    void noteMetricDimensionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteMetricDimensionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report the max size of output tuple of dimension in condition across dimensions in what.
@@ -362,7 +419,7 @@ public:
      * [id]: The id of the metric.
      * [size]: The output tuple size.
      */
-    void noteMetricDimensionInConditionSize(const ConfigKey& key, const int64_t& id, int size);
+    void noteMetricDimensionInConditionSize(const ConfigKey& key, int64_t id, int size);
 
     /**
      * Report a matcher has been matched.
@@ -370,7 +427,7 @@ public:
      * [key]: The config key that this matcher belongs to.
      * [id]: The id of the matcher.
      */
-    void noteMatcherMatched(const ConfigKey& key, const int64_t& id);
+    void noteMatcherMatched(const ConfigKey& key, int64_t id);
 
     /**
      * Report that an anomaly detection alert has been declared.
@@ -378,7 +435,7 @@ public:
      * [key]: The config key that this alert belongs to.
      * [id]: The id of the alert.
      */
-    void noteAnomalyDeclared(const ConfigKey& key, const int64_t& id);
+    void noteAnomalyDeclared(const ConfigKey& key, int64_t id);
 
     /**
      * Report an atom event has been logged.
@@ -557,6 +614,9 @@ public:
      * in the queue */
     void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId, bool isSkipped);
 
+    /* Notes queue max size seen so far and associated timestamp */
+    void noteEventQueueSize(int32_t size, int64_t eventTimestampNs);
+
     /**
      * Reports that the activation broadcast guardrail was hit for this uid. Namely, the broadcast
      * should have been sent, but instead was skipped due to hitting the guardrail.
@@ -576,7 +636,7 @@ public:
     /** Report query of restricted metric succeed **/
     void noteQueryRestrictedMetricSucceed(const int64_t configId, const string& configPackage,
                                           const std::optional<int32_t> configUid,
-                                          const int32_t callingUid, const int64_t queryLatencyNs);
+                                          const int32_t callingUid, int64_t queryLatencyNs);
 
     /** Report query of restricted metric failed **/
     void noteQueryRestrictedMetricFailed(const int64_t configId, const string& configPackage,
@@ -593,25 +653,58 @@ public:
     void noteRestrictedMetricInsertError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports that a restricted metric fails to create table in database.
-    void noteRestrictedMetricTableCreationError(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricTableCreationError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports that a restricted metric fails to delete table in database.
-    void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricTableDeletionError(const ConfigKey& configKey, int64_t metricId);
 
     // Reports the time it takes for a restricted metric to flush the data to the database.
-    void noteRestrictedMetricFlushLatency(const ConfigKey& configKey, const int64_t metricId,
+    void noteRestrictedMetricFlushLatency(const ConfigKey& configKey, int64_t metricId,
                                           const int64_t flushLatencyNs);
 
     // Reports that a restricted metric had a category change.
-    void noteRestrictedMetricCategoryChanged(const ConfigKey& configKey, const int64_t metricId);
+    void noteRestrictedMetricCategoryChanged(const ConfigKey& configKey, int64_t metricId);
 
     // Reports the time is takes to flush a restricted config to the database.
     void noteRestrictedConfigFlushLatency(const ConfigKey& configKey,
                                           const int64_t totalFlushLatencyNs);
 
     // Reports the size of the internal sqlite db.
-    void noteRestrictedConfigDbSize(const ConfigKey& configKey, const int64_t elapsedTimeNs,
+    void noteRestrictedConfigDbSize(const ConfigKey& configKey, int64_t elapsedTimeNs,
                                     const int64_t dbSize);
+
+    /**
+     * Records libstatssocket was not able to write into socket.
+     */
+    void noteAtomSocketLoss(const SocketLossInfo& lossInfo);
+
+    /**
+     * Report a new subscription has started and report the static stats about the subscription
+     * config.
+     *
+     * The static stats include: the count of pushed atoms and pulled atoms.
+     */
+    void noteSubscriptionStarted(int subId, int32_t pushedAtomCount, int32_t pulledAtomCount);
+
+    /**
+     * Report an existing subscription has ended.
+     */
+    void noteSubscriptionEnded(int subId);
+
+    /**
+     * Report an existing subscription was flushed.
+     */
+    void noteSubscriptionFlushed(int subId);
+
+    /**
+     * Report an atom was pulled for a subscription.
+     */
+    void noteSubscriptionAtomPulled(int atomId);
+
+    /**
+     * Report subscriber pull thread wakeup.
+     */
+    void noteSubscriptionPullThreadWakeup();
 
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
@@ -633,9 +726,37 @@ public:
     void dumpStats(int outFd) const;
 
     /**
+     * Returns true if dimension guardrail has been hit since boot for given metric.
+     */
+    bool hasHitDimensionGuardrail(int64_t metricId) const;
+
+    /**
      * Return soft and hard atom key dimension size limits as an std::pair.
      */
-    static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(const int atomId = -1);
+    static std::pair<size_t, size_t> getAtomDimensionKeySizeLimits(int atomId,
+                                                                   size_t defaultHardLimit);
+
+    inline static int clampDimensionKeySizeLimit(int dimLimit) {
+        return std::clamp(dimLimit, kDimensionKeySizeHardLimitMin, kDimensionKeySizeHardLimitMax);
+    }
+
+    /**
+     * Return the unique identifier for the statsd stats report. This id is
+     * reset on boot.
+     */
+    inline int32_t getStatsdStatsId() const {
+        return mStatsdStatsId;
+    }
+
+    /**
+     * Returns true if there is recorded event queue overflow
+     */
+    bool hasEventQueueOverflow() const;
+
+    /**
+     * Returns true if there is recorded socket loss
+     */
+    bool hasSocketLoss() const;
 
     typedef struct PullTimeoutMetadata {
         int64_t pullTimeoutUptimeMillis;
@@ -668,6 +789,7 @@ public:
         int32_t atomErrorCount = 0;
         long binderCallFailCount = 0;
         std::list<PullTimeoutMetadata> pullTimeoutMetadata;
+        int32_t subscriptionPullCount = 0;
     } PulledAtomStats;
 
     typedef struct {
@@ -691,6 +813,11 @@ private:
 
     int32_t mStartTimeSec;
 
+    // Random id set using rand() during the initialization. Used to uniquely
+    // identify a session. This is more reliable than mStartTimeSec due to the
+    // unreliable nature of wall clock times.
+    const int32_t mStatsdStatsId;
+
     // Track the number of dropped entries used by the uid map.
     UidMapStats mUidMapStats;
 
@@ -700,7 +827,7 @@ private:
 
     // Stores the stats for the configs that are no longer in use.
     // The size of the vector is capped by kMaxIceBoxSize.
-    std::list<const std::shared_ptr<ConfigStats>> mIceBox;
+    std::list<std::shared_ptr<ConfigStats>> mIceBox;
 
     // Stores the number of times a pushed atom is logged and skipped (if skipped).
     // The size of the vector is the largest pushed atom id in atoms.proto + 1. Atoms
@@ -729,6 +856,37 @@ private:
     // corresponding counts for pulled atoms are stored in PulledAtomStats.
     // The max size of this map is kMaxPushedAtomErrorStatsSize.
     std::map<int, int> mPushedAtomErrorStats;
+
+    // Stores the number of times a pushed atom was lost due to socket error.
+    // Represents counter per uid per tag per error with indication when the loss event was observed
+    // first & last time.
+    struct SocketLossStats {
+        SocketLossStats(int32_t uid, int64_t firstLossTsNanos, int64_t lastLossTsNanos)
+            : mUid(uid), mFirstLossTsNanos(firstLossTsNanos), mLastLossTsNanos(lastLossTsNanos) {
+        }
+
+        int32_t mUid;
+        int64_t mFirstLossTsNanos;
+        int64_t mLastLossTsNanos;
+        // atom loss count per error, atom id
+        struct AtomLossInfo {
+            AtomLossInfo(int32_t atomId, int32_t error, int32_t count)
+                : mAtomId(atomId), mError(error), mCount(count) {
+            }
+            int mAtomId;
+            int mError;
+            int mCount;
+        };
+        std::vector<AtomLossInfo> mLossCountPerErrorAtomId;
+    };
+    // The max size of this list is kMaxSocketLossStatsSize.
+    std::list<SocketLossStats> mSocketLossStats;
+
+    // Stores the number of times a pushed atom loss info was dropped from the stats
+    // on libstatssocket side due to guardrail hit.
+    // Represents counter per uid.
+    // The max size of this map is kMaxSocketLossStatsSize.
+    std::map<int32_t, int32_t> mSocketLossStatsOverflowCounters;
 
     // Maps metric ID to its stats. The size is capped by the number of metrics.
     std::map<int64_t, AtomMetricStats> mAtomMetricStats;
@@ -766,6 +924,12 @@ private:
 
     // Total number of events that are lost due to queue overflow.
     int32_t mOverflowCount = 0;
+
+    // Max number of events stored into the queue seen so far.
+    int32_t mEventQueueMaxSizeObserved = 0;
+
+    // Event timestamp for associated max size hit.
+    int64_t mEventQueueMaxSizeObservedElapsedNanos = 0;
 
     // Timestamps when we detect log loss, and the number of logs lost.
     std::list<LogLossStats> mLogLossStats;
@@ -806,6 +970,12 @@ private:
                                                const InvalidQueryReason reason,
                                                const string& error);
 
+    int32_t mSubscriptionPullThreadWakeupCount = 0;
+
+    // Maps Subscription ID to the corresponding SubscriptionStats struct object.
+    // Size of this map is capped by ShellSubscriber::kMaxSubscriptions.
+    std::map<int32_t, SubscriptionStats> mSubscriptionStats;
+
     // Stores the number of times statsd modified the anomaly alarm registered with
     // StatsCompanionService.
     int mAnomalyAlarmRegisteredStats = 0;
@@ -825,7 +995,8 @@ private:
 
     void noteDataDropped(const ConfigKey& key, const size_t totalBytes, int32_t timeSec);
 
-    void noteMetricsReportSent(const ConfigKey& key, const size_t num_bytes, int32_t timeSec);
+    void noteMetricsReportSent(const ConfigKey& key, const size_t numBytes, int32_t timeSec,
+                               const int32_t reportNumber);
 
     void noteBroadcastSent(const ConfigKey& key, int32_t timeSec);
 
@@ -839,36 +1010,50 @@ private:
 
     int getPushedAtomDropsLocked(int atomId) const;
 
+    bool hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const;
+
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
      * will live as long as `this`.
      */
     StatsdStats::AtomMetricStats& getAtomMetricStats(int64_t metricId);
 
-    FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
+    FRIEND_TEST(LogEventQueue_test, TestQueueMaxSize);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessage);
+    FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
+    FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
+    FRIEND_TEST(StatsdStatsTest, TestAnomalyMonitor);
+    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLog);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
+    FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
+    FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigAdd);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId);
-    FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
-    FRIEND_TEST(StatsdStatsTest, TestSubStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLog);
     FRIEND_TEST(StatsdStatsTest, TestNonPlatformAtomLog);
-    FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
-    FRIEND_TEST(StatsdStatsTest, TestAnomalyMonitor);
-    FRIEND_TEST(StatsdStatsTest, TestSystemServerCrash);
     FRIEND_TEST(StatsdStatsTest, TestPullAtomStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
-    FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
-    FRIEND_TEST(StatsdStatsTest, TestAtomErrorStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
-    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
+    FRIEND_TEST(StatsdStatsTest, TestQueueStats);
     FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsQueryStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
-    FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestRestrictedMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
-
-    FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
+    FRIEND_TEST(StatsdStatsTest, TestSocketLossStats);
+    FRIEND_TEST(StatsdStatsTest, TestSocketLossStatsOverflowCounter);
+    FRIEND_TEST(StatsdStatsTest, TestSubStats);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionAtomPulled);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionEnded);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionFlushed);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionPullThreadWakeup);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStarted);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedMaxActiveSubscriptions);
+    FRIEND_TEST(StatsdStatsTest, TestSubscriptionStartedRemoveFinishedSubscription);
+    FRIEND_TEST(StatsdStatsTest, TestSystemServerCrash);
+    FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
+    FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
 };
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
@@ -903,10 +1088,10 @@ InvalidConfigReason createInvalidConfigReasonWithSubscription(const InvalidConfi
                                                               const int64_t subscriptionId);
 
 InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlarm(
-        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alarmId);
+        const InvalidConfigReasonEnum reason, int64_t subscriptionId, int64_t alarmId);
 
 InvalidConfigReason createInvalidConfigReasonWithSubscriptionAndAlert(
-        const InvalidConfigReasonEnum reason, const int64_t subscriptionId, const int64_t alertId);
+        const InvalidConfigReasonEnum reason, int64_t subscriptionId, int64_t alertId);
 
 }  // namespace statsd
 }  // namespace os

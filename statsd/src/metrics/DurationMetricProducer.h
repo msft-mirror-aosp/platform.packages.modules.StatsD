@@ -39,12 +39,11 @@ namespace statsd {
 class DurationMetricProducer : public MetricProducer {
 public:
     DurationMetricProducer(
-            const ConfigKey& key, const DurationMetric& durationMetric, const int conditionIndex,
-            const vector<ConditionState>& initialConditionCache, const int whatIndex,
-            const int startIndex, const int stopIndex, const int stopAllIndex, const bool nesting,
+            const ConfigKey& key, const DurationMetric& durationMetric, int conditionIndex,
+            const vector<ConditionState>& initialConditionCache, int whatIndex,
+            const int startIndex, int stopIndex, int stopAllIndex, const bool nesting,
             const sp<ConditionWizard>& wizard, const uint64_t protoHash,
-            const FieldMatcher& internalDimensions, const int64_t timeBaseNs,
-            const int64_t startTimeNs,
+            const FieldMatcher& internalDimensions, int64_t timeBaseNs, const int64_t startTimeNs,
             const unordered_map<int, shared_ptr<Activation>>& eventActivationMap = {},
             const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap = {},
             const vector<int>& slicedStateAtoms = {},
@@ -57,7 +56,7 @@ public:
                                          const UpdateStatus& updateStatus,
                                          const int64_t updateTimeNs) override;
 
-    void addAnomalyTracker(sp<AnomalyTracker>& anomalyTracker, const int64_t updateTimeNs) override;
+    void addAnomalyTracker(sp<AnomalyTracker>& anomalyTracker, int64_t updateTimeNs) override;
 
     void onStateChanged(const int64_t eventTimeNs, const int32_t atomId,
                         const HashableDimensionKey& primaryKey, const FieldValue& oldState,
@@ -77,13 +76,13 @@ protected:
 
 private:
     // Initializes true dimensions of the 'what' predicate. Only to be called during initialization.
-    void initTrueDimensions(const int whatIndex, const int64_t startTimeNs);
+    void initTrueDimensions(const int whatIndex, int64_t startTimeNs);
 
     void handleMatchedLogEventValuesLocked(const size_t matcherIndex,
                                            const std::vector<FieldValue>& values,
                                            const int64_t eventTimeNs);
     void handleStartEvent(const MetricDimensionKey& eventKey, const ConditionKey& conditionKeys,
-                          bool condition, const int64_t eventTimeNs,
+                          bool condition, int64_t eventTimeNs,
                           const vector<FieldValue>& eventValues);
 
     void onDumpReportLocked(const int64_t dumpTimeNs,
@@ -96,13 +95,13 @@ private:
     void clearPastBucketsLocked(const int64_t dumpTimeNs) override;
 
     // Internal interface to handle condition change.
-    void onConditionChangedLocked(const bool conditionMet, const int64_t eventTime) override;
+    void onConditionChangedLocked(const bool conditionMet, int64_t eventTime) override;
 
     // Internal interface to handle active state change.
     void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) override;
 
     // Internal interface to handle sliced condition change.
-    void onSlicedConditionMayChangeLocked(bool overallCondition, const int64_t eventTime) override;
+    void onSlicedConditionMayChangeLocked(bool overallCondition, int64_t eventTime) override;
 
     void onSlicedConditionMayChangeInternalLocked(const int64_t eventTimeNs);
 
@@ -111,18 +110,17 @@ private:
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
 
-    void dumpStatesLocked(FILE* out, bool verbose) const override;
+    void dumpStatesLocked(int out, bool verbose) const override;
 
     void dropDataLocked(const int64_t dropTimeNs) override;
 
     // Util function to flush the old packet.
-    void flushIfNeededLocked(const int64_t& eventTime);
+    void flushIfNeededLocked(int64_t eventTime);
 
-    void flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                  const int64_t& nextBucketStartTimeNs) override;
+    void flushCurrentBucketLocked(int64_t eventTimeNs, int64_t nextBucketStartTimeNs) override;
 
     optional<InvalidConfigReason> onConfigUpdatedLocked(
-            const StatsdConfig& config, const int configIndex, const int metricIndex,
+            const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -138,7 +136,7 @@ private:
             std::vector<int>& metricsWithActivation) override;
 
     void addAnomalyTrackerLocked(sp<AnomalyTracker>& anomalyTracker,
-                                 const UpdateStatus& updateStatus, const int64_t updateTimeNs);
+                                 const UpdateStatus& updateStatus, int64_t updateTimeNs);
 
     const DurationMetric_AggregationType mAggregationType;
 
@@ -172,22 +170,24 @@ private:
     std::unordered_map<HashableDimensionKey, std::unique_ptr<DurationTracker>>
             mCurrentSlicedDurationTrackerMap;
 
+    const size_t mDimensionHardLimit;
+
     // Helper function to create a duration tracker given the metric aggregation type.
     std::unique_ptr<DurationTracker> createDurationTracker(
             const MetricDimensionKey& eventKey) const;
 
     // Util function to check whether the specified dimension hits the guardrail.
-    bool hitGuardRailLocked(const MetricDimensionKey& newKey);
+    bool hitGuardRailLocked(const MetricDimensionKey& newKey) const;
 
     static const size_t kBucketSize = sizeof(DurationBucket{});
 
     FRIEND_TEST(DurationMetricTrackerTest, TestNoCondition);
     FRIEND_TEST(DurationMetricTrackerTest, TestNonSlicedCondition);
     FRIEND_TEST(DurationMetricTrackerTest, TestNonSlicedConditionUnknownState);
-    FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicates);
     FRIEND_TEST(DurationMetricTrackerTest, TestFirstBucket);
 
     FRIEND_TEST(DurationMetricProducerTest, TestSumDurationAppUpgradeSplitDisabled);
+    FRIEND_TEST(DurationMetricProducerTest, TestClearCurrentSlicedTrackerMapWhenStop);
     FRIEND_TEST(DurationMetricProducerTest_PartialBucket, TestSumDuration);
     FRIEND_TEST(DurationMetricProducerTest_PartialBucket,
                 TestSumDurationWithSplitInFollowingBucket);
@@ -196,6 +196,10 @@ private:
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateDurationMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateAlerts);
+
+    FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
 };
 
 }  // namespace statsd

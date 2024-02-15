@@ -986,11 +986,28 @@ std::unique_ptr<LogEvent> CreateBatterySaverOffEvent(uint64_t timestampNs) {
     return logEvent;
 }
 
-std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs, const BatteryPluggedStateEnum state) {
+std::unique_ptr<LogEvent> CreateBatteryStateChangedEvent(const uint64_t timestampNs,
+                                                         const BatteryPluggedStateEnum state,
+                                                         int32_t uid) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, util::PLUGGED_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
     AStatsEvent_writeInt32(statsEvent, state);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
+
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/uid, /*pid=*/0);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
+std::unique_ptr<LogEvent> CreateMalformedBatteryStateChangedEvent(const uint64_t timestampNs) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, util::PLUGGED_STATE_CHANGED);
+    AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+    AStatsEvent_writeString(statsEvent, "bad_state");
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_EXCLUSIVE_STATE, true);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_STATE_NESTED, false);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1060,6 +1077,18 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEventVariableRepeatedFields(
                                        repeatedIntField, repeatedLongField, repeatedFloatField,
                                        repeatedStringField, repeatedBoolField,
                                        repeatedBoolFieldLength, repeatedEnumField);
+}
+
+std::unique_ptr<LogEvent> CreateTestAtomReportedEventWithPrimitives(
+        uint64_t timestampNs, int intField, long longField, float floatField,
+        const string& stringField, bool boolField, TestAtomReported::State enumField) {
+    return CreateTestAtomReportedEvent(
+            timestampNs, /* attributionUids */ {1001},
+            /* attributionTags */ {"app1"}, intField, longField, floatField, stringField, boolField,
+            enumField, /* bytesField */ {},
+            /* repeatedIntField */ {}, /* repeatedLongField */ {}, /* repeatedFloatField */ {},
+            /* repeatedStringField */ {}, /* repeatedBoolField */ {},
+            /* repeatedBoolFieldLength */ 0, /* repeatedEnumField */ {});
 }
 
 std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
@@ -1143,14 +1172,15 @@ std::unique_ptr<LogEvent> CreateReleaseWakelockEvent(uint64_t timestampNs,
 }
 
 std::unique_ptr<LogEvent> CreateActivityForegroundStateChangedEvent(
-        uint64_t timestampNs, const int uid, const ActivityForegroundStateChanged::State state) {
+        uint64_t timestampNs, const int uid, const string& pkgName, const string& className,
+        const ActivityForegroundStateChanged::State state) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, util::ACTIVITY_FOREGROUND_STATE_CHANGED);
     AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
 
     AStatsEvent_writeInt32(statsEvent, uid);
-    AStatsEvent_writeString(statsEvent, "pkg_name");
-    AStatsEvent_writeString(statsEvent, "class_name");
+    AStatsEvent_writeString(statsEvent, pkgName.c_str());
+    AStatsEvent_writeString(statsEvent, className.c_str());
     AStatsEvent_writeInt32(statsEvent, state);
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
@@ -1159,12 +1189,12 @@ std::unique_ptr<LogEvent> CreateActivityForegroundStateChangedEvent(
 }
 
 std::unique_ptr<LogEvent> CreateMoveToBackgroundEvent(uint64_t timestampNs, const int uid) {
-    return CreateActivityForegroundStateChangedEvent(timestampNs, uid,
+    return CreateActivityForegroundStateChangedEvent(timestampNs, uid, "pkg_name", "class_name",
                                                      ActivityForegroundStateChanged::BACKGROUND);
 }
 
 std::unique_ptr<LogEvent> CreateMoveToForegroundEvent(uint64_t timestampNs, const int uid) {
-    return CreateActivityForegroundStateChangedEvent(timestampNs, uid,
+    return CreateActivityForegroundStateChangedEvent(timestampNs, uid, "pkg_name", "class_name",
                                                      ActivityForegroundStateChanged::FOREGROUND);
 }
 
@@ -1474,8 +1504,8 @@ sp<EventMatcherWizard> createEventMatcherWizard(
     }
     uint64_t matcherHash = 0x12345678;
     int64_t matcherId = 678;
-    return new EventMatcherWizard({new SimpleAtomMatchingTracker(
-            matcherId, matcherIndex, matcherHash, atomMatcher, uidMap)});
+    return new EventMatcherWizard(
+            {new SimpleAtomMatchingTracker(matcherId, matcherHash, atomMatcher, uidMap)});
 }
 
 StatsDimensionsValueParcel CreateAttributionUidDimensionsValueParcel(const int atomId,
@@ -2138,7 +2168,7 @@ PackageInfo buildPackageInfo(const string& name, const int32_t uid, const int64_
 vector<PackageInfo> buildPackageInfos(
         const vector<string>& names, const vector<int32_t>& uids, const vector<int64_t>& versions,
         const vector<string>& versionStrings, const vector<string>& installers,
-        const vector<vector<uint8_t>>& certHashes, const vector<bool>& deleted,
+        const vector<vector<uint8_t>>& certHashes, const vector<uint8_t>& deleted,
         const vector<uint32_t>& installerIndices, const bool hashStrings) {
     vector<PackageInfo> packageInfos;
     for (int i = 0; i < uids.size(); i++) {
@@ -2157,17 +2187,19 @@ vector<PackageInfo> buildPackageInfos(
     return packageInfos;
 }
 
+ApplicationInfo createApplicationInfo(const int32_t uid, const int64_t version,
+                                      const string& versionString, const string& package) {
+    ApplicationInfo info;
+    info.set_uid(uid);
+    info.set_version(version);
+    info.set_version_string(versionString);
+    info.set_package_name(package);
+    return info;
+}
+
 StatsdStatsReport_PulledAtomStats getPulledAtomStats(int32_t atom_id) {
-    vector<uint8_t> statsBuffer;
-    StatsdStats::getInstance().dumpStats(&statsBuffer, false /*reset stats*/);
-    StatsdStatsReport statsReport;
+    StatsdStatsReport statsReport = getStatsdStatsReport();
     StatsdStatsReport_PulledAtomStats pulledAtomStats;
-    if (!statsReport.ParseFromArray(&statsBuffer[0], statsBuffer.size())) {
-        return pulledAtomStats;
-    }
-    if (statsReport.pulled_atom_stats_size() == 0) {
-        return pulledAtomStats;
-    }
     for (size_t i = 0; i < statsReport.pulled_atom_stats_size(); i++) {
         if (statsReport.pulled_atom_stats(i).atom_id() == atom_id) {
             return statsReport.pulled_atom_stats(i);
@@ -2216,6 +2248,72 @@ void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId) {
     }
 }
 
+StatsdStatsReport getStatsdStatsReport(bool resetStats) {
+    StatsdStats& stats = StatsdStats::getInstance();
+    return getStatsdStatsReport(stats, resetStats);
+}
+
+StatsdStatsReport getStatsdStatsReport(StatsdStats& stats, bool resetStats) {
+    vector<uint8_t> statsBuffer;
+    stats.dumpStats(&statsBuffer, resetStats);
+    StatsdStatsReport statsReport;
+    EXPECT_TRUE(statsReport.ParseFromArray(statsBuffer.data(), statsBuffer.size()));
+    return statsReport;
+}
+
+StatsdConfig buildGoodConfig(int configId) {
+    StatsdConfig config;
+    config.set_id(configId);
+
+    AtomMatcher screenOnMatcher = CreateScreenTurnedOnAtomMatcher();
+    *config.add_atom_matcher() = screenOnMatcher;
+    *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
+
+    AtomMatcher* eventMatcher = config.add_atom_matcher();
+    eventMatcher->set_id(StringToId("SCREEN_ON_OR_OFF"));
+    AtomMatcher_Combination* combination = eventMatcher->mutable_combination();
+    combination->set_operation(LogicalOperation::OR);
+    combination->add_matcher(screenOnMatcher.id());
+    combination->add_matcher(StringToId("ScreenTurnedOff"));
+
+    CountMetric* countMetric = config.add_count_metric();
+    *countMetric = createCountMetric("Count", screenOnMatcher.id() /* what */,
+                                     nullopt /* condition */, {} /* states */);
+    countMetric->mutable_dimensions_in_what()->set_field(SCREEN_STATE_ATOM_ID);
+    countMetric->mutable_dimensions_in_what()->add_child()->set_field(1);
+
+    config.add_no_report_metric(StringToId("Count"));
+
+    *config.add_predicate() = CreateScreenIsOnPredicate();
+    *config.add_duration_metric() =
+            createDurationMetric("Duration", StringToId("ScreenIsOn") /* what */,
+                                 nullopt /* condition */, {} /* states */);
+
+    *config.add_gauge_metric() = createGaugeMetric(
+            "Gauge", screenOnMatcher.id() /* what */, GaugeMetric_SamplingType_FIRST_N_SAMPLES,
+            nullopt /* condition */, nullopt /* triggerEvent */);
+
+    *config.add_value_metric() =
+            createValueMetric("Value", screenOnMatcher /* what */, 2 /* valueField */,
+                              nullopt /* condition */, {} /* states */);
+
+    *config.add_kll_metric() = createKllMetric("Kll", screenOnMatcher /* what */, 2 /* kllField */,
+                                               nullopt /* condition */);
+
+    return config;
+}
+
+StatsdConfig buildGoodConfig(int configId, int alertId) {
+    StatsdConfig config = buildGoodConfig(configId);
+    auto alert = config.add_alert();
+    alert->set_id(alertId);
+    alert->set_metric_id(StringToId("Count"));
+    alert->set_num_buckets(10);
+    alert->set_refractory_period_secs(100);
+    alert->set_trigger_if_sum_gt(100);
+
+    return config;
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
