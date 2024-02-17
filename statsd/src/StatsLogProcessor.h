@@ -329,6 +329,8 @@ private:
 
     void writeDataCorruptedReasons(ProtoOutputStream& proto);
 
+    bool validateAppBreadcrumbEvent(const LogEvent& event) const;
+
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
     std::function<bool(const ConfigKey& key)> mSendBroadcast;
