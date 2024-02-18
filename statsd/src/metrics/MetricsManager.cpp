@@ -526,42 +526,6 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
     return true;
 }
 
-bool MetricsManager::eventSanityCheck(const LogEvent& event) {
-    if (event.GetTagId() == util::APP_BREADCRUMB_REPORTED) {
-        // Check that app breadcrumb reported fields are valid.
-        status_t err = NO_ERROR;
-
-        // Uid is 3rd from last field and must match the caller's uid,
-        // unless that caller is statsd itself (statsd is allowed to spoof uids).
-        long appHookUid = event.GetLong(event.size()-2, &err);
-        if (err != NO_ERROR) {
-            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the uid");
-            return false;
-        }
-
-        // Because the uid within the LogEvent may have been mapped from
-        // isolated to host, map the loggerUid similarly before comparing.
-        int32_t loggerUid = mUidMap->getHostUidOrSelf(event.GetUid());
-        if (loggerUid != appHookUid && loggerUid != AID_STATSD) {
-            VLOG("APP_BREADCRUMB_REPORTED has invalid uid: claimed %ld but caller is %d",
-                 appHookUid, loggerUid);
-            return false;
-        }
-
-        // The state must be from 0,3. This part of code must be manually updated.
-        long appHookState = event.GetLong(event.size(), &err);
-        if (err != NO_ERROR) {
-            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the state field");
-            return false;
-        } else if (appHookState < 0 || appHookState > 3) {
-            VLOG("APP_BREADCRUMB_REPORTED does not have valid state %ld", appHookState);
-            return false;
-        }
-    }
-
-    return true;
-}
-
 // Consume the stats log if it's interesting to this metric.
 void MetricsManager::onLogEvent(const LogEvent& event) {
     if (!isConfigValid()) {
@@ -569,11 +533,6 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     }
 
     if (!checkLogCredentials(event)) {
-        return;
-    }
-
-    // TODO(b/212755214): this check could be done once on the StatsLogProcessor level
-    if (!eventSanityCheck(event)) {
         return;
     }
 
