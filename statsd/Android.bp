@@ -481,6 +481,7 @@ cc_benchmark {
         "benchmark/on_log_event_benchmark.cpp",
         "benchmark/stats_write_benchmark.cpp",
         "benchmark/loss_info_container_benchmark.cpp",
+        "benchmark/string_transform_benchmark.cpp",
     ],
 
     cflags: [
