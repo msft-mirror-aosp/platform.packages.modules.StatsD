@@ -16,6 +16,7 @@
 
 package com.android.server.cts.device.statsd;
 
+import android.os.SystemClock;
 import android.util.StatsLog;
 
 import org.junit.Test;
@@ -27,10 +28,16 @@ public class StatsdStressLogging {
     @Test
     public void testLogAtomsBackToBack() throws Exception {
         // logging back to back many atoms to force socket overflow
-        performAtomStorm(EVENT_STORM_ATOMS_COUNT);
+        logAtoms(EVENT_STORM_ATOMS_COUNT);
+
+        // Using sleep to allow bypass libstatsocket dumpAtomsLossStats() cooldown timer
+        SystemClock.sleep(100);
+
+        // Try to log atoms into socket successfully to trigger libstatsocket dumpAtomsLossStats()
+        logAtoms(1);
     }
 
-    private void performAtomStorm(int iterations) {
+    private void logAtoms(int iterations) {
         // single atom logging takes ~2us excluding JNI interactions
         for (int i = 0; i < iterations; i++) {
             StatsLog.logStart(i);
