@@ -118,7 +118,7 @@ private:
     bool hitFullBucketGuardRailLocked(const MetricDimensionKey& newKey);
 
     inline bool canSkipLogEventLocked(
-            const MetricDimensionKey& eventKey, const bool condition, const int64_t eventTimeNs,
+            const MetricDimensionKey& eventKey, const bool condition, int64_t eventTimeNs,
             const map<int, HashableDimensionKey>& statePrimaryKeys) const override {
         // For pushed metrics, can only skip if condition is false.
         // For pulled metrics, can only skip if metric is not diffed and condition is false or

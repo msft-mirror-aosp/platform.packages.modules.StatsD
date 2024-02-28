@@ -49,7 +49,7 @@ struct InternalAlarm : public RefBase {
 
     /** InternalAlarm a is smaller (higher priority) than b if its timestamp is sooner. */
     struct SmallerTimestamp {
-        bool operator()(sp<const InternalAlarm> a, sp<const InternalAlarm> b) const {
+        bool operator()(const sp<const InternalAlarm>& a, const sp<const InternalAlarm>& b) const {
             return (a->timestampSec < b->timestampSec);
         }
     };
@@ -77,19 +77,19 @@ public:
      * If nullptr, AnomalyMonitor will continue to add/remove alarms, but won't
      * update IStatsCompanionService (until such time as it is set non-null).
      */
-    void setStatsCompanionService(shared_ptr<IStatsCompanionService> statsCompanionService);
+    void setStatsCompanionService(const shared_ptr<IStatsCompanionService>& statsCompanionService);
 
     /**
      * Adds the given alarm (reference) to the queue.
      */
-    void add(sp<const InternalAlarm> alarm);
+    void add(const sp<const InternalAlarm>& alarm);
 
     /**
      * Removes the given alarm (reference) from the queue.
      * Note that alarm comparison is reference-based; if another alarm exists
      * with the same timestampSec, that alarm will still remain in the queue.
      */
-    void remove(sp<const InternalAlarm> alarm);
+    void remove(const sp<const InternalAlarm>& alarm);
 
     /**
      * Returns and removes all alarms whose timestamp <= the given timestampSec.

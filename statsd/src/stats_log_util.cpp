@@ -598,6 +598,10 @@ int64_t NanoToMillis(const int64_t nano) {
     return nano / 1000000;
 }
 
+int64_t NanoToSeconds(const int64_t nano) {
+    return nano / NS_PER_SEC;
+}
+
 int64_t MillisToNano(const int64_t millis) {
     return millis * 1000000;
 }
@@ -617,7 +621,7 @@ bool checkPermissionForIds(const char* permission, pid_t pid, uid_t uid) {
     return success;
 }
 
-void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event) {
+void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap>& uidMap, LogEvent& event) {
     uint8_t remainingUidCount = event.getNumUidFields();
     vector<FieldValue>* fieldValues = event.getMutableValues();
     auto it = fieldValues->begin();

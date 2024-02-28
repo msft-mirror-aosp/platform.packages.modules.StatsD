@@ -400,7 +400,9 @@ message ConfigMetricsReport {
 
   repeated string strings = 9;
 
-  repeated DataCorruptedReason data_corrupted_reason = 10;
+  reserved 10;
+
+  repeated DataCorruptedReason data_corrupted_reason = 11;
 }
 
 message ConfigMetricsReportList {
@@ -682,6 +684,13 @@ message StatsdStatsReport {
     }
 
     optional SocketLossStats socket_loss_stats = 24;
+
+    message EventQueueStats {
+        optional int32 max_size_observed = 1;
+        optional int64 max_size_observed_elapsed_nanos = 2;
+    }
+
+    optional EventQueueStats event_queue_stats = 25;
 }
 
 message AlertTriggerDetails {
