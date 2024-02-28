@@ -64,6 +64,71 @@ bool hasLeafNode(const FieldMatcher& matcher) {
     return true;
 }
 
+// DFS for ensuring there is no
+// 1. value matching in the FieldValueMatcher tree with Position::ALL.
+// 2. string replacement in the FieldValueMatcher tree without a value matcher with Position::ANY.
+// Using vector to keep track of visited FieldValueMatchers since we expect number of
+// FieldValueMatchers to be low.
+optional<InvalidConfigReasonEnum> validateFvmPositionAllAndAny(
+        const FieldValueMatcher& fvm, bool inPositionAll, bool inPositionAny,
+        vector<FieldValueMatcher const*>& visited) {
+    visited.push_back(&fvm);
+    inPositionAll = inPositionAll || fvm.position() == Position::ALL;
+    inPositionAny = inPositionAny || fvm.position() == Position::ANY;
+    if (fvm.value_matcher_case() == FieldValueMatcher::kMatchesTuple) {
+        for (const FieldValueMatcher& childFvm : fvm.matches_tuple().field_value_matcher()) {
+            if (std::find(visited.cbegin(), visited.cend(), &childFvm) != visited.cend()) {
+                continue;
+            }
+            const optional<InvalidConfigReasonEnum> reasonEnum =
+                    validateFvmPositionAllAndAny(childFvm, inPositionAll, inPositionAny, visited);
+            if (reasonEnum != nullopt) {
+                return reasonEnum;
+            }
+        }
+        return nullopt;
+    }
+    if (inPositionAll && fvm.value_matcher_case() != FieldValueMatcher::VALUE_MATCHER_NOT_SET) {
+        // value_matcher is set to something other than matches_tuple with Position::ALL
+        return INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL;
+    }
+    if (inPositionAny && fvm.value_matcher_case() == FieldValueMatcher::VALUE_MATCHER_NOT_SET &&
+        fvm.has_replace_string()) {
+        // value_matcher is not set and there is a string replacement with Position::ANY
+        return INVALID_CONFIG_REASON_MATCHER_STRING_REPLACE_WITH_NO_VALUE_MATCHER_WITH_POSITION_ANY;
+    }
+    return nullopt;
+}
+
+optional<InvalidConfigReason> validateSimpleAtomMatcher(int64_t matcherId,
+                                                        const SimpleAtomMatcher& simpleMatcher) {
+    for (const FieldValueMatcher& fvm : simpleMatcher.field_value_matcher()) {
+        if (fvm.value_matcher_case() == FieldValueMatcher::VALUE_MATCHER_NOT_SET &&
+            !fvm.has_replace_string()) {
+            return createInvalidConfigReasonWithMatcher(
+                    INVALID_CONFIG_REASON_MATCHER_NO_VALUE_MATCHER_NOR_STRING_REPLACER, matcherId);
+        } else if (fvm.has_replace_string() &&
+                   !(fvm.value_matcher_case() == FieldValueMatcher::VALUE_MATCHER_NOT_SET ||
+                     fvm.value_matcher_case() == FieldValueMatcher::kEqString ||
+                     fvm.value_matcher_case() == FieldValueMatcher::kEqAnyString ||
+                     fvm.value_matcher_case() == FieldValueMatcher::kNeqAnyString ||
+                     fvm.value_matcher_case() == FieldValueMatcher::kEqWildcardString ||
+                     fvm.value_matcher_case() == FieldValueMatcher::kEqAnyWildcardString ||
+                     fvm.value_matcher_case() == FieldValueMatcher::kNeqAnyWildcardString)) {
+            return createInvalidConfigReasonWithMatcher(
+                    INVALID_CONFIG_REASON_MATCHER_INVALID_VALUE_MATCHER_WITH_STRING_REPLACE,
+                    matcherId);
+        }
+        vector<FieldValueMatcher const*> visited;
+        const optional<InvalidConfigReasonEnum> reasonEnum = validateFvmPositionAllAndAny(
+                fvm, false /* inPositionAll */, false /* inPositionAny */, visited);
+        if (reasonEnum != nullopt) {
+            return createInvalidConfigReasonWithMatcher(*reasonEnum, matcherId);
+        }
+    }
+    return nullopt;
+}
+
 }  // namespace
 
 sp<AtomMatchingTracker> createAtomMatchingTracker(
@@ -79,6 +144,12 @@ sp<AtomMatchingTracker> createAtomMatchingTracker(
     uint64_t protoHash = Hash64(serializedMatcher);
     switch (logMatcher.contents_case()) {
         case AtomMatcher::ContentsCase::kSimpleAtomMatcher: {
+            invalidConfigReason =
+                    validateSimpleAtomMatcher(logMatcher.id(), logMatcher.simple_atom_matcher());
+            if (invalidConfigReason != nullopt) {
+                ALOGE("Matcher \"%lld\" malformed", (long long)logMatcher.id());
+                return nullptr;
+            }
             sp<AtomMatchingTracker> simpleAtomMatcher = new SimpleAtomMatchingTracker(
                     logMatcher.id(), protoHash, logMatcher.simple_atom_matcher(), uidMap);
             return simpleAtomMatcher;
@@ -620,7 +691,7 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
         }
     }
 
-    FieldMatcher internalDimensions = simplePredicate.dimensions();
+    const FieldMatcher& internalDimensions = simplePredicate.dimensions();
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
@@ -860,7 +931,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
-    sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
+    const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     int atomTagId = *(atomMatcher->getAtomIds().begin());
     int pullTagId = pullerManager->PullerForMatcherExists(atomTagId) ? atomTagId : -1;
 
@@ -1089,7 +1160,7 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
     const bool containsAnyPositionInDimensionsInWhat = HasPositionANY(metric.dimensions_in_what());
     const bool shouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
-    sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
+    const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     const int atomTagId = *(atomMatcher->getAtomIds().begin());
     const auto [dimensionSoftLimit, dimensionHardLimit] =
             StatsdStats::getAtomDimensionKeySizeLimits(
@@ -1167,7 +1238,7 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
-    sp<AtomMatchingTracker> atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
+    const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     int atomTagId = *(atomMatcher->getAtomIds().begin());
     int pullTagId = pullerManager->PullerForMatcherExists(atomTagId) ? atomTagId : -1;
 
@@ -1194,7 +1265,7 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         if (invalidConfigReason.has_value()) {
             return nullopt;
         }
-        sp<AtomMatchingTracker> triggerAtomMatcher =
+        const sp<AtomMatchingTracker>& triggerAtomMatcher =
                 allAtomMatchingTrackers.at(triggerTrackerIndex);
         triggerAtomId = *(triggerAtomMatcher->getAtomIds().begin());
     }
@@ -1214,6 +1285,18 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
                     INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
             return nullopt;
         }
+    }
+
+    if (pullTagId != -1 && metric.sampling_percentage() != 100) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING, metric.id());
+        return nullopt;
+    }
+
+    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE, metric.id());
+        return nullopt;
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
@@ -1330,8 +1413,9 @@ optional<InvalidConfigReason> initAtomMatchingTrackers(
     vector<uint8_t> stackTracker2(allAtomMatchingTrackers.size(), false);
     for (size_t matcherIndex = 0; matcherIndex < allAtomMatchingTrackers.size(); matcherIndex++) {
         auto& matcher = allAtomMatchingTrackers[matcherIndex];
-        invalidConfigReason = matcher->init(matcherIndex, matcherConfigs, allAtomMatchingTrackers,
-                                            atomMatchingTrackerMap, stackTracker2);
+        const auto [invalidConfigReason, _] =
+                matcher->init(matcherIndex, matcherConfigs, allAtomMatchingTrackers,
+                              atomMatchingTrackerMap, stackTracker2);
         if (invalidConfigReason.has_value()) {
             return invalidConfigReason;
         }
@@ -1423,8 +1507,8 @@ optional<InvalidConfigReason> initStates(
         stateProtoHashes[stateId] = Hash64(serializedState);
 
         const StateMap& stateMap = state.map();
-        for (auto group : stateMap.group()) {
-            for (auto value : group.value()) {
+        for (const auto& group : stateMap.group()) {
+            for (const auto& value : group.value()) {
                 allStateGroupMaps[stateId][value] = group.group_id();
             }
         }

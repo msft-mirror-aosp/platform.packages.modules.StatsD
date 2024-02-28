@@ -42,7 +42,8 @@ public:
 
     void addSubscription(const Subscription& subscription);
 
-    void informAlarmsFired(const int64_t& timestampNs,
+    void informAlarmsFired(
+            int64_t timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& firedAlarms);
 
 protected:

@@ -30,13 +30,13 @@ namespace statsd {
  */
 class ConfigListener : public virtual RefBase {
 public:
-    ConfigListener();
-    virtual ~ConfigListener();
+    ConfigListener() = default;
+    virtual ~ConfigListener() = default;
 
     /**
      * A configuration was added or updated.
      */
-    virtual void OnConfigUpdated(const int64_t timestampNs, const ConfigKey& key,
+    virtual void OnConfigUpdated(int64_t timestampNs, const ConfigKey& key,
                                  const StatsdConfig& config, bool modularUpdate = true) = 0;
 
     /**

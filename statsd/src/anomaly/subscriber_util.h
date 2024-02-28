@@ -24,7 +24,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
-void triggerSubscribers(const int64_t ruleId, const int64_t metricId,
+void triggerSubscribers(const int64_t ruleId, int64_t metricId,
                         const MetricDimensionKey& dimensionKey, int64_t metricValue,
                         const ConfigKey& configKey, const std::vector<Subscription>& subscriptions);
 
