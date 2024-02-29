@@ -162,7 +162,7 @@ public class CountMetricsTests extends DeviceAtomTestCase {
         StatsdConfigProto.StatsdConfig.Builder builder = createConfigBuilder()
                 .addCountMetric(StatsdConfigProto.CountMetric.newBuilder()
                         .setId(MetricsUtils.COUNT_METRIC_ID)
-                        .setBucket(StatsdConfigProto.TimeUnit.CTS)
+                        .setBucket(StatsdConfigProto.TimeUnit.ONE_MINUTE)
                         .setWhat(whatMatcherId)
                         .setCondition(conditionId)
                 )
