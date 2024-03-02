@@ -56,8 +56,6 @@ public:
 
     bool checkLogCredentials(const LogEvent& event);
 
-    bool eventSanityCheck(const LogEvent& event);
-
     virtual void onLogEvent(const LogEvent& event);
 
     void onAnomalyAlarmFired(

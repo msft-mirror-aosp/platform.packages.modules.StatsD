@@ -742,13 +742,15 @@ public class StatsCompanionService extends IStatsCompanionService.Stub {
             filter.addAction(Intent.ACTION_PACKAGE_ADDED);
             filter.addAction(Intent.ACTION_PACKAGE_REMOVED);
             filter.addDataScheme("package");
-            mContext.registerReceiverForAllUsers(appUpdateReceiver, filter, null, null);
+            mContext.registerReceiverForAllUsers(appUpdateReceiver, filter, null,
+                    /* scheduler= */ mHandler);
 
             // Setup receiver for user initialize (which happens once for a new user)
             // and if a user is removed.
             filter = new IntentFilter(Intent.ACTION_USER_INITIALIZE);
             filter.addAction(Intent.ACTION_USER_REMOVED);
-            mContext.registerReceiverForAllUsers(userUpdateReceiver, filter, null, null);
+            mContext.registerReceiverForAllUsers(userUpdateReceiver, filter, null,
+                    /* scheduler= */ mHandler);
 
             // Setup receiver for device reboots or shutdowns.
             filter = new IntentFilter(Intent.ACTION_REBOOT);
