@@ -57,8 +57,6 @@ public:
     // Return whether the configuration is valid.
     bool isConfigValid() const;
 
-    bool checkLogCredentials(const LogEvent& event);
-
     virtual void onLogEvent(const LogEvent& event);
 
     void onAnomalyAlarmFired(
@@ -325,6 +323,12 @@ private:
 
     std::vector<int> mMetricIndexesWithActivation;
 
+    inline bool checkLogCredentials(const LogEvent& event) const {
+        return checkLogCredentials(event.GetUid(), event.GetTagId());
+    }
+
+    bool checkLogCredentials(int32_t uid, int32_t atomId) const;
+
     void initAllowedLogSources();
 
     void initPullAtomSources();
@@ -364,6 +368,8 @@ private:
     // Only called on config creation/update. Sets the soft memory limit in bytes for storing
     // metrics.
     void setTriggerGetDataBytesFromConfig(const StatsdConfig& config);
+
+    void onLogEventLost(const SocketLossInfo& socketLossInfo);
 
     // The memory limit in bytes for storing metrics
     size_t mMaxMetricsBytes;
@@ -406,7 +412,10 @@ private:
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations);
 
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
+    FRIEND_TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom);
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
