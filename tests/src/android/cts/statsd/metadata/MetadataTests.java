@@ -137,6 +137,20 @@ public class MetadataTests extends MetadataTestCase {
             runDeviceTests(
                     DEVICE_SIDE_TEST_PACKAGE, ".StatsdStressLogging", "testLogAtomsBackToBack");
 
+            // Delay to allow statsd socket recover after overflow
+            Thread.sleep(500);
+
+            // There is some un-deterministic component in AtomLossStats propagation:
+            // - the dumpAtomsLossStats() from the libstatssocket happens ONLY after the
+            //   next successful atom write to socket.
+            // - to avoid socket flood there is also cooldown timer incorporated. If no new atoms -
+            //   loss info will not be propagated, which is intention by design.
+            // Log atoms into socket successfully to trigger libstatsocket dumpAtomsLossStats()
+            doAppBreadcrumbReportedStart(6);
+
+            // Delay to allow libstatssocket loss info to be propagated to statsdstats
+            Thread.sleep(1000);
+
             StatsdStatsReport report = getStatsdStatsReport();
             assertThat(report).isNotNull();
             boolean detectedLossEventForAppBreadcrumbAtom = false;
@@ -168,7 +182,6 @@ public class MetadataTests extends MetadataTestCase {
                     }
                 }
             }
-
             assertThat(detectedLossEventForAppBreadcrumbAtomViaSocketLossStats).isTrue();
         }
     }
