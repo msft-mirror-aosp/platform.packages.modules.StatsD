@@ -44,6 +44,7 @@ using android::util::ProtoOutputStream;
 
 using std::set;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace android {
@@ -364,7 +365,7 @@ bool MetricsManager::isConfigValid() const {
     return !mInvalidConfigReason.has_value();
 }
 
-void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
+void MetricsManager::notifyAppUpgrade(const int64_t eventTimeNs, const string& apk, const int uid,
                                       const int64_t version) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
@@ -385,8 +386,7 @@ void MetricsManager::notifyAppUpgrade(const int64_t& eventTimeNs, const string& 
     }
 }
 
-void MetricsManager::notifyAppRemoved(const int64_t& eventTimeNs, const string& apk,
-                                      const int uid) {
+void MetricsManager::notifyAppRemoved(const int64_t eventTimeNs, const string& apk, const int uid) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
         it->notifyAppRemoved(eventTimeNs);
@@ -406,7 +406,7 @@ void MetricsManager::notifyAppRemoved(const int64_t& eventTimeNs, const string& 
     }
 }
 
-void MetricsManager::onUidMapReceived(const int64_t& eventTimeNs) {
+void MetricsManager::onUidMapReceived(const int64_t eventTimeNs) {
     // Purposefully don't inform metric producers on a new snapshot
     // because we don't need to flush partial buckets.
     // This occurs if a new user is added/removed or statsd crashes.
@@ -418,7 +418,7 @@ void MetricsManager::onUidMapReceived(const int64_t& eventTimeNs) {
     initAllowedLogSources();
 }
 
-void MetricsManager::onStatsdInitCompleted(const int64_t& eventTimeNs) {
+void MetricsManager::onStatsdInitCompleted(const int64_t eventTimeNs) {
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
         it->onStatsdInitCompleted(eventTimeNs);
@@ -526,42 +526,6 @@ bool MetricsManager::checkLogCredentials(const LogEvent& event) {
     return true;
 }
 
-bool MetricsManager::eventSanityCheck(const LogEvent& event) {
-    if (event.GetTagId() == util::APP_BREADCRUMB_REPORTED) {
-        // Check that app breadcrumb reported fields are valid.
-        status_t err = NO_ERROR;
-
-        // Uid is 3rd from last field and must match the caller's uid,
-        // unless that caller is statsd itself (statsd is allowed to spoof uids).
-        long appHookUid = event.GetLong(event.size()-2, &err);
-        if (err != NO_ERROR) {
-            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the uid");
-            return false;
-        }
-
-        // Because the uid within the LogEvent may have been mapped from
-        // isolated to host, map the loggerUid similarly before comparing.
-        int32_t loggerUid = mUidMap->getHostUidOrSelf(event.GetUid());
-        if (loggerUid != appHookUid && loggerUid != AID_STATSD) {
-            VLOG("APP_BREADCRUMB_REPORTED has invalid uid: claimed %ld but caller is %d",
-                 appHookUid, loggerUid);
-            return false;
-        }
-
-        // The state must be from 0,3. This part of code must be manually updated.
-        long appHookState = event.GetLong(event.size(), &err);
-        if (err != NO_ERROR) {
-            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the state field");
-            return false;
-        } else if (appHookState < 0 || appHookState > 3) {
-            VLOG("APP_BREADCRUMB_REPORTED does not have valid state %ld", appHookState);
-            return false;
-        }
-    }
-
-    return true;
-}
-
 // Consume the stats log if it's interesting to this metric.
 void MetricsManager::onLogEvent(const LogEvent& event) {
     if (!isConfigValid()) {
@@ -569,11 +533,6 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     }
 
     if (!checkLogCredentials(event)) {
-        return;
-    }
-
-    // TODO(b/212755214): this check could be done once on the StatsLogProcessor level
-    if (!eventSanityCheck(event)) {
         return;
     }
 
@@ -616,10 +575,12 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     vector<MatchingState> matcherCache(mAllAtomMatchingTrackers.size(),
                                        MatchingState::kNotComputed);
+    vector<shared_ptr<LogEvent>> matcherTransformations(matcherCache.size(), nullptr);
 
     for (const auto& matcherIndex : matchersIt->second) {
         mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, matcherIndex,
-                                                           mAllAtomMatchingTrackers, matcherCache);
+                                                           mAllAtomMatchingTrackers, matcherCache,
+                                                           matcherTransformations);
     }
 
     // Set of metrics that received an activation cancellation.
@@ -661,12 +622,15 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     // A bitmap to see which ConditionTracker needs to be re-evaluated.
     vector<uint8_t> conditionToBeEvaluated(mAllConditionTrackers.size(), false);
+    vector<shared_ptr<LogEvent>> conditionToTransformedLogEvents(mAllConditionTrackers.size(),
+                                                                 nullptr);
 
-    for (const auto& pair : mTrackerToConditionMap) {
-        if (matcherCache[pair.first] == MatchingState::kMatched) {
-            const auto& conditionList = pair.second;
+    for (const auto& [matcherIndex, conditionList] : mTrackerToConditionMap) {
+        if (matcherCache[matcherIndex] == MatchingState::kMatched) {
             for (const int conditionIndex : conditionList) {
                 conditionToBeEvaluated[conditionIndex] = true;
+                conditionToTransformedLogEvents[conditionIndex] =
+                        matcherTransformations[matcherIndex];
             }
         }
     }
@@ -676,34 +640,38 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     // A bitmap to track if a condition has changed value.
     vector<uint8_t> changedCache(mAllConditionTrackers.size(), false);
     for (size_t i = 0; i < mAllConditionTrackers.size(); i++) {
-        if (conditionToBeEvaluated[i] == false) {
+        if (!conditionToBeEvaluated[i]) {
             continue;
         }
         sp<ConditionTracker>& condition = mAllConditionTrackers[i];
-        condition->evaluateCondition(event, matcherCache, mAllConditionTrackers, conditionCache,
-                                     changedCache);
+        const LogEvent& conditionEvent = conditionToTransformedLogEvents[i] == nullptr
+                                                 ? event
+                                                 : *conditionToTransformedLogEvents[i];
+        condition->evaluateCondition(conditionEvent, matcherCache, mAllConditionTrackers,
+                                     conditionCache, changedCache);
     }
 
     for (size_t i = 0; i < mAllConditionTrackers.size(); i++) {
-        if (changedCache[i] == false) {
+        if (!changedCache[i]) {
             continue;
         }
-        auto pair = mConditionToMetricMap.find(i);
-        if (pair != mConditionToMetricMap.end()) {
-            auto& metricList = pair->second;
-            for (auto metricIndex : metricList) {
-                // Metric cares about non sliced condition, and it's changed.
-                // Push the new condition to it directly.
-                if (!mAllMetricProducers[metricIndex]->isConditionSliced()) {
-                    mAllMetricProducers[metricIndex]->onConditionChanged(conditionCache[i],
-                                                                         eventTimeNs);
-                    // Metric cares about sliced conditions, and it may have changed. Send
-                    // notification, and the metric can query the sliced conditions that are
-                    // interesting to it.
-                } else {
-                    mAllMetricProducers[metricIndex]->onSlicedConditionMayChange(conditionCache[i],
-                                                                                 eventTimeNs);
-                }
+        auto it = mConditionToMetricMap.find(i);
+        if (it == mConditionToMetricMap.end()) {
+            continue;
+        }
+        auto& metricList = it->second;
+        for (auto metricIndex : metricList) {
+            // Metric cares about non sliced condition, and it's changed.
+            // Push the new condition to it directly.
+            if (!mAllMetricProducers[metricIndex]->isConditionSliced()) {
+                mAllMetricProducers[metricIndex]->onConditionChanged(conditionCache[i],
+                                                                     eventTimeNs);
+                // Metric cares about sliced conditions, and it may have changed. Send
+                // notification, and the metric can query the sliced conditions that are
+                // interesting to it.
+            } else {
+                mAllMetricProducers[metricIndex]->onSlicedConditionMayChange(conditionCache[i],
+                                                                             eventTimeNs);
             }
         }
     }
@@ -712,20 +680,23 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
         if (matcherCache[i] == MatchingState::kMatched) {
             StatsdStats::getInstance().noteMatcherMatched(mConfigKey,
                                                           mAllAtomMatchingTrackers[i]->getId());
-            auto pair = mTrackerToMetricMap.find(i);
-            if (pair != mTrackerToMetricMap.end()) {
-                auto& metricList = pair->second;
-                for (const int metricIndex : metricList) {
-                    // pushed metrics are never scheduled pulls
-                    mAllMetricProducers[metricIndex]->onMatchedLogEvent(i, event);
-                }
+            auto it = mTrackerToMetricMap.find(i);
+            if (it == mTrackerToMetricMap.end()) {
+                continue;
+            }
+            auto& metricList = it->second;
+            const LogEvent& metricEvent =
+                    matcherTransformations[i] == nullptr ? event : *matcherTransformations[i];
+            for (const int metricIndex : metricList) {
+                // pushed metrics are never scheduled pulls
+                mAllMetricProducers[metricIndex]->onMatchedLogEvent(i, metricEvent);
             }
         }
     }
 }
 
 void MetricsManager::onAnomalyAlarmFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mAllAnomalyTrackers) {
         itr->informAlarmsFired(timestampNs, alarmSet);
@@ -733,7 +704,7 @@ void MetricsManager::onAnomalyAlarmFired(
 }
 
 void MetricsManager::onPeriodicAlarmFired(
-        const int64_t& timestampNs,
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mAllPeriodicAlarmTrackers) {
         itr->informAlarmsFired(timestampNs, alarmSet);

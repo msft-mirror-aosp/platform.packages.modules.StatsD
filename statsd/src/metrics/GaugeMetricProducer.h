@@ -34,7 +34,7 @@ namespace os {
 namespace statsd {
 
 struct GaugeAtom {
-    GaugeAtom(std::shared_ptr<vector<FieldValue>> fields, int64_t elapsedTimeNs)
+    GaugeAtom(const std::shared_ptr<vector<FieldValue>>& fields, int64_t elapsedTimeNs)
         : mFields(fields), mElapsedTimestampNs(elapsedTimeNs) {
     }
     std::shared_ptr<vector<FieldValue>> mFields;
@@ -60,13 +60,12 @@ typedef std::unordered_map<MetricDimensionKey, std::vector<GaugeAtom>>
 class GaugeMetricProducer : public MetricProducer, public virtual PullDataReceiver {
 public:
     GaugeMetricProducer(
-            const ConfigKey& key, const GaugeMetric& gaugeMetric, const int conditionIndex,
+            const ConfigKey& key, const GaugeMetric& gaugeMetric, int conditionIndex,
             const vector<ConditionState>& initialConditionCache,
             const sp<ConditionWizard>& conditionWizard, const uint64_t protoHash,
             const int whatMatcherIndex, const sp<EventMatcherWizard>& matcherWizard,
-            const int pullTagId, const int triggerAtomId, const int atomId,
-            const int64_t timeBaseNs, const int64_t startTimeNs,
-            const sp<StatsPullerManager>& pullerManager,
+            const int pullTagId, int triggerAtomId, int atomId, const int64_t timeBaseNs,
+            int64_t startTimeNs, const sp<StatsPullerManager>& pullerManager,
             const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap = {},
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
@@ -86,7 +85,7 @@ public:
     };
 
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
-    void notifyAppUpgradeInternalLocked(const int64_t eventTimeNs) override {
+    void notifyAppUpgradeInternalLocked(int64_t eventTimeNs) override {
         flushLocked(eventTimeNs);
         if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE && mIsActive) {
             pullAndMatchEventsLocked(eventTimeNs);
@@ -94,7 +93,7 @@ public:
     };
 
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
-    void onStatsdInitCompleted(const int64_t& eventTimeNs) override {
+    void onStatsdInitCompleted(int64_t eventTimeNs) override {
         std::lock_guard<std::mutex> lock(mMutex);
 
         flushLocked(eventTimeNs);
@@ -123,13 +122,13 @@ private:
     void clearPastBucketsLocked(const int64_t dumpTimeNs) override;
 
     // Internal interface to handle condition change.
-    void onConditionChangedLocked(const bool conditionMet, const int64_t eventTime) override;
+    void onConditionChangedLocked(const bool conditionMet, int64_t eventTime) override;
 
     // Internal interface to handle active state change.
     void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) override;
 
     // Internal interface to handle sliced condition change.
-    void onSlicedConditionMayChangeLocked(bool overallCondition, const int64_t eventTime) override;
+    void onSlicedConditionMayChangeLocked(bool overallCondition, int64_t eventTime) override;
 
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
@@ -139,10 +138,9 @@ private:
     void dropDataLocked(const int64_t dropTimeNs) override;
 
     // Util function to flush the old packet.
-    void flushIfNeededLocked(const int64_t& eventTime) override;
+    void flushIfNeededLocked(int64_t eventTime) override;
 
-    void flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                  const int64_t& nextBucketStartTimeNs) override;
+    void flushCurrentBucketLocked(int64_t eventTimeNs, int64_t nextBucketStartTimeNs) override;
 
     void prepareFirstBucketLocked() override;
 
@@ -150,7 +148,7 @@ private:
     void pullAndMatchEventsLocked(const int64_t timestampNs);
 
     optional<InvalidConfigReason> onConfigUpdatedLocked(
-            const StatsdConfig& config, const int configIndex, const int metricIndex,
+            const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -226,6 +224,8 @@ private:
 
     // Tracks if the dimension guardrail has been hit in the current report.
     bool mDimensionGuardrailHit;
+
+    const int mSamplingPercentage;
 
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition);

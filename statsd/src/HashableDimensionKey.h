@@ -142,7 +142,7 @@ private:
 
 class AtomDimensionKey {
 public:
-    explicit AtomDimensionKey(const int32_t atomTag, const HashableDimensionKey& atomFieldValues)
+    explicit AtomDimensionKey(int32_t atomTag, const HashableDimensionKey& atomFieldValues)
         : mAtomTag(atomTag), mAtomFieldValues(atomFieldValues){};
 
     AtomDimensionKey(){};

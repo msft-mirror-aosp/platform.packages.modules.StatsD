@@ -750,6 +750,16 @@ TEST(StatsdStatsTest, TestAtomDroppedStats) {
     EXPECT_FALSE(nonPlatformPushedAtomStats.has_skip_count());
 }
 
+TEST(StatsdStatsTest, TestQueueStats) {
+    StatsdStats stats;
+
+    stats.noteEventQueueSize(100, 1000);
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ true);
+
+    ASSERT_EQ(100, report.event_queue_stats().max_size_observed());
+    ASSERT_EQ(1000, report.event_queue_stats().max_size_observed_elapsed_nanos());
+}
+
 TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats) {
     StatsdStats stats;
 
