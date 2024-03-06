@@ -99,6 +99,8 @@ public class TestDrive {
             "com.google.android.healthconnect.controller",
             "com.android.telephony.qns",
             "com.android.car",
+            "com.android.ondevicepersonalization.services",
+            "com.google.android.ondevicepersonalization.services",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",
