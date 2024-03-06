@@ -589,6 +589,7 @@ cc_fuzz {
     defaults: [
         "statsd_defaults",
         "service_fuzzer_defaults",
+        "fuzzer_disable_leaks",
     ],
     srcs: [
         "fuzzers/statsd_service_fuzzer.cpp",
@@ -604,6 +605,7 @@ cc_fuzz {
         "-Wno-unused-parameter",
     ],
     fuzz_config: {
+        triage_assignee: "waghpawan@google.com",
         cc: [
             "singhtejinder@google.com",
             "sharaienko@google.com",
