@@ -225,7 +225,7 @@ template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onStateChanged(
         int64_t eventTimeNs, int32_t atomId, const HashableDimensionKey& primaryKey,
         const FieldValue& oldState, const FieldValue& newState) {
-    // TODO(b/189353769): Acquire lock.
+    std::lock_guard<std::mutex> lock(mMutex);
     VLOG("ValueMetricProducer %lld onStateChanged time %lld, State %d, key %s, %d -> %d",
          (long long)mMetricId, (long long)eventTimeNs, atomId, primaryKey.toString().c_str(),
          oldState.mValue.int_value, newState.mValue.int_value);

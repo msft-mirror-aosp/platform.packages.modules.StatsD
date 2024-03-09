@@ -318,6 +318,7 @@ void DurationMetricProducer::onStateChanged(const int64_t eventTimeNs, const int
                                             const HashableDimensionKey& primaryKey,
                                             const FieldValue& oldState,
                                             const FieldValue& newState) {
+    std::lock_guard<std::mutex> lock(mMutex);
     // Check if this metric has a StateMap. If so, map the new state value to
     // the correct state group id.
     FieldValue newStateCopy = newState;
