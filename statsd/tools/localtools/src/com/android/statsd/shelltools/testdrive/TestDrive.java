@@ -101,6 +101,7 @@ public class TestDrive {
             "com.android.car",
             "com.android.ondevicepersonalization.services",
             "com.google.android.ondevicepersonalization.services",
+            "AID_UPROBESTATS",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",
