@@ -415,7 +415,7 @@ private:
      */
     void onStatsdInitCompleted();
 
-    /**
+    /*
      *  This method is used to stop log reader thread.
      */
     void stopReadingLogs();

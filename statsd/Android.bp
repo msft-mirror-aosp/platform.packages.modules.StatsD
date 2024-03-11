@@ -604,6 +604,7 @@ cc_fuzz {
         "-Wno-unused-parameter",
     ],
     fuzz_config: {
+        triage_assignee: "waghpawan@google.com",
         cc: [
             "singhtejinder@google.com",
             "sharaienko@google.com",
