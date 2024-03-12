@@ -48,6 +48,7 @@ namespace statsd {
 const int FIELD_ID_ID = 1;
 const int FIELD_ID_EVENT_METRICS = 4;
 const int FIELD_ID_IS_ACTIVE = 14;
+const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
 // for EventMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 // for EventMetricData
@@ -173,6 +174,9 @@ void EventMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                              ProtoOutputStream* protoOutput) {
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
+
     uint64_t protoToken = protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_EVENT_METRICS);
     for (const auto& [atomDimensionKey, elapsedTimestampsNs] : mAggregatedAtoms) {
         uint64_t wrapperToken =
