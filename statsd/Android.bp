@@ -75,6 +75,7 @@ cc_defaults {
         "src/external/StatsPuller.cpp",
         "src/external/StatsPullerManager.cpp",
         "src/external/TrainInfoPuller.cpp",
+        "src/external/Uprobestats.cpp",
         "src/FieldValue.cpp",
         "src/flags/FlagProvider.cpp",
         "src/guardrail/StatsdStats.cpp",
@@ -589,6 +590,7 @@ cc_fuzz {
     defaults: [
         "statsd_defaults",
         "service_fuzzer_defaults",
+        "fuzzer_disable_leaks",
     ],
     srcs: [
         "fuzzers/statsd_service_fuzzer.cpp",
@@ -596,6 +598,36 @@ cc_fuzz {
     shared_libs: [
         "libstatssocket",
         "libvndksupport",
+    ],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+    fuzz_config: {
+        triage_assignee: "waghpawan@google.com",
+        cc: [
+            "singhtejinder@google.com",
+            "sharaienko@google.com",
+        ],
+    },
+    proto: {
+        type: "lite",
+        static: true,
+    },
+}
+
+cc_fuzz {
+    name: "statsd_logevent_fuzzer",
+    defaults: [
+        "statsd_defaults",
+    ],
+    srcs: [
+        "fuzzers/LogEvent_fuzzer.cpp",
+    ],
+    shared_libs: [
+        "libstatssocket",
     ],
     cflags: [
         "-Wall",

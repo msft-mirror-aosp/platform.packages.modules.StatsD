@@ -849,7 +849,6 @@ public class StatsManagerService extends IStatsManagerService.Stub {
             }
         }
     }
-
     private static final int CHUNK_SIZE = 1024 * 64; // 64 kB
 
     /**
