@@ -30,6 +30,7 @@ import com.android.os.StatsLog;
 import com.android.os.StatsLog.ConfigMetricsReport;
 import com.android.os.StatsLog.ConfigMetricsReportList;
 import com.android.os.StatsLog.StatsLogReport;
+import com.android.os.framework.FrameworkExtensionAtoms;
 import com.android.os.telephony.qns.QnsExtensionAtoms;
 import com.android.statsd.shelltools.Utils;
 
@@ -576,6 +577,8 @@ public class TestDrive {
             allowedSources.addAll(mAdditionalAllowedPackages);
             return StatsdConfig.newBuilder()
                     .addAllAllowedLogSource(allowedSources)
+                    .addWhitelistedAtomIds(
+                            FrameworkExtensionAtoms.STYLUS_PREDICTION_METRICS_REPORTED_FIELD_NUMBER)
                     .addAllDefaultPullPackages(Arrays.asList(DEFAULT_PULL_SOURCES))
                     .addPullAtomPackages(
                             PullAtomPackages.newBuilder()

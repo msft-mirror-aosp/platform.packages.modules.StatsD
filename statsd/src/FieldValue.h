@@ -371,7 +371,6 @@ struct Value {
 class Annotations {
 public:
     Annotations() {
-        setNested(true);  // Nested = true by default
     }
 
     // This enum stores where particular annotations can be found in the
