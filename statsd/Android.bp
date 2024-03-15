@@ -616,6 +616,35 @@ cc_fuzz {
     },
 }
 
+cc_fuzz {
+    name: "statsd_logevent_fuzzer",
+    defaults: [
+        "statsd_defaults",
+    ],
+    srcs: [
+        "fuzzers/LogEvent_fuzzer.cpp",
+    ],
+    shared_libs: [
+        "libstatssocket",
+    ],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+    fuzz_config: {
+        cc: [
+            "singhtejinder@google.com",
+            "sharaienko@google.com",
+        ],
+    },
+    proto: {
+        type: "lite",
+        static: true,
+    },
+}
+
 // Filegroup for subscription protos.
 filegroup {
     name: "libstats_subscription_protos",
