@@ -618,7 +618,7 @@ cc_fuzz {
 }
 
 cc_fuzz {
-    name: "statsd_logevent_fuzzer",
+    name: "statsd_fuzzer",
     defaults: [
         "statsd_defaults",
     ],
