@@ -61,8 +61,8 @@ private:
      * @param queue queue to submit the event
      * @param filter to be used for event evaluation
      */
-    static void processData(const char* buffer, uint32_t len, uint32_t uid, uint32_t pid,
-                            LogEventQueue& queue, const LogEventFilter& filter);
+    static void processSocketMessage(const char* buffer, uint32_t len, uint32_t uid, uint32_t pid,
+                                     LogEventQueue& queue, const LogEventFilter& filter);
 
     /**
      * @brief Helper API to parse buffer, make the LogEvent & submit it into the queue
@@ -85,6 +85,8 @@ private:
     std::shared_ptr<LogEventQueue> mQueue;
 
     std::shared_ptr<LogEventFilter> mLogEventFilter;
+
+    friend void fuzzSocket(const uint8_t* data, size_t size);
 
     friend class SocketParseMessageTest;
     friend void generateAtomLogging(LogEventQueue& queue, const LogEventFilter& filter,
