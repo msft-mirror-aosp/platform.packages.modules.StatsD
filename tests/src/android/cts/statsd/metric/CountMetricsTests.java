@@ -49,7 +49,7 @@ public class CountMetricsTests extends DeviceAtomTestCase {
         StatsdConfigProto.StatsdConfig.Builder builder = createConfigBuilder();
         builder.addCountMetric(StatsdConfigProto.CountMetric.newBuilder()
                 .setId(MetricsUtils.COUNT_METRIC_ID)
-                .setBucket(StatsdConfigProto.TimeUnit.CTS)
+                .setBucket(StatsdConfigProto.TimeUnit.ONE_MINUTE)
                 .setWhat(matcherId))
                 .addAtomMatcher(MetricsUtils.simpleAtomMatcher(matcherId));
         uploadConfig(builder);
