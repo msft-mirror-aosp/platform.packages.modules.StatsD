@@ -95,14 +95,14 @@ bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
     const uint32_t uid = cred->uid;
     const uint32_t pid = cred->pid;
 
-    processData(buffer, n, uid, pid, *mQueue, *mLogEventFilter);
+    processSocketMessage(buffer, n, uid, pid, *mQueue, *mLogEventFilter);
 
     return true;
 }
 
-void StatsSocketListener::processData(const char* buffer, const uint32_t len, uint32_t uid,
-                                      uint32_t pid, LogEventQueue& queue,
-                                      const LogEventFilter& filter) {
+void StatsSocketListener::processSocketMessage(const char* buffer, const uint32_t len, uint32_t uid,
+                                               uint32_t pid, LogEventQueue& queue,
+                                               const LogEventFilter& filter) {
     static const uint32_t kStatsEventTag = 1937006964;
 
     if (len <= (ssize_t)(sizeof(android_log_header_t)) + sizeof(uint32_t)) {
