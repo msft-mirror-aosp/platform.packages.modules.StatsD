@@ -163,3 +163,29 @@ genrule {
         "stats_statsdsocketlog.cpp",
     ],
 }
+
+cc_fuzz {
+    name: "statsevent_fuzzer",
+    defaults: [
+        "libstatssocket_defaults",
+    ],
+    srcs: [
+        "fuzzers/stats_event_fuzzer.cpp",
+    ],
+    local_include_dirs: [
+        "include",
+    ],
+    host_supported: true,
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-unused-parameter",
+    ],
+    fuzz_config: {
+        cc: [
+            "singhtejinder@google.com",
+            "sharaienko@google.com",
+        ],
+    },
+}
