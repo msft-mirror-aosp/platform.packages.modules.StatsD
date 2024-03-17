@@ -101,6 +101,7 @@ public class TestDrive {
             "com.android.car",
             "com.android.ondevicepersonalization.services",
             "com.google.android.ondevicepersonalization.services",
+            "AID_UPROBESTATS",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",
@@ -157,7 +158,8 @@ public class TestDrive {
         LOGGER.severe("-e");
         LOGGER.severe("\tWait for Enter key press before collecting report");
         LOGGER.severe("-d delay_ms");
-        LOGGER.severe("\tWait for delay_ms before collecting report, default is 60000 ms");
+        LOGGER.severe("\tWait for delay_ms before collecting report, default is 60000 ms. Only");
+        LOGGER.severe("\taffects collection of pushed atoms.");
         LOGGER.severe("-v");
         LOGGER.severe("\tDebug logging level");
     }
