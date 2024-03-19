@@ -61,6 +61,7 @@ import com.android.os.wifi.WifiExtensionAtoms;
 import android.os.statsd.media.MediaCodecExtensionAtoms;
 import com.android.os.credentials.CredentialsExtensionAtoms;
 import com.android.os.sdksandbox.SdksandboxExtensionAtoms;
+import com.android.os.apex.ApexExtensionAtoms;
 
 import com.google.protobuf.ExtensionRegistry;
 
@@ -136,5 +137,6 @@ public class ExtensionAtomsRegistry {
         CredentialsExtensionAtoms.registerAllExtensions(extensionRegistry);
         SdksandboxExtensionAtoms.registerAllExtensions(extensionRegistry);
         ArtExtensionAtoms.registerAllExtensions(extensionRegistry);
+        ApexExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
