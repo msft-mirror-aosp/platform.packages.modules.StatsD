@@ -55,20 +55,19 @@ public class MetricsUtils {
     public static AtomMatcher.Builder getAtomMatcher(int atomId) {
         AtomMatcher.Builder builder = AtomMatcher.newBuilder();
         builder.setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder()
-                        .setAtomId(atomId));
+                .setAtomId(atomId));
         return builder;
     }
 
     public static AtomMatcher startAtomMatcher(int id) {
-      return AtomMatcher.newBuilder()
-          .setId(id)
-          .setSimpleAtomMatcher(
-              SimpleAtomMatcher.newBuilder()
-                  .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
-                  .addFieldValueMatcher(FieldValueMatcher.newBuilder()
-                                            .setField(AppBreadcrumbReported.STATE_FIELD_NUMBER)
-                                            .setEqInt(AppBreadcrumbReported.State.START.ordinal())))
-          .build();
+        return AtomMatcher.newBuilder()
+                .setId(id)
+                .setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder()
+                        .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
+                        .addFieldValueMatcher(FieldValueMatcher.newBuilder()
+                                .setField(AppBreadcrumbReported.STATE_FIELD_NUMBER)
+                                .setEqInt(AppBreadcrumbReported.State.START.getNumber())))
+                .build();
     }
 
     public static AtomMatcher startAtomMatcherWithLabel(int id, int label) {
@@ -76,15 +75,14 @@ public class MetricsUtils {
     }
 
     public static AtomMatcher stopAtomMatcher(int id) {
-      return AtomMatcher.newBuilder()
-          .setId(id)
-          .setSimpleAtomMatcher(
-              SimpleAtomMatcher.newBuilder()
-                  .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
-                  .addFieldValueMatcher(FieldValueMatcher.newBuilder()
-                                            .setField(AppBreadcrumbReported.STATE_FIELD_NUMBER)
-                                            .setEqInt(AppBreadcrumbReported.State.STOP.ordinal())))
-          .build();
+        return AtomMatcher.newBuilder()
+                .setId(id)
+                .setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder()
+                        .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
+                        .addFieldValueMatcher(FieldValueMatcher.newBuilder()
+                                .setField(AppBreadcrumbReported.STATE_FIELD_NUMBER)
+                                .setEqInt(AppBreadcrumbReported.State.STOP.getNumber())))
+                .build();
     }
 
     public static AtomMatcher stopAtomMatcherWithLabel(int id, int label) {
@@ -98,16 +96,16 @@ public class MetricsUtils {
                         .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
                         .addFieldValueMatcher(FieldValueMatcher.newBuilder()
                                 .setField(AppBreadcrumbReported.STATE_FIELD_NUMBER)
-                                .setEqInt(AppBreadcrumbReported.State.UNSPECIFIED.ordinal())))
+                                .setEqInt(AppBreadcrumbReported.State.UNSPECIFIED.getNumber())))
                 .build();
     }
 
     public static AtomMatcher simpleAtomMatcher(int id) {
-      return AtomMatcher.newBuilder()
-          .setId(id)
-          .setSimpleAtomMatcher(
-              SimpleAtomMatcher.newBuilder().setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER))
-          .build();
+        return AtomMatcher.newBuilder()
+                .setId(id)
+                .setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder()
+                        .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER))
+                .build();
     }
 
     public static AtomMatcher appBreadcrumbMatcherWithLabel(int id, int label) {
@@ -130,7 +128,7 @@ public class MetricsUtils {
                         .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
                         .addFieldValueMatcher(FieldValueMatcher.newBuilder()
                                 .setField(AppBreadcrumbReported.STATE_FIELD_NUMBER)
-                                .setEqInt(state.ordinal()))
+                                .setEqInt(state.getNumber()))
                         .addFieldValueMatcher(FieldValueMatcher.newBuilder()
                                 .setField(AppBreadcrumbReported.LABEL_FIELD_NUMBER)
                                 .setEqInt(label)))
@@ -138,16 +136,16 @@ public class MetricsUtils {
     }
 
     public static AtomMatcher simpleAtomMatcher(int id, int label) {
-      return AtomMatcher.newBuilder()
-          .setId(id)
-          .setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder()
-                  .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
-                  .addFieldValueMatcher(FieldValueMatcher.newBuilder()
-                            .setField(AppBreadcrumbReported.LABEL_FIELD_NUMBER)
-                            .setEqInt(label)
-                  )
-          )
-          .build();
+        return AtomMatcher.newBuilder()
+                .setId(id)
+                .setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder()
+                        .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
+                        .addFieldValueMatcher(FieldValueMatcher.newBuilder()
+                                .setField(AppBreadcrumbReported.LABEL_FIELD_NUMBER)
+                                .setEqInt(label)
+                        )
+                )
+                .build();
     }
 
     public static EventActivation.Builder createEventActivation(int ttlSecs, int matcherId,
@@ -159,7 +157,7 @@ public class MetricsUtils {
     }
 
     public static long StringToId(String str) {
-      return str.hashCode();
+        return str.hashCode();
     }
 
     public static String getCurrentLogcatDate(ITestDevice device) throws Exception {
@@ -178,7 +176,7 @@ public class MetricsUtils {
         if (bucketNum != null && bucketInfo.hasField(bucketNum)) {
             found = true;
         } else if (startMillis != null && bucketInfo.hasField(startMillis) &&
-                   endMillis != null && bucketInfo.hasField(endMillis)) {
+                endMillis != null && bucketInfo.hasField(endMillis)) {
             found = true;
         }
         assertWithMessage(
