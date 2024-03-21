@@ -17,6 +17,8 @@ package android.cts.statsd.metric;
 
 import static com.google.common.truth.Truth.assertWithMessage;
 
+import android.cts.statsd.atom.BufferDebug;
+
 import com.android.internal.os.StatsdConfigProto;
 import com.android.internal.os.StatsdConfigProto.AtomMatcher;
 import com.android.internal.os.StatsdConfigProto.EventActivation;
@@ -24,11 +26,26 @@ import com.android.internal.os.StatsdConfigProto.FieldValueMatcher;
 import com.android.internal.os.StatsdConfigProto.SimpleAtomMatcher;
 import com.android.os.AtomsProto.Atom;
 import com.android.os.AtomsProto.AppBreadcrumbReported;
+import com.android.tradefed.device.CollectingByteOutputReceiver;
+import com.android.tradefed.device.DeviceNotAvailableException;
+import com.android.tradefed.device.ITestDevice;
+import com.android.tradefed.log.LogUtil;
+import com.android.tradefed.util.RunUtil;
+
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.MessageLite;
+import com.google.protobuf.Parser;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 public class MetricsUtils {
+    public static final String DEVICE_SIDE_TEST_PACKAGE =
+            "com.android.server.cts.device.statsd";
+    public static final String DEVICE_SIDE_TEST_APK = "CtsStatsdApp.apk";
     public static final long COUNT_METRIC_ID = 3333;
     public static final long DURATION_METRIC_ID = 4444;
     public static final long GAUGE_METRIC_ID = 5555;
@@ -145,6 +162,13 @@ public class MetricsUtils {
       return str.hashCode();
     }
 
+    public static String getCurrentLogcatDate(ITestDevice device) throws Exception {
+        // TODO: Do something more robust than this for getting logcat markers.
+        long timestampMs = device.getDeviceDate();
+        return new SimpleDateFormat("MM-dd HH:mm:ss.SSS")
+                .format(new Date(timestampMs));
+    }
+
     public static void assertBucketTimePresent(Message bucketInfo) {
         Descriptor descriptor = bucketInfo.getDescriptorForType();
         boolean found = false;
@@ -160,5 +184,54 @@ public class MetricsUtils {
         assertWithMessage(
                 "Bucket info did not have either bucket num or start and end elapsed millis"
         ).that(found).isTrue();
+    }
+
+    public static boolean didIncidentdFireSince(ITestDevice device, String date) throws Exception {
+        final String INCIDENTD_TAG = "incidentd";
+        final String INCIDENTD_STARTED_STRING = "reportIncident";
+        // TODO: Do something more robust than this in case of delayed logging.
+        RunUtil.getDefault().sleep(1000);
+        String log = getLogcatSince(device, date, String.format(
+                "-s %s -e %s", INCIDENTD_TAG, INCIDENTD_STARTED_STRING));
+        return log.contains(INCIDENTD_STARTED_STRING);
+    }
+
+    public static String getLogcatSince(ITestDevice device, String date, String logcatParams)
+            throws Exception {
+        return device.executeShellCommand(String.format(
+                "logcat -v threadtime -t '%s' -d %s", date, logcatParams));
+    }
+
+    /**
+     * Call onto the device with an adb shell command and get the results of
+     * that as a proto of the given type.
+     *
+     * @param parser  A protobuf parser object. e.g. MyProto.parser()
+     * @param command The adb shell command to run. e.g. "dumpsys fingerprint --proto"
+     * @throws DeviceNotAvailableException    If there was a problem communicating with
+     *                                        the test device.
+     * @throws InvalidProtocolBufferException If there was an error parsing
+     *                                        the proto. Note that a 0 length buffer is not
+     *                                        necessarily an error.
+     */
+    public static <T extends MessageLite> T getDump(ITestDevice device, Parser<T> parser,
+            String command)
+            throws DeviceNotAvailableException, InvalidProtocolBufferException {
+        final CollectingByteOutputReceiver receiver = new CollectingByteOutputReceiver();
+        device.executeShellCommand(command, receiver);
+        if (false) {
+            LogUtil.CLog.d("Command output while parsing " + parser.getClass().getCanonicalName()
+                    + " for command: " + command + "\n"
+                    + BufferDebug.debugString(receiver.getOutput(), -1));
+        }
+        try {
+            return parser.parseFrom(receiver.getOutput());
+        } catch (Exception ex) {
+            LogUtil.CLog.d(
+                    "Error parsing " + parser.getClass().getCanonicalName() + " for command: "
+                            + command
+                            + BufferDebug.debugString(receiver.getOutput(), 16384));
+            throw ex;
+        }
     }
 }
