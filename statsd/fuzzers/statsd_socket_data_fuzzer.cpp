@@ -14,15 +14,30 @@
  * limitations under the License.
  */
 
-#include "logd/LogEvent.h"
+#include "socket/StatsSocketListener.h"
 
-using namespace android::os::statsd;
+namespace android {
+namespace os {
+namespace statsd {
+
+void fuzzSocket(const uint8_t* data, size_t size) {
+    LogEventQueue queue(50000);
+    LogEventFilter filter;
+    filter.setFilteringEnabled(false);
+
+    StatsSocketListener::processSocketMessage((const char*)data, size, 0, 0, queue, filter);
+
+    StatsSocketListener::processStatsEventBuffer(data, size, 0, 0, queue, filter);
+}
+
+}  // namespace statsd
+}  // namespace os
+}  // namespace android
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-    LogEvent logEvent1(0, 0);
-    logEvent1.parseHeader(data, size);
+    using namespace android::os::statsd;
 
-    LogEvent logEvent2(0, 0);
-    logEvent2.parseBuffer(data, size);
+    fuzzSocket(data, size);
+
     return 0;
 }
