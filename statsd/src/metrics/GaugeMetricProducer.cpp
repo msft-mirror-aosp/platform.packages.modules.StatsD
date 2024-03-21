@@ -102,7 +102,8 @@ GaugeMetricProducer::GaugeMetricProducer(
       mDimensionHardLimit(dimensionHardLimit),
       mGaugeAtomsPerDimensionLimit(metric.max_num_gauge_atoms_per_bucket()),
       mDimensionGuardrailHit(false),
-      mSamplingPercentage(metric.sampling_percentage()) {
+      mSamplingPercentage(metric.sampling_percentage()),
+      mPullProbability(metric.pull_probability()) {
     mCurrentSlicedBucket = std::make_shared<DimToGaugeAtomsMap>();
     mCurrentSlicedBucketForAnomaly = std::make_shared<DimToValMap>();
     int64_t bucketSizeMills = 0;
@@ -397,7 +398,7 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         default:
             break;
     }
-    if (!triggerPuller) {
+    if (!triggerPuller || !shouldKeepRandomSample(mPullProbability)) {
         return;
     }
     vector<std::shared_ptr<LogEvent>> allData;
