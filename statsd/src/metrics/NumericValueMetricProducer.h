@@ -142,12 +142,16 @@ private:
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
 
-    void combineValueFields(pair<LogEvent, vector<int>>& eventValues, const LogEvent& newEvent,
-                            const vector<int>& newValueIndices) const;
+    void combineValueFields(pair<LogEvent, std::vector<int>>& eventValues, const LogEvent& newEvent,
+                            const std::vector<int>& newValueIndices) const;
+
+    ValueMetric::AggregationType getAggregationTypeLocked(int index) const {
+        return mAggregationTypes.size() == 1 ? mAggregationTypes[0] : mAggregationTypes[index];
+    }
 
     const bool mUseAbsoluteValueOnReset;
 
-    const ValueMetric::AggregationType mAggregationType;
+    const std::vector<ValueMetric::AggregationType> mAggregationTypes;
 
     const bool mIncludeSampleSize;
 
@@ -170,6 +174,9 @@ private:
     bool mHasGlobalBase;
 
     const int64_t mMaxPullDelayNs;
+
+    // Deduped value fields for matching.
+    const std::vector<Matcher> mDedupedFieldMatchers;
 
     // For anomaly detection.
     std::unordered_map<MetricDimensionKey, int64_t> mCurrentFullBucket;
@@ -232,6 +239,8 @@ private:
     FRIEND_TEST(NumericValueMetricProducerTest,
                 TestSlicedStateWithMultipleDimensionsMissingDataInPull);
     FRIEND_TEST(NumericValueMetricProducerTest, TestUploadThreshold);
+    FRIEND_TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPulled);
+    FRIEND_TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPushed);
 
     FRIEND_TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenOneConditionFailed);
     FRIEND_TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenInitialPullFailed);
