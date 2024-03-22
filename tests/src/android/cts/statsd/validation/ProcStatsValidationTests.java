@@ -90,12 +90,12 @@ public class ProcStatsValidationTests extends ProcStateTestCase {
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
 
         final String fileName = "PROCSTATSQ_PULL.pbtxt";
-        StatsdConfig config = createValidationUtil().getConfig(fileName);
+        StatsdConfig config = ValidationTestUtil.getConfig(fileName, mCtsBuild);
         LogUtil.CLog.d("Updating the following config:\n" + config.toString());
         ConfigUtils.uploadConfig(getDevice(), config.toBuilder());
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AtomsProto.AppBreadcrumbReported.State.START.ordinal(), 1);
+                AtomsProto.AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT + 5_000);
 
         List<Atom> statsdData = ReportUtils.getGaugeMetricAtoms(getDevice());
@@ -280,15 +280,6 @@ public class ProcStatsValidationTests extends ProcStateTestCase {
 
     private void commitProcStatsToDisk() throws Exception {
         getDevice().executeShellCommand("dumpsys procstats --commit");
-    }
-
-    /**
-     * Create and return {@link ValidationTestUtil} and give it the current build.
-     */
-    public ValidationTestUtil createValidationUtil() {
-        ValidationTestUtil util = new ValidationTestUtil();
-        util.setBuild(mCtsBuild);
-        return util;
     }
 
     /*
