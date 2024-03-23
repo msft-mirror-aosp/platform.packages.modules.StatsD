@@ -150,6 +150,7 @@ cc_defaults {
         "libbinder_ndk",
         "libincident",
         "liblog",
+        "libstatssocket",
     ],
     header_libs: [
         "libgtest_prod_headers",
@@ -263,10 +264,6 @@ cc_binary {
     },
     stl: "libc++_static",
 
-    shared_libs: [
-        "libstatssocket",
-    ],
-
     apex_available: [
         "com.android.os.statsd",
         "test_com.android.os.statsd",
@@ -298,7 +295,6 @@ cc_defaults {
     static_libs: [
         "libgmock",
         "libstatslog_statsdtest",
-        "libstatssocket_private",
     ],
     proto: {
         type: "lite",
@@ -459,6 +455,7 @@ cc_test {
     ],
 
     min_sdk_version: "30",
+    test_for: ["com.android.os.statsd"],
 }
 
 //#############################
@@ -494,6 +491,8 @@ cc_benchmark {
         "libgtest",
         "libstats_test_utils",
     ],
+
+    test_for: ["com.android.os.statsd"],
 }
 
 // ====  java proto device library (for test only)  ==============================
