@@ -80,18 +80,18 @@ public class MetricActivationTests extends DeviceTestCase {
     }
 
     private StatsdConfig.Builder createConfig(final int act1TtlSecs, final int act2TtlSecs) {
-        AtomMatcher metric1Matcher = MetricsUtils.simpleAtomMatcher(metric1MatcherId,
-                metric1MatcherId);
-        AtomMatcher metric2Matcher = MetricsUtils.simpleAtomMatcher(metric2MatcherId,
-                metric2MatcherId);
-        AtomMatcher metric3Matcher = MetricsUtils.simpleAtomMatcher(metric3MatcherId,
-                metric3MatcherId);
+        AtomMatcher metric1Matcher =
+                MetricsUtils.simpleAtomMatcher(metric1MatcherId, metric1MatcherId);
+        AtomMatcher metric2Matcher =
+                MetricsUtils.simpleAtomMatcher(metric2MatcherId, metric2MatcherId);
+        AtomMatcher metric3Matcher =
+                MetricsUtils.simpleAtomMatcher(metric3MatcherId, metric3MatcherId);
         AtomMatcher act1Matcher = MetricsUtils.simpleAtomMatcher(act1MatcherId, act1MatcherId);
-        AtomMatcher act1CancelMatcher = MetricsUtils.simpleAtomMatcher(act1CancelMatcherId,
-                act1CancelMatcherId);
+        AtomMatcher act1CancelMatcher =
+                MetricsUtils.simpleAtomMatcher(act1CancelMatcherId, act1CancelMatcherId);
         AtomMatcher act2Matcher = MetricsUtils.simpleAtomMatcher(act2MatcherId, act2MatcherId);
-        AtomMatcher act2CancelMatcher = MetricsUtils.simpleAtomMatcher(act2CancelMatcherId,
-                act2CancelMatcherId);
+        AtomMatcher act2CancelMatcher =
+                MetricsUtils.simpleAtomMatcher(act2CancelMatcherId, act2CancelMatcherId);
 
         EventMetric metric1 =
                 EventMetric.newBuilder().setId(metric1Id).setWhat(metric1MatcherId).build();
@@ -176,62 +176,62 @@ public class MetricActivationTests extends DeviceTestCase {
 
         // Ignored, metric not active.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Trigger cancel for already inactive event activation 1.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1CancelMatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1CancelMatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Trigger event activation 1.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // First logged event.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Second logged event.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Cancel event activation 1.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1CancelMatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1CancelMatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Ignored, metric not active.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Trigger event activation 1.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Trigger event activation 2.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act2MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act2MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Third logged event.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Cancel event activation 2.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act2CancelMatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act2CancelMatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Fourth logged event.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Expire event activation 1
@@ -239,22 +239,22 @@ public class MetricActivationTests extends DeviceTestCase {
 
         // Ignored, metric 1 not active. Activation 1 expired and Activation 2 was cancelled.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Trigger event activation 2.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act2MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act2MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Metric 1 log ignored, Activation 1 expired and Activation 2 needs reboot to activate.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // First logged event for Metric 3.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric3MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric3MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         ConfigMetricsReportList reportList = ReportUtils.getReportList(getDevice(),
@@ -295,7 +295,7 @@ public class MetricActivationTests extends DeviceTestCase {
         // Metric 2 Activation 1: 0 seconds (will activate after boot)
         // Metric 2 Activation 2: 0 seconds
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // First logged event for Metric 1.
@@ -334,7 +334,7 @@ public class MetricActivationTests extends DeviceTestCase {
         // Metric 2 Activation 1: 0 seconds
         // Metric 2 Activation 2: 400 seconds
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act2MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act2MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Metric 1 event ignored, will activate after boot.
@@ -349,7 +349,7 @@ public class MetricActivationTests extends DeviceTestCase {
         // Metric 2 Activation 1: 0 seconds (will activate after boot)
         // Metric 2 Activation 2: 400 seconds
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Third logged event for Metric 1.
@@ -451,7 +451,7 @@ public class MetricActivationTests extends DeviceTestCase {
         // Metric 2 Activation 1: 0 seconds (will activate after boot)
         // Metric 2 Activation 2: 0 seconds
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // First logged event for Metric 1.
@@ -478,7 +478,7 @@ public class MetricActivationTests extends DeviceTestCase {
         // Metric 2 Activation 1: 0 seconds (will activate after boot)
         // Metric 2 Activation 2: 0 seconds
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Third logged event for Metric 1.
@@ -505,7 +505,7 @@ public class MetricActivationTests extends DeviceTestCase {
         // Metric 2 Activation 1: 200 seconds
         // Metric 2 Activation 2: 0 seconds
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), act1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), act1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         // Fifth logged event for Metric 1.
@@ -569,15 +569,15 @@ public class MetricActivationTests extends DeviceTestCase {
 
     private void logAllMetrics() throws Exception {
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric1MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric1MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric2MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric2MatcherId);
         RunUtil.getDefault().sleep(10L);
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), metric3MatcherId);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), metric3MatcherId);
         RunUtil.getDefault().sleep(10L);
     }
 

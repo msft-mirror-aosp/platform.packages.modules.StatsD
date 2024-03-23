@@ -56,7 +56,7 @@ public class MetadataTests extends MetadataTestCase {
         long startTime = System.currentTimeMillis();
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AtomsProto.AppBreadcrumbReported.State.START.ordinal(), /* irrelevant val */
+                AtomsProto.AppBreadcrumbReported.State.START.getNumber(), /* irrelevant val */
                 6); // Event, within < TTL_TIME_SEC secs.
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
         StatsdStatsReport report = getStatsdStatsReport(); // Has only been 1 second
@@ -79,7 +79,7 @@ public class MetadataTests extends MetadataTestCase {
             RunUtil.getDefault().sleep(10);
         }
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AtomsProto.AppBreadcrumbReported.State.START.ordinal(), /* irrelevant val */
+                AtomsProto.AppBreadcrumbReported.State.START.getNumber(), /* irrelevant val */
                 6); // Event, after TTL_TIME_SEC secs.
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
         report = getStatsdStatsReport();
@@ -162,7 +162,7 @@ public class MetadataTests extends MetadataTestCase {
             //   loss info will not be propagated, which is intention by design.
             // Log atoms into socket successfully to trigger libstatsocket dumpAtomsLossStats()
             AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                    AtomsProto.AppBreadcrumbReported.State.START.ordinal(), /* irrelevant val */
+                    AtomsProto.AppBreadcrumbReported.State.START.getNumber(), /* irrelevant val */
                     6); // Event, after TTL_TIME_SEC secs.
 
             // Delay to allow libstatssocket loss info to be propagated to statsdstats

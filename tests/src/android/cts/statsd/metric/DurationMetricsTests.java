@@ -88,22 +88,21 @@ public class DurationMetricsTests extends DeviceTestCase {
         builder.addPredicate(predicate);
 
         // Add DurationMetric.
-        builder.addDurationMetric(
-                StatsdConfigProto.DurationMetric.newBuilder()
-                        .setId(MetricsUtils.DURATION_METRIC_ID)
-                        .setWhat(predicate.getId())
-                        .setAggregationType(StatsdConfigProto.DurationMetric.AggregationType.SUM)
-                        .setBucket(StatsdConfigProto.TimeUnit.CTS));
+        builder.addDurationMetric(StatsdConfigProto.DurationMetric.newBuilder()
+                .setId(MetricsUtils.DURATION_METRIC_ID)
+                .setWhat(predicate.getId())
+                .setAggregationType(StatsdConfigProto.DurationMetric.AggregationType.SUM)
+                .setBucket(StatsdConfigProto.TimeUnit.CTS));
 
         // Upload config.
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         // Create AppBreadcrumbReported Start/Stop events.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), label);
+                AppBreadcrumbReported.State.START.getNumber(), label);
         RunUtil.getDefault().sleep(2000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), label);
+                AppBreadcrumbReported.State.STOP.getNumber(), label);
 
         // Wait for the metrics to propagate to statsd.
         RunUtil.getDefault().sleep(2000);
@@ -160,67 +159,64 @@ public class DurationMetricsTests extends DeviceTestCase {
                 .setSimplePredicate(conditionSimplePredicate)
                 .build();
 
-        builder
-                .addPredicate(predicate)
-                .addPredicate(conditionPredicate);
+        builder.addPredicate(predicate).addPredicate(conditionPredicate);
 
         // Add DurationMetric.
-        builder
-                .addDurationMetric(StatsdConfigProto.DurationMetric.newBuilder()
-                        .setId(MetricsUtils.DURATION_METRIC_ID)
-                        .setWhat(predicate.getId())
-                        .setAggregationType(StatsdConfigProto.DurationMetric.AggregationType.SUM)
-                        .setBucket(StatsdConfigProto.TimeUnit.CTS)
-                        .setCondition(conditionPredicate.getId())
-                );
+        builder.addDurationMetric(StatsdConfigProto.DurationMetric.newBuilder()
+                .setId(MetricsUtils.DURATION_METRIC_ID)
+                .setWhat(predicate.getId())
+                .setAggregationType(StatsdConfigProto.DurationMetric.AggregationType.SUM)
+                .setBucket(StatsdConfigProto.TimeUnit.CTS)
+                .setCondition(conditionPredicate.getId())
+        );
 
         // Upload config.
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         // Start uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to true.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.START.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Start counted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop counted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to false.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Start uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
@@ -272,13 +268,11 @@ public class DurationMetricsTests extends DeviceTestCase {
         builder.addPredicate(predicate);
 
         // Add DurationMetric.
-        builder
-                .addDurationMetric(StatsdConfigProto.DurationMetric.newBuilder()
+        builder.addDurationMetric(StatsdConfigProto.DurationMetric.newBuilder()
                         .setId(MetricsUtils.DURATION_METRIC_ID)
                         .setWhat(predicate.getId())
                         .setAggregationType(StatsdConfigProto.DurationMetric.AggregationType.SUM)
-                        .setBucket(StatsdConfigProto.TimeUnit.CTS)
-                )
+                        .setBucket(StatsdConfigProto.TimeUnit.CTS))
                 .addMetricActivation(StatsdConfigProto.MetricActivation.newBuilder()
                         .setMetricId(MetricsUtils.DURATION_METRIC_ID)
                         .addEventActivation(StatsdConfigProto.EventActivation.newBuilder()
@@ -292,31 +286,31 @@ public class DurationMetricsTests extends DeviceTestCase {
 
         // Start uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Start counted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop counted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
@@ -385,14 +379,12 @@ public class DurationMetricsTests extends DeviceTestCase {
         builder.addPredicate(conditionPredicate);
 
         // Add DurationMetric.
-        builder
-                .addDurationMetric(StatsdConfigProto.DurationMetric.newBuilder()
+        builder.addDurationMetric(StatsdConfigProto.DurationMetric.newBuilder()
                         .setId(MetricsUtils.DURATION_METRIC_ID)
                         .setWhat(predicate.getId())
                         .setAggregationType(StatsdConfigProto.DurationMetric.AggregationType.SUM)
                         .setBucket(StatsdConfigProto.TimeUnit.CTS)
-                        .setCondition(conditionPredicate.getId())
-                )
+                        .setCondition(conditionPredicate.getId()))
                 .addMetricActivation(StatsdConfigProto.MetricActivation.newBuilder()
                         .setMetricId(MetricsUtils.DURATION_METRIC_ID)
                         .addEventActivation(StatsdConfigProto.EventActivation.newBuilder()
@@ -406,41 +398,41 @@ public class DurationMetricsTests extends DeviceTestCase {
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to true.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.START.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Start counted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop counted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to false.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Start uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Let the metric deactivate.
@@ -450,48 +442,48 @@ public class DurationMetricsTests extends DeviceTestCase {
 
         // Start uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set condition to true again.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.START.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Start uncounted duration
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Start counted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop counted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Let the metric deactivate.
@@ -499,14 +491,14 @@ public class DurationMetricsTests extends DeviceTestCase {
 
         // Start uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.START.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         RunUtil.getDefault().sleep(2_000);
 
         // Stop uncounted duration.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), durationLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), durationLabel);
         RunUtil.getDefault().sleep(10);
 
         // Wait for the metrics to propagate to statsd.
@@ -561,46 +553,44 @@ public class DurationMetricsTests extends DeviceTestCase {
         dimensionsBuilder
                 .addChild(FieldMatcher.newBuilder().setField(
                         AppBreadcrumbReported.LABEL_FIELD_NUMBER));
-        Predicate predicateB =
-                Predicate.newBuilder()
-                        .setId(MetricsUtils.StringToId("Predicate_B"))
-                        .setSimplePredicate(SimplePredicate.newBuilder()
-                                .setStart(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
-                                .setStop(APP_BREADCRUMB_REPORTED_B_MATCH_STOP_ID)
-                                .setDimensions(dimensionsBuilder.build())
-                                .build())
-                        .build();
+        Predicate predicateB = Predicate.newBuilder()
+                .setId(MetricsUtils.StringToId("Predicate_B"))
+                .setSimplePredicate(SimplePredicate.newBuilder()
+                        .setStart(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
+                        .setStop(APP_BREADCRUMB_REPORTED_B_MATCH_STOP_ID)
+                        .setDimensions(dimensionsBuilder.build())
+                        .build())
+                .build();
         builder.addPredicate(predicateB);
 
         // Add DurationMetric.
-        builder.addDurationMetric(
-                StatsdConfigProto.DurationMetric.newBuilder()
-                        .setId(MetricsUtils.DURATION_METRIC_ID)
-                        .setWhat(predicateB.getId())
-                        .setCondition(predicateA.getId())
-                        .setAggregationType(StatsdConfigProto.DurationMetric.AggregationType.SUM)
-                        .setBucket(StatsdConfigProto.TimeUnit.CTS)
-                        .setDimensionsInWhat(
-                                FieldMatcher.newBuilder()
-                                        .setField(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
-                                        .addChild(FieldMatcher.newBuilder().setField(
-                                                AppBreadcrumbReported.LABEL_FIELD_NUMBER))));
+        builder.addDurationMetric(StatsdConfigProto.DurationMetric.newBuilder()
+                .setId(MetricsUtils.DURATION_METRIC_ID)
+                .setWhat(predicateB.getId())
+                .setCondition(predicateA.getId())
+                .setAggregationType(StatsdConfigProto.DurationMetric.AggregationType.SUM)
+                .setBucket(StatsdConfigProto.TimeUnit.CTS)
+                .setDimensionsInWhat(
+                        FieldMatcher.newBuilder()
+                                .setField(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
+                                .addChild(FieldMatcher.newBuilder().setField(
+                                        AppBreadcrumbReported.LABEL_FIELD_NUMBER))));
 
         // Upload config.
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         // Trigger events.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(2000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 2);
+                AppBreadcrumbReported.State.START.getNumber(), 2);
         RunUtil.getDefault().sleep(2000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
         RunUtil.getDefault().sleep(2000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 2);
+                AppBreadcrumbReported.State.STOP.getNumber(), 2);
 
         // Wait for the metrics to propagate to statsd.
         RunUtil.getDefault().sleep(2000);

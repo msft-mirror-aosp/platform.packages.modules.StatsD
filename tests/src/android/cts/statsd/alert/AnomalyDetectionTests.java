@@ -166,39 +166,36 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         String markTime = MetricsUtils.getCurrentLogcatDate(getDevice());
         // count(label=6) -> 1 (not an anomaly, since not "greater than 2")
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 6);
+                AppBreadcrumbReported.State.START.getNumber(), 6);
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
         assertWithMessage("Premature anomaly").that(
                 ReportUtils.getEventMetricDataList(getDevice())).isEmpty();
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
         }
 
         // count(label=6) -> 2 (not an anomaly, since not "greater than 2")
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 6);
+                AppBreadcrumbReported.State.START.getNumber(), 6);
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
         assertWithMessage("Premature anomaly").that(
                 ReportUtils.getEventMetricDataList(getDevice())).isEmpty();
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
         }
 
         // count(label=12) -> 1 (not an anomaly, since not "greater than 2")
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 12);
+                AppBreadcrumbReported.State.START.getNumber(), 12);
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_LONG);
         assertWithMessage("Premature anomaly").that(
                 ReportUtils.getEventMetricDataList(getDevice())).isEmpty();
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
         }
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(),
+                AppBreadcrumbReported.State.START.getNumber(),
                 6); // count(label=6) -> 3 (anomaly, since "greater than 2"!)
         RunUtil.getDefault().sleep(WAIT_AFTER_BREADCRUMB_MS);
 
@@ -206,8 +203,7 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         assertWithMessage("Expected anomaly").that(data).hasSize(1);
         assertThat(data.get(0).getAtom().getAnomalyDetected().getAlertId()).isEqualTo(ALERT_ID);
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
         }
     }
 
@@ -237,23 +233,23 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         // Test that alarm doesn't fire early.
         String markTime = MetricsUtils.getCurrentLogcatDate(getDevice());
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(6_000);  // Recorded duration at end: 6s
         assertWithMessage("Premature anomaly").that(
                 ReportUtils.getEventMetricDataList(getDevice())).isEmpty();
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
         RunUtil.getDefault().sleep(4_000);  // Recorded duration at end: 6s
         assertWithMessage("Premature anomaly").that(
                 ReportUtils.getEventMetricDataList(getDevice())).isEmpty();
 
         // Test that alarm does fire when it is supposed to (after 4s, plus up to 5s alarm delay).
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(9_000);  // Recorded duration at end: 13s
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 2);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 2);
         List<EventMetricData> data = ReportUtils.getEventMetricDataList(getDevice());
         assertWithMessage("Expected anomaly").that(data).hasSize(1);
         assertThat(data.get(0).getAtom().getAnomalyDetected().getAlertId()).isEqualTo(ALERT_ID);
@@ -261,9 +257,9 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         // Now test that the refractory period is obeyed.
         markTime = MetricsUtils.getCurrentLogcatDate(getDevice());
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(3_000);  // Recorded duration at end: 13s
         // NB: the previous getEventMetricDataList also removes the report, so size is back to 0.
         assertWithMessage("Premature anomaly").that(
@@ -271,24 +267,23 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
 
         // Test that detection works again after refractory period finishes.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
         RunUtil.getDefault().sleep(8_000);  // Recorded duration at end: 9s
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(15_000);  // Recorded duration at end: 15s
         // We can do an incidentd test now that all the timing issues are done.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 2);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 2);
         data = ReportUtils.getEventMetricDataList(getDevice());
         assertWithMessage("Expected anomaly").that(data).hasSize(1);
         assertThat(data.get(0).getAtom().getAnomalyDetected().getAlertId()).isEqualTo(ALERT_ID);
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
         }
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
     }
 
     // Tests that anomaly detection for duration works even when the alarm fires too late.
@@ -313,10 +308,10 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         ConfigUtils.uploadConfig(getDevice(), config);
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(5_000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
         RunUtil.getDefault().sleep(2_000);
         assertWithMessage("Premature anomaly").that(
                 ReportUtils.getEventMetricDataList(getDevice())).isEmpty();
@@ -326,11 +321,11 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         // It is likely that the alarm will only fire after this period is already over, but the
         // anomaly should nonetheless be detected when the event stops.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(1_200);
         // Anomaly should be detected here if the alarm didn't fire yet.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
         RunUtil.getDefault().sleep(200);
         List<EventMetricData> data = ReportUtils.getEventMetricDataList(getDevice());
         if (data.size() == 2) {
@@ -360,18 +355,17 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
 
         String markTime = MetricsUtils.getCurrentLogcatDate(getDevice());
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(),
+                AppBreadcrumbReported.State.START.getNumber(),
                 6); // value = 6, which is NOT > trigger
         RunUtil.getDefault().sleep(WAIT_AFTER_BREADCRUMB_MS);
         assertWithMessage("Premature anomaly").that(
                 ReportUtils.getEventMetricDataList(getDevice())).isEmpty();
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
         }
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(),
+                AppBreadcrumbReported.State.START.getNumber(),
                 14); // value = 14 > trigger
         RunUtil.getDefault().sleep(WAIT_AFTER_BREADCRUMB_MS);
 
@@ -379,8 +373,7 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         assertWithMessage("Expected anomaly").that(data).hasSize(1);
         assertThat(data.get(0).getAtom().getAnomalyDetected().getAlertId()).isEqualTo(ALERT_ID);
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
         }
     }
 
@@ -417,7 +410,7 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
 
         String markTime = MetricsUtils.getCurrentLogcatDate(getDevice());
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(),
+                AppBreadcrumbReported.State.START.getNumber(),
                 6); // value = 6, which is NOT > trigger
         RunUtil.getDefault().sleep(WAIT_AFTER_BREADCRUMB_MS);
         assertWithMessage("Premature anomaly").that(
@@ -425,7 +418,7 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         if (PERFETTO_TESTS_ENABLED) assertThat(isSystemTracingEnabled()).isFalse();
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(),
+                AppBreadcrumbReported.State.START.getNumber(),
                 14); // value = 14 > trigger
         RunUtil.getDefault().sleep(WAIT_AFTER_BREADCRUMB_MS);
 
@@ -468,20 +461,19 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
 
         String markTime = MetricsUtils.getCurrentLogcatDate(getDevice());
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(),
+                AppBreadcrumbReported.State.START.getNumber(),
                 6); // gauge = 6, which is NOT > trigger
         RunUtil.getDefault().sleep(
                 Math.max(WAIT_AFTER_BREADCRUMB_MS, 1_100)); // Must be >1s to push next bucket.
         assertWithMessage("Premature anomaly").that(
                 ReportUtils.getEventMetricDataList(getDevice())).isEmpty();
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isFalse();
         }
 
         // We waited for >1s above, so we are now in the next bucket (which is essential).
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(),
+                AppBreadcrumbReported.State.START.getNumber(),
                 14); // gauge = 14 > trigger
         RunUtil.getDefault().sleep(WAIT_AFTER_BREADCRUMB_MS);
 
@@ -489,8 +481,7 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
         assertWithMessage("Expected anomaly").that(data).hasSize(1);
         assertThat(data.get(0).getAtom().getAnomalyDetected().getAlertId()).isEqualTo(ALERT_ID);
         if (INCIDENTD_TESTS_ENABLED) {
-            assertThat(
-                    MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
         }
     }
 
@@ -537,67 +528,54 @@ public class AnomalyDetectionTests extends DeviceTestCase implements IBuildRecei
             long triggerIfSumGt) throws Exception {
         return ConfigUtils.createConfigBuilder(MetricsUtils.DEVICE_SIDE_TEST_PACKAGE)
                 // Items of relevance for detecting the anomaly:
-                .addAtomMatcher(
-                        StatsdConfigProto.AtomMatcher.newBuilder()
-                                .setId(APP_BREADCRUMB_REPORTED_MATCH_START_ID)
-                                .setSimpleAtomMatcher(
-                                        StatsdConfigProto.SimpleAtomMatcher.newBuilder()
-                                                .setAtomId(
-                                                        Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
-                                                // Event only when the uid is this app's uid.
-                                                .addFieldValueMatcher(ConfigUtils.createFvm(
-                                                                AppBreadcrumbReported.UID_FIELD_NUMBER)
-                                                        .setEqInt(SHELL_UID))
-                                                .addFieldValueMatcher(
-                                                        ConfigUtils.createFvm(
-                                                                        AppBreadcrumbReported.STATE_FIELD_NUMBER)
-                                                                .setEqInt(
-                                                                        AppBreadcrumbReported.State.START.ordinal()))))
-                .addAtomMatcher(
-                        StatsdConfigProto.AtomMatcher.newBuilder()
-                                .setId(APP_BREADCRUMB_REPORTED_MATCH_STOP_ID)
-                                .setSimpleAtomMatcher(
-                                        StatsdConfigProto.SimpleAtomMatcher.newBuilder()
-                                                .setAtomId(
-                                                        Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
-                                                // Event only when the uid is this app's uid.
-                                                .addFieldValueMatcher(ConfigUtils.createFvm(
-                                                                AppBreadcrumbReported.UID_FIELD_NUMBER)
-                                                        .setEqInt(SHELL_UID))
-                                                .addFieldValueMatcher(
-                                                        ConfigUtils.createFvm(
-                                                                        AppBreadcrumbReported.STATE_FIELD_NUMBER)
-                                                                .setEqInt(
-                                                                        AppBreadcrumbReported.State.STOP.ordinal()))))
+                .addAtomMatcher(StatsdConfigProto.AtomMatcher.newBuilder()
+                        .setId(APP_BREADCRUMB_REPORTED_MATCH_START_ID)
+                        .setSimpleAtomMatcher(StatsdConfigProto.SimpleAtomMatcher.newBuilder()
+                                .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) // Event
+                                // only when the uid is this app's uid.
+                                .addFieldValueMatcher(ConfigUtils
+                                        .createFvm(AppBreadcrumbReported.UID_FIELD_NUMBER)
+                                        .setEqInt(SHELL_UID))
+                                .addFieldValueMatcher(ConfigUtils
+                                        .createFvm(AppBreadcrumbReported.STATE_FIELD_NUMBER)
+                                        .setEqInt(AppBreadcrumbReported.State.START.getNumber()))))
+                .addAtomMatcher(StatsdConfigProto.AtomMatcher.newBuilder()
+                        .setId(APP_BREADCRUMB_REPORTED_MATCH_STOP_ID)
+                        .setSimpleAtomMatcher(StatsdConfigProto.SimpleAtomMatcher.newBuilder()
+                                .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
+                                // Event only when the uid is this app's uid.
+                                .addFieldValueMatcher(ConfigUtils
+                                        .createFvm(AppBreadcrumbReported.UID_FIELD_NUMBER)
+                                        .setEqInt(SHELL_UID))
+                                .addFieldValueMatcher(ConfigUtils
+                                        .createFvm(AppBreadcrumbReported.STATE_FIELD_NUMBER)
+                                        .setEqInt(AppBreadcrumbReported.State.STOP.getNumber()))))
                 .addAlert(Alert.newBuilder()
                         .setId(ALERT_ID)
                         .setMetricId(METRIC_ID) // The metric itself must yet be added by the test.
                         .setNumBuckets(numBuckets)
                         .setRefractoryPeriodSecs(refractorySecs)
                         .setTriggerIfSumGt(triggerIfSumGt))
-                .addSubscription(
-                        Subscription.newBuilder()
-                                .setId(SUBSCRIPTION_ID_INCIDENTD)
-                                .setRuleType(Subscription.RuleType.ALERT)
-                                .setRuleId(ALERT_ID)
-                                .setIncidentdDetails(IncidentdDetails.newBuilder().addSection(
-                                        INCIDENTD_SECTION)))
+                .addSubscription(Subscription.newBuilder()
+                        .setId(SUBSCRIPTION_ID_INCIDENTD)
+                        .setRuleType(Subscription.RuleType.ALERT)
+                        .setRuleId(ALERT_ID)
+                        .setIncidentdDetails(IncidentdDetails.newBuilder().addSection(
+                                INCIDENTD_SECTION)))
                 // We want to trigger anomalies on METRIC_ID, but don't want the actual data.
                 .addNoReportMetric(METRIC_ID)
 
                 // Items of relevance to reporting the anomaly (we do want this data):
-                .addAtomMatcher(
-                        StatsdConfigProto.AtomMatcher.newBuilder()
-                                .setId(ANOMALY_DETECT_MATCH_ID)
-                                .setSimpleAtomMatcher(
-                                        StatsdConfigProto.SimpleAtomMatcher.newBuilder()
-                                                .setAtomId(Atom.ANOMALY_DETECTED_FIELD_NUMBER)
-                                                .addFieldValueMatcher(ConfigUtils.createFvm(
-                                                                AnomalyDetected.CONFIG_UID_FIELD_NUMBER)
-                                                        .setEqInt(SHELL_UID))
-                                                .addFieldValueMatcher(ConfigUtils.createFvm(
-                                                                AnomalyDetected.CONFIG_ID_FIELD_NUMBER)
-                                                        .setEqInt(ConfigUtils.CONFIG_ID))))
+                .addAtomMatcher(StatsdConfigProto.AtomMatcher.newBuilder()
+                        .setId(ANOMALY_DETECT_MATCH_ID)
+                        .setSimpleAtomMatcher(StatsdConfigProto.SimpleAtomMatcher.newBuilder()
+                                .setAtomId(Atom.ANOMALY_DETECTED_FIELD_NUMBER)
+                                .addFieldValueMatcher(ConfigUtils
+                                        .createFvm(AnomalyDetected.CONFIG_UID_FIELD_NUMBER)
+                                        .setEqInt(SHELL_UID))
+                                .addFieldValueMatcher(ConfigUtils
+                                        .createFvm(AnomalyDetected.CONFIG_ID_FIELD_NUMBER)
+                                        .setEqInt(ConfigUtils.CONFIG_ID))))
                 .addEventMetric(StatsdConfigProto.EventMetric.newBuilder()
                         .setId(ANOMALY_EVENT_ID)
                         .setWhat(ANOMALY_DETECT_MATCH_ID));

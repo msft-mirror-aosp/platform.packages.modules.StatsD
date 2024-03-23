@@ -87,20 +87,24 @@ public class AlarmTests extends DeviceTestCase implements IBuildReceiver {
         String markTime = MetricsUtils.getCurrentLogcatDate(getDevice());
         RunUtil.getDefault().sleep(9_000);
 
-        if (INCIDENTD_TESTS_ENABLED) assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
+        if (INCIDENTD_TESTS_ENABLED) {
+            assertThat(MetricsUtils.didIncidentdFireSince(getDevice(), markTime)).isTrue();
+        }
     }
 
 
     private final StatsdConfig.Builder getBaseConfig() throws Exception {
         return ConfigUtils.createConfigBuilder(MetricsUtils.DEVICE_SIDE_TEST_PACKAGE)
-                .addAlarm(Alarm.newBuilder().setId(ALARM_ID).setOffsetMillis(2).setPeriodMillis(
-                        5_000) // every 5 seconds.
+                .addAlarm(Alarm.newBuilder()
+                        .setId(ALARM_ID)
+                        .setOffsetMillis(2)
+                        .setPeriodMillis(5_000) // every 5 seconds.
                 )
                 .addSubscription(Subscription.newBuilder()
                         .setId(SUBSCRIPTION_ID_INCIDENTD)
                         .setRuleType(Subscription.RuleType.ALARM)
                         .setRuleId(ALARM_ID)
-                        .setIncidentdDetails(
-                                IncidentdDetails.newBuilder().addSection(INCIDENTD_SECTION)));
+                        .setIncidentdDetails(IncidentdDetails.newBuilder()
+                                .addSection(INCIDENTD_SECTION)));
     }
 }

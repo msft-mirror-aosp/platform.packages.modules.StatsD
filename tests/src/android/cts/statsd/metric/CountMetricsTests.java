@@ -83,14 +83,14 @@ public class CountMetricsTests extends DeviceTestCase implements IBuildReceiver 
                         .setId(MetricsUtils.COUNT_METRIC_ID)
                         .setBucket(StatsdConfigProto.TimeUnit.ONE_MINUTE)
                         .setWhat(matcherId))
-                        .addAtomMatcher(MetricsUtils.simpleAtomMatcher(matcherId));
+                .addAtomMatcher(MetricsUtils.simpleAtomMatcher(matcherId));
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 0);
+                AppBreadcrumbReported.State.START.getNumber(), 0);
         RunUtil.getDefault().sleep(100);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 0);
+                AppBreadcrumbReported.State.STOP.getNumber(), 0);
         RunUtil.getDefault().sleep(2000);  // Wait for the metrics to propagate to statsd.
 
         StatsLogReport metricReport = ReportUtils.getStatsLogReport(getDevice(),
@@ -143,19 +143,19 @@ public class CountMetricsTests extends DeviceTestCase implements IBuildReceiver 
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 0);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 0);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 0);
+                AppBreadcrumbReported.State.START.getNumber(), 0);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 0);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 0);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 0);
+                AppBreadcrumbReported.State.STOP.getNumber(), 0);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 0);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 0);
         RunUtil.getDefault().sleep(2000);  // Wait for the metrics to propagate to statsd.
 
         StatsLogReport metricReport = ReportUtils.getStatsLogReport(getDevice(),
@@ -226,32 +226,32 @@ public class CountMetricsTests extends DeviceTestCase implements IBuildReceiver 
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to true.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), startMatcherLabel);
+                AppBreadcrumbReported.State.START.getNumber(), startMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Log an event that should be counted. Bucket 1 Count 1.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), whatMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), whatMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Log an event that should be counted. Bucket 1 Count 2.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), whatMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), whatMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to false.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), endMatcherLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), endMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Log an event that should not be counted because condition is false.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), whatMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), whatMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Let the metric deactivate.
@@ -259,27 +259,27 @@ public class CountMetricsTests extends DeviceTestCase implements IBuildReceiver 
 
         // Log an event that should not be counted.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), whatMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), whatMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Condition to true again.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), startMatcherLabel);
+                AppBreadcrumbReported.State.START.getNumber(), startMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Event should not be counted, metric is still not active.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), whatMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), whatMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         //  Log an event that should be counted.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), whatMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), whatMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Let the metric deactivate.
@@ -287,7 +287,7 @@ public class CountMetricsTests extends DeviceTestCase implements IBuildReceiver 
 
         // Log an event that should not be counted.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), whatMatcherLabel);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), whatMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Wait for the metrics to propagate to statsd.
@@ -310,29 +310,25 @@ public class CountMetricsTests extends DeviceTestCase implements IBuildReceiver 
     public void testPartialBucketCountMetric() throws Exception {
         int matcherId = 1;
         StatsdConfigProto.StatsdConfig.Builder builder = ConfigUtils.createConfigBuilder(
-                MetricsUtils.DEVICE_SIDE_TEST_PACKAGE);
-        builder
-                .addCountMetric(
-                        StatsdConfigProto.CountMetric.newBuilder()
-                                .setId(MetricsUtils.COUNT_METRIC_ID)
-                                .setBucket(
-                                        StatsdConfigProto.TimeUnit.ONE_DAY) // Ensures partial
-                                // bucket.
-                                .setWhat(matcherId)
-                                .setSplitBucketForAppUpgrade(true))
+                        MetricsUtils.DEVICE_SIDE_TEST_PACKAGE)
+                .addCountMetric(StatsdConfigProto.CountMetric.newBuilder()
+                        .setId(MetricsUtils.COUNT_METRIC_ID)
+                        .setBucket(StatsdConfigProto.TimeUnit.ONE_DAY) // Ensures partial bucket.
+                        .setWhat(matcherId)
+                        .setSplitBucketForAppUpgrade(true))
                 .addAtomMatcher(MetricsUtils.simpleAtomMatcher(matcherId));
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 0);
+                AppBreadcrumbReported.State.START.getNumber(), 0);
 
         builder.getCountMetricBuilder(0).setBucket(StatsdConfigProto.TimeUnit.CTS);
         ConfigUtils.uploadConfig(getDevice(), builder);  // The count metric had a partial bucket.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 0);
+                AppBreadcrumbReported.State.START.getNumber(), 0);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 0);
+                AppBreadcrumbReported.State.START.getNumber(), 0);
         RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_LONG); // Finish the current bucket.
 
         ConfigMetricsReportList reports = ReportUtils.getReportList(getDevice(),

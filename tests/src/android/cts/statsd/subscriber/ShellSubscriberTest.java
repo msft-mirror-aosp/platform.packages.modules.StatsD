@@ -149,7 +149,7 @@ public class ShellSubscriberTest extends DeviceTestCase {
 
             // Pushed event. arbitrary label = 1
             AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                    AtomsProto.AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 1);
+                    AtomsProto.AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 1);
 
             // Make sure the last 19 threads die before moving to the next step.
             // First subscription is still active due to its longer timeout that is used keep
@@ -188,7 +188,7 @@ public class ShellSubscriberTest extends DeviceTestCase {
 
             // Pushed event. arbitrary label = 1
             AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                    AtomsProto.AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 1);
+                    AtomsProto.AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 1);
 
             // Make sure all the threads die before moving to the next step
             for (int i = 0; i <= maxSubs; i++) {
@@ -275,7 +275,7 @@ public class ShellSubscriberTest extends DeviceTestCase {
 
             // Pushed event. arbitrary label = 1
             AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                    AtomsProto.AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 1);
+                    AtomsProto.AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 1);
             // Wait for thread to die before returning
             shellThread.join();
             // Remove config from device if not already deleted

@@ -83,33 +83,32 @@ public class ValueMetricsTests extends DeviceTestCase {
         builder.addAtomMatcher(atomMatcher);
 
         // Add ValueMetric.
-        builder.addValueMetric(
-                ValueMetric.newBuilder()
-                        .setId(MetricsUtils.VALUE_METRIC_ID)
-                        .setWhat(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
-                        .setBucket(TimeUnit.CTS)
-                        .setValueField(FieldMatcher.newBuilder()
-                                .setField(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
-                                .addChild(FieldMatcher.newBuilder().setField(
-                                        AppBreadcrumbReported.LABEL_FIELD_NUMBER)))
-                        .setDimensionsInWhat(FieldMatcher.newBuilder()
-                                .setField(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
-                                .build())
-                        .build());
+        builder.addValueMetric(ValueMetric.newBuilder()
+                .setId(MetricsUtils.VALUE_METRIC_ID)
+                .setWhat(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
+                .setBucket(TimeUnit.CTS)
+                .setValueField(FieldMatcher.newBuilder()
+                        .setField(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
+                        .addChild(FieldMatcher.newBuilder().setField(
+                                AppBreadcrumbReported.LABEL_FIELD_NUMBER)))
+                .setDimensionsInWhat(FieldMatcher.newBuilder()
+                        .setField(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
+                        .build())
+                .build());
 
         // Upload config.
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         // Create AppBreadcrumbReported Start/Stop events.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(1000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 3);
+                AppBreadcrumbReported.State.START.getNumber(), 3);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 3);
+                AppBreadcrumbReported.State.STOP.getNumber(), 3);
 
         // Wait for the metrics to propagate to statsd.
         RunUtil.getDefault().sleep(1000);
@@ -168,28 +167,27 @@ public class ValueMetricsTests extends DeviceTestCase {
                 .setSimpleAtomMatcher(sam));
 
         // Add ValueMetric.
-        builder.addValueMetric(
-                ValueMetric.newBuilder()
-                        .setId(MetricsUtils.VALUE_METRIC_ID)
-                        .setWhat(atomName.hashCode())
-                        .setBucket(TimeUnit.ONE_MINUTE)
-                        .setValueField(FieldMatcher.newBuilder()
-                                .setField(Atom.SYSTEM_ELAPSED_REALTIME_FIELD_NUMBER)
-                                .addChild(FieldMatcher.newBuilder().setField(
-                                        SystemElapsedRealtime.TIME_MILLIS_FIELD_NUMBER)))
-                        .setCondition(predicateName.hashCode())
-                        .build());
+        builder.addValueMetric(ValueMetric.newBuilder()
+                .setId(MetricsUtils.VALUE_METRIC_ID)
+                .setWhat(atomName.hashCode())
+                .setBucket(TimeUnit.ONE_MINUTE)
+                .setValueField(FieldMatcher.newBuilder()
+                        .setField(Atom.SYSTEM_ELAPSED_REALTIME_FIELD_NUMBER)
+                        .addChild(FieldMatcher.newBuilder().setField(
+                                SystemElapsedRealtime.TIME_MILLIS_FIELD_NUMBER)))
+                .setCondition(predicateName.hashCode())
+                .build());
 
         // Upload config.
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         // Create AppBreadcrumbReported Start/Stop events.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         // Wait for 2 min and 1 sec to capture at least 2 buckets
         RunUtil.getDefault().sleep(2 * 60_000 + 10_000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
 
         // Wait for the metrics to propagate to statsd.
         RunUtil.getDefault().sleep(1_000);
@@ -250,17 +248,16 @@ public class ValueMetricsTests extends DeviceTestCase {
                 .setSimpleAtomMatcher(sam));
 
         // Add ValueMetric.
-        builder.addValueMetric(
-                ValueMetric.newBuilder()
-                        .setId(MetricsUtils.VALUE_METRIC_ID)
-                        .setWhat(atomName.hashCode())
-                        .setBucket(TimeUnit.ONE_MINUTE)
-                        .setValueField(FieldMatcher.newBuilder()
-                                .setField(Atom.SYSTEM_ELAPSED_REALTIME_FIELD_NUMBER)
-                                .addChild(FieldMatcher.newBuilder().setField(
-                                        SystemElapsedRealtime.TIME_MILLIS_FIELD_NUMBER)))
-                        .setCondition(predicateName.hashCode())
-                        .build());
+        builder.addValueMetric(ValueMetric.newBuilder()
+                .setId(MetricsUtils.VALUE_METRIC_ID)
+                .setWhat(atomName.hashCode())
+                .setBucket(TimeUnit.ONE_MINUTE)
+                .setValueField(FieldMatcher.newBuilder()
+                        .setField(Atom.SYSTEM_ELAPSED_REALTIME_FIELD_NUMBER)
+                        .addChild(FieldMatcher.newBuilder().setField(
+                                SystemElapsedRealtime.TIME_MILLIS_FIELD_NUMBER)))
+                .setCondition(predicateName.hashCode())
+                .build());
 
         // Upload config.
         ConfigUtils.uploadConfig(getDevice(), builder);
@@ -270,10 +267,10 @@ public class ValueMetricsTests extends DeviceTestCase {
         // Create AppBreadcrumbReported Start/Stop events.
         for (int i = 0; i < NUM_EVENTS; i++) {
             AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                    AppBreadcrumbReported.State.START.ordinal(), 1);
+                    AppBreadcrumbReported.State.START.getNumber(), 1);
             RunUtil.getDefault().sleep(GAP_INTERVAL);
             AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                    AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                    AppBreadcrumbReported.State.STOP.getNumber(), 1);
             RunUtil.getDefault().sleep(GAP_INTERVAL);
         }
 
@@ -323,16 +320,15 @@ public class ValueMetricsTests extends DeviceTestCase {
                         .setSimpleAtomMatcher(sam));
 
         // Add ValueMetric.
-        builder.addValueMetric(
-                ValueMetric.newBuilder()
-                        .setId(MetricsUtils.VALUE_METRIC_ID)
-                        .setWhat(atomName.hashCode())
-                        .setBucket(TimeUnit.ONE_MINUTE)
-                        .setValueField(FieldMatcher.newBuilder()
-                                .setField(Atom.SYSTEM_ELAPSED_REALTIME_FIELD_NUMBER)
-                                .addChild(FieldMatcher.newBuilder().setField(
-                                        SystemElapsedRealtime.TIME_MILLIS_FIELD_NUMBER)))
-                        .build());
+        builder.addValueMetric(ValueMetric.newBuilder()
+                .setId(MetricsUtils.VALUE_METRIC_ID)
+                .setWhat(atomName.hashCode())
+                .setBucket(TimeUnit.ONE_MINUTE)
+                .setValueField(FieldMatcher.newBuilder()
+                        .setField(Atom.SYSTEM_ELAPSED_REALTIME_FIELD_NUMBER)
+                        .addChild(FieldMatcher.newBuilder().setField(
+                                SystemElapsedRealtime.TIME_MILLIS_FIELD_NUMBER)))
+                .build());
         // Add activation.
         builder.addMetricActivation(MetricActivation.newBuilder()
                 .setMetricId(MetricsUtils.VALUE_METRIC_ID)
@@ -397,8 +393,7 @@ public class ValueMetricsTests extends DeviceTestCase {
         builder.addPredicate(predicate);
 
         // Add ValueMetric.
-        builder
-                .addValueMetric(ValueMetric.newBuilder()
+        builder.addValueMetric(ValueMetric.newBuilder()
                         .setId(MetricsUtils.VALUE_METRIC_ID)
                         .setWhat(whatMatcher.getId())
                         .setBucket(TimeUnit.ONE_MINUTE)
@@ -423,32 +418,32 @@ public class ValueMetricsTests extends DeviceTestCase {
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.START.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to true.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.START.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Skipped due to unknown condition at start of bucket.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 10);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 10);
         RunUtil.getDefault().sleep(10);
 
         // Skipped due to unknown condition at start of bucket.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 200);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 200);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to false.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Log an event that should not be counted because condition is false.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 3_000);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 3_000);
         RunUtil.getDefault().sleep(10);
 
         // Let the metric deactivate.
@@ -456,27 +451,27 @@ public class ValueMetricsTests extends DeviceTestCase {
 
         // Log an event that should not be counted.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 40_000);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 40_000);
         RunUtil.getDefault().sleep(10);
 
         // Condition to true again.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.START.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Event should not be counted, metric is still not active.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 500_000);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 500_000);
         RunUtil.getDefault().sleep(10);
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.START.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         //  Log an event that should be counted.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 6_000_000);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 6_000_000);
         RunUtil.getDefault().sleep(10);
 
         // Let the metric deactivate.
@@ -484,7 +479,7 @@ public class ValueMetricsTests extends DeviceTestCase {
 
         // Log an event that should not be counted.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 70_000_000);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 70_000_000);
         RunUtil.getDefault().sleep(10);
 
         // Wait for the metrics to propagate to statsd.
