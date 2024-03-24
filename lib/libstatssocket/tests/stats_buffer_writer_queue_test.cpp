@@ -24,6 +24,8 @@
 #include "utils.h"
 
 using testing::_;
+using testing::AnyNumber;
+using testing::DoAll;
 using testing::Return;
 using testing::StrictMock;
 
@@ -40,8 +42,7 @@ static AStatsEvent* generateTestEvent() {
 class BasicBufferWriterQueueMock : public BufferWriterQueue {
 public:
     BasicBufferWriterQueueMock() = default;
-    MOCK_METHOD(bool, handleCommand, (const BasicBufferWriterQueueMock::Cmd& cmd),
-                (const override));
+    MOCK_METHOD(bool, handleCommand, (const BufferWriterQueue::Cmd& cmd), (const override));
 };
 
 typedef StrictMock<BasicBufferWriterQueueMock> BufferWriterQueueMock;
@@ -104,12 +105,16 @@ TEST(StatsBufferWriterQueueTest, TestSleepOnOverflow) {
     std::vector<int64_t> attemptsTs;
 
     BufferWriterQueueMock queue;
-    EXPECT_CALL(queue, handleCommand(_))
-            .WillRepeatedly([&attemptsTs](const BufferWriterQueueMock::Cmd&) {
-                // store timestamp for command handler invocations
-                attemptsTs.push_back(get_elapsed_realtime_ns());
-                return false;
-            });
+    ON_CALL(queue, handleCommand(_))
+            .WillByDefault(DoAll(
+                    [&attemptsTs](const BufferWriterQueue::Cmd&) {
+                        // store timestamp for command handler invocations
+                        attemptsTs.push_back(get_elapsed_realtime_ns());
+                        return false;
+                    },
+                    Return(false)));
+
+    EXPECT_CALL(queue, handleCommand(_)).Times(AnyNumber());
 
     // simulate failed write to stats socket to fill the queue
     for (int i = 0; i < BufferWriterQueueMock::kQueueMaxSizeLimit; i++) {
