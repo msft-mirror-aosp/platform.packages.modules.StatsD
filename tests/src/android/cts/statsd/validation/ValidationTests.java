@@ -88,13 +88,13 @@ public class ValidationTests extends DeviceTestCase implements IBuildReceiver {
 
     @Override
     protected void tearDown() throws Exception {
-        super.setUp();
         ConfigUtils.removeConfig(getDevice());
         ReportUtils.clearReports(getDevice());
         DeviceUtils.uninstallTestApp(getDevice(), MetricsUtils.DEVICE_SIDE_TEST_PACKAGE);
         DeviceUtils.resetBatteryStatus(getDevice());
         DeviceUtils.turnScreenOn(getDevice());
         DeviceUtils.turnBatteryStatsAutoResetOn(getDevice());
+        super.tearDown();
     }
 
     @Override

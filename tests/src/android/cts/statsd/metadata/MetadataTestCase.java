@@ -75,10 +75,10 @@ public class MetadataTestCase extends DeviceTestCase implements IBuildReceiver {
 
     @Override
     protected void tearDown() throws Exception {
-        super.setUp();
         ConfigUtils.removeConfig(getDevice());
         ReportUtils.clearReports(getDevice());
         DeviceUtils.uninstallTestApp(getDevice(), MetricsUtils.DEVICE_SIDE_TEST_PACKAGE);
+        super.tearDown();
     }
 
     @Override

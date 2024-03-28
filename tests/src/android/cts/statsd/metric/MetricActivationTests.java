@@ -74,9 +74,9 @@ public class MetricActivationTests extends DeviceTestCase {
 
     @Override
     protected void tearDown() throws Exception {
-        super.setUp();
         ConfigUtils.removeConfig(getDevice());
         ReportUtils.clearReports(getDevice());
+        super.tearDown();
     }
 
     private StatsdConfig.Builder createConfig(final int act1TtlSecs, final int act2TtlSecs) {

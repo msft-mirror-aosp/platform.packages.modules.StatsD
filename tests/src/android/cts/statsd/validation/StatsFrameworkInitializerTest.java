@@ -41,8 +41,8 @@ public class StatsFrameworkInitializerTest extends DeviceTestCase implements IBu
 
     @Override
     protected void tearDown() throws Exception {
-        super.setUp();
         DeviceUtils.uninstallTestApp(getDevice(), MetricsUtils.DEVICE_SIDE_TEST_PACKAGE);
+        super.tearDown();
     }
 
     @Override
