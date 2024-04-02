@@ -67,9 +67,9 @@ public class GaugeMetricsTests extends DeviceTestCase {
 
     @Override
     protected void tearDown() throws Exception {
-        super.setUp();
         ConfigUtils.removeConfig(getDevice());
         ReportUtils.clearReports(getDevice());
+        super.tearDown();
     }
 
     public void testGaugeMetric() throws Exception {
