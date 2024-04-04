@@ -358,6 +358,8 @@ message GaugeMetric {
 
   optional int32 sampling_percentage = 17 [default = 100];
 
+  optional int32 pull_probability = 18 [default = 100];
+
   reserved 100;
   reserved 101;
 }
