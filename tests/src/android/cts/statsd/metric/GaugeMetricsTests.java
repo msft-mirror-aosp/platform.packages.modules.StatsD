@@ -67,9 +67,9 @@ public class GaugeMetricsTests extends DeviceTestCase {
 
     @Override
     protected void tearDown() throws Exception {
-        super.setUp();
         ConfigUtils.removeConfig(getDevice());
         ReportUtils.clearReports(getDevice());
+        super.tearDown();
     }
 
     public void testGaugeMetric() throws Exception {
@@ -99,59 +99,58 @@ public class GaugeMetricsTests extends DeviceTestCase {
         builder.addPredicate(predicate);
 
         // Add GaugeMetric.
-        FieldMatcher fieldMatcher =
-                FieldMatcher.newBuilder().setField(
-                        APP_BREADCRUMB_REPORTED_B_MATCH_START_ID).build();
-        builder.addGaugeMetric(
-                StatsdConfigProto.GaugeMetric.newBuilder()
-                        .setId(MetricsUtils.GAUGE_METRIC_ID)
-                        .setWhat(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
-                        .setCondition(predicate.getId())
-                        .setGaugeFieldsFilter(
-                                FieldFilter.newBuilder().setIncludeAll(false).setFields(
-                                        fieldMatcher).build())
-                        .setDimensionsInWhat(
-                                FieldMatcher.newBuilder()
-                                        .setField(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
-                                        .addChild(FieldMatcher.newBuilder()
-                                                .setField(AppBreadcrumbReported.STATE_FIELD_NUMBER)
-                                                .build())
-                                        .build())
-                        .setBucket(StatsdConfigProto.TimeUnit.CTS)
-                        .build());
+        FieldMatcher fieldMatcher = FieldMatcher.newBuilder()
+                .setField(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
+                .build();
+        builder.addGaugeMetric(StatsdConfigProto.GaugeMetric.newBuilder()
+                .setId(MetricsUtils.GAUGE_METRIC_ID)
+                .setWhat(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
+                .setCondition(predicate.getId())
+                .setGaugeFieldsFilter(FieldFilter.newBuilder()
+                        .setIncludeAll(false)
+                        .setFields(fieldMatcher)
+                        .build())
+                .setDimensionsInWhat(FieldMatcher.newBuilder()
+                        .setField(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
+                        .addChild(FieldMatcher.newBuilder()
+                                .setField(AppBreadcrumbReported.STATE_FIELD_NUMBER)
+                                .build())
+                        .build())
+                .setBucket(StatsdConfigProto.TimeUnit.CTS)
+                .build());
 
         // Upload config.
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         // Create AppBreadcrumbReported Start/Stop events.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 0);
+                AppBreadcrumbReported.State.START.getNumber(), 0);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 2);
+                AppBreadcrumbReported.State.START.getNumber(), 2);
         RunUtil.getDefault().sleep(2000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 2);
+                AppBreadcrumbReported.State.STOP.getNumber(), 2);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 0);
+                AppBreadcrumbReported.State.STOP.getNumber(), 0);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 2);
+                AppBreadcrumbReported.State.START.getNumber(), 2);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), 1);
+                AppBreadcrumbReported.State.START.getNumber(), 1);
         RunUtil.getDefault().sleep(2000);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 2);
+                AppBreadcrumbReported.State.STOP.getNumber(), 2);
         RunUtil.getDefault().sleep(10);
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), 1);
+                AppBreadcrumbReported.State.STOP.getNumber(), 1);
 
         // Wait for the metrics to propagate to statsd.
         RunUtil.getDefault().sleep(2000);
@@ -194,16 +193,13 @@ public class GaugeMetricsTests extends DeviceTestCase {
         int activationAtomMatcherLabel = 1;
 
         int systemUptimeMatcherId = 2;
-        AtomMatcher activationAtomMatcher =
-                MetricsUtils.appBreadcrumbMatcherWithLabel(
-                        activationAtomMatcherId, activationAtomMatcherLabel);
-        AtomMatcher systemUptimeMatcher =
-                AtomMatcher.newBuilder()
-                        .setId(systemUptimeMatcherId)
-                        .setSimpleAtomMatcher(
-                                SimpleAtomMatcher.newBuilder().setAtomId(
-                                        Atom.SYSTEM_UPTIME_FIELD_NUMBER))
-                        .build();
+        AtomMatcher activationAtomMatcher = MetricsUtils.appBreadcrumbMatcherWithLabel(
+                activationAtomMatcherId, activationAtomMatcherLabel);
+        AtomMatcher systemUptimeMatcher = AtomMatcher.newBuilder()
+                .setId(systemUptimeMatcherId)
+                .setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder()
+                        .setAtomId(Atom.SYSTEM_UPTIME_FIELD_NUMBER))
+                .build();
 
         StatsdConfigProto.StatsdConfig.Builder builder = ConfigUtils.createConfigBuilder(
                 MetricsUtils.DEVICE_SIDE_TEST_PACKAGE);
@@ -211,14 +207,13 @@ public class GaugeMetricsTests extends DeviceTestCase {
         builder.addAtomMatcher(systemUptimeMatcher);
 
         // Add GaugeMetric.
-        builder.addGaugeMetric(
-                StatsdConfigProto.GaugeMetric.newBuilder()
-                        .setId(MetricsUtils.GAUGE_METRIC_ID)
-                        .setWhat(systemUptimeMatcherId)
-                        .setGaugeFieldsFilter(
-                                FieldFilter.newBuilder().setIncludeAll(true).build())
-                        .setBucket(StatsdConfigProto.TimeUnit.CTS)
-                        .build());
+        builder.addGaugeMetric(StatsdConfigProto.GaugeMetric.newBuilder()
+                .setId(MetricsUtils.GAUGE_METRIC_ID)
+                .setWhat(systemUptimeMatcherId)
+                .setGaugeFieldsFilter(
+                        FieldFilter.newBuilder().setIncludeAll(true).build())
+                .setBucket(StatsdConfigProto.TimeUnit.CTS)
+                .build());
 
         // Add activation.
         builder.addMetricActivation(MetricActivation.newBuilder()
@@ -253,18 +248,16 @@ public class GaugeMetricsTests extends DeviceTestCase {
                 APP_BREADCRUMB_REPORTED_A_MATCH_START_ID, conditionLabel);
         AtomMatcher conditionStopAtomMatcher = MetricsUtils.stopAtomMatcherWithLabel(
                 APP_BREADCRUMB_REPORTED_A_MATCH_STOP_ID, conditionLabel);
-        AtomMatcher activationMatcher =
-                MetricsUtils.startAtomMatcherWithLabel(
-                        activationMatcherId, activationMatcherLabel);
-        AtomMatcher whatMatcher =
-                MetricsUtils.unspecifiedAtomMatcher(whatMatcherId);
+        AtomMatcher activationMatcher = MetricsUtils.startAtomMatcherWithLabel(
+                activationMatcherId, activationMatcherLabel);
+        AtomMatcher whatMatcher = MetricsUtils.unspecifiedAtomMatcher(whatMatcherId);
 
-        StatsdConfig.Builder builder = ConfigUtils.createConfigBuilder(
-                        MetricsUtils.DEVICE_SIDE_TEST_PACKAGE)
-                .addAtomMatcher(conditionStartAtomMatcher)
-                .addAtomMatcher(conditionStopAtomMatcher)
-                .addAtomMatcher(whatMatcher)
-                .addAtomMatcher(activationMatcher);
+        StatsdConfig.Builder builder =
+                ConfigUtils.createConfigBuilder(MetricsUtils.DEVICE_SIDE_TEST_PACKAGE)
+                        .addAtomMatcher(conditionStartAtomMatcher)
+                        .addAtomMatcher(conditionStopAtomMatcher)
+                        .addAtomMatcher(whatMatcher)
+                        .addAtomMatcher(activationMatcher);
 
         // Add Predicates.
         SimplePredicate simplePredicate = SimplePredicate.newBuilder()
@@ -278,59 +271,53 @@ public class GaugeMetricsTests extends DeviceTestCase {
         builder.addPredicate(predicate);
 
         // Add GaugeMetric.
-        builder
-                .addGaugeMetric(GaugeMetric.newBuilder()
+        builder.addGaugeMetric(GaugeMetric.newBuilder()
                         .setId(MetricsUtils.GAUGE_METRIC_ID)
                         .setWhat(whatMatcher.getId())
                         .setBucket(TimeUnit.CTS)
                         .setCondition(predicate.getId())
-                        .setGaugeFieldsFilter(
-                                FieldFilter.newBuilder().setIncludeAll(false).setFields(
-                                        FieldMatcher.newBuilder()
-                                                .setField(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)
-                                )
-                        )
-                        .setDimensionsInWhat(FieldMatcher.newBuilder().setField(whatMatcherId))
-                )
+                        .setGaugeFieldsFilter(FieldFilter.newBuilder()
+                                .setIncludeAll(false)
+                                .setFields(FieldMatcher.newBuilder()
+                                        .setField(APP_BREADCRUMB_REPORTED_B_MATCH_START_ID)))
+                        .setDimensionsInWhat(FieldMatcher.newBuilder().setField(whatMatcherId)))
                 .addMetricActivation(MetricActivation.newBuilder()
                         .setMetricId(MetricsUtils.GAUGE_METRIC_ID)
                         .addEventActivation(EventActivation.newBuilder()
                                 .setAtomMatcherId(activationMatcherId)
                                 .setActivationType(ActivationType.ACTIVATE_IMMEDIATELY)
-                                .setTtlSeconds(ttlSec)
-                        )
-                );
+                                .setTtlSeconds(ttlSec)));
 
         ConfigUtils.uploadConfig(getDevice(), builder);
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.START.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to true.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.START.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // This value is collected.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 10);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 10);
         RunUtil.getDefault().sleep(10);
 
         // Ignored; value already collected.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 20);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 20);
         RunUtil.getDefault().sleep(10);
 
         // Set the condition to false.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.STOP.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.STOP.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Value not updated because condition is false.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 30);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 30);
         RunUtil.getDefault().sleep(10);
 
         // Let the metric deactivate.
@@ -338,27 +325,27 @@ public class GaugeMetricsTests extends DeviceTestCase {
 
         // Value not collected.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 40);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 40);
         RunUtil.getDefault().sleep(10);
 
         // Condition to true again.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), conditionLabel);
+                AppBreadcrumbReported.State.START.getNumber(), conditionLabel);
         RunUtil.getDefault().sleep(10);
 
         // Value not collected.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 50);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 50);
         RunUtil.getDefault().sleep(10);
 
         // Activate the metric.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.START.ordinal(), activationMatcherLabel);
+                AppBreadcrumbReported.State.START.getNumber(), activationMatcherLabel);
         RunUtil.getDefault().sleep(10);
 
         // Value collected.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 60);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 60);
         RunUtil.getDefault().sleep(10);
 
         // Let the metric deactivate.
@@ -366,7 +353,7 @@ public class GaugeMetricsTests extends DeviceTestCase {
 
         // Value not collected.
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                AppBreadcrumbReported.State.UNSPECIFIED.ordinal(), 70);
+                AppBreadcrumbReported.State.UNSPECIFIED.getNumber(), 70);
         RunUtil.getDefault().sleep(10);
 
         // Wait for the metrics to propagate to statsd.
