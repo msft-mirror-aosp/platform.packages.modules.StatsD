@@ -509,6 +509,15 @@ message PerfettoDetails {
   optional bytes trace_config = 1;
 }
 
+message UprobestatsDetails {
+  // The |config| field is a proto-encoded message of type
+  // uprobestats.protos.UprobestatsConfig defined in
+  // //packages/modules/UprobeStats/src/config.proto. On device,
+  // statsd doesn't need to deserialize the message as it's just
+  // passed binary-encoded to the Uprobestats API.
+  optional bytes config = 1;
+}
+
 message BroadcastSubscriberDetails {
   optional int64 subscriber_id = 1;
   repeated string cookie = 2;
@@ -530,6 +539,7 @@ message Subscription {
     IncidentdDetails incidentd_details = 4;
     PerfettoDetails perfetto_details = 5;
     BroadcastSubscriberDetails broadcast_subscriber_details = 6;
+    UprobestatsDetails uprobestats_details = 9;
   }
 
   optional float probability_of_informing = 7 [default = 1.1];
