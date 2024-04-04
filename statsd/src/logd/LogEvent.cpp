@@ -266,7 +266,7 @@ void LogEvent::parseArray(int32_t* pos, int32_t depth, bool* last, uint8_t numAn
 }
 
 // Assumes that mValues is not empty
-bool LogEvent::checkPreviousValueType(Type expected) {
+bool LogEvent::checkPreviousValueType(Type expected) const {
     return mValues[mValues.size() - 1].mValue.getType() == expected;
 }
 
@@ -283,7 +283,7 @@ void LogEvent::parseIsUidAnnotation(uint8_t annotationType, std::optional<uint8_
     }
 
     // Allowed types: INT, repeated INT
-    if (numElements > mValues.size() || !checkPreviousValueType(INT) ||
+    if (mValues.empty() || numElements > mValues.size() || !checkPreviousValueType(INT) ||
         annotationType != BOOL_TYPE) {
         VLOG("Atom ID %d error while parseIsUidAnnotation()", mTagId);
         mValid = false;
@@ -395,8 +395,10 @@ void LogEvent::parseRestrictionCategoryAnnotation(uint8_t annotationType) {
     int value = readNextValue<int32_t>();
     // should be one of predefined category in StatsLog.java
     switch (value) {
-        // Only diagnostic is currently supported for use.
         case ASTATSLOG_RESTRICTION_CATEGORY_DIAGNOSTIC:
+        case ASTATSLOG_RESTRICTION_CATEGORY_SYSTEM_INTELLIGENCE:
+        case ASTATSLOG_RESTRICTION_CATEGORY_AUTHENTICATION:
+        case ASTATSLOG_RESTRICTION_CATEGORY_FRAUD_AND_ABUSE:
             break;
         default:
             mValid = false;
