@@ -707,6 +707,79 @@ TEST_F(MetricsManagerUtilTest, TestPulledGaugeMetricWithSamplingPercentage) {
                                   StringToId("Gauge")));
 }
 
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(101);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbabilityZero) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(0);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricValidPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestPushedGaugeMetricWithPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricRandomOneSampleWithPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::RANDOM_ONE_SAMPLE,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
+                      StringToId("Gauge")));
+}
+
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingIdOrWhat) {
     StatsdConfig config;
     int64_t metricId = 1;
