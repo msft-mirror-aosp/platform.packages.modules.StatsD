@@ -231,8 +231,8 @@ void StatsPullerManager::OnAlarmFired(int64_t elapsedTimeNs) {
                 // receiver to the list that will pull on this alarm.
                 // If pullNecessary is false, check if next pull time needs to be updated.
                 sp<PullDataReceiver> receiverPtr = receiverInfo.receiver.promote();
-                const bool pullNecessary = receiverPtr != nullptr && receiverPtr->isPullNeeded();
-                if (receiverInfo.nextPullTimeNs <= elapsedTimeNs && pullNecessary) {
+                if (receiverInfo.nextPullTimeNs <= elapsedTimeNs && receiverPtr != nullptr &&
+                    receiverPtr->isPullNeeded()) {
                     receivers.push_back(&receiverInfo);
                 } else {
                     if (receiverInfo.nextPullTimeNs <= elapsedTimeNs) {

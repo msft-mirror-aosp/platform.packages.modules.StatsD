@@ -81,7 +81,8 @@ public:
     // Determine if metric needs to pull
     bool isPullNeeded() const override {
         std::lock_guard<std::mutex> lock(mMutex);
-        return mIsActive && (mCondition == ConditionState::kTrue);
+        return mIsActive && (mCondition == ConditionState::kTrue) &&
+               shouldKeepRandomSample(mPullProbability);
     };
 
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
@@ -226,6 +227,8 @@ private:
     bool mDimensionGuardrailHit;
 
     const int mSamplingPercentage;
+
+    const int mPullProbability;
 
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition);
     FRIEND_TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition);

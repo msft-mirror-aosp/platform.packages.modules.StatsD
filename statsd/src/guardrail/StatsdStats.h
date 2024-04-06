@@ -180,8 +180,8 @@ public:
     const static int kMaxConfigCountPerUid = 20;
     const static int kMaxAlertCountPerConfig = 200;
     const static int kMaxConditionCountPerConfig = 500;
-    const static int kMaxMetricCountPerConfig = 2000;
-    const static int kMaxMatcherCountPerConfig = 2500;
+    const static int kMaxMetricCountPerConfig = 3000;
+    const static int kMaxMatcherCountPerConfig = 3500;
 
     // The max number of old config stats we keep.
     const static int kMaxIceBoxSize = 20;
@@ -277,7 +277,7 @@ public:
 
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
-    static const int kMaxPushedAtomId = 900;
+    static const int kMaxPushedAtomId = 1500;
 
     // Atom id that is the start of the pulled atoms.
     static const int kPullAtomStartTag = 10000;
