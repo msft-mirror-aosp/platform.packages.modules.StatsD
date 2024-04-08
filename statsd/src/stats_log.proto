@@ -318,6 +318,8 @@ message StatsLogReport {
 
   optional bool dimension_guardrail_hit = 17;
 
+  optional int64 estimated_data_bytes = 18;
+
   // Do not use.
   reserved 13, 15;
 }
@@ -403,6 +405,8 @@ message ConfigMetricsReport {
   reserved 10;
 
   repeated DataCorruptedReason data_corrupted_reason = 11;
+
+  optional int64 estimated_data_bytes = 12;
 }
 
 message ConfigMetricsReportList {
