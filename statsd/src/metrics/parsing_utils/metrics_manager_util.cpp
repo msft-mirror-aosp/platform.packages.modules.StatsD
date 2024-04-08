@@ -1299,6 +1299,26 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
+    if (metric.pull_probability() < 1 || metric.pull_probability() > 100) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY, metric.id());
+        return nullopt;
+    }
+
+    if (metric.pull_probability() != 100) {
+        if (pullTagId == -1) {
+            invalidConfigReason = InvalidConfigReason(
+                    INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY, metric.id());
+            return nullopt;
+        }
+        if (metric.sampling_type() == GaugeMetric::RANDOM_ONE_SAMPLE) {
+            invalidConfigReason = InvalidConfigReason(
+                    INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
+                    metric.id());
+            return nullopt;
+        }
+    }
+
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
     invalidConfigReason = handleMetricActivation(
