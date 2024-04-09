@@ -50,6 +50,7 @@ const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
+const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
 // for GaugeMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 const int FIELD_ID_SKIPPED = 2;
@@ -101,7 +102,8 @@ GaugeMetricProducer::GaugeMetricProducer(
       mDimensionHardLimit(dimensionHardLimit),
       mGaugeAtomsPerDimensionLimit(metric.max_num_gauge_atoms_per_bucket()),
       mDimensionGuardrailHit(false),
-      mSamplingPercentage(metric.sampling_percentage()) {
+      mSamplingPercentage(metric.sampling_percentage()),
+      mPullProbability(metric.pull_probability()) {
     mCurrentSlicedBucket = std::make_shared<DimToGaugeAtomsMap>();
     mCurrentSlicedBucketForAnomaly = std::make_shared<DimToValMap>();
     int64_t bucketSizeMills = 0;
@@ -257,6 +259,8 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
 
     if (mPastBuckets.empty() && mSkippedBuckets.empty()) {
         return;
@@ -394,7 +398,7 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         default:
             break;
     }
-    if (!triggerPuller) {
+    if (!triggerPuller || !shouldKeepRandomSample(mPullProbability)) {
         return;
     }
     vector<std::shared_ptr<LogEvent>> allData;
