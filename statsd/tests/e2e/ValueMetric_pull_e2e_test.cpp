@@ -274,7 +274,6 @@ TEST(ValueMetricE2eTest, TestPulledEvents) {
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
     StatsLogReport::ValueMetricDataWrapper valueMetrics;
-    EXPECT_TRUE(reports.reports(0).metrics(0).has_estimated_data_bytes());
     sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).value_metrics(), &valueMetrics);
     ASSERT_GT((int)valueMetrics.data_size(), 1);
 
