@@ -73,7 +73,6 @@ const int FIELD_ID_CURRENT_REPORT_WALL_CLOCK_NANOS = 6;
 const int FIELD_ID_DUMP_REPORT_REASON = 8;
 const int FIELD_ID_STRINGS = 9;
 const int FIELD_ID_DATA_CORRUPTED_REASON = 11;
-const int FIELD_ID_ESTIMATED_DATA_BYTES = 12;
 
 // for ActiveConfigList
 const int FIELD_ID_ACTIVE_CONFIG_LIST_CONFIG = 1;
@@ -770,8 +769,6 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
 
     std::set<string> str_set;
 
-    int64_t totalSize = it->second->byteSize();
-
     ProtoOutputStream tempProto;
     // First, fill in ConfigMetricsReport using current data on memory, which
     // starts from filling in StatsLogReport's.
@@ -807,9 +804,6 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
 
     // Data corrupted reason
     writeDataCorruptedReasons(tempProto);
-
-    // Estimated memory bytes
-    tempProto.write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_DATA_BYTES, totalSize);
 
     flushProtoToBuffer(tempProto, buffer);
 
