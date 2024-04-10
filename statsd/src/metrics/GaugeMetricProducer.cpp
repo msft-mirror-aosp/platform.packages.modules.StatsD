@@ -50,6 +50,7 @@ const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
+const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
 // for GaugeMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 const int FIELD_ID_SKIPPED = 2;
@@ -101,7 +102,8 @@ GaugeMetricProducer::GaugeMetricProducer(
       mDimensionHardLimit(dimensionHardLimit),
       mGaugeAtomsPerDimensionLimit(metric.max_num_gauge_atoms_per_bucket()),
       mDimensionGuardrailHit(false),
-      mSamplingPercentage(metric.sampling_percentage()) {
+      mSamplingPercentage(metric.sampling_percentage()),
+      mPullProbability(metric.pull_probability()) {
     mCurrentSlicedBucket = std::make_shared<DimToGaugeAtomsMap>();
     mCurrentSlicedBucketForAnomaly = std::make_shared<DimToValMap>();
     int64_t bucketSizeMills = 0;
@@ -257,6 +259,8 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
 
     if (mPastBuckets.empty() && mSkippedBuckets.empty()) {
         return;
@@ -394,7 +398,7 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         default:
             break;
     }
-    if (!triggerPuller) {
+    if (!triggerPuller || !shouldKeepRandomSample(mPullProbability)) {
         return;
     }
     vector<std::shared_ptr<LogEvent>> allData;
@@ -410,9 +414,10 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         return;
     }
     for (const auto& data : allData) {
-        if (mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex) ==
-            MatchingState::kMatched) {
-            LogEvent localCopy = *data;
+        const auto [matchResult, transformedEvent] =
+                mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex);
+        if (matchResult == MatchingState::kMatched) {
+            LogEvent localCopy = transformedEvent == nullptr ? *data : *transformedEvent;
             localCopy.setElapsedTimestampNs(timestampNs);
             onMatchedLogEventLocked(mWhatMatcherIndex, localCopy);
         }
@@ -502,9 +507,11 @@ void GaugeMetricProducer::onDataPulled(const std::vector<std::shared_ptr<LogEven
         return;
     }
     for (const auto& data : allData) {
-        if (mEventMatcherWizard->matchLogEvent(
-                *data, mWhatMatcherIndex) == MatchingState::kMatched) {
-            onMatchedLogEventLocked(mWhatMatcherIndex, *data);
+        const auto [matchResult, transformedEvent] =
+                mEventMatcherWizard->matchLogEvent(*data, mWhatMatcherIndex);
+        if (matchResult == MatchingState::kMatched) {
+            onMatchedLogEventLocked(mWhatMatcherIndex,
+                                    transformedEvent == nullptr ? *data : *transformedEvent);
         }
     }
 }
@@ -624,7 +631,7 @@ void GaugeMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
 // bucket.
 // if data is pushed, onMatchedLogEvent will only be called through onConditionChanged() inside
 // the GaugeMetricProducer while holding the lock.
-void GaugeMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void GaugeMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
 
     if (eventTimeNs < currentBucketEndTimeNs) {
@@ -643,8 +650,8 @@ void GaugeMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
          (long long)mCurrentBucketStartTimeNs);
 }
 
-void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                   const int64_t& nextBucketStartTimeNs) {
+void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                   const int64_t nextBucketStartTimeNs) {
     int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
     int64_t bucketEndTime = eventTimeNs < fullBucketEndTimeNs ? eventTimeNs : fullBucketEndTimeNs;
 

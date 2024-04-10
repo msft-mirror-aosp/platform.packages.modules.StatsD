@@ -37,38 +37,21 @@ cc_defaults {
     shared_libs: [
         "libbinder_ndk",
         "liblog",
+        "libstatssocket",
     ],
     static_libs: [
         "libutils",
         "statsd-aidl-ndk",
     ],
-    target: {
-        android: {
-            shared_libs: ["libstatssocket"],
-        },
-        host: {
-            static_libs: ["libstatssocket"],
-        },
-    },
 }
 
-cc_library {
+cc_library_shared {
     name: "libstatspull",
     defaults: [
         "libstatspull_defaults",
     ],
     host_supported: true,
     target: {
-        android: {
-            static: {
-                enabled: false,
-            },
-        },
-        host: {
-            shared: {
-                enabled: false,
-            },
-        },
         darwin: {
             enabled: false,
         },
@@ -92,20 +75,6 @@ cc_library {
 cc_library_headers {
     name: "libstatspull_headers",
     export_include_dirs: ["include"],
-}
-
-// ONLY USE IN TESTS.
-cc_library_static {
-    name: "libstatspull_private",
-    defaults: [
-        "libstatspull_defaults",
-    ],
-    cflags: [
-        "-DLIB_STATS_PULL_TESTS_FLAG",
-    ],
-    visibility: [
-        "//packages/modules/StatsD/apex/tests/libstatspull",
-    ],
 }
 
 // Note: These unit tests only test PullAtomMetadata and subscriptions
@@ -169,4 +138,5 @@ cc_test {
     ],
     require_root: true,
     min_sdk_version: "30",
+    test_for: ["com.android.os.statsd"],
 }

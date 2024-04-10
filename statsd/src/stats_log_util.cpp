@@ -598,6 +598,10 @@ int64_t NanoToMillis(const int64_t nano) {
     return nano / 1000000;
 }
 
+int64_t NanoToSeconds(const int64_t nano) {
+    return nano / NS_PER_SEC;
+}
+
 int64_t MillisToNano(const int64_t millis) {
     return millis * 1000000;
 }

@@ -54,6 +54,7 @@ const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
+const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
 // for *MetricDataWrapper
 const int FIELD_ID_DATA = 1;
 const int FIELD_ID_SKIPPED = 2;
@@ -72,7 +73,7 @@ const int FIELD_ID_SLICE_BY_STATE = 6;
 
 template <typename AggregatedValue, typename DimExtras>
 ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
-        const int64_t& metricId, const ConfigKey& key, const uint64_t protoHash,
+        const int64_t metricId, const ConfigKey& key, const uint64_t protoHash,
         const PullOptions& pullOptions, const BucketOptions& bucketOptions,
         const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
         const StateOptions& stateOptions, const ActivationOptions& activationOptions,
@@ -154,7 +155,7 @@ ValueMetricProducer<AggregatedValue, DimExtras>::~ValueMetricProducer() {
 
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onStatsdInitCompleted(
-        const int64_t& eventTimeNs) {
+        const int64_t eventTimeNs) {
     lock_guard<mutex> lock(mMutex);
 
     if (isPulled() && mCondition == ConditionState::kTrue && mIsActive) {
@@ -225,7 +226,7 @@ template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onStateChanged(
         int64_t eventTimeNs, int32_t atomId, const HashableDimensionKey& primaryKey,
         const FieldValue& oldState, const FieldValue& newState) {
-    // TODO(b/189353769): Acquire lock.
+    std::lock_guard<std::mutex> lock(mMutex);
     VLOG("ValueMetricProducer %lld onStateChanged time %lld, State %d, key %s, %d -> %d",
          (long long)mMetricId, (long long)eventTimeNs, atomId, primaryKey.toString().c_str(),
          oldState.mValue.int_value, newState.mValue.int_value);
@@ -320,6 +321,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
     if (mPastBuckets.empty() && mSkippedBuckets.empty()) {
         return;
     }
@@ -717,7 +720,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onMatchedLogEventInternalL
 // if mCondition and mIsActive are true!
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::flushIfNeededLocked(
-        const int64_t& eventTimeNs) {
+        const int64_t eventTimeNs) {
     const int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
     if (eventTimeNs < currentBucketEndTimeNs) {
         VLOG("eventTime is %lld, less than current bucket end time %lld", (long long)eventTimeNs,
@@ -742,7 +745,7 @@ int64_t ValueMetricProducer<AggregatedValue, DimExtras>::calcBucketsForwardCount
 
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::flushCurrentBucketLocked(
-        const int64_t& eventTimeNs, const int64_t& nextBucketStartTimeNs) {
+        const int64_t eventTimeNs, const int64_t nextBucketStartTimeNs) {
     if (mCondition == ConditionState::kUnknown) {
         StatsdStats::getInstance().noteBucketUnknownCondition(mMetricId);
         invalidateCurrentBucket(eventTimeNs, BucketDropReason::CONDITION_UNKNOWN);

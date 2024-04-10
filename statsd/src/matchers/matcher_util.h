@@ -33,11 +33,16 @@ enum MatchingState {
     kMatched = 1,
 };
 
+struct MatchResult {
+    bool matched;
+    std::unique_ptr<LogEvent> transformedEvent;
+};
+
 bool combinationMatch(const std::vector<int>& children, const LogicalOperation& operation,
                       const std::vector<MatchingState>& matcherResults);
 
-bool matchesSimple(const sp<UidMap>& uidMap, const SimpleAtomMatcher& simpleMatcher,
-                   const LogEvent& wrapper);
+MatchResult matchesSimple(const sp<UidMap>& uidMap, const SimpleAtomMatcher& simpleMatcher,
+                          const LogEvent& wrapper);
 
 }  // namespace statsd
 }  // namespace os

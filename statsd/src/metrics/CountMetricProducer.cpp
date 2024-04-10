@@ -54,6 +54,7 @@ const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
+const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
 
 // for CountMetricDataWrapper
 const int FIELD_ID_DATA = 1;
@@ -239,6 +240,8 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                            mDimensionGuardrailHit);
     }
 
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
 
@@ -400,7 +403,7 @@ void CountMetricProducer::onMatchedLogEventInternalLocked(
 
 // When a new matched event comes in, we check if event falls into the current
 // bucket. If not, flush the old counter to past buckets and initialize the new bucket.
-void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void CountMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
     if (eventTimeNs < currentBucketEndTimeNs) {
         return;
@@ -416,7 +419,7 @@ void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
          (long long)mCurrentBucketStartTimeNs);
 }
 
-bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
+bool CountMetricProducer::countPassesThreshold(const int64_t count) {
     if (mUploadThreshold == nullopt) {
         return true;
     }
@@ -436,8 +439,8 @@ bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
     }
 }
 
-void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                   const int64_t& nextBucketStartTimeNs) {
+void CountMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                   const int64_t nextBucketStartTimeNs) {
     int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
     CountBucket info;
     info.mBucketStartNs = mCurrentBucketStartTimeNs;

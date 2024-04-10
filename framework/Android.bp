@@ -30,6 +30,9 @@ java_library_static {
     srcs: [
         ":statslog-statsd-java-gen",
     ],
+    libs: [
+        "androidx.annotation_annotation",
+    ],
     visibility: [
         "//cts/hostsidetests/statsd/apps:__subpackages__",
         "//vendor:__subpackages__",
@@ -98,15 +101,6 @@ java_sdk_library {
         "test_com.android.os.statsd",
     ],
     min_sdk_version: "30",
-}
-
-java_api_contribution {
-    name: "framework-statsd-public-stubs",
-    api_surface: "public",
-    api_file: "api/current.txt",
-    visibility: [
-        "//build/orchestrator/apis",
-    ],
 }
 
 // JNI library for StatsLog.write

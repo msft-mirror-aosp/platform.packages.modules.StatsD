@@ -707,6 +707,79 @@ TEST_F(MetricsManagerUtilTest, TestPulledGaugeMetricWithSamplingPercentage) {
                                   StringToId("Gauge")));
 }
 
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(101);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbabilityZero) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(0);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricValidPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestPushedGaugeMetricWithPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricRandomOneSampleWithPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::RANDOM_ONE_SAMPLE,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
+                      StringToId("Gauge")));
+}
+
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingIdOrWhat) {
     StatsdConfig config;
     int64_t metricId = 1;
@@ -1983,6 +2056,313 @@ TEST_P(MetricsManagerUtilDimLimitTest, TestDimLimit) {
     producer = allMetricProducers[metricProducerMap.at(config.kll_metric(0).id())];
     KllMetricProducer* kllProducer = static_cast<KllMetricProducer*>(producer.get());
     EXPECT_EQ(kllProducer->mDimensionHardLimit, actualLimit);
+}
+
+TEST_F(MetricsManagerUtilTest, TestMissingValueMatcherAndStringReplacer) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(SCREEN_STATE_ATOM_ID);
+    matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_NO_VALUE_MATCHER_NOR_STRING_REPLACER);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMatcherWithValueMatcherOnly) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(SCREEN_STATE_ATOM_ID);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(2 /*int_field*/);
+    fvm->set_eq_int(1);
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplacerOnly) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(SCREEN_STATE_ATOM_ID);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(5 /*string_field*/);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("#");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMatcherWithPositionAll) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(9 /*repeated_int_field*/);
+    fvm->set_position(Position::ALL);
+    fvm->set_eq_int(1);
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAll) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(12 /*repeated_string_field*/);
+    fvm->set_position(Position::ALL);
+    fvm->set_eq_string("foo");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMatcherWithPositionAllNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Match on attribution_node[ALL].uid = 1
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ALL);
+    fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(1 /* uid */);
+    fvm->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_int(1);
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAllNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Match on attribution_node[ALL].uid = 1
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ALL);
+    fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(2 /* tag */);
+    fvm->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string("foo");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_regex(R"([0-9]+$)");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAny) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(12 /*repeated_string_field*/);
+    fvm->set_position(Position::ANY);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_STRING_REPLACE_WITH_NO_VALUE_MATCHER_WITH_POSITION_ANY);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAnyNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Match on attribution_node[ALL].uid = 1
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ANY);
+    fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(2 /* tag */);
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_regex(R"([0-9]+$)");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_STRING_REPLACE_WITH_NO_VALUE_MATCHER_WITH_POSITION_ANY);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAny) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(12 /*repeated_string_field*/);
+    fvm->set_position(Position::ANY);
+    fvm->set_eq_string("bar");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAnyNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Match on attribution_node[ALL].uid = 1
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ANY);
+    fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(2 /* tag */);
+    fvm->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string("bar");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_regex(R"([0-9]+$)");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithPositionAllNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Replace attribution_node[ALL].tag using "[0-9]+$" -> "".
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ALL);
+    fvm = fvm->mutable_matches_tuple()->add_field_value_matcher();
+    fvm->set_field(2 /* tag */);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplaceAndNonStringValueMatcher) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(2 /*int_field*/);
+    fvm->set_eq_int(1);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("#");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_INVALID_VALUE_MATCHER_WITH_STRING_REPLACE);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestCombinationMatcherWithStringReplace) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(5 /*string_field*/);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("#");
+
+    matcher = config.add_atom_matcher();
+    matcher->set_id(222);
+    matcher->mutable_combination()->set_operation(LogicalOperation::NOT);
+    matcher->mutable_combination()->add_matcher(111);
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_COMBINATION_WITH_STRING_REPLACE);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(222));
 }
 
 }  // namespace statsd

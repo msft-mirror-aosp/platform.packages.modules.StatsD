@@ -24,7 +24,7 @@ namespace statsd {
 
 using std::pair;
 
-OringDurationTracker::OringDurationTracker(const ConfigKey& key, const int64_t& id,
+OringDurationTracker::OringDurationTracker(const ConfigKey& key, const int64_t id,
                                            const MetricDimensionKey& eventKey,
                                            const sp<ConditionWizard>& wizard, int conditionIndex,
                                            bool nesting, int64_t currentBucketStartNs,
@@ -141,7 +141,7 @@ void OringDurationTracker::noteStopAll(const int64_t timestamp) {
 }
 
 bool OringDurationTracker::flushCurrentBucket(
-        const int64_t& eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
+        const int64_t eventTimeNs, const optional<UploadThreshold>& uploadThreshold,
         const int64_t globalConditionTrueNs,
         std::unordered_map<MetricDimensionKey, std::vector<DurationBucket>>* output) {
     VLOG("OringDurationTracker Flushing.............");

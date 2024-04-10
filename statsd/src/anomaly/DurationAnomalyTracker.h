@@ -23,8 +23,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-using std::unordered_map;
-
 class DurationAnomalyTracker : public virtual AnomalyTracker {
 public:
     DurationAnomalyTracker(const Alert& alert, const ConfigKey& configKey,
@@ -34,12 +32,12 @@ public:
 
     // Sets an alarm for the given timestamp.
     // Replaces previous alarm if one already exists.
-    void startAlarm(const MetricDimensionKey& dimensionKey, const int64_t& eventTime) override;
+    void startAlarm(const MetricDimensionKey& dimensionKey, int64_t eventTime) override;
 
     // Stops the alarm.
     // If it should have already fired, but hasn't yet (e.g. because the AlarmManager is delayed),
     // declare the anomaly now.
-    void stopAlarm(const MetricDimensionKey& dimensionKey, const int64_t& timestampNs) override;
+    void stopAlarm(const MetricDimensionKey& dimensionKey, int64_t timestampNs) override;
 
     // Stop all the alarms owned by this tracker. Does not declare any anomalies.
     void cancelAllAlarms() override;
@@ -48,7 +46,8 @@ public:
     // and removes it from firedAlarms. The AlarmMonitor is not informed.
     // Note that this will generally be called from a different thread from the other functions;
     // the caller is responsible for thread safety.
-    void informAlarmsFired(const int64_t& timestampNs,
+    void informAlarmsFired(
+            int64_t timestampNs,
             unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& firedAlarms) override;
 
 protected:
