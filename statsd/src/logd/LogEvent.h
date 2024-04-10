@@ -265,7 +265,7 @@ private:
     void parseTriggerStateResetAnnotation(uint8_t annotationType,
                                           std::optional<uint8_t> numElements);
     void parseStateNestedAnnotation(uint8_t annotationType, std::optional<uint8_t> numElements);
-    bool checkPreviousValueType(Type expected);
+    bool checkPreviousValueType(Type expected) const;
 
     /**
      * The below two variables are only valid during the execution of
