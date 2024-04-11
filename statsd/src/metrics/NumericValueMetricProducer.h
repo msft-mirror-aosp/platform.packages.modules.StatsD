@@ -36,7 +36,8 @@ public:
                                const ConditionOptions& conditionOptions,
                                const StateOptions& stateOptions,
                                const ActivationOptions& activationOptions,
-                               const GuardrailOptions& guardrailOptions);
+                               const GuardrailOptions& guardrailOptions,
+                               const wp<ConfigMetadataProvider> configMetadataProvider);
 
     // Process data pulled on bucket boundary.
     void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& allData, PullResult pullResult,

@@ -23,6 +23,7 @@
 #include "anomaly/AnomalyTracker.h"
 #include "condition/ConditionTracker.h"
 #include "config/ConfigKey.h"
+#include "config/ConfigMetadataProvider.h"
 #include "external/StatsPullerManager.h"
 #include "guardrail/StatsdStats.h"
 #include "logd/LogEvent.h"
@@ -37,7 +38,9 @@ namespace os {
 namespace statsd {
 
 // A MetricsManager is responsible for managing metrics from one single config source.
-class MetricsManager : public virtual RefBase, public virtual PullUidProvider {
+class MetricsManager : public virtual RefBase,
+                       public virtual PullUidProvider,
+                       public virtual ConfigMetadataProvider {
 public:
     MetricsManager(const ConfigKey& configKey, const StatsdConfig& config, int64_t timeBaseNs,
                    const int64_t currentTimeNs, const sp<UidMap>& uidMap,
@@ -77,6 +80,8 @@ public:
     void init();
 
     vector<int32_t> getPullAtomUids(int32_t atomId) override;
+
+    bool useV2SoftMemoryCalculation() override;
 
     bool shouldWriteToDisk() const {
         return mNoReportMetricIds.size() != mAllMetricProducers.size();
@@ -247,6 +252,7 @@ private:
     std::list<std::pair<const int64_t, const int32_t>> mAnnotations;
 
     bool mShouldPersistHistory;
+    bool mUseV2SoftMemoryCalculation;
 
     // All event tags that are interesting to config metrics matchers.
     std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;

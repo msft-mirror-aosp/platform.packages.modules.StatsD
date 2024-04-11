@@ -224,6 +224,7 @@ public:
             aggregationTypes.push_back(metric.aggregation_type());
         }
 
+        sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
         sp<NumericValueMetricProducer> valueProducer = new NumericValueMetricProducer(
                 kConfigKey, metric, protoHash, {pullAtomId, pullerManager},
                 {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
@@ -234,7 +235,7 @@ public:
                 {conditionIndex, metric.links(), initialConditionCache, wizard},
                 {metric.state_link(), slicedStateAtoms, stateGroupMap},
                 {/*eventActivationMap=*/{}, /*eventDeactivationMap=*/{}},
-                {dimensionSoftLimit, dimensionHardLimit});
+                {dimensionSoftLimit, dimensionHardLimit}, provider);
 
         valueProducer->prepareFirstBucket();
         if (conditionAfterFirstBucketPrepared) {
