@@ -230,6 +230,9 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
 
     if (mEventQueue != nullptr) {
         mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
+        if (mLogsReaderThread) {
+            pthread_setname_np(mLogsReaderThread->native_handle(), "statsd.reader");
+        }
     }
 }
 
