@@ -22,6 +22,7 @@
 #include <limits.h>
 #include <stdlib.h>
 
+#include "FieldValue.h"
 #include "guardrail/StatsdStats.h"
 #include "metrics/parsing_utils/metrics_manager_util.h"
 #include "stats_log_util.h"
@@ -70,7 +71,7 @@ NumericValueMetricProducer::NumericValueMetricProducer(
     : ValueMetricProducer(metric.id(), key, protoHash, pullOptions, bucketOptions, whatOptions,
                           conditionOptions, stateOptions, activationOptions, guardrailOptions),
       mUseAbsoluteValueOnReset(metric.use_absolute_value_on_reset()),
-      mAggregationType(metric.aggregation_type()),
+      mAggregationTypes(whatOptions.aggregationTypes),
       mIncludeSampleSize(metric.has_include_sample_size()
                                  ? metric.include_sample_size()
                                  : metric.aggregation_type() == ValueMetric_AggregationType_AVG),
@@ -80,7 +81,8 @@ NumericValueMetricProducer::NumericValueMetricProducer(
       mUseZeroDefaultBase(metric.use_zero_default_base()),
       mHasGlobalBase(false),
       mMaxPullDelayNs(metric.has_max_pull_delay_sec() ? metric.max_pull_delay_sec() * NS_PER_SEC
-                                                      : StatsdStats::kPullMaxDelayNs) {
+                                                      : StatsdStats::kPullMaxDelayNs),
+      mDedupedFieldMatchers(dedupFieldMatchers(whatOptions.fieldMatchers)) {
     // TODO(b/186677791): Use initializer list to initialize mUploadThreshold.
     if (metric.has_threshold()) {
         mUploadThreshold = metric.threshold();
@@ -274,9 +276,9 @@ void NumericValueMetricProducer::accumulateEvents(const vector<shared_ptr<LogEve
 
             // Get dimensions_in_what key and value indices.
             HashableDimensionKey dimensionsInWhat;
-            vector<int> valueIndices(mFieldMatchers.size(), -1);
+            vector<int> valueIndices(mDedupedFieldMatchers.size(), -1);
             const LogEvent& eventRef = transformedEvent == nullptr ? *data : *transformedEvent;
-            if (!filterValues(mDimensionsInWhat, mFieldMatchers, eventRef.getValues(),
+            if (!filterValues(mDimensionsInWhat, mDedupedFieldMatchers, eventRef.getValues(),
                               dimensionsInWhat, valueIndices)) {
                 StatsdStats::getInstance().noteBadValueType(mMetricId);
             }
@@ -478,7 +480,7 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
         }
 
         if (interval.hasValue()) {
-            switch (mAggregationType) {
+            switch (getAggregationTypeLocked(i)) {
                 case ValueMetric::SUM:
                     // for AVG, we add up and take average when flushing the bucket
                 case ValueMetric::AVG:
@@ -664,7 +666,7 @@ bool NumericValueMetricProducer::valuePassesThreshold(const Interval& interval) 
 }
 
 Value NumericValueMetricProducer::getFinalValue(const Interval& interval) const {
-    if (mAggregationType != ValueMetric::AVG) {
+    if (getAggregationTypeLocked(interval.aggIndex) != ValueMetric::AVG) {
         return interval.aggregate;
     } else {
         double sum = interval.aggregate.type == LONG ? (double)interval.aggregate.long_value
