@@ -53,7 +53,8 @@ MetricProducer::MetricProducer(
                 eventDeactivationMap,
         const vector<int>& slicedStateAtoms,
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap,
-        const optional<bool> splitBucketForAppUpgrade)
+        const optional<bool> splitBucketForAppUpgrade,
+        const wp<ConfigMetadataProvider> configMetadataProvider)
     : mMetricId(metricId),
       mProtoHash(protoHash),
       mConfigKey(key),
@@ -78,7 +79,8 @@ MetricProducer::MetricProducer(
       mSplitBucketForAppUpgrade(splitBucketForAppUpgrade),
       mHasHitGuardrail(false),
       mSampledWhatFields({}),
-      mShardCount(0) {
+      mShardCount(0),
+      mConfigMetadataProvider(configMetadataProvider) {
 }
 
 optional<InvalidConfigReason> MetricProducer::onConfigUpdatedLocked(

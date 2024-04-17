@@ -60,6 +60,7 @@ sp<UidMap> uidMap = new UidMap();
 sp<StatsPullerManager> pullerManager = new StatsPullerManager();
 sp<AlarmMonitor> anomalyAlarmMonitor;
 sp<AlarmMonitor> periodicAlarmMonitor;
+sp<ConfigMetadataProvider> configMetadataProvider;
 unordered_map<int, vector<int>> allTagIdsToMatchersMap;
 vector<sp<AtomMatchingTracker>> allAtomMatchingTrackers;
 unordered_map<int64_t, int> atomMatchingTrackerMap;
@@ -83,12 +84,12 @@ optional<InvalidConfigReason> initConfig(const StatsdConfig& config) {
     // initStatsdConfig returns nullopt if config is valid
     return initStatsdConfig(
             kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds);
+            timeBaseSec, timeBaseSec, configMetadataProvider, allTagIdsToMatchersMap,
+            allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
+            conditionTrackerMap, allMetricProducers, metricProducerMap, allAnomalyTrackers,
+            allAlarmTrackers, conditionToMetricMap, trackerToMetricMap, trackerToConditionMap,
+            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap, alertTrackerMap,
+            metricsWithActivation, stateProtoHashes, noReportMetricIds);
 }
 
 StatsdConfig buildCircleMatchers() {
@@ -1538,8 +1539,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerNoThreshold) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1561,8 +1564,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerMissingBuckets) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1585,8 +1590,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerGood) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_NE(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1610,10 +1617,11 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerDurationTooLong) {
     metric.set_aggregation_type(DurationMetric_AggregationType_SUM);
     FieldMatcher dimensions;
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     vector<sp<MetricProducer>> metricProducers({new DurationMetricProducer(
             kConfigKey, metric, -1 /*no condition*/, {}, -1 /* what index not needed*/,
             1 /* start index */, 2 /* stop index */, 3 /* stop_all index */, false /*nesting*/,
-            wizard, 0x0123456789, dimensions, 0, 0)});
+            wizard, 0x0123456789, dimensions, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
