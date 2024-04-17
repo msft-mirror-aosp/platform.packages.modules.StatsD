@@ -463,6 +463,8 @@ bool isAttributionUidField(const FieldValue& value);
 /* returns uid if the field is uid field, or -1 if the field is not a uid field */
 int getUidIfExists(const FieldValue& value);
 
+std::vector<Matcher> dedupFieldMatchers(const std::vector<Matcher>& fieldMatchers);
+
 void translateFieldMatcher(const FieldMatcher& matcher, std::vector<Matcher>* output);
 
 bool isAttributionUidField(const Field& field, const Value& value);
