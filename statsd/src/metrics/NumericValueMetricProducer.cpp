@@ -67,9 +67,11 @@ NumericValueMetricProducer::NumericValueMetricProducer(
         const PullOptions& pullOptions, const BucketOptions& bucketOptions,
         const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
         const StateOptions& stateOptions, const ActivationOptions& activationOptions,
-        const GuardrailOptions& guardrailOptions)
+        const GuardrailOptions& guardrailOptions,
+        const wp<ConfigMetadataProvider> configMetadataProvider)
     : ValueMetricProducer(metric.id(), key, protoHash, pullOptions, bucketOptions, whatOptions,
-                          conditionOptions, stateOptions, activationOptions, guardrailOptions),
+                          conditionOptions, stateOptions, activationOptions, guardrailOptions,
+                          configMetadataProvider),
       mUseAbsoluteValueOnReset(metric.use_absolute_value_on_reset()),
       mAggregationTypes(whatOptions.aggregationTypes),
       mIncludeSampleSize(metric.has_include_sample_size()
