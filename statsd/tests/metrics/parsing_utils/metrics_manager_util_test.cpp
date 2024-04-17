@@ -805,6 +805,88 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricConditionlinkNoCondition) {
                                   StringToId("NumericValue")));
 }
 
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHasBothSingleAndMultipleAggTypes) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->set_aggregation_type(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
+                      StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMoreAggTypesThanValueFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                                StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMoreValueFieldsThanAggTypes) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    // This only fails if the repeated aggregation field is used. If the single field is used,
+    // we will apply this aggregation type to all value fields.
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+    *metric->mutable_value_field() = CreateDimensions(
+            util::SUBSYSTEM_SLEEP_STATE, {3 /* count */, 4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                                StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricDefaultAggTypeOutOfOrderFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    *metric->mutable_value_field() =
+            CreateDimensions(util::SUBSYSTEM_SLEEP_STATE, {4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMultipleAggTypesOutOfOrderFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+    metric->add_aggregation_types(ValueMetric::SUM);
+    *metric->mutable_value_field() = CreateDimensions(
+            util::SUBSYSTEM_SLEEP_STATE, {3 /* count */, 4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
 TEST_F(MetricsManagerUtilTest, TestKllMetricMissingIdOrWhat) {
     StatsdConfig config;
     int64_t metricId = 1;

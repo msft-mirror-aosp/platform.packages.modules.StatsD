@@ -215,13 +215,22 @@ public:
                         ? optional<int64_t>(metric.condition_correction_threshold_nanos())
                         : nullopt;
 
+        std::vector<ValueMetric::AggregationType> aggregationTypes;
+        if (metric.aggregation_types_size() != 0) {
+            for (int i = 0; i < metric.aggregation_types_size(); i++) {
+                aggregationTypes.push_back(metric.aggregation_types(i));
+            }
+        } else {  // aggregation_type() is set or default is used.
+            aggregationTypes.push_back(metric.aggregation_type());
+        }
+
         sp<NumericValueMetricProducer> valueProducer = new NumericValueMetricProducer(
                 kConfigKey, metric, protoHash, {pullAtomId, pullerManager},
                 {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
                  conditionCorrectionThresholdNs, metric.split_bucket_for_app_upgrade()},
                 {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions,
                  logEventMatcherIndex, eventMatcherWizard, metric.dimensions_in_what(),
-                 fieldMatchers},
+                 fieldMatchers, aggregationTypes},
                 {conditionIndex, metric.links(), initialConditionCache, wizard},
                 {metric.state_link(), slicedStateAtoms, stateGroupMap},
                 {/*eventActivationMap=*/{}, /*eventDeactivationMap=*/{}},
@@ -7732,6 +7741,266 @@ TEST(NumericValueMetricProducerTest, TestDimensionalSampling) {
     ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucketStartTimeNs + 10000000000,
                         {3}, -1,
                         0);  // Diff of 15 and 18
+}
+
+TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPulled) {
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetricWithCondition();
+    // createMetricWithCondition() adds field 2 as first value field.
+    metric.mutable_value_field()->add_child()->set_field(2);
+    metric.mutable_value_field()->add_child()->set_field(2);
+    metric.mutable_value_field()->add_child()->set_field(2);
+    metric.mutable_value_field()->add_child()->set_field(1);
+    metric.add_aggregation_types(ValueMetric::MIN);
+    metric.add_aggregation_types(ValueMetric::MAX);
+    metric.add_aggregation_types(ValueMetric::SUM);
+    metric.add_aggregation_types(ValueMetric::AVG);
+    metric.add_aggregation_types(ValueMetric::SUM);
+
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+
+    EXPECT_CALL(*pullerManager, Pull(tagId, kConfigKey, _, _))
+            // Screen On Pull 1.
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                data->clear();
+                data->push_back(
+                        CreateTwoValueLogEvent(tagId, bucketStartTimeNs + 30 * NS_PER_SEC, 1, 2));
+                data->push_back(
+                        CreateTwoValueLogEvent(tagId, bucketStartTimeNs + 30 * NS_PER_SEC, 2, 4));
+                return true;
+            }))
+            // Screen Off Pull 2.
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                data->clear();
+                data->push_back(
+                        CreateTwoValueLogEvent(tagId, bucketStartTimeNs + 40 * NS_PER_SEC, 3, 5));
+                data->push_back(
+                        CreateTwoValueLogEvent(tagId, bucketStartTimeNs + 40 * NS_PER_SEC, 4, 9));
+                return true;
+            }))
+            // Screen On Pull 3.
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                data->clear();
+                data->push_back(
+                        CreateTwoValueLogEvent(tagId, bucketStartTimeNs + 50 * NS_PER_SEC, 5, 10));
+                data->push_back(
+                        CreateTwoValueLogEvent(tagId, bucketStartTimeNs + 50 * NS_PER_SEC, 6, 20));
+                return true;
+            }))
+            // Dump report pull.
+            .WillOnce(Invoke([](int tagId, const ConfigKey&, const int64_t eventTimeNs,
+                                vector<std::shared_ptr<LogEvent>>* data) {
+                data->clear();
+                data->push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 55 * NS_PER_SEC,
+                                                       25, 60));
+                data->push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs + 55 * NS_PER_SEC,
+                                                       35, 80));
+
+                return true;
+            }));
+
+    sp<NumericValueMetricProducer> valueProducer =
+            NumericValueMetricProducerTestHelper::createValueProducerWithCondition(
+                    pullerManager, metric, ConditionState::kFalse);
+
+    EXPECT_EQ(5, valueProducer->mFieldMatchers.size());
+    ASSERT_EQ(5, valueProducer->mAggregationTypes.size());
+    EXPECT_EQ(ValueMetric::MIN, valueProducer->mAggregationTypes[0]);
+    EXPECT_EQ(ValueMetric::MAX, valueProducer->mAggregationTypes[1]);
+    EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[2]);
+    EXPECT_EQ(ValueMetric::AVG, valueProducer->mAggregationTypes[3]);
+    EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[4]);
+
+    // Screen On. Pull 1.
+    valueProducer->onConditionChanged(true, bucketStartTimeNs + 30 * NS_PER_SEC);
+
+    // Screen Off.
+    valueProducer->onConditionChanged(false, bucketStartTimeNs + 40 * NS_PER_SEC);
+
+    // Screen On. Pull 2.
+    valueProducer->onConditionChanged(true, bucketStartTimeNs + 50 * NS_PER_SEC);
+
+    // Bucket 2 start. Pull 4.
+    vector<shared_ptr<LogEvent>> allData;
+    allData.clear();
+    allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs, 15, 30));
+    allData.push_back(CreateTwoValueLogEvent(tagId, bucket2StartTimeNs, 20, 40));
+    valueProducer->onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
+
+    // Check dump report.
+    ProtoOutputStream output;
+    std::set<string> strSet;
+    int64_t dumpReportTimeNs = bucket2StartTimeNs + 55 * NS_PER_SEC;
+    valueProducer->onDumpReport(dumpReportTimeNs, true /* include current buckets */, true,
+                                NO_TIME_CONSTRAINTS /* dumpLatency */, &strSet, &output);
+
+    StatsLogReport report = outputStreamToProto(&output);
+    backfillDimensionPath(&report);
+    backfillStartEndTimestamp(&report);
+    EXPECT_TRUE(report.has_value_metrics());
+    StatsLogReport::ValueMetricDataWrapper valueMetrics;
+    sortMetricDataByDimensionsValue(report.value_metrics(), &valueMetrics);
+    ASSERT_EQ(1, valueMetrics.data_size());
+    EXPECT_EQ(0, report.value_metrics().skipped_size());
+
+    // Bucket 1.
+    // Value field 1
+    // Diff from pulls 1 and 2: (3+4)-(1+2) = 4
+    // Diff from pulls 3 and 4: (15+20)-(5+6) = 24
+
+    // Value field 2
+    // Diff from pulls 1 and 2: (5+9)-(2+4) = 8
+    // Diff from pulls 3 and 4: (30+40)-(10+20) = 40
+
+    // Bucket 2
+    // Value field 1
+    // Diff from pulls 4 and 5: (25+35)-(15+20) = 25
+
+    // Value field 2
+    // Diff from pulls 4 and 5: (60+80)-(30+40) = 70
+
+    // Output values are calculated for these agg type - value field combinations
+    // MIN-2, MAX-2, SUM-2, AVG-2, SUM-1
+    ValueMetricData data = valueMetrics.data(0);
+    ASSERT_EQ(2, data.bucket_info_size());
+    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs,
+                        {8, 40, 48, 24, 28}, 20 * NS_PER_SEC, 0);
+    ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs,
+                        {70, 70, 70, 70, 25}, 55 * NS_PER_SEC, 0);
+}
+
+TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPushed) {
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetric();
+    metric.mutable_dimensions_in_what()->set_field(tagId);
+    metric.mutable_dimensions_in_what()->add_child()->set_field(1);
+    // createMetric() adds field 2 as first value field.
+    metric.mutable_value_field()->add_child()->set_field(2);
+    metric.mutable_value_field()->add_child()->set_field(2);
+    metric.mutable_value_field()->add_child()->set_field(2);
+    metric.mutable_value_field()->add_child()->set_field(3);
+    metric.add_aggregation_types(ValueMetric::MIN);
+    metric.add_aggregation_types(ValueMetric::MAX);
+    metric.add_aggregation_types(ValueMetric::SUM);
+    metric.add_aggregation_types(ValueMetric::AVG);
+    metric.add_aggregation_types(ValueMetric::SUM);
+
+    sp<EventMatcherWizard> eventMatcherWizard =
+            createEventMatcherWizard(tagId, logEventMatcherIndex);
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+
+    sp<NumericValueMetricProducer> valueProducer =
+            NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
+                    pullerManager, metric, /*pullAtomId=*/-1);
+
+    EXPECT_EQ(5, valueProducer->mFieldMatchers.size());
+    ASSERT_EQ(5, valueProducer->mAggregationTypes.size());
+    EXPECT_EQ(ValueMetric::MIN, valueProducer->mAggregationTypes[0]);
+    EXPECT_EQ(ValueMetric::MAX, valueProducer->mAggregationTypes[1]);
+    EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[2]);
+    EXPECT_EQ(ValueMetric::AVG, valueProducer->mAggregationTypes[3]);
+    EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[4]);
+
+    // Bucket 1 events.
+    LogEvent event1(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event1, tagId, bucketStartTimeNs + 10, 1, 5, 10);
+
+    LogEvent event2(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event2, tagId, bucketStartTimeNs + 20, 1, 6, 8);
+
+    LogEvent event3(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event3, tagId, bucketStartTimeNs + 40, 2, 3, 10);
+
+    LogEvent event4(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event4, tagId, bucketStartTimeNs + 50, 2, 4, 6);
+
+    LogEvent event5(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event5, tagId, bucketStartTimeNs + 30, 1, 19, 9);
+
+    LogEvent event6(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event6, tagId, bucketStartTimeNs + 60, 2, 20, 8);
+
+    // Bucket 2 events.
+    LogEvent event7(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event7, tagId, bucket2StartTimeNs + 10, 2, 7, 41);
+
+    LogEvent event8(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event8, tagId, bucket2StartTimeNs + 20, 1, 21, 40);
+
+    LogEvent event9(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event9, tagId, bucket2StartTimeNs + 30, 1, 10, 4);
+
+    LogEvent event10(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event10, tagId, bucket2StartTimeNs + 40, 2, 3, 50);
+
+    LogEvent event11(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event11, tagId, bucket2StartTimeNs + 50, 1, 20, 7);
+
+    LogEvent event12(/*uid=*/0, /*pid=*/0);
+    CreateThreeValueLogEvent(&event12, tagId, bucket2StartTimeNs + 60, 2, 20, 2);
+
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event1);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event2);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event3);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event4);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event5);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event6);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event7);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event8);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event9);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event10);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event11);
+    valueProducer->onMatchedLogEvent(1 /*log matcher index*/, event12);
+
+    // Check dump report.
+    ProtoOutputStream output;
+    valueProducer->onDumpReport(bucket3StartTimeNs + 10000, false /* include recent buckets */,
+                                true, FAST /* dumpLatency */, nullptr, &output);
+
+    StatsLogReport report = outputStreamToProto(&output);
+    backfillDimensionPath(&report);
+    backfillStartEndTimestamp(&report);
+    EXPECT_TRUE(report.has_value_metrics());
+    StatsLogReport::ValueMetricDataWrapper valueMetrics;
+    sortMetricDataByDimensionsValue(report.value_metrics(), &valueMetrics);
+    ASSERT_EQ(2, valueMetrics.data_size());
+    EXPECT_EQ(0, report.value_metrics().skipped_size());
+
+    // Bucket 1.
+    // Value field 2
+    // dim 1 pushed values: 5, 6, 19
+    // dim 2 pushed values: 3, 4, 20
+
+    // Value field 3
+    // dim 1 pushed values: 10, 8, 9
+    // dim 2 pushed values: 10, 6, 8
+
+    // Bucket 2
+    // Value field 2
+    // dim 1 pushed values: 21, 10, 20
+    // dim 2 pushed values: 7, 3, 20
+
+    // Value field 3
+    // dim 1 pushed values: 40, 4, 7
+    // dim 2 pushed values: 41, 50, 2
+
+    // Output values are calculated for these agg type - value field combinations
+    // MIN-2, MAX-2, SUM-2, AVG-2, SUM-1
+    ValueMetricData data = valueMetrics.data(0);
+    ASSERT_EQ(2, data.bucket_info_size());
+    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs,
+                        {5, 19, 30, 10, 27}, 0, 0);
+    ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, bucket3StartTimeNs,
+                        {10, 21, 51, 17, 51}, 0, 0);
+
+    data = valueMetrics.data(1);
+    ASSERT_EQ(2, data.bucket_info_size());
+    ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs,
+                        {3, 20, 27, 9, 24}, 0, 0);
+    ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, bucket3StartTimeNs,
+                        {3, 20, 30, 10, 93}, 0, 0);
 }
 
 }  // namespace statsd

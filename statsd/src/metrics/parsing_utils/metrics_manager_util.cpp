@@ -922,6 +922,27 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
+    std::vector<ValueMetric::AggregationType> aggregationTypes;
+    if (metric.aggregation_types_size() != 0) {
+        if (metric.has_aggregation_type()) {
+            invalidConfigReason = InvalidConfigReason(
+                    INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
+                    metric.id());
+            return nullopt;
+        }
+        if (metric.aggregation_types_size() != (int)fieldMatchers.size()) {
+            invalidConfigReason = InvalidConfigReason(
+                    INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                    metric.id());
+            return nullopt;
+        }
+        for (int i = 0; i < metric.aggregation_types_size(); i++) {
+            aggregationTypes.push_back(metric.aggregation_types(i));
+        }
+    } else {  // aggregation_type() is set or default is used.
+        aggregationTypes.push_back(metric.aggregation_type());
+    }
+
     int trackerIndex;
     invalidConfigReason = handleMetricWithAtomMatchingTrackers(
             metric.what(), metric.id(), metricIndex,
@@ -1019,7 +1040,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              conditionCorrectionThresholdNs, getAppUpgradeBucketSplit(metric)},
             {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
-             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers, aggregationTypes},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});
@@ -1171,8 +1192,13 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             key, metric, metricHash, {/*pullTagId=*/-1, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              /*conditionCorrectionThresholdNs=*/nullopt, getAppUpgradeBucketSplit(metric)},
-            {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
-             matcherWizard, metric.dimensions_in_what(), fieldMatchers},
+            {containsAnyPositionInDimensionsInWhat,
+             shouldUseNestedDimensions,
+             trackerIndex,
+             matcherWizard,
+             metric.dimensions_in_what(),
+             fieldMatchers,
+             {}},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit});

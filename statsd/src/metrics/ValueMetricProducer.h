@@ -88,6 +88,7 @@ public:
         const sp<EventMatcherWizard>& matcherWizard;
         const FieldMatcher& dimensionsInWhat;
         const vector<Matcher>& fieldMatchers;
+        const vector<ValueMetric::AggregationType> aggregationTypes;
     };
 
     struct ConditionOptions {
