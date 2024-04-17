@@ -80,9 +80,10 @@ TEST_F(EventMetricProducerTest, TestNoCondition) {
     CreateNoValuesLogEvent(&event2, 1 /*tagId*/, bucketStartTimeNs + 2);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
 
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -117,10 +118,11 @@ TEST_F(EventMetricProducerTest, TestEventsWithNonSlicedCondition) {
     CreateNoValuesLogEvent(&event2, 1 /*tagId*/, bucketStartTimeNs + 10);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
 
     EventMetricProducer eventProducer(kConfigKey, metric, 0 /*condition index*/,
                                       {ConditionState::kUnknown}, wizard, protoHash,
-                                      bucketStartTimeNs);
+                                      bucketStartTimeNs, provider);
 
     eventProducer.onConditionChanged(true /*condition*/, bucketStartTimeNs);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
@@ -174,10 +176,11 @@ TEST_F(EventMetricProducerTest, TestEventsWithSlicedCondition) {
     EXPECT_CALL(*wizard, query(_, key1, _)).WillOnce(Return(ConditionState::kFalse));
     // Condition is true for second event.
     EXPECT_CALL(*wizard, query(_, key2, _)).WillOnce(Return(ConditionState::kTrue));
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
 
     EventMetricProducer eventProducer(kConfigKey, metric, 0 /*condition index*/,
                                       {ConditionState::kUnknown}, wizard, protoHash,
-                                      bucketStartTimeNs);
+                                      bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -213,8 +216,9 @@ TEST_F(EventMetricProducerTest, TestOneAtomTagAggregatedEvents) {
     makeLogEvent(&event4, tagId, bucketStartTimeNs + 40, "222");
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -265,8 +269,9 @@ TEST_F(EventMetricProducerTest, TestBytesFieldAggregatedEvents) {
     makeLogEvent(&event4, tagId, bucketStartTimeNs + 40, "111", &bytesField2);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -314,8 +319,9 @@ TEST_F(EventMetricProducerTest, TestTwoAtomTagAggregatedEvents) {
     makeLogEvent(&event3, tagId2, bucketStartTimeNs + 40, "222");
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -343,6 +349,7 @@ TEST_F(EventMetricProducerTest, TestTwoAtomTagAggregatedEvents) {
         }
     }
 }
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

@@ -139,7 +139,8 @@ protected:
                         const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
                         const StateOptions& stateOptions,
                         const ActivationOptions& activationOptions,
-                        const GuardrailOptions& guardrailOptions);
+                        const GuardrailOptions& guardrailOptions,
+                        const wp<ConfigMetadataProvider> configMetadataProvider);
 
     void onMatchedLogEventInternalLocked(
             const size_t matcherIndex, const MetricDimensionKey& eventKey,
