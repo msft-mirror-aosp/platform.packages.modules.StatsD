@@ -37,6 +37,7 @@
 #include "state/StateManager.h"
 #include "utils/DbUtils.h"
 #include "utils/ShardOffsetProvider.h"
+#include "utils/api_tracing.h"
 
 namespace android {
 namespace os {
@@ -197,9 +198,11 @@ public:
      * Force a partial bucket split on boot complete.
      */
     virtual void onStatsdInitCompleted(int64_t eventTimeNs) {
+        ATRACE_CALL();
         std::lock_guard<std::mutex> lock(mMutex);
         flushLocked(eventTimeNs);
     }
+
     // Consume the parsed stats log entry that already matched the "what" of the metric.
     void onMatchedLogEvent(const size_t matcherIndex, const LogEvent& event) {
         std::lock_guard<std::mutex> lock(mMutex);
