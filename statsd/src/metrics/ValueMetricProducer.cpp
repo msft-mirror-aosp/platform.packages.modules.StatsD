@@ -77,12 +77,14 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
         const PullOptions& pullOptions, const BucketOptions& bucketOptions,
         const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
         const StateOptions& stateOptions, const ActivationOptions& activationOptions,
-        const GuardrailOptions& guardrailOptions)
+        const GuardrailOptions& guardrailOptions,
+        const wp<ConfigMetadataProvider> configMetadataProvider)
     : MetricProducer(metricId, key, bucketOptions.timeBaseNs, conditionOptions.conditionIndex,
                      conditionOptions.initialConditionCache, conditionOptions.conditionWizard,
                      protoHash, activationOptions.eventActivationMap,
                      activationOptions.eventDeactivationMap, stateOptions.slicedStateAtoms,
-                     stateOptions.stateGroupMap, bucketOptions.splitBucketForAppUpgrade),
+                     stateOptions.stateGroupMap, bucketOptions.splitBucketForAppUpgrade,
+                     configMetadataProvider),
       mWhatMatcherIndex(whatOptions.whatMatcherIndex),
       mEventMatcherWizard(whatOptions.matcherWizard),
       mPullerManager(pullOptions.pullerManager),
