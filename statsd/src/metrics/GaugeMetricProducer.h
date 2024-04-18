@@ -96,8 +96,8 @@ public:
 
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
     void onStatsdInitCompleted(int64_t eventTimeNs) override {
+        ATRACE_CALL();
         std::lock_guard<std::mutex> lock(mMutex);
-
         flushLocked(eventTimeNs);
         if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE && mIsActive) {
             pullAndMatchEventsLocked(eventTimeNs);

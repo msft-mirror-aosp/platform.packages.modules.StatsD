@@ -33,6 +33,7 @@
 #include "logd/logevent_util.h"
 #include "stats_log_util.h"
 #include "statslog_statsd.h"
+#include "utils/api_tracing.h"
 
 namespace android {
 namespace os {
@@ -46,6 +47,7 @@ StatsSocketListener::StatsSocketListener(const std::shared_ptr<LogEventQueue>& q
 }
 
 bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
+    ATRACE_CALL();
     static bool name_set;
     if (!name_set) {
         prctl(PR_SET_NAME, "statsd.writer");
@@ -103,6 +105,7 @@ bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
 void StatsSocketListener::processSocketMessage(const char* buffer, const uint32_t len, uint32_t uid,
                                                uint32_t pid, LogEventQueue& queue,
                                                const LogEventFilter& filter) {
+    ATRACE_CALL();
     static const uint32_t kStatsEventTag = 1937006964;
 
     if (len <= (ssize_t)(sizeof(android_log_header_t)) + sizeof(uint32_t)) {
@@ -154,6 +157,7 @@ void StatsSocketListener::processSocketMessage(const char* buffer, const uint32_
 void StatsSocketListener::processStatsEventBuffer(const uint8_t* msg, const uint32_t len,
                                                   uint32_t uid, uint32_t pid, LogEventQueue& queue,
                                                   const LogEventFilter& filter) {
+    ATRACE_CALL();
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
 
     if (filter.getFilteringEnabled()) {
