@@ -2314,6 +2314,13 @@ StatsdConfig buildGoodConfig(int configId, int alertId) {
 
     return config;
 }
+
+sp<MockConfigMetadataProvider> makeMockConfigMetadataProvider(bool enabled) {
+    sp<MockConfigMetadataProvider> metadataProvider = new StrictMock<MockConfigMetadataProvider>();
+    EXPECT_CALL(*metadataProvider, useV2SoftMemoryCalculation()).Times(AnyNumber());
+    EXPECT_CALL(*metadataProvider, useV2SoftMemoryCalculation()).WillRepeatedly(Return(enabled));
+    return nullptr;
+}
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

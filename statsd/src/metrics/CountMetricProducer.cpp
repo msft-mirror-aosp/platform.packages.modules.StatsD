@@ -74,13 +74,14 @@ CountMetricProducer::CountMetricProducer(
         const ConfigKey& key, const CountMetric& metric, const int conditionIndex,
         const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const uint64_t protoHash, const int64_t timeBaseNs, const int64_t startTimeNs,
+        const wp<ConfigMetadataProvider> configMetadataProvider,
         const unordered_map<int, shared_ptr<Activation>>& eventActivationMap,
         const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap,
         const vector<int>& slicedStateAtoms,
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap, getAppUpgradeBucketSplit(metric)),
+                     stateGroupMap, getAppUpgradeBucketSplit(metric), configMetadataProvider),
       mDimensionGuardrailHit(false),
       mDimensionHardLimit(
               StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket())) {

@@ -78,7 +78,8 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mPullerManager(pullerManager),
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
-      mShouldPersistHistory(config.persist_locally()) {
+      mShouldPersistHistory(config.persist_locally()),
+      mUseV2SoftMemoryCalculation(config.statsd_config_options().use_v2_soft_memory_limit()) {
     if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
@@ -91,7 +92,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
     refreshTtl(timeBaseNs);
     mInvalidConfigReason = initStatsdConfig(
             key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseNs, currentTimeNs, mTagIdsToMatchersMap, mAllAtomMatchingTrackers,
+            timeBaseNs, currentTimeNs, this, mTagIdsToMatchersMap, mAllAtomMatchingTrackers,
             mAtomMatchingTrackerMap, mAllConditionTrackers, mConditionTrackerMap,
             mAllMetricProducers, mMetricProducerMap, mAllAnomalyTrackers, mAllPeriodicAlarmTrackers,
             mConditionToMetricMap, mTrackerToMetricMap, mTrackerToConditionMap,
@@ -162,7 +163,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
             mConfigKey, config, mUidMap, mPullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
             timeBaseNs, currentTimeNs, mAllAtomMatchingTrackers, mAtomMatchingTrackerMap,
             mAllConditionTrackers, mConditionTrackerMap, mAllMetricProducers, mMetricProducerMap,
-            mAllAnomalyTrackers, mAlertTrackerMap, mStateProtoHashes, mTagIdsToMatchersMap,
+            mAllAnomalyTrackers, mAlertTrackerMap, mStateProtoHashes, this, mTagIdsToMatchersMap,
             newAtomMatchingTrackers, newAtomMatchingTrackerMap, newConditionTrackers,
             newConditionTrackerMap, newMetricProducers, newMetricProducerMap, newAnomalyTrackers,
             newAlertTrackerMap, newPeriodicAlarmTrackers, mConditionToMetricMap,
@@ -191,6 +192,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
                                config.whitelisted_atom_ids().end());
     mShouldPersistHistory = config.persist_locally();
     mPackageCertificateHashSizeBytes = config.package_certificate_hash_size_bytes();
+    mUseV2SoftMemoryCalculation = config.statsd_config_options().use_v2_soft_memory_limit();
 
     // Store the sub-configs used.
     mAnnotations.clear();
@@ -440,6 +442,10 @@ vector<int32_t> MetricsManager::getPullAtomUids(int32_t atomId) {
     }
     uids.insert(uids.end(), mDefaultPullUids.begin(), mDefaultPullUids.end());
     return uids;
+}
+
+bool MetricsManager::useV2SoftMemoryCalculation() {
+    return mUseV2SoftMemoryCalculation;
 }
 
 void MetricsManager::dumpStates(int out, bool verbose) {

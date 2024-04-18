@@ -66,6 +66,7 @@ public:
             const int whatMatcherIndex, const sp<EventMatcherWizard>& matcherWizard,
             const int pullTagId, int triggerAtomId, int atomId, const int64_t timeBaseNs,
             int64_t startTimeNs, const sp<StatsPullerManager>& pullerManager,
+            const wp<ConfigMetadataProvider> configMetadataProvider,
             const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap = {},
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},

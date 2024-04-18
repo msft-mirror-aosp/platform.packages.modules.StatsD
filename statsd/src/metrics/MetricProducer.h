@@ -27,6 +27,7 @@
 #include "condition/ConditionTimer.h"
 #include "condition/ConditionWizard.h"
 #include "config/ConfigKey.h"
+#include "config/ConfigMetadataProvider.h"
 #include "guardrail/StatsdStats.h"
 #include "matchers/EventMatcherWizard.h"
 #include "matchers/matcher_util.h"
@@ -136,7 +137,8 @@ public:
                            eventDeactivationMap,
                    const vector<int>& slicedStateAtoms,
                    const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap,
-                   const optional<bool> splitBucketForAppUpgrade);
+                   const optional<bool> splitBucketForAppUpgrade,
+                   const wp<ConfigMetadataProvider> configMetadataProvider);
 
     virtual ~MetricProducer(){};
 
@@ -576,6 +578,12 @@ protected:
     std::vector<Matcher> mSampledWhatFields;
 
     int mShardCount;
+
+    inline wp<ConfigMetadataProvider> getConfigMetadataProvider() const {
+        return mConfigMetadataProvider;
+    }
+
+    wp<ConfigMetadataProvider> mConfigMetadataProvider;
 
     FRIEND_TEST(CountMetricE2eTest, TestSlicedState);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithMap);

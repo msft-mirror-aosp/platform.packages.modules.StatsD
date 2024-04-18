@@ -48,7 +48,8 @@ public:
                       const PullOptions& pullOptions, const BucketOptions& bucketOptions,
                       const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
                       const StateOptions& stateOptions, const ActivationOptions& activationOptions,
-                      const GuardrailOptions& guardrailOptions);
+                      const GuardrailOptions& guardrailOptions,
+                      const wp<ConfigMetadataProvider> configMetadataProvider);
 
     inline MetricType getMetricType() const override {
         return METRIC_TYPE_KLL;

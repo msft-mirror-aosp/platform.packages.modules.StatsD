@@ -395,6 +395,8 @@ message ValueMetric {
   }
   optional AggregationType aggregation_type = 8 [default = SUM];
 
+  repeated AggregationType aggregation_types = 25;
+
   optional bool include_sample_size = 22;
 
   optional int64 min_bucket_size_nanos = 10;
@@ -639,6 +641,12 @@ message StatsdConfig {
   optional int32 max_metrics_memory_kb = 28;
 
   optional int32 soft_metrics_memory_kb = 29;
+
+  message StatsdConfigOptions {
+    optional bool use_v2_soft_memory_limit = 1;
+  }
+
+  optional StatsdConfigOptions statsd_config_options = 30;
 
   // Do not use.
   reserved 1000, 1001;
