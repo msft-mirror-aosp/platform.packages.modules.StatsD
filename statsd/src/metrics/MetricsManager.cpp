@@ -515,20 +515,19 @@ void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t w
     VLOG("=========================Metric Reports End==========================");
 }
 
-bool MetricsManager::checkLogCredentials(const LogEvent& event) {
-    if (mWhitelistedAtomIds.find(event.GetTagId()) != mWhitelistedAtomIds.end()) {
+bool MetricsManager::checkLogCredentials(const int32_t uid, const int32_t atomId) const {
+    if (mWhitelistedAtomIds.find(atomId) != mWhitelistedAtomIds.end()) {
         return true;
     }
 
-    if (event.GetUid() == AID_ROOT ||
-        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL)) {
+    if (uid == AID_ROOT || (uid >= AID_SYSTEM && uid < AID_SHELL)) {
         // enable atoms logged from pre-installed Android system services
         return true;
     }
 
     std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
-    if (mAllowedLogSources.find(event.GetUid()) == mAllowedLogSources.end()) {
-        VLOG("log source %d not on the whitelist", event.GetUid());
+    if (mAllowedLogSources.find(uid) == mAllowedLogSources.end()) {
+        VLOG("log source %d not on the whitelist", uid);
         return false;
     }
     return true;
@@ -540,11 +539,24 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
         return;
     }
 
+    const int tagId = event.GetTagId();
+
+    if (tagId == util::STATS_SOCKET_LOSS_REPORTED) {
+        // Hard coded logic to handle socket loss info to highlight metric corruption reason
+        // STATS_SOCKET_LOSS_REPORTED might not be part of atoms allow list - but some of lost
+        // atoms can be always allowed - that is the reason to evaluate SocketLossInfo content prior
+        // the checkLogCredentials below
+        const std::optional<SocketLossInfo>& lossInfo = toSocketLossInfo(event);
+        if (lossInfo) {
+            onLogEventLost(*lossInfo);
+        }
+        // next, atom is going to be propagated to be consumed by metrics if any
+    }
+
     if (!checkLogCredentials(event)) {
         return;
     }
 
-    const int tagId = event.GetTagId();
     const int64_t eventTimeNs = event.GetElapsedTimestampNs();
 
     bool isActive = mIsAlwaysActive;
@@ -698,6 +710,48 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
             for (const int metricIndex : metricList) {
                 // pushed metrics are never scheduled pulls
                 mAllMetricProducers[metricIndex]->onMatchedLogEvent(i, metricEvent);
+            }
+        }
+    }
+}
+
+void MetricsManager::onLogEventLost(const SocketLossInfo& socketLossInfo) {
+    // socketLossInfo stores atomId per UID - to eliminate duplicates using set
+    const set<int> uniqueLostAtomIds(socketLossInfo.atomIds.begin(), socketLossInfo.atomIds.end());
+
+    // pass lost atom id to all relevant metrics
+    for (const auto lostAtomId : uniqueLostAtomIds) {
+        /**
+         * Socket loss atom:
+         *  - comes from a specific uid (originUid)
+         *  - specifies the uid in the atom payload (socketLossInfo.uid)
+         *  - provides a list of atom ids that are lost
+         *
+         * For atom id that is lost (lostAtomId below):
+         * - if that atom id is allowed from any uid, then always count this atom as lost
+         * - else, if the originUid (from ucred) (socketLossInfo.uid below - is the same for all
+         *   uniqueLostAtomIds) is in the allowed log sources - count this atom as lost
+         */
+
+        if (!checkLogCredentials(socketLossInfo.uid, lostAtomId)) {
+            continue;
+        }
+
+        const auto matchersIt = mTagIdsToMatchersMap.find(lostAtomId);
+        if (matchersIt == mTagIdsToMatchersMap.end()) {
+            // atom is lost - but no metrics in config reference it
+            continue;
+        }
+        const auto& matchersIndexesListForLostAtom = matchersIt->second;
+        for (const auto matcherIndex : matchersIndexesListForLostAtom) {
+            auto it = mTrackerToMetricMap.find(matcherIndex);
+            if (it == mTrackerToMetricMap.end()) {
+                continue;
+            }
+            auto& metricsList = it->second;
+            for (const int metricIndex : metricsList) {
+                mAllMetricProducers[metricIndex]->onMatchedLogEventLost(lostAtomId,
+                                                                        DATA_CORRUPTED_SOCKET_LOSS);
             }
         }
     }
