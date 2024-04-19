@@ -505,6 +505,7 @@ message StatsdStatsReport {
         optional int32 db_deletion_too_old = 35;
         optional int32 db_deletion_config_removed = 36;
         optional int32 db_deletion_config_updated = 37;
+        optional int32 config_metadata_provider_promotion_failed = 38;
     }
 
     repeated ConfigStats config_stats = 3;
