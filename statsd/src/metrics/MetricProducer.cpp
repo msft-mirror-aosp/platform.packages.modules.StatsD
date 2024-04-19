@@ -34,7 +34,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-
 // for ActiveMetric
 const int FIELD_ID_ACTIVE_METRIC_ID = 1;
 const int FIELD_ID_ACTIVE_METRIC_ACTIVATION = 2;
@@ -185,6 +184,11 @@ void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const Lo
     MetricDimensionKey metricKey(dimensionInWhat, stateValuesKey);
     onMatchedLogEventInternalLocked(matcherIndex, metricKey, conditionKey, condition, event,
                                     statePrimaryKeys);
+}
+
+void MetricProducer::onMatchedLogEventLostLocked(int32_t /*atomId*/, DataCorruptedReason reason) {
+    mDataCorruptedDueToSocketLoss |= reason == DATA_CORRUPTED_SOCKET_LOSS;
+    mDataCorruptedDueToQueueOverflow |= reason == DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW;
 }
 
 bool MetricProducer::evaluateActiveStateLocked(int64_t elapsedTimestampNs) {

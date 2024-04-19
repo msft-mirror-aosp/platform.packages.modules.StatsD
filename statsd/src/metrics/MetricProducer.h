@@ -18,6 +18,7 @@
 #define METRIC_PRODUCER_H
 
 #include <src/active_config_list.pb.h>
+#include <src/guardrail/stats_log_enums.pb.h>
 #include <utils/RefBase.h>
 
 #include <unordered_map>
@@ -209,6 +210,11 @@ public:
         onMatchedLogEventLocked(matcherIndex, event);
     }
 
+    void onMatchedLogEventLost(int32_t atomId, DataCorruptedReason reason) {
+        std::lock_guard<std::mutex> lock(mMutex);
+        onMatchedLogEventLostLocked(atomId, reason);
+    }
+
     void onConditionChanged(const bool condition, int64_t eventTime) {
         std::lock_guard<std::mutex> lock(mMutex);
         onConditionChangedLocked(condition, eventTime);
@@ -237,8 +243,8 @@ public:
                       std::set<string> *str_set,
                       android::util::ProtoOutputStream* protoOutput) {
         std::lock_guard<std::mutex> lock(mMutex);
-        return onDumpReportLocked(dumpTimeNs, include_current_partial_bucket, erase_data,
-                dumpLatency, str_set, protoOutput);
+        onDumpReportLocked(dumpTimeNs, include_current_partial_bucket, erase_data, dumpLatency,
+                           str_set, protoOutput);
     }
 
     virtual optional<InvalidConfigReason> onConfigUpdatedLocked(
@@ -259,7 +265,7 @@ public:
 
     void clearPastBuckets(const int64_t dumpTimeNs) {
         std::lock_guard<std::mutex> lock(mMutex);
-        return clearPastBucketsLocked(dumpTimeNs);
+        clearPastBucketsLocked(dumpTimeNs);
     }
 
     void prepareFirstBucket() {
@@ -433,14 +439,14 @@ protected:
 
     // Consume the parsed stats log entry that already matched the "what" of the metric.
     virtual void onMatchedLogEventLocked(const size_t matcherIndex, const LogEvent& event);
+    virtual void onMatchedLogEventLostLocked(int32_t atomId, DataCorruptedReason reason);
     virtual void onConditionChangedLocked(const bool condition, int64_t eventTime) = 0;
     virtual void onSlicedConditionMayChangeLocked(bool overallCondition,
                                                   const int64_t eventTime) = 0;
     virtual void onDumpReportLocked(const int64_t dumpTimeNs,
                                     const bool include_current_partial_bucket,
-                                    const bool erase_data,
-                                    const DumpLatency dumpLatency,
-                                    std::set<string> *str_set,
+                                    const bool erase_data, const DumpLatency dumpLatency,
+                                    std::set<string>* str_set,
                                     android::util::ProtoOutputStream* protoOutput) = 0;
     virtual void clearPastBucketsLocked(const int64_t dumpTimeNs) = 0;
     virtual void prepareFirstBucketLocked(){};
@@ -587,6 +593,8 @@ protected:
     }
 
     wp<ConfigMetadataProvider> mConfigMetadataProvider;
+    bool mDataCorruptedDueToSocketLoss = false;
+    bool mDataCorruptedDueToQueueOverflow = false;
 
     FRIEND_TEST(CountMetricE2eTest, TestSlicedState);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithMap);
@@ -625,6 +633,9 @@ protected:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
 
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom);
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
+
     FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
@@ -635,6 +646,10 @@ protected:
     FRIEND_TEST(ConfigUpdateTest, TestUpdateDurationMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMetricsMultipleTypes);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateAlerts);
+
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnDumpReport);
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnDropData);
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnClearPastBuckets);
 };
 
 }  // namespace statsd
