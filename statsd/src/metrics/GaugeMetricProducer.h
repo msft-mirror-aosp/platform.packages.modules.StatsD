@@ -66,6 +66,7 @@ public:
             const int whatMatcherIndex, const sp<EventMatcherWizard>& matcherWizard,
             const int pullTagId, int triggerAtomId, int atomId, const int64_t timeBaseNs,
             int64_t startTimeNs, const sp<StatsPullerManager>& pullerManager,
+            const wp<ConfigMetadataProvider> configMetadataProvider,
             const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap = {},
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
@@ -95,8 +96,8 @@ public:
 
     // GaugeMetric needs to immediately trigger another pull when we create the partial bucket.
     void onStatsdInitCompleted(int64_t eventTimeNs) override {
+        ATRACE_CALL();
         std::lock_guard<std::mutex> lock(mMutex);
-
         flushLocked(eventTimeNs);
         if (mIsPulled && mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE && mIsActive) {
             pullAndMatchEventsLocked(eventTimeNs);
