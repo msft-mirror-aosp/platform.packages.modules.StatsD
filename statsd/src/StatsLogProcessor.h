@@ -327,8 +327,6 @@ private:
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
 
-    void writeDataCorruptedReasons(ProtoOutputStream& proto);
-
     bool validateAppBreadcrumbEvent(const LogEvent& event) const;
 
     // Function used to send a broadcast so that receiver for the config key can call getData

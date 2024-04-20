@@ -158,6 +158,7 @@ ValueMetricProducer<AggregatedValue, DimExtras>::~ValueMetricProducer() {
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onStatsdInitCompleted(
         const int64_t eventTimeNs) {
+    ATRACE_CALL();
     lock_guard<mutex> lock(mMutex);
 
     if (isPulled() && mCondition == ConditionState::kTrue && mIsActive) {

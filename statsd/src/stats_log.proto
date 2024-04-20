@@ -320,6 +320,8 @@ message StatsLogReport {
 
   optional int64 estimated_data_bytes = 18;
 
+  repeated DataCorruptedReason data_corrupted_reason = 19;
+
   // Do not use.
   reserved 13, 15;
 }
