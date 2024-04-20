@@ -831,6 +831,76 @@ TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL) {
     ASSERT_EQ(0, processor->mMetricsManagers.size());
 }
 
+TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes) {
+    // Create config.
+    StatsdConfig config;
+
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    // Create value metric.
+    int64_t metricId = 123456;
+    ValueMetric* valueMetric = config.add_value_metric();
+    valueMetric->set_id(metricId);
+    valueMetric->set_bucket(TimeUnit::FIVE_MINUTES);
+    valueMetric->set_what(testAtomReportedMatcher.id());
+    *valueMetric->mutable_value_field() = CreateDimensions(
+            util::TEST_ATOM_REPORTED, {2 /*int_field*/, 2 /*int_field*/, 3 /*long_field*/,
+                                       3 /*long_field*/, 3 /*long_field*/});
+    valueMetric->add_aggregation_types(ValueMetric::SUM);
+    valueMetric->add_aggregation_types(ValueMetric::MIN);
+    valueMetric->add_aggregation_types(ValueMetric::MAX);
+    valueMetric->add_aggregation_types(ValueMetric::AVG);
+    valueMetric->add_aggregation_types(ValueMetric::MIN);
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
+
+    ASSERT_EQ(1, processor->mMetricsManagers.size());
+    sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+    EXPECT_TRUE(metricsManager->isConfigValid());
+    ASSERT_EQ(1, metricsManager->mAllMetricProducers.size());
+    sp<MetricProducer> metricProducer = metricsManager->mAllMetricProducers[0];
+}
+
+TEST(ValueMetricE2eTest, TestInitWithDefaultAggType) {
+    // Create config.
+    StatsdConfig config;
+
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    // Create value metric.
+    int64_t metricId = 123456;
+    ValueMetric* valueMetric = config.add_value_metric();
+    valueMetric->set_id(metricId);
+    valueMetric->set_bucket(TimeUnit::FIVE_MINUTES);
+    valueMetric->set_what(testAtomReportedMatcher.id());
+    *valueMetric->mutable_value_field() =
+            CreateDimensions(util::TEST_ATOM_REPORTED, {3 /*long_field*/, 2 /*int_field*/});
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
+
+    ASSERT_EQ(1, processor->mMetricsManagers.size());
+    sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+    EXPECT_TRUE(metricsManager->isConfigValid());
+    ASSERT_EQ(1, metricsManager->mAllMetricProducers.size());
+    sp<MetricProducer> metricProducer = metricsManager->mAllMetricProducers[0];
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif
