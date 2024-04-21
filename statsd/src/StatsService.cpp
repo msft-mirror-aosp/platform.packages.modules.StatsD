@@ -43,6 +43,7 @@
 #include "storage/StorageManager.h"
 #include "subscriber/SubscriberReporter.h"
 #include "utils/DbUtils.h"
+#include "utils/api_tracing.h"
 
 using namespace android;
 
@@ -237,6 +238,7 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
 }
 
 StatsService::~StatsService() {
+    ATRACE_CALL();
     if (mEventQueue != nullptr) {
         stopReadingLogs();
         mLogsReaderThread->join();
@@ -987,6 +989,7 @@ bool StatsService::getUidFromString(const char* s, int32_t& uid) {
 }
 
 Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     // Parse fd into proto.
@@ -1004,6 +1007,7 @@ Status StatsService::informAllUidData(const ScopedFileDescriptor& fd) {
 Status StatsService::informOnePackage(const string& app, int32_t uid, int64_t version,
                                       const string& versionString, const string& installer,
                                       const vector<uint8_t>& certificateHash) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackage was called");
@@ -1014,6 +1018,7 @@ Status StatsService::informOnePackage(const string& app, int32_t uid, int64_t ve
 }
 
 Status StatsService::informOnePackageRemoved(const string& app, int32_t uid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informOnePackageRemoved was called");
@@ -1029,6 +1034,7 @@ Status StatsService::informAnomalyAlarmFired() {
 }
 
 Status StatsService::informAlarmForSubscriberTriggeringFired() {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informAlarmForSubscriberTriggeringFired was called");
@@ -1045,6 +1051,7 @@ Status StatsService::informAlarmForSubscriberTriggeringFired() {
 }
 
 Status StatsService::informPollAlarmFired() {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::informPollAlarmFired was called");
@@ -1054,6 +1061,7 @@ Status StatsService::informPollAlarmFired() {
 }
 
 Status StatsService::systemRunning() {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     // When system_server is up and running, schedule the dropbox task to run.
@@ -1063,6 +1071,7 @@ Status StatsService::systemRunning() {
 }
 
 Status StatsService::informDeviceShutdown() {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     VLOG("StatsService::informDeviceShutdown");
     int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
@@ -1084,6 +1093,7 @@ void StatsService::sayHiToStatsCompanion() {
 }
 
 Status StatsService::statsCompanionReady() {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::statsCompanionReady was called");
@@ -1102,6 +1112,7 @@ Status StatsService::statsCompanionReady() {
 }
 
 Status StatsService::bootCompleted() {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::bootCompleted was called");
@@ -1125,6 +1136,7 @@ void StatsService::onStatsdInitCompleted() {
 }
 
 void StatsService::Startup() {
+    ATRACE_CALL();
     mConfigManager->Startup();
     int64_t wallClockNs = getWallClockNs();
     int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
@@ -1134,6 +1146,7 @@ void StatsService::Startup() {
 }
 
 void StatsService::Terminate() {
+    ATRACE_CALL();
     ALOGI("StatsService::Terminating");
     if (mProcessor != nullptr) {
         int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
@@ -1154,6 +1167,7 @@ void StatsService::OnLogEvent(LogEvent* event) {
 }
 
 Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8_t>* output) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     getDataChecked(key, callingUid, output);
     return Status::ok();
@@ -1161,6 +1175,7 @@ Status StatsService::getData(int64_t key, const int32_t callingUid, vector<uint8
 
 Status StatsService::getDataFd(int64_t key, const int32_t callingUid,
                                const ScopedFileDescriptor& fd) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     vector<uint8_t> reportData;
     getDataChecked(key, callingUid, &reportData);
@@ -1197,6 +1212,7 @@ void StatsService::getDataChecked(int64_t key, const int32_t callingUid, vector<
 }
 
 Status StatsService::getMetadata(vector<uint8_t>* output) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     StatsdStats::getInstance().dumpStats(output, false); // Don't reset the counters.
@@ -1205,6 +1221,7 @@ Status StatsService::getMetadata(vector<uint8_t>* output) {
 
 Status StatsService::addConfiguration(int64_t key, const vector <uint8_t>& config,
                                       const int32_t callingUid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     if (addConfigurationChecked(callingUid, key, config)) {
@@ -1228,6 +1245,7 @@ bool StatsService::addConfigurationChecked(int uid, int64_t key, const vector<ui
 
 Status StatsService::removeDataFetchOperation(int64_t key,
                                               const int32_t callingUid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     ConfigKey configKey(callingUid, key);
     mConfigManager->RemoveConfigReceiver(configKey);
@@ -1237,6 +1255,7 @@ Status StatsService::removeDataFetchOperation(int64_t key,
 Status StatsService::setDataFetchOperation(int64_t key,
                                            const shared_ptr<IPendingIntentRef>& pir,
                                            const int32_t callingUid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     ConfigKey configKey(callingUid, key);
@@ -1252,6 +1271,7 @@ Status StatsService::setDataFetchOperation(int64_t key,
 Status StatsService::setActiveConfigsChangedOperation(const shared_ptr<IPendingIntentRef>& pir,
                                                       const int32_t callingUid,
                                                       vector<int64_t>* output) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     mConfigManager->SetActiveConfigsChangedReceiver(callingUid, pir);
@@ -1264,6 +1284,7 @@ Status StatsService::setActiveConfigsChangedOperation(const shared_ptr<IPendingI
 }
 
 Status StatsService::removeActiveConfigsChangedOperation(const int32_t callingUid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     mConfigManager->RemoveActiveConfigsChangedReceiver(callingUid);
@@ -1271,6 +1292,7 @@ Status StatsService::removeActiveConfigsChangedOperation(const int32_t callingUi
 }
 
 Status StatsService::removeConfiguration(int64_t key, const int32_t callingUid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     ConfigKey configKey(callingUid, key);
@@ -1282,6 +1304,7 @@ Status StatsService::setBroadcastSubscriber(int64_t configId,
                                             int64_t subscriberId,
                                             const shared_ptr<IPendingIntentRef>& pir,
                                             const int32_t callingUid) {
+    ATRACE_CALL();
     VLOG("StatsService::setBroadcastSubscriber called.");
     ENFORCE_UID(AID_SYSTEM);
 
@@ -1299,6 +1322,7 @@ Status StatsService::setBroadcastSubscriber(int64_t configId,
 Status StatsService::unsetBroadcastSubscriber(int64_t configId,
                                               int64_t subscriberId,
                                               const int32_t callingUid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::unsetBroadcastSubscriber called.");
@@ -1309,6 +1333,7 @@ Status StatsService::unsetBroadcastSubscriber(int64_t configId,
 }
 
 Status StatsService::allPullersFromBootRegistered() {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::allPullersFromBootRegistered was called");
@@ -1320,6 +1345,7 @@ Status StatsService::registerPullAtomCallback(int32_t uid, int32_t atomTag, int6
                                               int64_t timeoutMillis,
                                               const std::vector<int32_t>& additiveFields,
                                               const shared_ptr<IPullAtomCallback>& pullerCallback) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     VLOG("StatsService::registerPullAtomCallback called.");
     mPullerManager->RegisterPullAtomCallback(uid, atomTag, MillisToNano(coolDownMillis),
@@ -1332,6 +1358,7 @@ Status StatsService::registerNativePullAtomCallback(
         int32_t atomTag, int64_t coolDownMillis, int64_t timeoutMillis,
         const std::vector<int32_t>& additiveFields,
         const shared_ptr<IPullAtomCallback>& pullerCallback) {
+    ATRACE_CALL();
     if (!checkPermission(kPermissionRegisterPullAtom)) {
         return exception(
                 EX_SECURITY,
@@ -1347,6 +1374,7 @@ Status StatsService::registerNativePullAtomCallback(
 }
 
 Status StatsService::unregisterPullAtomCallback(int32_t uid, int32_t atomTag) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     VLOG("StatsService::unregisterPullAtomCallback called.");
     mPullerManager->UnregisterPullAtomCallback(uid, atomTag);
@@ -1354,6 +1382,7 @@ Status StatsService::unregisterPullAtomCallback(int32_t uid, int32_t atomTag) {
 }
 
 Status StatsService::unregisterNativePullAtomCallback(int32_t atomTag) {
+    ATRACE_CALL();
     if (!checkPermission(kPermissionRegisterPullAtom)) {
         return exception(
                 EX_SECURITY,
@@ -1367,6 +1396,7 @@ Status StatsService::unregisterNativePullAtomCallback(int32_t atomTag) {
 }
 
 Status StatsService::getRegisteredExperimentIds(std::vector<int64_t>* experimentIdsOut) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     // TODO: add verifier permission
 
@@ -1396,6 +1426,7 @@ Status StatsService::updateProperties(const vector<PropertyParcel>& properties) 
 }
 
 void StatsService::statsCompanionServiceDied(void* cookie) {
+    ATRACE_CALL();
     auto thiz = static_cast<StatsService*>(cookie);
     thiz->statsCompanionServiceDiedImpl();
 }
@@ -1434,6 +1465,7 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId
                                                           const shared_ptr<IPendingIntentRef>& pir,
                                                           const int32_t callingUid,
                                                           vector<int64_t>* output) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     if (!isAtLeastU()) {
         ALOGW("setRestrictedMetricsChangedOperation invoked on U- device");
@@ -1451,6 +1483,7 @@ Status StatsService::setRestrictedMetricsChangedOperation(const int64_t configId
 Status StatsService::removeRestrictedMetricsChangedOperation(const int64_t configId,
                                                              const string& configPackage,
                                                              const int32_t callingUid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     if (!isAtLeastU()) {
         ALOGW("removeRestrictedMetricsChangedOperation invoked on U- device");
@@ -1465,6 +1498,7 @@ Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClient
                               const shared_ptr<IStatsQueryCallback>& callback,
                               const int64_t configKey, const string& configPackage,
                               const int32_t callingUid) {
+    ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
     if (callback == nullptr) {
         ALOGW("querySql called with null callback.");
@@ -1480,6 +1514,7 @@ Status StatsService::querySql(const string& sqlQuery, const int32_t minSqlClient
 
 Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,
                                      const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ATRACE_CALL();
     ENFORCE_SID(kTracedProbesSid);
 
     initShellSubscriber();
@@ -1489,6 +1524,7 @@ Status StatsService::addSubscription(const vector<uint8_t>& subscriptionConfig,
 }
 
 Status StatsService::removeSubscription(const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ATRACE_CALL();
     ENFORCE_SID(kTracedProbesSid);
 
     if (mShellSubscriber != nullptr) {
@@ -1498,6 +1534,7 @@ Status StatsService::removeSubscription(const shared_ptr<IStatsSubscriptionCallb
 }
 
 Status StatsService::flushSubscription(const shared_ptr<IStatsSubscriptionCallback>& callback) {
+    ATRACE_CALL();
     ENFORCE_SID(kTracedProbesSid);
 
     if (mShellSubscriber != nullptr) {
