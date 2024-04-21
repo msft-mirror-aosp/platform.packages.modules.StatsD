@@ -60,6 +60,17 @@ bool Field::matches(const Matcher& matcher) const {
     return false;
 }
 
+std::vector<Matcher> dedupFieldMatchers(const std::vector<Matcher>& fieldMatchers) {
+    std::vector<Matcher> dedupedFieldMatchers;
+    for (size_t i = 0; i < fieldMatchers.size(); i++) {
+        if (std::find(dedupedFieldMatchers.begin(), dedupedFieldMatchers.end(), fieldMatchers[i]) ==
+            dedupedFieldMatchers.end()) {
+            dedupedFieldMatchers.push_back(fieldMatchers[i]);
+        }
+    }
+    return dedupedFieldMatchers;
+}
+
 void translateFieldMatcher(int tag, const FieldMatcher& matcher, int depth, int* pos, int* mask,
                            std::vector<Matcher>* output) {
     if (depth > kMaxLogDepth) {
