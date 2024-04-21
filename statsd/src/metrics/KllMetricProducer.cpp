@@ -58,9 +58,11 @@ KllMetricProducer::KllMetricProducer(const ConfigKey& key, const KllMetric& metr
                                      const ConditionOptions& conditionOptions,
                                      const StateOptions& stateOptions,
                                      const ActivationOptions& activationOptions,
-                                     const GuardrailOptions& guardrailOptions)
+                                     const GuardrailOptions& guardrailOptions,
+                                     const wp<ConfigMetadataProvider> configMetadataProvider)
     : ValueMetricProducer(metric.id(), key, protoHash, pullOptions, bucketOptions, whatOptions,
-                          conditionOptions, stateOptions, activationOptions, guardrailOptions) {
+                          conditionOptions, stateOptions, activationOptions, guardrailOptions,
+                          configMetadataProvider) {
 }
 
 KllMetricProducer::DumpProtoFields KllMetricProducer::getDumpProtoFields() const {
