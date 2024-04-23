@@ -837,6 +837,13 @@ StatsdConfig buildGoodConfig(int configId);
 
 StatsdConfig buildGoodConfig(int configId, int alertId);
 
+class MockConfigMetadataProvider : public ConfigMetadataProvider {
+public:
+    MOCK_METHOD(bool, useV2SoftMemoryCalculation, (), (override));
+};
+
+sp<MockConfigMetadataProvider> makeMockConfigMetadataProvider(bool enabled);
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

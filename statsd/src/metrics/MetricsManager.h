@@ -23,6 +23,7 @@
 #include "anomaly/AnomalyTracker.h"
 #include "condition/ConditionTracker.h"
 #include "config/ConfigKey.h"
+#include "config/ConfigMetadataProvider.h"
 #include "external/StatsPullerManager.h"
 #include "guardrail/StatsdStats.h"
 #include "logd/LogEvent.h"
@@ -37,7 +38,9 @@ namespace os {
 namespace statsd {
 
 // A MetricsManager is responsible for managing metrics from one single config source.
-class MetricsManager : public virtual RefBase, public virtual PullUidProvider {
+class MetricsManager : public virtual RefBase,
+                       public virtual PullUidProvider,
+                       public virtual ConfigMetadataProvider {
 public:
     MetricsManager(const ConfigKey& configKey, const StatsdConfig& config, int64_t timeBaseNs,
                    const int64_t currentTimeNs, const sp<UidMap>& uidMap,
@@ -53,8 +56,6 @@ public:
 
     // Return whether the configuration is valid.
     bool isConfigValid() const;
-
-    bool checkLogCredentials(const LogEvent& event);
 
     virtual void onLogEvent(const LogEvent& event);
 
@@ -77,6 +78,8 @@ public:
     void init();
 
     vector<int32_t> getPullAtomUids(int32_t atomId) override;
+
+    bool useV2SoftMemoryCalculation() override;
 
     bool shouldWriteToDisk() const {
         return mNoReportMetricIds.size() != mAllMetricProducers.size();
@@ -247,6 +250,7 @@ private:
     std::list<std::pair<const int64_t, const int32_t>> mAnnotations;
 
     bool mShouldPersistHistory;
+    bool mUseV2SoftMemoryCalculation;
 
     // All event tags that are interesting to config metrics matchers.
     std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;
@@ -319,6 +323,12 @@ private:
 
     std::vector<int> mMetricIndexesWithActivation;
 
+    inline bool checkLogCredentials(const LogEvent& event) const {
+        return checkLogCredentials(event.GetUid(), event.GetTagId());
+    }
+
+    bool checkLogCredentials(int32_t uid, int32_t atomId) const;
+
     void initAllowedLogSources();
 
     void initPullAtomSources();
@@ -359,6 +369,8 @@ private:
     // metrics.
     void setTriggerGetDataBytesFromConfig(const StatsdConfig& config);
 
+    void onLogEventLost(const SocketLossInfo& socketLossInfo);
+
     // The memory limit in bytes for storing metrics
     size_t mMaxMetricsBytes;
 
@@ -368,6 +380,8 @@ private:
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
+
+    FRIEND_TEST(GaugeMetricE2ePushedTest, TestDimensionalSampling);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
@@ -398,7 +412,10 @@ private:
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations);
 
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
+    FRIEND_TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom);
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
@@ -435,7 +452,8 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
-    FRIEND_TEST(GaugeMetricE2ePushedTest, TestDimensionalSampling);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
 };
 
 }  // namespace statsd
