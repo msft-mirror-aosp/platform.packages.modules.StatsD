@@ -81,12 +81,14 @@ GaugeMetricProducer::GaugeMetricProducer(
         const sp<EventMatcherWizard>& matcherWizard, const int pullTagId, const int triggerAtomId,
         const int atomId, const int64_t timeBaseNs, const int64_t startTimeNs,
         const sp<StatsPullerManager>& pullerManager,
+        const wp<ConfigMetadataProvider> configMetadataProvider,
         const unordered_map<int, shared_ptr<Activation>>& eventActivationMap,
         const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap,
         const size_t dimensionSoftLimit, const size_t dimensionHardLimit)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, /*slicedStateAtoms=*/{},
-                     /*stateGroupMap=*/{}, getAppUpgradeBucketSplit(metric)),
+                     /*stateGroupMap=*/{}, getAppUpgradeBucketSplit(metric),
+                     configMetadataProvider),
       mWhatMatcherIndex(whatMatcherIndex),
       mEventMatcherWizard(matcherWizard),
       mPullerManager(pullerManager),
@@ -102,7 +104,8 @@ GaugeMetricProducer::GaugeMetricProducer(
       mDimensionHardLimit(dimensionHardLimit),
       mGaugeAtomsPerDimensionLimit(metric.max_num_gauge_atoms_per_bucket()),
       mDimensionGuardrailHit(false),
-      mSamplingPercentage(metric.sampling_percentage()) {
+      mSamplingPercentage(metric.sampling_percentage()),
+      mPullProbability(metric.pull_probability()) {
     mCurrentSlicedBucket = std::make_shared<DimToGaugeAtomsMap>();
     mCurrentSlicedBucketForAnomaly = std::make_shared<DimToValMap>();
     int64_t bucketSizeMills = 0;
@@ -397,7 +400,7 @@ void GaugeMetricProducer::pullAndMatchEventsLocked(const int64_t timestampNs) {
         default:
             break;
     }
-    if (!triggerPuller) {
+    if (!triggerPuller || !shouldKeepRandomSample(mPullProbability)) {
         return;
     }
     vector<std::shared_ptr<LogEvent>> allData;
