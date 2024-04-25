@@ -301,6 +301,8 @@ public:
 
     static const int32_t kMaxLoggedBucketDropEvents = 10;
 
+    static const int32_t kNumBinsInSocketBatchReadHistogram = 30;
+
     /**
      * Report a new config has been received and report the static stats about the config.
      *
@@ -706,6 +708,8 @@ public:
      */
     void noteSubscriptionPullThreadWakeup();
 
+    void noteBatchSocketRead(int32_t readSize);
+
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
      * metrics, matchers, and atoms. The active configs will be kept and StatsdStats will continue
@@ -936,6 +940,8 @@ private:
 
     std::list<int32_t> mSystemServerRestartSec;
 
+    std::vector<int64_t> mSocketBatchReadHistogram;
+
     struct RestrictedMetricQueryStats {
         RestrictedMetricQueryStats(int32_t callingUid, int64_t configId,
                                    const string& configPackage, std::optional<int32_t> configUid,
@@ -1054,6 +1060,7 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestSystemServerCrash);
     FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
     FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
+    FRIEND_TEST(StatsdStatsTest, TestSocketBatchReadStats);
 };
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,

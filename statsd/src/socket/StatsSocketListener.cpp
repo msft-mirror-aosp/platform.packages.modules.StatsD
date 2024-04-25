@@ -64,41 +64,45 @@ bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
     };
 
     const int socket = cli->getSocket();
-
-    // To clear the entire buffer is secure/safe, but this contributes to 1.68%
-    // overhead under logging load. We are safe because we check counts, but
-    // still need to clear null terminator
-    // memset(buffer, 0, sizeof(buffer));
-    ssize_t n = recvmsg(socket, &hdr, 0);
-    if (n <= (ssize_t)(sizeof(android_log_header_t))) {
-        return false;
-    }
-
-    buffer[n] = 0;
-
-    struct ucred* cred = NULL;
-
-    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&hdr);
-    while (cmsg != NULL) {
-        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_CREDENTIALS) {
-            cred = (struct ucred*)CMSG_DATA(cmsg);
-            break;
+    int i = 0;
+    ssize_t n = 0;
+    while (n = recvmsg(socket, &hdr, MSG_DONTWAIT), n > 0) {
+        // To clear the entire buffer is secure/safe, but this contributes to 1.68%
+        // overhead under logging load. We are safe because we check counts, but
+        // still need to clear null terminator.
+        // Note that the memset, if needed, should happen before each read in the while loop.
+        // memset(buffer, 0, sizeof(buffer));
+        if (n <= (ssize_t)(sizeof(android_log_header_t))) {
+            return false;
         }
-        cmsg = CMSG_NXTHDR(&hdr, cmsg);
+        buffer[n] = 0;
+        i++;
+
+        struct ucred* cred = NULL;
+
+        struct cmsghdr* cmsg = CMSG_FIRSTHDR(&hdr);
+        while (cmsg != NULL) {
+            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_CREDENTIALS) {
+                cred = (struct ucred*)CMSG_DATA(cmsg);
+                break;
+            }
+            cmsg = CMSG_NXTHDR(&hdr, cmsg);
+        }
+
+        struct ucred fake_cred;
+        if (cred == NULL) {
+            cred = &fake_cred;
+            cred->pid = 0;
+            cred->uid = DEFAULT_OVERFLOWUID;
+        }
+
+        const uint32_t uid = cred->uid;
+        const uint32_t pid = cred->pid;
+
+        processSocketMessage(buffer, n, uid, pid, *mQueue, *mLogEventFilter);
     }
 
-    struct ucred fake_cred;
-    if (cred == NULL) {
-        cred = &fake_cred;
-        cred->pid = 0;
-        cred->uid = DEFAULT_OVERFLOWUID;
-    }
-
-    const uint32_t uid = cred->uid;
-    const uint32_t pid = cred->pid;
-
-    processSocketMessage(buffer, n, uid, pid, *mQueue, *mLogEventFilter);
-
+    StatsdStats::getInstance().noteBatchSocketRead(i);
     return true;
 }
 

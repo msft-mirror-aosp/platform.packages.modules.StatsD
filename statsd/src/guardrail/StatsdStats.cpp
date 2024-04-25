@@ -63,6 +63,7 @@ const int FIELD_ID_STATSD_STATS_ID = 22;
 const int FIELD_ID_SUBSCRIPTION_STATS = 23;
 const int FIELD_ID_SOCKET_LOSS_STATS = 24;
 const int FIELD_ID_QUEUE_STATS = 25;
+const int FIELD_ID_SOCKET_READ_STATS = 26;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -200,13 +201,17 @@ const int FIELD_ID_PER_SUBSCRIPTION_STATS_START_TIME = 4;
 const int FIELD_ID_PER_SUBSCRIPTION_STATS_END_TIME = 5;
 const int FIELD_ID_PER_SUBSCRIPTION_STATS_FLUSH_COUNT = 6;
 
+// Socket read stats
+const int FIELD_ID_SOCKET_READ_STATS_BATCHED_READ_SIZE = 1;
+
 const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySizeLimitMap = {
         {util::BINDER_CALLS, {6000, 10000}},
         {util::LOOPER_STATS, {1500, 2500}},
         {util::CPU_TIME_PER_UID_FREQ, {6000, 10000}},
 };
 
-StatsdStats::StatsdStats() : mStatsdStatsId(rand()) {
+StatsdStats::StatsdStats()
+    : mStatsdStatsId(rand()), mSocketBatchReadHistogram(kNumBinsInSocketBatchReadHistogram) {
     mPushedAtomStats.resize(kMaxPushedAtomId + 1);
     mStartTimeSec = getWallClockSec();
 }
@@ -292,6 +297,28 @@ void StatsdStats::noteLogLost(int32_t wallClockTimeSec, int32_t count, int32_t l
     mLogLossStats.emplace_back(wallClockTimeSec, count, lastError, lastTag, uid, pid);
 }
 
+void StatsdStats::noteBatchSocketRead(int32_t size) {
+    // Calculate the bin.
+    int bin = 0;
+    if (size < 0) {
+        ALOGE("Unexpected negative size read from socket. This should never happen");
+        bin = 0;
+    } else if (size < 5) {
+        bin = size;  // bin = [0,4].
+    } else if (size < 10) {
+        bin = 4 + (size / 5);  // bin = 5.
+    } else if (size < 100) {
+        bin = 5 + (size / 10);  // bin = [6,14].
+    } else if (size < 1000) {
+        bin = 14 + (size / 100);  // bin = [15-23].
+    } else if (size < 2000) {
+        bin = 19 + (size / 200);  // bin = [24-28].
+    } else {                      // 2000+
+        bin = 29;
+    }
+    lock_guard<std::mutex> lock(mLock);
+    mSocketBatchReadHistogram[bin] += 1;
+}
 void StatsdStats::noteBroadcastSent(const ConfigKey& key) {
     noteBroadcastSent(key, getWallClockSec());
 }
@@ -1100,6 +1127,7 @@ void StatsdStats::resetInternalLocked() {
     mPushedAtomDropsStats.clear();
     mRestrictedMetricQueryStats.clear();
     mSubscriptionPullThreadWakeupCount = 0;
+    std::fill(mSocketBatchReadHistogram.begin(), mSocketBatchReadHistogram.end(), 0);
 
     for (auto it = mSubscriptionStats.begin(); it != mSubscriptionStats.end();) {
         if (it->second.end_time_sec > 0) {
@@ -1413,6 +1441,28 @@ void StatsdStats::dumpStats(int out) const {
                 (long long)restart);
     }
 
+    dprintf(out, "********Socket batch read size stats***********\n");
+    for (int i = 0; i < kNumBinsInSocketBatchReadHistogram; i++) {
+        if (mSocketBatchReadHistogram[i] == 0) {
+            continue;
+        }
+        string range;
+        if (i < 5) {
+            range = "[" + to_string(i) + "]";
+        } else if (i == 5) {
+            range = "[5-9]";
+        } else if (i < 15) {
+            range = "[" + to_string(i - 5) + "0-" + to_string(i - 5) + "9]";
+        } else if (i < 24) {
+            range = "[" + to_string(i - 14) + "00-" + to_string(i - 14) + "99]";
+        } else if (i < 29) {
+            range = "[" + to_string((i - 19) * 2) + "00-" + to_string((i - 19) * 2 + 1) + "99]";
+        } else {
+            range = "[2000+]";
+        }
+        dprintf(out, "%s: %lld\n", range.c_str(), (long long)mSocketBatchReadHistogram[i]);
+    }
+
     for (const auto& loss : mLogLossStats) {
         dprintf(out,
                 "Log loss: %lld (wall clock sec) - %d (count), %d (last error), %d (last tag), %d "
@@ -1492,6 +1542,7 @@ void StatsdStats::dumpStats(int out) const {
     dprintf(out, "Statsd Stats Id %d\n", mStatsdStatsId);
     dprintf(out, "********Shard Offset Provider stats***********\n");
     dprintf(out, "Shard Offset: %u\n", ShardOffsetProvider::getInstance().getShardOffset());
+    dprintf(out, "\n");
 }
 
 void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* proto) {
@@ -1930,6 +1981,16 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
     }
 
     proto.end(socketLossStatsToken);
+
+    // Socket batch read stats.
+    const uint64_t socketReadStatsToken =
+            proto.start(FIELD_TYPE_MESSAGE | FIELD_ID_SOCKET_READ_STATS);
+    for (const auto& it : mSocketBatchReadHistogram) {
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_SOCKET_READ_STATS_BATCHED_READ_SIZE |
+                            FIELD_COUNT_REPEATED,
+                    it);
+    }
+    proto.end(socketReadStatsToken);
 
     output->clear();
     proto.serializeToVector(output);
