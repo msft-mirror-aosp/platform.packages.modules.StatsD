@@ -1100,6 +1100,47 @@ TEST(StatsdStatsTest, TestSocketLossStatsOverflowCounter) {
     }
 }
 
+TEST(StatsdStatsTest, TestSocketBatchReadStats) {
+    StatsdStats stats;
+    stats.noteBatchSocketRead(1);        // bin 1
+    stats.noteBatchSocketRead(2);        // bin 2
+    stats.noteBatchSocketRead(2);        // bin 2
+    stats.noteBatchSocketRead(4);        // bin 4
+    stats.noteBatchSocketRead(5);        // bin 5
+    stats.noteBatchSocketRead(9);        // bin 5
+    stats.noteBatchSocketRead(9);        // bin 5
+    stats.noteBatchSocketRead(10);       // bin 6
+    stats.noteBatchSocketRead(19);       // bin 6
+    stats.noteBatchSocketRead(30);       // bin 8
+    stats.noteBatchSocketRead(32);       // bin 8
+    stats.noteBatchSocketRead(39);       // bin 8
+    stats.noteBatchSocketRead(90);       // bin 14
+    stats.noteBatchSocketRead(99);       // bin 14
+    stats.noteBatchSocketRead(100);      // bin 15
+    stats.noteBatchSocketRead(100);      // bin 15
+    stats.noteBatchSocketRead(199);      // bin 15
+    stats.noteBatchSocketRead(200);      // bin 16
+    stats.noteBatchSocketRead(299);      // bin 16
+    stats.noteBatchSocketRead(999);      // bin 23
+    stats.noteBatchSocketRead(1000);     // bin 24
+    stats.noteBatchSocketRead(1199);     // bin 24
+    stats.noteBatchSocketRead(1200);     // bin 25
+    stats.noteBatchSocketRead(1800);     // bin 28
+    stats.noteBatchSocketRead(1999);     // bin 28
+    stats.noteBatchSocketRead(2000);     // bin 29
+    stats.noteBatchSocketRead(1200000);  // bin 29
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+    EXPECT_THAT(report.socket_read_stats().batched_read_size(),
+                ElementsAre(0, 1, 2, 0, 1, 3, 2, 0, 3, 0, 0, 0, 0, 0, 2, 3, 2, 0, 0, 0, 0, 0, 0, 1,
+                            2, 1, 0, 0, 2, 2));
+
+    stats.reset();
+    report = getStatsdStatsReport(stats, /* reset stats */ false);
+    EXPECT_THAT(report.socket_read_stats().batched_read_size(),
+                AllOf(SizeIs(StatsdStats::kNumBinsInSocketBatchReadHistogram), Each(0)));
+}
+
 TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap, TestGetAtomDimensionKeySizeLimits) {
     const auto& [atomId, defaultHardLimit] = GetParam();
     EXPECT_EQ(StatsdStats::getAtomDimensionKeySizeLimits(atomId, defaultHardLimit),
