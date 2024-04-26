@@ -33,6 +33,7 @@
 #include "logd/logevent_util.h"
 #include "stats_log_util.h"
 #include "statslog_statsd.h"
+#include "utils/api_tracing.h"
 
 namespace android {
 namespace os {
@@ -46,6 +47,7 @@ StatsSocketListener::StatsSocketListener(const std::shared_ptr<LogEventQueue>& q
 }
 
 bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
+    ATRACE_CALL();
     static bool name_set;
     if (!name_set) {
         prctl(PR_SET_NAME, "statsd.writer");
@@ -62,47 +64,52 @@ bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
     };
 
     const int socket = cli->getSocket();
-
-    // To clear the entire buffer is secure/safe, but this contributes to 1.68%
-    // overhead under logging load. We are safe because we check counts, but
-    // still need to clear null terminator
-    // memset(buffer, 0, sizeof(buffer));
-    ssize_t n = recvmsg(socket, &hdr, 0);
-    if (n <= (ssize_t)(sizeof(android_log_header_t))) {
-        return false;
-    }
-
-    buffer[n] = 0;
-
-    struct ucred* cred = NULL;
-
-    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&hdr);
-    while (cmsg != NULL) {
-        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_CREDENTIALS) {
-            cred = (struct ucred*)CMSG_DATA(cmsg);
-            break;
+    int i = 0;
+    ssize_t n = 0;
+    while (n = recvmsg(socket, &hdr, MSG_DONTWAIT), n > 0) {
+        // To clear the entire buffer is secure/safe, but this contributes to 1.68%
+        // overhead under logging load. We are safe because we check counts, but
+        // still need to clear null terminator.
+        // Note that the memset, if needed, should happen before each read in the while loop.
+        // memset(buffer, 0, sizeof(buffer));
+        if (n <= (ssize_t)(sizeof(android_log_header_t))) {
+            return false;
         }
-        cmsg = CMSG_NXTHDR(&hdr, cmsg);
+        buffer[n] = 0;
+        i++;
+
+        struct ucred* cred = NULL;
+
+        struct cmsghdr* cmsg = CMSG_FIRSTHDR(&hdr);
+        while (cmsg != NULL) {
+            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_CREDENTIALS) {
+                cred = (struct ucred*)CMSG_DATA(cmsg);
+                break;
+            }
+            cmsg = CMSG_NXTHDR(&hdr, cmsg);
+        }
+
+        struct ucred fake_cred;
+        if (cred == NULL) {
+            cred = &fake_cred;
+            cred->pid = 0;
+            cred->uid = DEFAULT_OVERFLOWUID;
+        }
+
+        const uint32_t uid = cred->uid;
+        const uint32_t pid = cred->pid;
+
+        processSocketMessage(buffer, n, uid, pid, *mQueue, *mLogEventFilter);
     }
 
-    struct ucred fake_cred;
-    if (cred == NULL) {
-        cred = &fake_cred;
-        cred->pid = 0;
-        cred->uid = DEFAULT_OVERFLOWUID;
-    }
-
-    const uint32_t uid = cred->uid;
-    const uint32_t pid = cred->pid;
-
-    processSocketMessage(buffer, n, uid, pid, *mQueue, *mLogEventFilter);
-
+    StatsdStats::getInstance().noteBatchSocketRead(i);
     return true;
 }
 
 void StatsSocketListener::processSocketMessage(const char* buffer, const uint32_t len, uint32_t uid,
                                                uint32_t pid, LogEventQueue& queue,
                                                const LogEventFilter& filter) {
+    ATRACE_CALL();
     static const uint32_t kStatsEventTag = 1937006964;
 
     if (len <= (ssize_t)(sizeof(android_log_header_t)) + sizeof(uint32_t)) {
@@ -154,6 +161,7 @@ void StatsSocketListener::processSocketMessage(const char* buffer, const uint32_
 void StatsSocketListener::processStatsEventBuffer(const uint8_t* msg, const uint32_t len,
                                                   uint32_t uid, uint32_t pid, LogEventQueue& queue,
                                                   const LogEventFilter& filter) {
+    ATRACE_CALL();
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
 
     if (filter.getFilteringEnabled()) {

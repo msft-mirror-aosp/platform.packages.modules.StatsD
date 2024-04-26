@@ -22,6 +22,7 @@ import com.android.os.ShellConfig;
 import com.android.os.adservices.AdservicesExtensionAtoms;
 import com.android.os.art.ArtExtensionAtoms;
 import com.android.os.automotive.caruilib.AutomotiveCaruilibAtoms;
+import com.android.os.bluetooth.BluetoothExtensionAtoms;
 import com.android.os.devicelogs.DeviceLogsAtoms;
 import com.android.os.dnd.DndAtoms;
 import com.android.os.dnd.DndExtensionAtoms;
@@ -96,6 +97,7 @@ public class ExtensionAtomsRegistry {
         ShellConfig.registerAllExtensions(extensionRegistry);
         AdservicesExtensionAtoms.registerAllExtensions(extensionRegistry);
         AutomotiveCaruilibAtoms.registerAllExtensions(extensionRegistry);
+        BluetoothExtensionAtoms.registerAllExtensions(extensionRegistry);
         DeviceLogsAtoms.registerAllExtensions(extensionRegistry);
         DndAtoms.registerAllExtensions(extensionRegistry);
         DndExtensionAtoms.registerAllExtensions(extensionRegistry);
