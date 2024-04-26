@@ -137,6 +137,7 @@ const int FIELD_ID_DB_DELETION_CONFIG_INVALID = 34;
 const int FIELD_ID_DB_DELETION_TOO_OLD = 35;
 const int FIELD_ID_DB_DELETION_CONFIG_REMOVED = 36;
 const int FIELD_ID_DB_DELETION_CONFIG_UPDATED = 37;
+const int FIELD_ID_CONFIG_METADATA_PROVIDER_PROMOTION_FAILED = 38;
 
 const int FIELD_ID_INVALID_CONFIG_REASON_ENUM = 1;
 const int FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID = 2;
@@ -550,6 +551,16 @@ void StatsdStats::noteDbDeletionConfigUpdated(const ConfigKey& key) {
         return;
     }
     it->second->db_deletion_config_updated++;
+}
+
+void StatsdStats::noteConfigMetadataProviderPromotionFailed(const ConfigKey& key) {
+    lock_guard<std::mutex> lock(mLock);
+    auto it = mConfigStats.find(key);
+    if (it == mConfigStats.end()) {
+        ALOGE("Config key %s not found!", key.ToString().c_str());
+        return;
+    }
+    it->second->config_metadata_provider_promote_failure++;
 }
 
 void StatsdStats::noteUidMapDropped(int deltas) {
@@ -1095,6 +1106,7 @@ void StatsdStats::resetInternalLocked() {
         config.second->db_deletion_too_old = 0;
         config.second->db_deletion_config_removed = 0;
         config.second->db_deletion_config_updated = 0;
+        config.second->config_metadata_provider_promote_failure = 0;
     }
     for (auto& pullStats : mPulledAtomStats) {
         pullStats.second.totalPull = 0;
@@ -1211,6 +1223,10 @@ void StatsdStats::dumpStats(int out) const {
                     configStats->db_deletion_stat_failed, configStats->db_deletion_config_invalid,
                     configStats->db_deletion_too_old, configStats->db_deletion_config_removed,
                     configStats->db_deletion_config_updated);
+        }
+        if (configStats->config_metadata_provider_promote_failure > 0) {
+            dprintf(out, "ConfigMetadataProviderPromotionFailure=%d",
+                    configStats->config_metadata_provider_promote_failure);
         }
         dprintf(out, "\n");
         if (!configStats->is_valid) {
@@ -1734,6 +1750,8 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
                              configStats.db_deletion_config_removed, proto);
     writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_DB_DELETION_CONFIG_UPDATED,
                              configStats.db_deletion_config_updated, proto);
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_CONFIG_METADATA_PROVIDER_PROMOTION_FAILED,
+                             configStats.config_metadata_provider_promote_failure, proto);
     for (int64_t latency : configStats.total_flush_latency_ns) {
         proto->write(FIELD_TYPE_INT64 | FIELD_ID_CONFIG_STATS_RESTRICTED_CONFIG_FLUSH_LATENCY |
                              FIELD_COUNT_REPEATED,
