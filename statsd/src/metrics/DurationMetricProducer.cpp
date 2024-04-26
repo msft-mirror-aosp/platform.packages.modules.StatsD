@@ -519,13 +519,14 @@ void DurationMetricProducer::onDumpReportLocked(
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
-    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
-                       (long long)byteSizeLocked());
 
     if (mPastBuckets.empty()) {
         VLOG(" Duration metric, empty return");
         return;
     }
+
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
 
     if (StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId)) {
         protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT, true);
@@ -846,8 +847,42 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
                      eventTimeNs, values);
 }
 
+// Estimate for the size of a DurationBucket.
+size_t DurationMetricProducer::computeBucketSizeLocked(const bool isFullBucket,
+                                                       const MetricDimensionKey& dimKey,
+                                                       const bool isFirstBucket) const {
+    size_t bucketSize =
+            MetricProducer::computeBucketSizeLocked(isFullBucket, dimKey, isFirstBucket);
+
+    // Duration Value
+    bucketSize += sizeof(int64_t);
+
+    // ConditionTrueNanos
+    if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty() && !mConditionSliced) {
+        bucketSize += sizeof(int64_t);
+    }
+
+    return bucketSize;
+}
+
 size_t DurationMetricProducer::byteSizeLocked() const {
     size_t totalSize = 0;
+    sp<ConfigMetadataProvider> configMetadataProvider = getConfigMetadataProvider();
+    if (configMetadataProvider != nullptr && configMetadataProvider->useV2SoftMemoryCalculation()) {
+        bool hasHitDimensionGuardrail =
+                StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId);
+        totalSize += computeOverheadSizeLocked(!mPastBuckets.empty(), hasHitDimensionGuardrail);
+        for (const auto& pair : mPastBuckets) {
+            bool isFirstBucket = true;
+            for (const auto& bucket : pair.second) {
+                bool isFullBucket = bucket.mBucketEndNs - bucket.mBucketStartNs >= mBucketSizeNs;
+                totalSize +=
+                        computeBucketSizeLocked(isFullBucket, /*dimKey=*/pair.first, isFirstBucket);
+                isFirstBucket = false;
+            }
+        }
+        return totalSize;
+    }
     for (const auto& pair : mPastBuckets) {
         totalSize += pair.second.size() * kBucketSize;
     }
