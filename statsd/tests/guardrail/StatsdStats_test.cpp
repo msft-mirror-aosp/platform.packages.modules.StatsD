@@ -88,6 +88,20 @@ TEST(StatsdStatsTest, TestValidConfigAdd) {
     EXPECT_FALSE(configReport.has_deletion_time_sec());
 }
 
+TEST(StatsdStatsTest, TestConfigMetadataProviderPromotionFailed) {
+    StatsdStats stats;
+    ConfigKey key(0, 12345);
+    stats.noteConfigReceived(key, /*metricsCount=*/0, /*conditionsCount=*/0, /*matchersCount=*/0,
+                             /*alertCount=*/0, /*annotations=*/{}, nullopt /*valid config*/);
+
+    stats.noteConfigMetadataProviderPromotionFailed(key);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+    ASSERT_EQ(1, report.config_stats_size());
+    const auto& configReport = report.config_stats(0);
+    EXPECT_EQ(1, configReport.config_metadata_provider_promotion_failed());
+}
+
 TEST(StatsdStatsTest, TestInvalidConfigAdd) {
     StatsdStats stats;
     ConfigKey key(0, 12345);
