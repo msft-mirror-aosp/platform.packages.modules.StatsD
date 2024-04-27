@@ -88,6 +88,20 @@ TEST(StatsdStatsTest, TestValidConfigAdd) {
     EXPECT_FALSE(configReport.has_deletion_time_sec());
 }
 
+TEST(StatsdStatsTest, TestConfigMetadataProviderPromotionFailed) {
+    StatsdStats stats;
+    ConfigKey key(0, 12345);
+    stats.noteConfigReceived(key, /*metricsCount=*/0, /*conditionsCount=*/0, /*matchersCount=*/0,
+                             /*alertCount=*/0, /*annotations=*/{}, nullopt /*valid config*/);
+
+    stats.noteConfigMetadataProviderPromotionFailed(key);
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+    ASSERT_EQ(1, report.config_stats_size());
+    const auto& configReport = report.config_stats(0);
+    EXPECT_EQ(1, configReport.config_metadata_provider_promotion_failed());
+}
+
 TEST(StatsdStatsTest, TestInvalidConfigAdd) {
     StatsdStats stats;
     ConfigKey key(0, 12345);
@@ -1098,6 +1112,47 @@ TEST(StatsdStatsTest, TestSocketLossStatsOverflowCounter) {
         ASSERT_EQ(counters.uid(), i);
         ASSERT_EQ(counters.count(), lossEventCount);
     }
+}
+
+TEST(StatsdStatsTest, TestSocketBatchReadStats) {
+    StatsdStats stats;
+    stats.noteBatchSocketRead(1);        // bin 1
+    stats.noteBatchSocketRead(2);        // bin 2
+    stats.noteBatchSocketRead(2);        // bin 2
+    stats.noteBatchSocketRead(4);        // bin 4
+    stats.noteBatchSocketRead(5);        // bin 5
+    stats.noteBatchSocketRead(9);        // bin 5
+    stats.noteBatchSocketRead(9);        // bin 5
+    stats.noteBatchSocketRead(10);       // bin 6
+    stats.noteBatchSocketRead(19);       // bin 6
+    stats.noteBatchSocketRead(30);       // bin 8
+    stats.noteBatchSocketRead(32);       // bin 8
+    stats.noteBatchSocketRead(39);       // bin 8
+    stats.noteBatchSocketRead(90);       // bin 14
+    stats.noteBatchSocketRead(99);       // bin 14
+    stats.noteBatchSocketRead(100);      // bin 15
+    stats.noteBatchSocketRead(100);      // bin 15
+    stats.noteBatchSocketRead(199);      // bin 15
+    stats.noteBatchSocketRead(200);      // bin 16
+    stats.noteBatchSocketRead(299);      // bin 16
+    stats.noteBatchSocketRead(999);      // bin 23
+    stats.noteBatchSocketRead(1000);     // bin 24
+    stats.noteBatchSocketRead(1199);     // bin 24
+    stats.noteBatchSocketRead(1200);     // bin 25
+    stats.noteBatchSocketRead(1800);     // bin 28
+    stats.noteBatchSocketRead(1999);     // bin 28
+    stats.noteBatchSocketRead(2000);     // bin 29
+    stats.noteBatchSocketRead(1200000);  // bin 29
+
+    StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
+    EXPECT_THAT(report.socket_read_stats().batched_read_size(),
+                ElementsAre(0, 1, 2, 0, 1, 3, 2, 0, 3, 0, 0, 0, 0, 0, 2, 3, 2, 0, 0, 0, 0, 0, 0, 1,
+                            2, 1, 0, 0, 2, 2));
+
+    stats.reset();
+    report = getStatsdStatsReport(stats, /* reset stats */ false);
+    EXPECT_THAT(report.socket_read_stats().batched_read_size(),
+                AllOf(SizeIs(StatsdStats::kNumBinsInSocketBatchReadHistogram), Each(0)));
 }
 
 TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_InMap, TestGetAtomDimensionKeySizeLimits) {

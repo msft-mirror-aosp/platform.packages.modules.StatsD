@@ -101,6 +101,9 @@ private:
 
     void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) override;
 
+    size_t computeBucketSizeLocked(const bool isFullBucket, const MetricDimensionKey& dimKey,
+                                   const bool isFirstBucket) const override;
+
     optional<InvalidConfigReason> onConfigUpdatedLocked(
             const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
