@@ -570,6 +570,14 @@ size_t getSize(const std::vector<FieldValue>& fieldValues) {
     return totalSize;
 }
 
+size_t getFieldValuesSizeV2(const std::vector<FieldValue>& fieldValues) {
+    size_t totalSize = 0;
+    for (const FieldValue& fieldValue : fieldValues) {
+        totalSize += fieldValue.getSizeV2();
+    }
+    return totalSize;
+}
+
 bool shouldKeepSample(const FieldValue& sampleFieldValue, int shardOffset, int shardCount) {
     int hashValue = 0;
     switch (sampleFieldValue.mValue.type) {

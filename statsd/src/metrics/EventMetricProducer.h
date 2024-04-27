@@ -51,9 +51,6 @@ public:
         return METRIC_TYPE_EVENT;
     }
 
-protected:
-    size_t mTotalSize;
-
 private:
     void onMatchedLogEventInternalLocked(
             const size_t matcherIndex, const MetricDimensionKey& eventKey,

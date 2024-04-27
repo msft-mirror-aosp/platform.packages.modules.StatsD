@@ -58,11 +58,11 @@ void RestrictedEventMetricProducer::onMatchedLogEventInternalLocked(
         StatsdStats::getInstance().noteRestrictedMetricCategoryChanged(mConfigKey, mMetricId);
         deleteMetricTable();
         mLogEvents.clear();
-        mTotalSize = 0;
+        mTotalDataSize = 0;
     }
     mRestrictedDataCategory = event.getRestrictionCategory();
     mLogEvents.push_back(event);
-    mTotalSize += getSize(event.getValues()) + sizeof(event);
+    mTotalDataSize += getSize(event.getValues()) + sizeof(event);
 }
 
 void RestrictedEventMetricProducer::onDumpReportLocked(
@@ -94,7 +94,7 @@ void RestrictedEventMetricProducer::clearPastBucketsLocked(const int64_t dumpTim
 
 void RestrictedEventMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
     mLogEvents.clear();
-    mTotalSize = 0;
+    mTotalDataSize = 0;
     StatsdStats::getInstance().noteBucketDropped(mMetricId);
 }
 
@@ -130,7 +130,7 @@ void RestrictedEventMetricProducer::flushRestrictedData() {
                 mConfigKey, mMetricId, getElapsedRealtimeNs() - flushStartNs);
     }
     mLogEvents.clear();
-    mTotalSize = 0;
+    mTotalDataSize = 0;
 }
 
 bool RestrictedEventMetricProducer::writeMetricMetadataToProto(

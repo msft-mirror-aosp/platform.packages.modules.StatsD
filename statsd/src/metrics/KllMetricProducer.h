@@ -103,6 +103,8 @@ private:
                                          const int sampleSize,
                                          ProtoOutputStream* const protoOutput) const override;
 
+    size_t getAggregatedValueSize(const std::unique_ptr<KllQuantile>& kll) const override;
+
     bool aggregateFields(const int64_t eventTimeNs, const MetricDimensionKey& eventKey,
                          const LogEvent& event, std::vector<Interval>& intervals,
                          Empty& empty) override;

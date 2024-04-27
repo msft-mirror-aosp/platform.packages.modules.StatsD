@@ -139,6 +139,9 @@ private:
     void addAnomalyTrackerLocked(sp<AnomalyTracker>& anomalyTracker,
                                  const UpdateStatus& updateStatus, int64_t updateTimeNs);
 
+    size_t computeBucketSizeLocked(const bool isFullBucket, const MetricDimensionKey& dimKey,
+                                   const bool isFirstBucket) const override;
+
     const DurationMetric_AggregationType mAggregationType;
 
     // Index of the SimpleAtomMatcher which defines the start.

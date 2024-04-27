@@ -149,6 +149,11 @@ private:
     // Only call if mCondition == ConditionState::kTrue && metric is active.
     void pullAndMatchEventsLocked(const int64_t timestampNs);
 
+    size_t computeGaugeBucketSizeLocked(
+            const bool isFullBucket, const MetricDimensionKey& dimKey, const bool isFirstBucket,
+            const std::unordered_map<AtomDimensionKey, std::vector<int64_t>>& aggregatedAtoms)
+            const;
+
     optional<InvalidConfigReason> onConfigUpdatedLocked(
             const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,

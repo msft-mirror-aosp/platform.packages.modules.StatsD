@@ -457,6 +457,15 @@ protected:
     void activateLocked(int activationTrackerIndex, int64_t elapsedTimestampNs);
     void cancelEventActivationLocked(int deactivationTrackerIndex);
 
+    // Computes the size of a newly added bucket to this metric, taking into account any new
+    // dimensions that are introduced if necessary.
+    virtual size_t computeBucketSizeLocked(const bool isFullBucket,
+                                           const MetricDimensionKey& dimKey,
+                                           const bool isFirstBucket) const;
+    size_t computeOverheadSizeLocked(const bool hasPastBuckets,
+                                     const bool dimensionGuardrailHit) const;
+    size_t computeSkippedBucketSizeLocked(const SkippedBucket& skippedBucket) const;
+
     bool evaluateActiveStateLocked(int64_t elapsedTimestampNs);
 
     virtual void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) {
@@ -588,13 +597,13 @@ protected:
 
     int mShardCount;
 
-    inline wp<ConfigMetadataProvider> getConfigMetadataProvider() const {
-        return mConfigMetadataProvider;
-    }
+    sp<ConfigMetadataProvider> getConfigMetadataProvider() const;
 
     wp<ConfigMetadataProvider> mConfigMetadataProvider;
     bool mDataCorruptedDueToSocketLoss = false;
     bool mDataCorruptedDueToQueueOverflow = false;
+
+    size_t mTotalDataSize = 0;
 
     FRIEND_TEST(CountMetricE2eTest, TestSlicedState);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithMap);
