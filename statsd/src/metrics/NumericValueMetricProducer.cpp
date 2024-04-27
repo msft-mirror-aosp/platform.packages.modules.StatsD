@@ -630,7 +630,30 @@ void NumericValueMetricProducer::appendToFullBucket(const bool isFullBucketReach
     }
 }
 
+// Estimate for the size of NumericValues.
+size_t NumericValueMetricProducer::getAggregatedValueSize(const Value& value) const {
+    size_t valueSize = 0;
+    // Index
+    valueSize += sizeof(int32_t);
+
+    // Value
+    valueSize += value.getSize();
+
+    // Sample Size
+    if (mIncludeSampleSize) {
+        valueSize += sizeof(int32_t);
+    }
+    return valueSize;
+}
+
 size_t NumericValueMetricProducer::byteSizeLocked() const {
+    sp<ConfigMetadataProvider> configMetadataProvider = getConfigMetadataProvider();
+    if (configMetadataProvider != nullptr && configMetadataProvider->useV2SoftMemoryCalculation()) {
+        bool dimensionGuardrailHit = StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId);
+        return computeOverheadSizeLocked(!mPastBuckets.empty() || !mSkippedBuckets.empty(),
+                                         dimensionGuardrailHit) +
+               mTotalDataSize;
+    }
     size_t totalSize = 0;
     for (const auto& [_, buckets] : mPastBuckets) {
         totalSize += buckets.size() * kBucketSize;

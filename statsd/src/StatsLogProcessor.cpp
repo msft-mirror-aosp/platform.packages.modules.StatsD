@@ -1114,8 +1114,11 @@ void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
                                                MetricsManager& metricsManager) {
     int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
     auto lastCheckTime = mLastByteSizeTimes.find(key);
+    int64_t minCheckPeriodNs = metricsManager.useV2SoftMemoryCalculation()
+                                       ? StatsdStats::kMinByteSizeV2CheckPeriodNs
+                                       : StatsdStats::kMinByteSizeCheckPeriodNs;
     if (lastCheckTime != mLastByteSizeTimes.end()) {
-        if (elapsedRealtimeNs - lastCheckTime->second < StatsdStats::kMinByteSizeCheckPeriodNs) {
+        if (elapsedRealtimeNs - lastCheckTime->second < minCheckPeriodNs) {
             return;
         }
     }
