@@ -83,7 +83,6 @@ EventMetricProducer::EventMetricProducer(
         mConditionSliced = true;
     }
 
-    mTotalSize = 0;
     VLOG("metric %lld created. bucket size %lld start_time: %lld", (long long)mMetricId,
          (long long)mBucketSizeNs, (long long)mTimeBaseNs);
 }
@@ -139,9 +138,9 @@ optional<InvalidConfigReason> EventMetricProducer::onConfigUpdatedLocked(
 
 void EventMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
     mAggregatedAtoms.clear();
-    mTotalSize = 0;
     mDataCorruptedDueToSocketLoss = false;
     mDataCorruptedDueToQueueOverflow = false;
+    mTotalDataSize = 0;
     StatsdStats::getInstance().noteBucketDropped(mMetricId);
 }
 
@@ -168,9 +167,9 @@ std::unique_ptr<std::vector<uint8_t>> serializeProtoLocked(ProtoOutputStream& pr
 
 void EventMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     mAggregatedAtoms.clear();
-    mTotalSize = 0;
     mDataCorruptedDueToSocketLoss = false;
     mDataCorruptedDueToQueueOverflow = false;
+    mTotalDataSize = 0;
 }
 
 void EventMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
@@ -181,12 +180,13 @@ void EventMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                              ProtoOutputStream* protoOutput) {
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
-    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
-                       (long long)byteSizeLocked());
     // Data corrupted reason
     writeDataCorruptedReasons(*protoOutput, FIELD_ID_DATA_CORRUPTED_REASON,
                               mDataCorruptedDueToQueueOverflow, mDataCorruptedDueToSocketLoss);
-
+    if (!mAggregatedAtoms.empty()) {
+        protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                           (long long)byteSizeLocked());
+    }
     uint64_t protoToken = protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_EVENT_METRICS);
     for (const auto& [atomDimensionKey, elapsedTimestampsNs] : mAggregatedAtoms) {
         uint64_t wrapperToken =
@@ -210,9 +210,9 @@ void EventMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     protoOutput->end(protoToken);
     if (erase_data) {
         mAggregatedAtoms.clear();
-        mTotalSize = 0;
         mDataCorruptedDueToSocketLoss = false;
         mDataCorruptedDueToQueueOverflow = false;
+        mTotalDataSize = 0;
     }
 }
 
@@ -239,14 +239,24 @@ void EventMetricProducer::onMatchedLogEventInternalLocked(
 
     std::vector<int64_t>& aggregatedTimestampsNs = mAggregatedAtoms[key];
     if (aggregatedTimestampsNs.empty()) {
-        mTotalSize += getSize(key.getAtomFieldValues().getValues());
+        sp<ConfigMetadataProvider> provider = getConfigMetadataProvider();
+        if (provider != nullptr && provider->useV2SoftMemoryCalculation()) {
+            mTotalDataSize += getFieldValuesSizeV2(key.getAtomFieldValues().getValues());
+        } else {
+            mTotalDataSize += getSize(key.getAtomFieldValues().getValues());
+        }
     }
     aggregatedTimestampsNs.push_back(elapsedTimeNs);
-    mTotalSize += sizeof(int64_t); // Add the size of the event timestamp
+    mTotalDataSize += sizeof(int64_t);  // Add the size of the event timestamp
 }
 
 size_t EventMetricProducer::byteSizeLocked() const {
-    return mTotalSize;
+    sp<ConfigMetadataProvider> provider = getConfigMetadataProvider();
+    if (provider != nullptr && provider->useV2SoftMemoryCalculation()) {
+        return mTotalDataSize +
+               computeOverheadSizeLocked(/*hasPastBuckets=*/false, /*dimensionGuardrailHit=*/false);
+    }
+    return mTotalDataSize;
 }
 
 }  // namespace statsd
