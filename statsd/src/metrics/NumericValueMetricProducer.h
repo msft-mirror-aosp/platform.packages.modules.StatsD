@@ -150,6 +150,8 @@ private:
         return mAggregationTypes.size() == 1 ? mAggregationTypes[0] : mAggregationTypes[index];
     }
 
+    size_t getAggregatedValueSize(const Value& value) const override;
+
     const bool mUseAbsoluteValueOnReset;
 
     const std::vector<ValueMetric::AggregationType> mAggregationTypes;
