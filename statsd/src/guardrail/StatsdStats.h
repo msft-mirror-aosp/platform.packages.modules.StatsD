@@ -91,6 +91,8 @@ struct ConfigStats {
     int32_t db_deletion_too_old = 0;
     int32_t db_deletion_config_removed = 0;
     int32_t db_deletion_config_updated = 0;
+    // Stores the number of ConfigMetadataProvider promotion failures
+    int32_t config_metadata_provider_promote_failure = 0;
 
     // Stores reasons for why config is valid or not
     std::optional<InvalidConfigReason> reason;
@@ -234,7 +236,11 @@ public:
     static const int64_t kMinBroadcastPeriodNs = 60 * NS_PER_SEC;
 
     /* Min period between two checks of byte size per config key in nanoseconds. */
-    static const int64_t kMinByteSizeCheckPeriodNs = 60 * NS_PER_SEC;
+    static const int64_t kMinByteSizeCheckPeriodNs = 1 * 60 * NS_PER_SEC;
+
+    // Min period between two checks of byte size per config key in nanoseconds for V2 memory
+    // calculations.
+    static const int64_t kMinByteSizeV2CheckPeriodNs = 5 * 60 * NS_PER_SEC;
 
     /* Min period between two checks of restricted metrics TTLs. */
     static const int64_t kMinTtlCheckPeriodNs = 60 * 60 * NS_PER_SEC;
@@ -300,6 +306,8 @@ public:
     static const int64_t kInt64Max = 0x7fffffffffffffffLL;
 
     static const int32_t kMaxLoggedBucketDropEvents = 10;
+
+    static const int32_t kNumBinsInSocketBatchReadHistogram = 30;
 
     /**
      * Report a new config has been received and report the static stats about the config.
@@ -384,6 +392,11 @@ public:
      * Report db was deleted due to config update.
      */
     void noteDbDeletionConfigUpdated(const ConfigKey& key);
+
+    /**
+     * Reports that the promotion for ConfigMetadataProvider failed.
+     */
+    void noteConfigMetadataProviderPromotionFailed(const ConfigKey& key);
 
     /**
      * Report the size of output tuple of a condition.
@@ -706,6 +719,8 @@ public:
      */
     void noteSubscriptionPullThreadWakeup();
 
+    void noteBatchSocketRead(int32_t readSize);
+
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
      * metrics, matchers, and atoms. The active configs will be kept and StatsdStats will continue
@@ -936,6 +951,8 @@ private:
 
     std::list<int32_t> mSystemServerRestartSec;
 
+    std::vector<int64_t> mSocketBatchReadHistogram;
+
     struct RestrictedMetricQueryStats {
         RestrictedMetricQueryStats(int32_t callingUid, int64_t configId,
                                    const string& configPackage, std::optional<int32_t> configUid,
@@ -1030,6 +1047,7 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomMetricsStats);
     FRIEND_TEST(StatsdStatsTest, TestAtomSkippedStats);
+    FRIEND_TEST(StatsdStatsTest, TestConfigMetadataProviderPromotionFailed);
     FRIEND_TEST(StatsdStatsTest, TestConfigRemove);
     FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigAdd);
@@ -1054,6 +1072,7 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestSystemServerCrash);
     FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
     FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
+    FRIEND_TEST(StatsdStatsTest, TestSocketBatchReadStats);
 };
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,
