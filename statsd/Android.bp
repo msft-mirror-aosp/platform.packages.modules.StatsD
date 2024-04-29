@@ -216,6 +216,7 @@ cc_library_static {
     generated_sources: ["statslog_statsdtest.cpp"],
     generated_headers: ["statslog_statsdtest.h"],
     export_generated_headers: ["statslog_statsdtest.h"],
+    min_sdk_version: "30",
     shared_libs: [
         "libstatssocket",
         "libstatspull",
