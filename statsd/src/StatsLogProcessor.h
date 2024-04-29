@@ -327,8 +327,6 @@ private:
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
 
-    void writeDataCorruptedReasons(ProtoOutputStream& proto);
-
     bool validateAppBreadcrumbEvent(const LogEvent& event) const;
 
     // Function used to send a broadcast so that receiver for the config key can call getData
@@ -485,6 +483,8 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
 
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
 
