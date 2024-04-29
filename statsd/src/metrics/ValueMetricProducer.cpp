@@ -851,9 +851,9 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
 
             auto& bucketList = mPastBuckets[metricDimensionKey];
             const bool isFirstBucket = bucketList.empty();
-            bucketList.push_back(std::move(bucket));
             mTotalDataSize += computeValueBucketSizeLocked(
                     eventTimeNs >= fullBucketEndTimeNs, metricDimensionKey, isFirstBucket, bucket);
+            bucketList.push_back(std::move(bucket));
         }
         if (!bucketHasData) {
             skipCurrentBucket(eventTimeNs, BucketDropReason::NO_DATA);
