@@ -226,6 +226,31 @@ ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
 }
 
 template <typename AggregatedValue, typename DimExtras>
+size_t ValueMetricProducer<AggregatedValue, DimExtras>::computeValueBucketSizeLocked(
+        const bool isFullBucket, const MetricDimensionKey& dimKey, const bool isFirstBucket,
+        const PastBucket<AggregatedValue>& bucket) const {
+    size_t bucketSize =
+            MetricProducer::computeBucketSizeLocked(isFullBucket, dimKey, isFirstBucket);
+
+    for (const auto& value : bucket.aggregates) {
+        bucketSize += getAggregatedValueSize(value);
+    }
+
+    // ConditionTrueNanos
+    if (mConditionTrackerIndex >= 0 || !mSlicedStateAtoms.empty()) {
+        bucketSize += sizeof(int64_t);
+    }
+
+    // ConditionCorrectionNanos
+    if (getDumpProtoFields().conditionCorrectionNsFieldId.has_value() && isPulled() &&
+        mConditionCorrectionThresholdNs &&
+        (abs(bucket.mConditionCorrectionNs) >= mConditionCorrectionThresholdNs)) {
+        bucketSize += sizeof(int64_t);
+    }
+    return bucketSize;
+}
+
+template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onStateChanged(
         int64_t eventTimeNs, int32_t atomId, const HashableDimensionKey& primaryKey,
         const FieldValue& oldState, const FieldValue& newState) {
@@ -291,6 +316,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::clearPastBucketsLocked(
         const int64_t dumpTimeNs) {
     mPastBuckets.clear();
     mSkippedBuckets.clear();
+    mTotalDataSize = 0;
 }
 
 template <typename AggregatedValue, typename DimExtras>
@@ -324,11 +350,12 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
-    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
-                       (long long)byteSizeLocked());
     if (mPastBuckets.empty() && mSkippedBuckets.empty()) {
         return;
     }
+
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
 
     if (StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId)) {
         protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT, true);
@@ -447,6 +474,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
     if (eraseData) {
         mPastBuckets.clear();
         mSkippedBuckets.clear();
+        mTotalDataSize = 0;
     }
 }
 
@@ -822,6 +850,9 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
             }
 
             auto& bucketList = mPastBuckets[metricDimensionKey];
+            const bool isFirstBucket = bucketList.empty();
+            mTotalDataSize += computeValueBucketSizeLocked(
+                    eventTimeNs >= fullBucketEndTimeNs, metricDimensionKey, isFirstBucket, bucket);
             bucketList.push_back(std::move(bucket));
         }
         if (!bucketHasData) {
@@ -833,6 +864,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
         mCurrentSkippedBucket.bucketStartTimeNs = mCurrentBucketStartTimeNs;
         mCurrentSkippedBucket.bucketEndTimeNs = bucketEndTimeNs;
         mSkippedBuckets.push_back(mCurrentSkippedBucket);
+        mTotalDataSize += computeSkippedBucketSizeLocked(mCurrentSkippedBucket);
     }
 
     // This means that the current bucket was not flushed before a forced bucket split.

@@ -232,6 +232,12 @@ protected:
             std::unordered_map<int, std::vector<int>>& deactivationAtomTrackerToMetricMap,
             std::vector<int>& metricsWithActivation) override;
 
+    size_t computeValueBucketSizeLocked(const bool isFullBucket, const MetricDimensionKey& dimKey,
+                                        const bool isFirstBucket,
+                                        const PastBucket<AggregatedValue>& bucket) const;
+
+    virtual size_t getAggregatedValueSize(const AggregatedValue& value) const = 0;
+
     virtual optional<int64_t> getConditionIdForMetric(const StatsdConfig& config,
                                                       const int configIndex) const = 0;
 
