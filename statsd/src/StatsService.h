@@ -408,10 +408,15 @@ private:
      */
     void onStatsdInitCompleted();
 
-    /**
-     *  This method is used to stop log reader thread.
+    /*
+     * This method is used to stop log reader thread.
      */
     void stopReadingLogs();
+
+    /*
+     * Notify async StatsdInitCompleted handler about termination event
+     */
+    void onStatsdInitCompletedHandlerTermination();
 
     std::atomic<bool> mIsStopRequested = false;
 
@@ -460,6 +465,14 @@ private:
     std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     std::unique_ptr<std::thread> mLogsReaderThread;
+
+    std::condition_variable mStatsdInitCompletedHandlerTerminationFlag;
+    std::mutex mStatsdInitCompletedHandlerTerminationFlagMutex;
+    /**
+     * @brief Used to communicated early termination request to onStatsdInitCompleted Handler
+     * @see onStatsdInitCompleted
+     */
+    bool mStatsdInitCompletedHandlerTerminationRequested = false;
 
     MultiConditionTrigger mBootCompleteTrigger;
     static const inline string kBootCompleteTag = "BOOT_COMPLETE";
