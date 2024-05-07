@@ -26,6 +26,7 @@ java_test_host {
 
     // tag this module as a cts test artifact
     test_suites: [
+        "cts",
         "general-tests",
         "mts-statsd",
         "mcts-statsd",
