@@ -36,7 +36,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-
 namespace {
 const ConfigKey kConfigKey(0, 12345);
 const uint64_t protoHash = 0x1234567890;
@@ -351,7 +350,7 @@ TEST_F(EventMetricProducerTest, TestTwoAtomTagAggregatedEvents) {
     }
 }
 
-TEST_F(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnDumpReport) {
+TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport) {
     int64_t bucketStartTimeNs = 10000000000;
     int tagId = 1;
 
@@ -365,33 +364,80 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnDumpReport) 
     sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
                                       wizard, protoHash, bucketStartTimeNs, provider);
-    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
 
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
-
     eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
-
     EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
 
-    // Check dump report content.
-    ProtoOutputStream output;
-    std::set<string> strSet;
-    eventProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
-                               true /*erase data*/, FAST, &strSet, &output);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        std::set<string> strSet;
+        eventProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, &strSet, &output);
 
-    StatsLogReport report = outputStreamToProto(&output);
-    EXPECT_TRUE(report.has_event_metrics());
-    ASSERT_EQ(1, report.event_metrics().data_size());
-    ASSERT_EQ(1, report.data_corrupted_reason_size());
-    ASSERT_EQ(DATA_CORRUPTED_SOCKET_LOSS, report.data_corrupted_reason()[0]);
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        ASSERT_EQ(1, report.event_metrics().data_size());
+        ASSERT_EQ(1, report.data_corrupted_reason_size());
+        ASSERT_EQ(DATA_CORRUPTED_SOCKET_LOSS, report.data_corrupted_reason()[0]);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    }
 
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        std::set<string> strSet;
+        eventProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, &strSet, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        ASSERT_EQ(1, report.event_metrics().data_size());
+        ASSERT_EQ(1, report.data_corrupted_reason_size());
+        ASSERT_EQ(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, report.data_corrupted_reason()[0]);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    }
+
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        std::set<string> strSet;
+        eventProducer.onDumpReport(bucketStartTimeNs + 250, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, &strSet, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        ASSERT_EQ(1, report.event_metrics().data_size());
+        ASSERT_EQ(2, report.data_corrupted_reason_size());
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    }
 }
 
-TEST_F(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnDropData) {
+TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDropData) {
     int64_t bucketStartTimeNs = 10000000000;
     int tagId = 1;
 
@@ -419,9 +465,30 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnDropData) {
 
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.dropData(bucketStartTimeNs + 200);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.dropData(bucketStartTimeNs + 300);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
 }
 
-TEST_F(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnClearPastBuckets) {
+TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnClearPastBuckets) {
     int64_t bucketStartTimeNs = 10000000000;
     int tagId = 1;
 
@@ -446,6 +513,27 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnClearPastBuc
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
 
     eventProducer.clearPastBuckets(bucketStartTimeNs + 100);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.clearPastBuckets(bucketStartTimeNs + 200);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.clearPastBuckets(bucketStartTimeNs + 300);
 
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
     EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);

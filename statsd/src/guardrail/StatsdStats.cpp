@@ -379,7 +379,7 @@ void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t
 
     mOverflowCount++;
 
-    int64_t history = getElapsedRealtimeNs() - oldestEventTimestampNs;
+    const int64_t history = getElapsedRealtimeNs() - oldestEventTimestampNs;
 
     if (history > mMaxQueueHistoryNs) {
         mMaxQueueHistoryNs = history;
@@ -1191,6 +1191,15 @@ bool StatsdStats::hasEventQueueOverflow() const {
     return mOverflowCount != 0;
 }
 
+vector<std::pair<int32_t, int32_t>> StatsdStats::getQueueOverflowAtomsStats() const {
+    lock_guard<std::mutex> lock(mLock);
+
+    vector<std::pair<int32_t, int32_t>> atomsStats(mPushedAtomDropsStats.begin(),
+                                                   mPushedAtomDropsStats.end());
+
+    return atomsStats;
+}
+
 bool StatsdStats::hasSocketLoss() const {
     lock_guard<std::mutex> lock(mLock);
     return !mLogLossStats.empty();
@@ -1770,7 +1779,7 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
     proto->end(token);
 }
 
-void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
+void StatsdStats::dumpStats(vector<uint8_t>* output, bool reset) {
     lock_guard<std::mutex> lock(mLock);
 
     ProtoOutputStream proto;
