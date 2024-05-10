@@ -16,7 +16,6 @@
 #pragma once
 
 #include "src/statsd_config.pb.h"
-#include "annotations.h"
 
 namespace android {
 namespace os {
@@ -241,7 +240,21 @@ struct Matcher {
     }
 
     bool hasAllPositionMatcher() const {
-        return mMatcher.getDepth() >= 1 && mMatcher.getRawPosAtDepth(1) == 0;
+        return mMatcher.getDepth() >= 1 && mMatcher.getRawPosAtDepth(1) == 0 &&
+               getRawMaskAtDepth(1) == 0x7f;
+    }
+
+    bool hasFirstPositionMatcher() const {
+        return mMatcher.getDepth() >= 1 && mMatcher.getRawPosAtDepth(1) == 1;
+    }
+
+    bool hasLastPositionMatcher() const {
+        return mMatcher.getDepth() >= 1 && mMatcher.isLastPosMatcher(1);
+    }
+
+    bool isEqualWithoutPositionBits(const Matcher& that) const {
+        return ((mMatcher.getField() & kClearAllPositionMatcherMask) ==
+                (that.getMatcher().getField() & kClearAllPositionMatcherMask));
     }
 
     inline bool operator!=(const Matcher& that) const {
@@ -358,7 +371,6 @@ struct Value {
 class Annotations {
 public:
     Annotations() {
-        setNested(true);  // Nested = true by default
     }
 
     // This enum stores where particular annotations can be found in the
@@ -436,6 +448,10 @@ struct FieldValue {
         return mField.getSize() + mValue.getSize();
     }
 
+    size_t getSizeV2() const {
+        return mValue.getSize();
+    }
+
     Field mField;
     Value mValue;
     Annotations mAnnotations;
@@ -450,6 +466,8 @@ bool isAttributionUidField(const FieldValue& value);
 
 /* returns uid if the field is uid field, or -1 if the field is not a uid field */
 int getUidIfExists(const FieldValue& value);
+
+std::vector<Matcher> dedupFieldMatchers(const std::vector<Matcher>& fieldMatchers);
 
 void translateFieldMatcher(const FieldMatcher& matcher, std::vector<Matcher>* output);
 
@@ -467,6 +485,9 @@ bool subsetDimensions(const std::vector<Matcher>& dimension_a,
 // Estimate the memory size of the FieldValues. This is different from sizeof(FieldValue) because
 // the size is computed at runtime using the actual contents stored in the FieldValue.
 size_t getSize(const std::vector<FieldValue>& fieldValues);
+
+// Same as getSize but does not compute the size of Field.
+size_t getFieldValuesSizeV2(const std::vector<FieldValue>& fieldValues);
 
 bool shouldKeepSample(const FieldValue& sampleFieldValue, int shardOffset, int shardCount);
 

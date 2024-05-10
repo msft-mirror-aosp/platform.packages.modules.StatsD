@@ -36,7 +36,7 @@ DurationAnomalyTracker::~DurationAnomalyTracker() {
 }
 
 void DurationAnomalyTracker::startAlarm(const MetricDimensionKey& dimensionKey,
-                                        const int64_t& timestampNs) {
+                                        const int64_t timestampNs) {
     // Alarms are stored in secs. Must round up, since if it fires early, it is ignored completely.
     uint32_t timestampSec = static_cast<uint32_t>((timestampNs -1) / NS_PER_SEC) + 1; // round up
     if (isInRefractoryPeriod(timestampNs, dimensionKey)) {
@@ -57,7 +57,7 @@ void DurationAnomalyTracker::startAlarm(const MetricDimensionKey& dimensionKey,
 }
 
 void DurationAnomalyTracker::stopAlarm(const MetricDimensionKey& dimensionKey,
-                                       const int64_t& timestampNs) {
+                                       const int64_t timestampNs) {
     const auto itr = mAlarms.find(dimensionKey);
     if (itr == mAlarms.end()) {
         return;
@@ -84,16 +84,16 @@ void DurationAnomalyTracker::cancelAllAlarms() {
     mAlarms.clear();
 }
 
-void DurationAnomalyTracker::informAlarmsFired(const int64_t& timestampNs,
+void DurationAnomalyTracker::informAlarmsFired(
+        const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& firedAlarms) {
-
     if (firedAlarms.empty() || mAlarms.empty()) return;
     // Find the intersection of firedAlarms and mAlarms.
     // The for loop is inefficient, since it loops over all keys, but that's okay since it is very
     // seldomly called. The alternative would be having InternalAlarms store information about the
     // DurationAnomalyTracker and key, but that's a lot of data overhead to speed up something that
     // is rarely ever called.
-    unordered_map<MetricDimensionKey, sp<const InternalAlarm>> matchedAlarms;
+    std::unordered_map<MetricDimensionKey, sp<const InternalAlarm>> matchedAlarms;
     for (const auto& kv : mAlarms) {
         if (firedAlarms.count(kv.second) > 0) {
             matchedAlarms.insert({kv.first, kv.second});

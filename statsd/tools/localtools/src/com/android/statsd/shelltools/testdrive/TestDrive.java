@@ -30,6 +30,7 @@ import com.android.os.StatsLog;
 import com.android.os.StatsLog.ConfigMetricsReport;
 import com.android.os.StatsLog.ConfigMetricsReportList;
 import com.android.os.StatsLog.StatsLogReport;
+import com.android.os.telephony.qns.QnsExtensionAtoms;
 import com.android.statsd.shelltools.Utils;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -94,6 +95,13 @@ public class TestDrive {
             "com.google.android.permissioncontroller",
             "AID_NFC",
             "AID_SECURE_ELEMENT",
+            "com.google.android.wearable.media.routing",
+            "com.google.android.healthconnect.controller",
+            "com.android.telephony.qns",
+            "com.android.car",
+            "com.android.ondevicepersonalization.services",
+            "com.google.android.ondevicepersonalization.services",
+            "AID_UPROBESTATS",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",
@@ -143,14 +151,15 @@ public class TestDrive {
         LOGGER.severe("\tPath is absolute or relative to current dir or to ANDROID_BUILD_TOP");
         LOGGER.severe("-terse");
         LOGGER.severe("\tTerse output format.");
-        LOGGER.severe("-p additional_allowed_package");
-        LOGGER.severe("\tAllows collection atoms from an additional package");
+        LOGGER.severe("-p additional_allowed_packages_csv");
+        LOGGER.severe("\tAllows collection atoms from an additional packages");
         LOGGER.severe("-s DEVICE_SERIAL_NUMBER");
         LOGGER.severe("\tDevice serial number to use for adb communication");
         LOGGER.severe("-e");
         LOGGER.severe("\tWait for Enter key press before collecting report");
         LOGGER.severe("-d delay_ms");
-        LOGGER.severe("\tWait for delay_ms before collecting report, default is 60000 ms");
+        LOGGER.severe("\tWait for delay_ms before collecting report, default is 60000 ms. Only");
+        LOGGER.severe("\taffects collection of pushed atoms.");
         LOGGER.severe("-v");
         LOGGER.severe("\tDebug logging level");
     }
@@ -177,7 +186,8 @@ public class TestDrive {
                 LOGGER.info("Terse output format.");
                 mDumper = new TerseDumper();
             } else if (remaining_args >= 3 && arg.equals("-p")) {
-                configuration.mAdditionalAllowedPackage = args[++first_arg];
+                Collections.addAll(configuration.mAdditionalAllowedPackages,
+                    args[++first_arg].split(","));
             } else if (remaining_args >= 3 && arg.equals("-i")) {
                 mProtoIncludes.add(args[++first_arg]);
             } else if (remaining_args >= 3 && arg.equals("-s")) {
@@ -277,7 +287,7 @@ public class TestDrive {
         @VisibleForTesting
         Set<Integer> mPulledAtoms = new TreeSet<>();
         @VisibleForTesting
-        String mAdditionalAllowedPackage = null;
+        ArrayList<String> mAdditionalAllowedPackages = new ArrayList<>();
         private final Set<Long> mTrackedMetrics = new HashSet<>();
         private final String mAndroidBuildTop = System.getenv("ANDROID_BUILD_TOP");
 
@@ -563,9 +573,7 @@ public class TestDrive {
         private StatsdConfig.Builder baseBuilder() {
             ArrayList<String> allowedSources = new ArrayList<>();
             Collections.addAll(allowedSources, ALLOWED_LOG_SOURCES);
-            if (mAdditionalAllowedPackage != null) {
-                allowedSources.add(mAdditionalAllowedPackage);
-            }
+            allowedSources.addAll(mAdditionalAllowedPackages);
             return StatsdConfig.newBuilder()
                     .addAllAllowedLogSource(allowedSources)
                     .addAllDefaultPullPackages(Arrays.asList(DEFAULT_PULL_SOURCES))
@@ -594,6 +602,21 @@ public class TestDrive {
                             PullAtomPackages.newBuilder()
                                     .setAtomId(Atom.LAUNCHER_LAYOUT_SNAPSHOT_FIELD_NUMBER)
                                     .addPackages("com.google.android.apps.nexuslauncher"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(QnsExtensionAtoms
+                                            .QNS_RAT_PREFERENCE_MISMATCH_INFO_FIELD_NUMBER)
+                                    .addPackages("com.android.telephony.qns"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(QnsExtensionAtoms
+                                            .QNS_HANDOVER_TIME_MILLIS_FIELD_NUMBER)
+                                    .addPackages("com.android.telephony.qns"))
+                    .addPullAtomPackages(
+                            PullAtomPackages.newBuilder()
+                                    .setAtomId(QnsExtensionAtoms
+                                            .QNS_HANDOVER_PINGPONG_FIELD_NUMBER)
+                                    .addPackages("com.android.telephony.qns"))
                     .setHashStringsInMetricReport(false);
         }
     }
@@ -648,7 +671,8 @@ public class TestDrive {
 
     private static String dumpAtom(AtomsProto.Atom atom,
             Descriptors.Descriptor externalDescriptor) {
-        if (atom.getPushedCase().getNumber() != 0 || atom.getPulledCase().getNumber() != 0) {
+        if (atom.getPushedCase().getNumber() != 0 || atom.getPulledCase().getNumber() != 0 ||
+                externalDescriptor == null) {
             return atom.toString();
         } else {
             try {

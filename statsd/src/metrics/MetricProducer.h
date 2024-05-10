@@ -18,6 +18,7 @@
 #define METRIC_PRODUCER_H
 
 #include <src/active_config_list.pb.h>
+#include <src/guardrail/stats_log_enums.pb.h>
 #include <utils/RefBase.h>
 
 #include <unordered_map>
@@ -27,29 +28,21 @@
 #include "condition/ConditionTimer.h"
 #include "condition/ConditionWizard.h"
 #include "config/ConfigKey.h"
+#include "config/ConfigMetadataProvider.h"
 #include "guardrail/StatsdStats.h"
 #include "matchers/EventMatcherWizard.h"
 #include "matchers/matcher_util.h"
 #include "packages/PackageInfoListener.h"
+#include "src/statsd_metadata.pb.h"  // MetricMetadata
 #include "state/StateListener.h"
 #include "state/StateManager.h"
+#include "utils/DbUtils.h"
 #include "utils/ShardOffsetProvider.h"
+#include "utils/api_tracing.h"
 
 namespace android {
 namespace os {
 namespace statsd {
-
-// Keep this in sync with DumpReportReason enum in stats_log.proto
-enum DumpReportReason {
-    DEVICE_SHUTDOWN = 1,
-    CONFIG_UPDATED = 2,
-    CONFIG_REMOVED = 3,
-    GET_DATA_CALLED = 4,
-    ADB_DUMP = 5,
-    CONFIG_RESET = 6,
-    STATSCOMPANION_DIED = 7,
-    TERMINATION_SIGNAL_RECEIVED = 8
-};
 
 // If the metric has no activation requirement, it will be active once the metric producer is
 // created.
@@ -73,24 +66,6 @@ enum DumpLatency {
     NO_TIME_CONSTRAINTS = 2
 };
 
-// Keep this in sync with BucketDropReason enum in stats_log.proto
-enum BucketDropReason {
-    // For ValueMetric, a bucket is dropped during a dump report request iff
-    // current bucket should be included, a pull is needed (pulled metric and
-    // condition is true), and we are under fast time constraints.
-    DUMP_REPORT_REQUESTED = 1,
-    EVENT_IN_WRONG_BUCKET = 2,
-    CONDITION_UNKNOWN = 3,
-    PULL_FAILED = 4,
-    PULL_DELAYED = 5,
-    DIMENSION_GUARDRAIL_REACHED = 6,
-    MULTIPLE_BUCKETS_SKIPPED = 7,
-    // Not an invalid bucket case, but the bucket is dropped.
-    BUCKET_TOO_SMALL = 8,
-    // Not an invalid bucket case, but the bucket is skipped.
-    NO_DATA = 9
-};
-
 enum MetricType {
     METRIC_TYPE_EVENT = 1,
     METRIC_TYPE_COUNT = 2,
@@ -101,11 +76,12 @@ enum MetricType {
 };
 
 struct Activation {
-    Activation(const ActivationType& activationType, const int64_t ttlNs)
+    Activation(const ActivationType& activationType, int64_t ttlNs)
         : ttl_ns(ttlNs),
           start_ns(0),
           state(ActivationState::kNotActive),
-          activationType(activationType) {}
+          activationType(activationType) {
+    }
 
     const int64_t ttl_ns;
     int64_t start_ns;
@@ -155,7 +131,7 @@ optional<bool> getAppUpgradeBucketSplit(const T& metric) {
 // be a no-op.
 class MetricProducer : public virtual RefBase, public virtual StateListener {
 public:
-    MetricProducer(const int64_t& metricId, const ConfigKey& key, const int64_t timeBaseNs,
+    MetricProducer(int64_t metricId, const ConfigKey& key, int64_t timeBaseNs,
                    const int conditionIndex, const vector<ConditionState>& initialConditionCache,
                    const sp<ConditionWizard>& wizard, const uint64_t protoHash,
                    const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap,
@@ -163,7 +139,8 @@ public:
                            eventDeactivationMap,
                    const vector<int>& slicedStateAtoms,
                    const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap,
-                   const optional<bool> splitBucketForAppUpgrade);
+                   const optional<bool> splitBucketForAppUpgrade,
+                   const wp<ConfigMetadataProvider> configMetadataProvider);
 
     virtual ~MetricProducer(){};
 
@@ -177,7 +154,7 @@ public:
     // This function also updates several maps used by metricsManager.
     // This function clears all anomaly trackers. All anomaly trackers need to be added again.
     optional<InvalidConfigReason> onConfigUpdated(
-            const StatsdConfig& config, const int configIndex, const int metricIndex,
+            const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -203,7 +180,7 @@ public:
     /**
      * Force a partial bucket split on app upgrade
      */
-    void notifyAppUpgrade(const int64_t& eventTimeNs) {
+    void notifyAppUpgrade(int64_t eventTimeNs) {
         std::lock_guard<std::mutex> lock(mMutex);
         const bool splitBucket =
                 mSplitBucketForAppUpgrade ? mSplitBucketForAppUpgrade.value() : false;
@@ -213,7 +190,7 @@ public:
         notifyAppUpgradeInternalLocked(eventTimeNs);
     };
 
-    void notifyAppRemoved(const int64_t& eventTimeNs) {
+    void notifyAppRemoved(int64_t eventTimeNs) {
         // Force buckets to split on removal also.
         notifyAppUpgrade(eventTimeNs);
     };
@@ -221,22 +198,29 @@ public:
     /**
      * Force a partial bucket split on boot complete.
      */
-    virtual void onStatsdInitCompleted(const int64_t& eventTimeNs) {
+    virtual void onStatsdInitCompleted(int64_t eventTimeNs) {
+        ATRACE_CALL();
         std::lock_guard<std::mutex> lock(mMutex);
         flushLocked(eventTimeNs);
     }
+
     // Consume the parsed stats log entry that already matched the "what" of the metric.
     void onMatchedLogEvent(const size_t matcherIndex, const LogEvent& event) {
         std::lock_guard<std::mutex> lock(mMutex);
         onMatchedLogEventLocked(matcherIndex, event);
     }
 
-    void onConditionChanged(const bool condition, const int64_t eventTime) {
+    void onMatchedLogEventLost(int32_t atomId, DataCorruptedReason reason) {
+        std::lock_guard<std::mutex> lock(mMutex);
+        onMatchedLogEventLostLocked(atomId, reason);
+    }
+
+    void onConditionChanged(const bool condition, int64_t eventTime) {
         std::lock_guard<std::mutex> lock(mMutex);
         onConditionChangedLocked(condition, eventTime);
     }
 
-    void onSlicedConditionMayChange(bool overallCondition, const int64_t eventTime) {
+    void onSlicedConditionMayChange(bool overallCondition, int64_t eventTime) {
         std::lock_guard<std::mutex> lock(mMutex);
         onSlicedConditionMayChangeLocked(overallCondition, eventTime);
     }
@@ -259,12 +243,12 @@ public:
                       std::set<string> *str_set,
                       android::util::ProtoOutputStream* protoOutput) {
         std::lock_guard<std::mutex> lock(mMutex);
-        return onDumpReportLocked(dumpTimeNs, include_current_partial_bucket, erase_data,
-                dumpLatency, str_set, protoOutput);
+        onDumpReportLocked(dumpTimeNs, include_current_partial_bucket, erase_data, dumpLatency,
+                           str_set, protoOutput);
     }
 
     virtual optional<InvalidConfigReason> onConfigUpdatedLocked(
-            const StatsdConfig& config, const int configIndex, const int metricIndex,
+            const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
             const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -281,7 +265,7 @@ public:
 
     void clearPastBuckets(const int64_t dumpTimeNs) {
         std::lock_guard<std::mutex> lock(mMutex);
-        return clearPastBucketsLocked(dumpTimeNs);
+        clearPastBucketsLocked(dumpTimeNs);
     }
 
     void prepareFirstBucket() {
@@ -296,7 +280,7 @@ public:
         return byteSizeLocked();
     }
 
-    void dumpStates(FILE* out, bool verbose) const {
+    void dumpStates(int out, bool verbose) const {
         std::lock_guard<std::mutex> lock(mMutex);
         dumpStatesLocked(out, verbose);
     }
@@ -334,6 +318,21 @@ public:
 
     void writeActiveMetricToProtoOutputStream(
             int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto);
+
+    virtual void enforceRestrictedDataTtl(sqlite3* db, int64_t wallClockNs){};
+
+    virtual bool writeMetricMetadataToProto(metadata::MetricMetadata* metricMetadata) {
+        return false;
+    }
+
+    virtual void loadMetricMetadataFromProto(const metadata::MetricMetadata& metricMetadata){};
+
+    /* Called when the metric is to about to be removed from config. */
+    virtual void onMetricRemove() {
+    }
+
+    virtual void flushRestrictedData() {
+    }
 
     // Start: getters/setters
     inline int64_t getMetricId() const {
@@ -377,7 +376,7 @@ public:
     }
 
     /* Adds an AnomalyTracker that has already been created */
-    virtual void addAnomalyTracker(sp<AnomalyTracker>& anomalyTracker, const int64_t updateTimeNs) {
+    virtual void addAnomalyTracker(sp<AnomalyTracker>& anomalyTracker, int64_t updateTimeNs) {
         std::lock_guard<std::mutex> lock(mMutex);
         mAnomalyTrackers.push_back(anomalyTracker);
     }
@@ -392,7 +391,7 @@ protected:
     /**
      * Flushes the current bucket if the eventTime is after the current bucket's end time.
      */
-    virtual void flushIfNeededLocked(const int64_t& eventTime){};
+    virtual void flushIfNeededLocked(int64_t eventTime){};
 
     /**
      * For metrics that aggregate (ie, every metric producer except for EventMetricProducer),
@@ -404,13 +403,12 @@ protected:
      * flushIfNeededLocked or flushLocked or the app upgrade handler; the caller MUST update the
      * bucket timestamp and bucket number as needed.
      */
-    virtual void flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                          const int64_t& nextBucketStartTimeNs) {};
+    virtual void flushCurrentBucketLocked(int64_t eventTimeNs, int64_t nextBucketStartTimeNs){};
 
     /**
      * Flushes all the data including the current partial bucket.
      */
-    void flushLocked(const int64_t& eventTimeNs) {
+    void flushLocked(int64_t eventTimeNs) {
         flushIfNeededLocked(eventTimeNs);
         flushCurrentBucketLocked(eventTimeNs, eventTimeNs);
     };
@@ -441,23 +439,32 @@ protected:
 
     // Consume the parsed stats log entry that already matched the "what" of the metric.
     virtual void onMatchedLogEventLocked(const size_t matcherIndex, const LogEvent& event);
-    virtual void onConditionChangedLocked(const bool condition, const int64_t eventTime) = 0;
+    virtual void onMatchedLogEventLostLocked(int32_t atomId, DataCorruptedReason reason);
+    virtual void onConditionChangedLocked(const bool condition, int64_t eventTime) = 0;
     virtual void onSlicedConditionMayChangeLocked(bool overallCondition,
                                                   const int64_t eventTime) = 0;
     virtual void onDumpReportLocked(const int64_t dumpTimeNs,
                                     const bool include_current_partial_bucket,
-                                    const bool erase_data,
-                                    const DumpLatency dumpLatency,
-                                    std::set<string> *str_set,
+                                    const bool erase_data, const DumpLatency dumpLatency,
+                                    std::set<string>* str_set,
                                     android::util::ProtoOutputStream* protoOutput) = 0;
     virtual void clearPastBucketsLocked(const int64_t dumpTimeNs) = 0;
     virtual void prepareFirstBucketLocked(){};
     virtual size_t byteSizeLocked() const = 0;
-    virtual void dumpStatesLocked(FILE* out, bool verbose) const = 0;
+    virtual void dumpStatesLocked(int out, bool verbose) const = 0;
     virtual void dropDataLocked(const int64_t dropTimeNs) = 0;
     void loadActiveMetricLocked(const ActiveMetric& activeMetric, int64_t currentTimeNs);
     void activateLocked(int activationTrackerIndex, int64_t elapsedTimestampNs);
     void cancelEventActivationLocked(int deactivationTrackerIndex);
+
+    // Computes the size of a newly added bucket to this metric, taking into account any new
+    // dimensions that are introduced if necessary.
+    virtual size_t computeBucketSizeLocked(const bool isFullBucket,
+                                           const MetricDimensionKey& dimKey,
+                                           const bool isFirstBucket) const;
+    size_t computeOverheadSizeLocked(const bool hasPastBuckets,
+                                     const bool dimensionGuardrailHit) const;
+    size_t computeSkippedBucketSizeLocked(const SkippedBucket& skippedBucket) const;
 
     bool evaluateActiveStateLocked(int64_t elapsedTimestampNs);
 
@@ -483,13 +490,12 @@ protected:
 
     // Query StateManager for original state value using the queryKey.
     // The field and value are output.
-    void queryStateValue(const int32_t atomId, const HashableDimensionKey& queryKey,
-                         FieldValue* value);
+    void queryStateValue(int32_t atomId, const HashableDimensionKey& queryKey, FieldValue* value);
 
     // If a state map exists for the given atom, replace the original state
     // value with the group id mapped to the value.
     // If no state map exists, keep the original state value.
-    void mapStateValue(const int32_t atomId, FieldValue* value);
+    void mapStateValue(int32_t atomId, FieldValue* value);
 
     // Returns a HashableDimensionKey with unknown state value for each state
     // atom.
@@ -583,13 +589,21 @@ protected:
     // Buckets that were invalidated and had their data dropped.
     std::vector<SkippedBucket> mSkippedBuckets;
 
-    // If hard dimension guardrail is hit, do not spam logcat
-    bool mHasHitGuardrail;
+    // If hard dimension guardrail is hit, do not spam logcat. This is a per bucket tracker.
+    mutable bool mHasHitGuardrail;
 
     // Matchers for sampled fields. Currently only one sampled dimension is supported.
     std::vector<Matcher> mSampledWhatFields;
 
     int mShardCount;
+
+    sp<ConfigMetadataProvider> getConfigMetadataProvider() const;
+
+    wp<ConfigMetadataProvider> mConfigMetadataProvider;
+    bool mDataCorruptedDueToSocketLoss = false;
+    bool mDataCorruptedDueToQueueOverflow = false;
+
+    size_t mTotalDataSize = 0;
 
     FRIEND_TEST(CountMetricE2eTest, TestSlicedState);
     FRIEND_TEST(CountMetricE2eTest, TestSlicedStateWithMap);
@@ -628,6 +642,9 @@ protected:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
 
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom);
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
+
     FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
@@ -638,6 +655,10 @@ protected:
     FRIEND_TEST(ConfigUpdateTest, TestUpdateDurationMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMetricsMultipleTypes);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateAlerts);
+
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport);
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnDropData);
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnClearPastBuckets);
 };
 
 }  // namespace statsd

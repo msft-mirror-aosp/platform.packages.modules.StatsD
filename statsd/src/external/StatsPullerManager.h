@@ -70,20 +70,21 @@ public:
     // Registers a receiver for tagId. It will be pulled on the nextPullTimeNs
     // and then every intervalNs thereafter.
     virtual void RegisterReceiver(int tagId, const ConfigKey& configKey,
-                                  wp<PullDataReceiver> receiver, int64_t nextPullTimeNs,
+                                  const wp<PullDataReceiver>& receiver, int64_t nextPullTimeNs,
                                   int64_t intervalNs);
 
     // Stop listening on a tagId.
     virtual void UnRegisterReceiver(int tagId, const ConfigKey& configKey,
-                                    wp<PullDataReceiver> receiver);
+                                    const wp<PullDataReceiver>& receiver);
 
     // Registers a pull uid provider for the config key. When pulling atoms, it will be used to
     // determine which uids to pull from.
-    virtual void RegisterPullUidProvider(const ConfigKey& configKey, wp<PullUidProvider> provider);
+    virtual void RegisterPullUidProvider(const ConfigKey& configKey,
+                                         const wp<PullUidProvider>& provider);
 
     // Unregister a pull uid provider.
     virtual void UnregisterPullUidProvider(const ConfigKey& configKey,
-                                           wp<PullUidProvider> provider);
+                                           const wp<PullUidProvider>& provider);
 
     // Verify if we know how to pull for this matcher
     bool PullerForMatcherExists(int tagId) const;
@@ -101,11 +102,11 @@ public:
     //      registered for any of the uids for this atom.
     // If the metric wants to make any change to the data, like timestamps, they
     // should make a copy as this data may be shared with multiple metrics.
-    virtual bool Pull(int tagId, const ConfigKey& configKey, const int64_t eventTimeNs,
+    virtual bool Pull(int tagId, const ConfigKey& configKey, int64_t eventTimeNs,
                       vector<std::shared_ptr<LogEvent>>* data);
 
     // Same as above, but directly specify the allowed uids to pull from.
-    virtual bool Pull(int tagId, const vector<int32_t>& uids, const int64_t eventTimeNs,
+    virtual bool Pull(int tagId, const vector<int32_t>& uids, int64_t eventTimeNs,
                       vector<std::shared_ptr<LogEvent>>* data);
 
     // Clear pull data cache immediately.
@@ -114,9 +115,9 @@ public:
     // Clear pull data cache if it is beyond respective cool down time.
     int ClearPullerCacheIfNecessary(int64_t timestampNs);
 
-    void SetStatsCompanionService(shared_ptr<IStatsCompanionService> statsCompanionService);
+    void SetStatsCompanionService(const shared_ptr<IStatsCompanionService>& statsCompanionService);
 
-    void RegisterPullAtomCallback(const int uid, const int32_t atomTag, const int64_t coolDownNs,
+    void RegisterPullAtomCallback(const int uid, const int32_t atomTag, int64_t coolDownNs,
                                   const int64_t timeoutNs, const vector<int32_t>& additiveFields,
                                   const shared_ptr<IPullAtomCallback>& callback);
 
@@ -151,10 +152,10 @@ private:
     // mapping from Config Key to the PullUidProvider for that config
     std::map<ConfigKey, wp<PullUidProvider>> mPullUidProviders;
 
-    bool PullLocked(int tagId, const ConfigKey& configKey, const int64_t eventTimeNs,
+    bool PullLocked(int tagId, const ConfigKey& configKey, int64_t eventTimeNs,
                     vector<std::shared_ptr<LogEvent>>* data);
 
-    bool PullLocked(int tagId, const vector<int32_t>& uids, const int64_t eventTimeNs,
+    bool PullLocked(int tagId, const vector<int32_t>& uids, int64_t eventTimeNs,
                     vector<std::shared_ptr<LogEvent>>* data);
 
     // locks for data receiver and StatsCompanionService changes
@@ -163,8 +164,6 @@ private:
     void updateAlarmLocked();
 
     int64_t mNextPullTimeNs;
-
-    const bool mLimitPull;
 
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation);

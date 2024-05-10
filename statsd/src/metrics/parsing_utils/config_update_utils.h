@@ -21,6 +21,7 @@
 #include "anomaly/AlarmMonitor.h"
 #include "anomaly/AlarmTracker.h"
 #include "condition/ConditionTracker.h"
+#include "config/ConfigMetadataProvider.h"
 #include "external/StatsPullerManager.h"
 #include "matchers/AtomMatchingTracker.h"
 #include "metrics/MetricProducer.h"
@@ -46,11 +47,11 @@ namespace statsd {
 // [cycleTracker]: intermediate param used during recursion.
 // Returns nullopt if successful and InvalidConfigReason if not.
 optional<InvalidConfigReason> determineMatcherUpdateStatus(
-        const StatsdConfig& config, const int matcherIdx,
+        const StatsdConfig& config, int matcherIdx,
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
         const std::vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-        std::vector<UpdateStatus>& matchersToUpdate, std::vector<bool>& cycleTracker);
+        std::vector<UpdateStatus>& matchersToUpdate, std::vector<uint8_t>& cycleTracker);
 
 // Updates the AtomMatchingTrackers.
 // input:
@@ -86,12 +87,12 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
 // [cycleTracker]: intermediate param used during recursion.
 // Returns nullopt if successful and InvalidConfigReason if not.
 optional<InvalidConfigReason> determineConditionUpdateStatus(
-        const StatsdConfig& config, const int conditionIdx,
+        const StatsdConfig& config, int conditionIdx,
         const std::unordered_map<int64_t, int>& oldConditionTrackerMap,
         const std::vector<sp<ConditionTracker>>& oldConditionTrackers,
         const std::unordered_map<int64_t, int>& newConditionTrackerMap,
         const std::set<int64_t>& replacedMatchers, std::vector<UpdateStatus>& conditionsToUpdate,
-        std::vector<bool>& cycleTracker);
+        std::vector<uint8_t>& cycleTracker);
 
 // Updates ConditionTrackers
 // input:
@@ -164,7 +165,7 @@ optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
 // [trackerToMetricMap]: contains the mapping from log tracker to MetricProducer index.
 // Returns nullopt if successful and InvalidConfigReason if not.
 optional<InvalidConfigReason> updateMetrics(
-        const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
+        const ConfigKey& key, const StatsdConfig& config, int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
         const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -179,6 +180,7 @@ optional<InvalidConfigReason> updateMetrics(
         const std::set<int64_t>& replacedStates,
         const std::unordered_map<int64_t, int>& oldMetricProducerMap,
         const std::vector<sp<MetricProducer>>& oldMetricProducers,
+        const wp<ConfigMetadataProvider> configMetadataProvider,
         std::unordered_map<int64_t, int>& newMetricProducerMap,
         std::vector<sp<MetricProducer>>& newMetricProducers,
         std::unordered_map<int, std::vector<int>>& conditionToMetricMap,
@@ -219,7 +221,7 @@ optional<InvalidConfigReason> determineAlertUpdateStatus(
 // [newAnomalyTrackers]: contains the list of sp to the AnomalyTrackers created.
 // Returns nullopt if successful and InvalidConfigReason if not.
 optional<InvalidConfigReason> updateAlerts(
-        const StatsdConfig& config, const int64_t currentTimeNs,
+        const StatsdConfig& config, int64_t currentTimeNs,
         const std::unordered_map<int64_t, int>& metricProducerMap,
         const std::set<int64_t>& replacedMetrics,
         const std::unordered_map<int64_t, int>& oldAlertTrackerMap,
@@ -234,7 +236,7 @@ optional<InvalidConfigReason> updateAlerts(
 optional<InvalidConfigReason> updateStatsdConfig(
         const ConfigKey& key, const StatsdConfig& config, const sp<UidMap>& uidMap,
         const sp<StatsPullerManager>& pullerManager, const sp<AlarmMonitor>& anomalyAlarmMonitor,
-        const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
+        const sp<AlarmMonitor>& periodicAlarmMonitor, int64_t timeBaseNs,
         const int64_t currentTimeNs,
         const std::vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -245,6 +247,7 @@ optional<InvalidConfigReason> updateStatsdConfig(
         const std::vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
         const std::unordered_map<int64_t, int>& oldAlertTrackerMap,
         const std::map<int64_t, uint64_t>& oldStateProtoHashes,
+        const wp<ConfigMetadataProvider> configMetadataProvider,
         std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
         std::vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
         std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,

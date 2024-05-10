@@ -53,6 +53,8 @@ const int FIELD_ID_TIME_BASE = 9;
 const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
+const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
+const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
 
 // for CountMetricDataWrapper
 const int FIELD_ID_DATA = 1;
@@ -72,13 +74,17 @@ CountMetricProducer::CountMetricProducer(
         const ConfigKey& key, const CountMetric& metric, const int conditionIndex,
         const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const uint64_t protoHash, const int64_t timeBaseNs, const int64_t startTimeNs,
+        const wp<ConfigMetadataProvider> configMetadataProvider,
         const unordered_map<int, shared_ptr<Activation>>& eventActivationMap,
         const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap,
         const vector<int>& slicedStateAtoms,
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap, getAppUpgradeBucketSplit(metric)) {
+                     stateGroupMap, getAppUpgradeBucketSplit(metric), configMetadataProvider),
+      mDimensionGuardrailHit(false),
+      mDimensionHardLimit(
+              StatsdStats::clampDimensionKeySizeLimit(metric.max_dimensions_per_bucket())) {
     if (metric.has_bucket()) {
         mBucketSizeNs =
                 TimeUnitToBucketSizeInMillisGuardrailed(key.GetUid(), metric.bucket()) * 1000000;
@@ -119,7 +125,7 @@ CountMetricProducer::CountMetricProducer(
     flushIfNeededLocked(startTimeNs);
     // Adjust start for partial bucket
     mCurrentBucketStartTimeNs = startTimeNs;
-
+    mConditionTimer.newBucketStart(mCurrentBucketStartTimeNs, mCurrentBucketStartTimeNs);
     mConditionTimer.onConditionChanged(mIsActive && mCondition == ConditionState::kTrue,
                                        mCurrentBucketStartTimeNs);
 
@@ -173,6 +179,7 @@ optional<InvalidConfigReason> CountMetricProducer::onConfigUpdatedLocked(
             return invalidConfigReason;
         }
     }
+
     return nullopt;
 }
 
@@ -184,17 +191,17 @@ void CountMetricProducer::onStateChanged(const int64_t eventTimeNs, const int32_
          oldState.mValue.int_value, newState.mValue.int_value);
 }
 
-void CountMetricProducer::dumpStatesLocked(FILE* out, bool verbose) const {
+void CountMetricProducer::dumpStatesLocked(int out, bool verbose) const {
     if (mCurrentSlicedCounter == nullptr ||
         mCurrentSlicedCounter->size() == 0) {
         return;
     }
 
-    fprintf(out, "CountMetric %lld dimension size %lu\n", (long long)mMetricId,
+    dprintf(out, "CountMetric %lld dimension size %lu\n", (long long)mMetricId,
             (unsigned long)mCurrentSlicedCounter->size());
     if (verbose) {
         for (const auto& it : *mCurrentSlicedCounter) {
-            fprintf(out, "\t(what)%s\t(state)%s  %lld\n",
+            dprintf(out, "\t(what)%s\t(state)%s  %lld\n",
                     it.first.getDimensionKeyInWhat().toString().c_str(),
                     it.first.getStateValuesKey().toString().c_str(), (unsigned long long)it.second);
         }
@@ -209,26 +216,34 @@ void CountMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
 
 void CountMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     mPastBuckets.clear();
+    mTotalDataSize = 0;
 }
 
 void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                              const bool include_current_partial_bucket,
-                                             const bool erase_data,
-                                             const DumpLatency dumpLatency,
-                                             std::set<string> *str_set,
+                                             const bool erase_data, const DumpLatency dumpLatency,
+                                             std::set<string>* str_set,
                                              ProtoOutputStream* protoOutput) {
     if (include_current_partial_bucket) {
         flushLocked(dumpTimeNs);
     } else {
         flushIfNeededLocked(dumpTimeNs);
     }
+
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
-
 
     if (mPastBuckets.empty()) {
         return;
     }
+
+    if (mDimensionGuardrailHit) {
+        protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT,
+                           mDimensionGuardrailHit);
+    }
+
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_TIME_BASE, (long long)mTimeBaseNs);
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_SIZE, (long long)mBucketSizeNs);
 
@@ -285,9 +300,9 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
             protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_COUNT, (long long)bucket.mCount);
 
             // We only write the condition timer value if the metric has a
-            // condition and isn't sliced by state.
-            // TODO: Slice the condition timer by state
-            if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty()) {
+            // condition and isn't sliced by state or condition.
+            // TODO(b/268531179): Slice the condition timer by state and condition
+            if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty() && !mConditionSliced) {
                 protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_CONDITION_TRUE_NS,
                                    (long long)bucket.mConditionTrueNs);
             }
@@ -303,6 +318,8 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 
     if (erase_data) {
         mPastBuckets.clear();
+        mDimensionGuardrailHit = false;
+        mTotalDataSize = 0;
     }
 }
 
@@ -310,12 +327,17 @@ void CountMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
     flushIfNeededLocked(dropTimeNs);
     StatsdStats::getInstance().noteBucketDropped(mMetricId);
     mPastBuckets.clear();
+    mTotalDataSize = 0;
 }
 
 void CountMetricProducer::onConditionChangedLocked(const bool conditionMet,
                                                    const int64_t eventTime) {
     VLOG("Metric %lld onConditionChanged", (long long)mMetricId);
     mCondition = conditionMet ? ConditionState::kTrue : ConditionState::kFalse;
+
+    if (!mIsActive) {
+        return;
+    }
 
     mConditionTimer.onConditionChanged(mCondition, eventTime);
 }
@@ -326,16 +348,17 @@ bool CountMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
     }
     // ===========GuardRail==============
     // 1. Report the tuple count if the tuple count > soft limit
-    if (mCurrentSlicedCounter->size() > StatsdStats::kDimensionKeySizeSoftLimit - 1) {
+    if (mCurrentSlicedCounter->size() >= StatsdStats::kDimensionKeySizeSoftLimit) {
         size_t newTupleCount = mCurrentSlicedCounter->size() + 1;
         StatsdStats::getInstance().noteMetricDimensionSize(mConfigKey, mMetricId, newTupleCount);
         // 2. Don't add more tuples, we are above the allowed threshold. Drop the data.
-        if (newTupleCount > StatsdStats::kDimensionKeySizeHardLimit) {
+        if (newTupleCount > mDimensionHardLimit) {
             if (!mHasHitGuardrail) {
                 ALOGE("CountMetric %lld dropping data for dimension key %s", (long long)mMetricId,
                       newKey.toString().c_str());
                 mHasHitGuardrail = true;
             }
+            mDimensionGuardrailHit = true;
             StatsdStats::getInstance().noteHardDimensionLimitReached(mMetricId);
             return true;
         }
@@ -384,7 +407,7 @@ void CountMetricProducer::onMatchedLogEventInternalLocked(
 
 // When a new matched event comes in, we check if event falls into the current
 // bucket. If not, flush the old counter to past buckets and initialize the new bucket.
-void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
+void CountMetricProducer::flushIfNeededLocked(const int64_t eventTimeNs) {
     int64_t currentBucketEndTimeNs = getCurrentBucketEndTimeNs();
     if (eventTimeNs < currentBucketEndTimeNs) {
         return;
@@ -400,7 +423,7 @@ void CountMetricProducer::flushIfNeededLocked(const int64_t& eventTimeNs) {
          (long long)mCurrentBucketStartTimeNs);
 }
 
-bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
+bool CountMetricProducer::countPassesThreshold(const int64_t count) {
     if (mUploadThreshold == nullopt) {
         return true;
     }
@@ -420,8 +443,8 @@ bool CountMetricProducer::countPassesThreshold(const int64_t& count) {
     }
 }
 
-void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
-                                                   const int64_t& nextBucketStartTimeNs) {
+void CountMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
+                                                   const int64_t nextBucketStartTimeNs) {
     int64_t fullBucketEndTimeNs = getCurrentBucketEndTimeNs();
     CountBucket info;
     info.mBucketStartNs = mCurrentBucketStartTimeNs;
@@ -439,7 +462,10 @@ void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
         if (countPassesThreshold(counter.second)) {
             info.mCount = counter.second;
             auto& bucketList = mPastBuckets[counter.first];
+            const bool isFirstBucket = bucketList.empty();
             bucketList.push_back(info);
+            mTotalDataSize += computeBucketSizeLocked(eventTimeNs < fullBucketEndTimeNs,
+                                                      counter.first, isFirstBucket);
             VLOG("metric %lld, dump key value: %s -> %lld", (long long)mMetricId,
                  counter.first.toString().c_str(), (long long)counter.second);
         }
@@ -485,11 +511,34 @@ void CountMetricProducer::flushCurrentBucketLocked(const int64_t& eventTimeNs,
 // greater than actual data size as it contains each dimension of
 // CountMetricData is  duplicated.
 size_t CountMetricProducer::byteSizeLocked() const {
+    sp<ConfigMetadataProvider> configMetadataProvider = getConfigMetadataProvider();
+    if (configMetadataProvider != nullptr && configMetadataProvider->useV2SoftMemoryCalculation()) {
+        return computeOverheadSizeLocked(!mPastBuckets.empty(), mDimensionGuardrailHit) +
+               mTotalDataSize;
+    }
     size_t totalSize = 0;
     for (const auto& pair : mPastBuckets) {
         totalSize += pair.second.size() * kBucketSize;
     }
     return totalSize;
+}
+
+// Estimate for the size of a CountBucket.
+size_t CountMetricProducer::computeBucketSizeLocked(const bool isFullBucket,
+                                                    const MetricDimensionKey& dimKey,
+                                                    const bool isFirstBucket) const {
+    size_t bucketSize =
+            MetricProducer::computeBucketSizeLocked(isFullBucket, dimKey, isFirstBucket);
+
+    // Count Value
+    bucketSize += sizeof(int32_t);
+
+    // ConditionTrueNanos
+    if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty() && !mConditionSliced) {
+        bucketSize += sizeof(int64_t);
+    }
+
+    return bucketSize;
 }
 
 void CountMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,

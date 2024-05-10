@@ -24,6 +24,7 @@
 
 #include "HashableDimensionKey.h"
 #include "packages/UidMap.h"
+#include "socket/LogEventFilter.h"
 #include "state/StateListener.h"
 #include "state/StateTracker.h"
 
@@ -54,17 +55,17 @@ public:
     // If the correct StateTracker does not exist, a new StateTracker is created.
     // Note: StateTrackers can be created for non-state atoms. They are essentially empty and
     // do not perform any actions.
-    void registerListener(const int32_t atomId, wp<StateListener> listener);
+    void registerListener(const int32_t atomId, const wp<StateListener>& listener);
 
     // Notifies the correct StateTracker to unregister a listener
     // and removes the tracker if it no longer has any listeners.
-    void unregisterListener(const int32_t atomId, wp<StateListener> listener);
+    void unregisterListener(const int32_t atomId, const wp<StateListener>& listener);
 
     // Returns true if the StateTracker exists and queries for the
     // original state value mapped to the given query key. The state value is
     // stored and output in a FieldValue class.
     // Returns false if the StateTracker doesn't exist.
-    bool getStateValue(const int32_t atomId, const HashableDimensionKey& queryKey,
+    bool getStateValue(int32_t atomId, const HashableDimensionKey& queryKey,
                        FieldValue* output) const;
 
     // Updates mAllowedLogSources with the latest uids for the packages that are allowed to log.
@@ -76,13 +77,15 @@ public:
         return mStateTrackers.size();
     }
 
-    inline int getListenersCount(const int32_t atomId) const {
+    inline int getListenersCount(int32_t atomId) const {
         auto it = mStateTrackers.find(atomId);
         if (it != mStateTrackers.end()) {
             return it->second->getListenersCount();
         }
         return -1;
     }
+
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
 
 private:
     mutable std::mutex mMutex;

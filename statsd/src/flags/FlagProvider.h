@@ -16,15 +16,16 @@
 
 #pragma once
 
-#include <unordered_map>
-#include <vector>
-
-#include <android-modules-utils/sdk_level.h>
 #include <gtest/gtest_prod.h>
 #include <server_configurable_flags/get_flags.h>
 
+#include <functional>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <vector>
+
+#include "stats_util.h"
 
 namespace android {
 namespace os {
@@ -37,9 +38,7 @@ using IsAtLeastSFunc = std::function<bool()>;
 const std::string STATSD_NATIVE_NAMESPACE = "statsd_native";
 const std::string STATSD_NATIVE_BOOT_NAMESPACE = "statsd_native_boot";
 
-const std::string OPTIMIZATION_ATOM_MATCHER_MAP_FLAG = "optimization_atom_matcher_map";
-
-const std::string LIMIT_PULL_FLAG = "limit_pull";
+const std::string STATSD_INIT_COMPLETED_NO_DELAY_FLAG = "statsd_init_completed_no_delay";
 
 const std::string FLAG_TRUE = "true";
 const std::string FLAG_FALSE = "false";
@@ -67,15 +66,13 @@ private:
     FlagProvider();
 
     // TODO(b/194347008): Remove the GetServerConfigurableFlag override.
-    void overrideFuncs(
-            const IsAtLeastSFunc& isAtLeastSFunc = &android::modules::sdklevel::IsAtLeastS,
-            const GetServerFlagFunc& getServerFlagFunc =
-                    &server_configurable_flags::GetServerConfigurableFlag);
+    void overrideFuncs(const IsAtLeastSFunc& isAtLeastSFunc = &isAtLeastS,
+                       const GetServerFlagFunc& getServerFlagFunc =
+                               &server_configurable_flags::GetServerConfigurableFlag);
 
-    void overrideFuncsLocked(
-            const IsAtLeastSFunc& isAtLeastSFunc = &android::modules::sdklevel::IsAtLeastS,
-            const GetServerFlagFunc& getServerFlagFunc =
-                    &server_configurable_flags::GetServerConfigurableFlag);
+    void overrideFuncsLocked(const IsAtLeastSFunc& isAtLeastSFunc = &isAtLeastS,
+                             const GetServerFlagFunc& getServerFlagFunc =
+                                     &server_configurable_flags::GetServerConfigurableFlag);
 
     inline void resetOverrides() {
         std::lock_guard<std::mutex> lock(mFlagsMutex);
@@ -115,9 +112,15 @@ private:
     friend class KllMetricE2eAbTest;
     friend class MetricsManagerTest;
     friend class StatsLogProcessorTest;
+    friend class StatsLogProcessorTestRestricted;
+    friend class RestrictedEventMetricProducerTest;
+    friend class RestrictedConfigE2ETest;
+    friend class RestrictedEventMetricE2eTest;
+    friend class LogEvent_FieldRestrictionTest;
 
     FRIEND_TEST(ConfigUpdateE2eTest, TestEventMetric);
     FRIEND_TEST(ConfigUpdateE2eTest, TestGaugeMetric);
+    FRIEND_TEST(ConfigUpdateE2eTest, TestConfigUpdateRestrictedDelegateCleared);
     FRIEND_TEST(EventMetricE2eTest, TestEventMetricDataAggregated);
     FRIEND_TEST(EventMetricProducerTest, TestOneAtomTagAggregatedEvents);
     FRIEND_TEST(EventMetricProducerTest, TestTwoAtomTagAggregatedEvents);
@@ -129,7 +132,13 @@ private:
     FRIEND_TEST(FlagProviderTest_SPlus, TestGetFlagBoolServerFlagEmptyDefaultTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagTrue);
     FRIEND_TEST(FlagProviderTest_SPlus_RealValues, TestGetBootFlagBoolServerFlagFalse);
-    FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
+    FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestFlagDisabled);
+    FRIEND_TEST(LogEventTest, TestRestrictionCategoryAnnotation);
+    FRIEND_TEST(LogEventTest, TestInvalidRestrictionCategoryAnnotation);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestFieldRestrictionAnnotation);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestInvalidAnnotationIntType);
+    FRIEND_TEST(LogEvent_FieldRestrictionTest, TestInvalidAnnotationAtomLevel);
 };
 
 }  // namespace statsd

@@ -36,7 +36,7 @@ AlarmMonitor::AlarmMonitor(
 AlarmMonitor::~AlarmMonitor() {}
 
 void AlarmMonitor::setStatsCompanionService(
-        shared_ptr<IStatsCompanionService> statsCompanionService) {
+        const shared_ptr<IStatsCompanionService>& statsCompanionService) {
     std::lock_guard<std::mutex> lock(mLock);
     shared_ptr<IStatsCompanionService> tmpForLock = mStatsCompanionService;
     mStatsCompanionService = statsCompanionService;
@@ -51,7 +51,7 @@ void AlarmMonitor::setStatsCompanionService(
     }
 }
 
-void AlarmMonitor::add(sp<const InternalAlarm> alarm) {
+void AlarmMonitor::add(const sp<const InternalAlarm>& alarm) {
     std::lock_guard<std::mutex> lock(mLock);
     if (alarm == nullptr) {
         ALOGW("Asked to add a null alarm.");
@@ -71,7 +71,7 @@ void AlarmMonitor::add(sp<const InternalAlarm> alarm) {
     }
 }
 
-void AlarmMonitor::remove(sp<const InternalAlarm> alarm) {
+void AlarmMonitor::remove(const sp<const InternalAlarm>& alarm) {
     std::lock_guard<std::mutex> lock(mLock);
     if (alarm == nullptr) {
         ALOGW("Asked to remove a null alarm.");

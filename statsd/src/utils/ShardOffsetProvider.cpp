@@ -20,7 +20,7 @@ namespace android {
 namespace os {
 namespace statsd {
 
-ShardOffsetProvider::ShardOffsetProvider(const int shardOffset) : mShardOffset(shardOffset) {
+ShardOffsetProvider::ShardOffsetProvider(const uint32_t shardOffset) : mShardOffset(shardOffset) {
 }
 
 ShardOffsetProvider& ShardOffsetProvider::getInstance() {

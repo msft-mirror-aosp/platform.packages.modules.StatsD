@@ -15,6 +15,9 @@
       "name" : "LibStatsPullTests"
     },
     {
+      "name" : "StatsdTestUtilsTest"
+    },
+    {
       "name" : "libkll_test"
     },
     {
@@ -27,12 +30,15 @@
       "name" : "statsd_test"
     }
   ],
-  "hwasan-postsubmit" : [
+  "hwasan-presubmit" : [
     {
       "name" : "FrameworkStatsdTest"
     },
     {
       "name" : "FrameworkStatsdHostTest"
+    },
+    {
+      "name" : "StatsdTestUtilsTest"
     },
     {
       "name" : "LibStatsPullTests"

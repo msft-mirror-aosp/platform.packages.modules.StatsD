@@ -17,10 +17,13 @@
 #define STATSD_DEBUG false  // STOPSHIP if true
 #include "Log.h"
 
+#include <android/binder_ibinder.h>
+#include <android/binder_ibinder_platform.h>
 #include <android/binder_interface_utils.h>
 #include <android/binder_manager.h>
 #include <android/binder_process.h>
 #include <stdio.h>
+#include <sys/random.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -64,6 +67,18 @@ void registerSignalHandlers()
     sigaction(SIGTERM, &sa, nullptr);
 }
 
+void initSeedRandom() {
+    unsigned int seed = 0;
+    // getrandom() reads bytes from urandom source into buf. If getrandom()
+    // is unable to read from urandom source, then it returns -1 and we set
+    // out seed to be time(nullptr) as a fallback.
+    if (TEMP_FAILURE_RETRY(
+                getrandom(static_cast<void*>(&seed), sizeof(unsigned int), GRND_NONBLOCK)) < 0) {
+        seed = time(nullptr);
+    }
+    srand(seed);
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     // Set up the looper
     sp<Looper> looper(Looper::prepare(0 /* opts */));
@@ -72,20 +87,34 @@ int main(int /*argc*/, char** /*argv*/) {
     ABinderProcess_setThreadPoolMaxThreadCount(9);
     ABinderProcess_startThreadPool();
 
-    std::shared_ptr<LogEventQueue> eventQueue =
-            std::make_shared<LogEventQueue>(4000 /*buffer limit. Buffer is NOT pre-allocated*/);
-
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags(
-            {OPTIMIZATION_ATOM_MATCHER_MAP_FLAG, LIMIT_PULL_FLAG});
+    FlagProvider::getInstance().initBootFlags({STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
+
+    std::shared_ptr<LogEventQueue> eventQueue =
+            std::make_shared<LogEventQueue>(50000); /*buffer limit. Buffer is NOT pre-allocated*/
 
     sp<UidMap> uidMap = UidMap::getInstance();
 
+    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
+
+    const int initEventDelay = FlagProvider::getInstance().getBootFlagBool(
+                                       STATSD_INIT_COMPLETED_NO_DELAY_FLAG, FLAG_FALSE)
+                                       ? 0
+                                       : StatsService::kStatsdInitDelaySecs;
+    initSeedRandom();
     // Create the service
-    gStatsService = SharedRefBase::make<StatsService>(uidMap, eventQueue);
+    gStatsService =
+            SharedRefBase::make<StatsService>(uidMap, eventQueue, logEventFilter, initEventDelay);
+    auto binder = gStatsService->asBinder();
+
+    // We want to be able to ask for the selinux context of callers:
+    if (__builtin_available(android __ANDROID_API_U__, *)) {
+        AIBinder_setRequestingSid(binder.get(), true);
+    }
+
     // TODO(b/149582373): Set DUMP_FLAG_PROTO once libbinder_ndk supports
     // setting dumpsys priorities.
-    binder_status_t status = AServiceManager_addService(gStatsService->asBinder().get(), "stats");
+    binder_status_t status = AServiceManager_addService(binder.get(), "stats");
     if (status != STATUS_OK) {
         ALOGE("Failed to add service as AIDL service");
         return -1;
@@ -95,7 +124,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     gStatsService->Startup();
 
-    gSocketListener = new StatsSocketListener(eventQueue);
+    gSocketListener = new StatsSocketListener(eventQueue, logEventFilter);
 
     ALOGI("Statsd starts to listen to socket.");
     // Backlog and /proc/sys/net/unix/max_dgram_qlen set to large value
@@ -115,7 +144,11 @@ int main(int /*argc*/, char** /*argv*/) {
             }
             gSocketListener->stopListener();
             gStatsService->Terminate();
-            exit(1);
+            // return the signal handler to its default disposition, then raise the signal again
+            signal(SIGTERM, SIG_DFL);
+            // this is a sync call which leads to immediate process termination and
+            // no destructors are called, semantically similar to call exit(1) here
+            raise(SIGTERM);
         }
     }).detach();
 

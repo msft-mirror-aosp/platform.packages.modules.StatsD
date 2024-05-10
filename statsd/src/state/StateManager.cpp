@@ -43,8 +43,9 @@ void StateManager::clear() {
 void StateManager::onLogEvent(const LogEvent& event) {
     // Only process state events from uids in AID_* and packages that are whitelisted in
     // mAllowedPkg.
-    // Whitelisted AIDs are AID_ROOT and all AIDs in [1000, 2000)
-    if (event.GetUid() == AID_ROOT || (event.GetUid() >= 1000 && event.GetUid() < 2000) ||
+    // Allowlisted AIDs are AID_ROOT and all AIDs in [1000, 2000) which is [AID_SYSTEM, AID_SHELL)
+    if (event.GetUid() == AID_ROOT ||
+        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL) ||
         mAllowedLogSources.find(event.GetUid()) != mAllowedLogSources.end()) {
         if (mStateTrackers.find(event.GetTagId()) != mStateTrackers.end()) {
             mStateTrackers[event.GetTagId()]->onLogEvent(event);
@@ -52,7 +53,7 @@ void StateManager::onLogEvent(const LogEvent& event) {
     }
 }
 
-void StateManager::registerListener(const int32_t atomId, wp<StateListener> listener) {
+void StateManager::registerListener(const int32_t atomId, const wp<StateListener>& listener) {
     // Check if state tracker already exists.
     if (mStateTrackers.find(atomId) == mStateTrackers.end()) {
         mStateTrackers[atomId] = new StateTracker(atomId);
@@ -60,7 +61,7 @@ void StateManager::registerListener(const int32_t atomId, wp<StateListener> list
     mStateTrackers[atomId]->registerListener(listener);
 }
 
-void StateManager::unregisterListener(const int32_t atomId, wp<StateListener> listener) {
+void StateManager::unregisterListener(const int32_t atomId, const wp<StateListener>& listener) {
     std::unique_lock<std::mutex> lock(mMutex);
 
     // Hold the sp<> until the lock is released so that ~StateTracker() is
@@ -105,6 +106,12 @@ void StateManager::updateLogSources(const sp<UidMap>& uidMap) {
 void StateManager::notifyAppChanged(const string& apk, const sp<UidMap>& uidMap) {
     if (mAllowedPkg.find(apk) != mAllowedPkg.end()) {
         updateLogSources(uidMap);
+    }
+}
+
+void StateManager::addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const {
+    for (const auto& stateTracker : mStateTrackers) {
+        allIds.insert(stateTracker.first);
     }
 }
 

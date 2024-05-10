@@ -32,7 +32,6 @@
 #include "../statscompanion_util.h"
 #include "StatsCallbackPuller.h"
 #include "TrainInfoPuller.h"
-#include "flags/FlagProvider.h"
 #include "statslog_statsd.h"
 
 using std::shared_ptr;
@@ -48,20 +47,21 @@ const int64_t NO_ALARM_UPDATE = INT64_MAX;
 StatsPullerManager::StatsPullerManager()
     : kAllPullAtomInfo({
               // TrainInfo.
-              {{.atomTag = util::TRAIN_INFO, .uid = AID_STATSD}, new TrainInfoPuller()},
+              {{.uid = AID_STATSD, .atomTag = util::TRAIN_INFO}, new TrainInfoPuller()},
       }),
-      mNextPullTimeNs(NO_ALARM_UPDATE),
-      mLimitPull(FlagProvider::getInstance().getBootFlagBool(LIMIT_PULL_FLAG, FLAG_FALSE)) {
+      mNextPullTimeNs(NO_ALARM_UPDATE) {
 }
 
 bool StatsPullerManager::Pull(int tagId, const ConfigKey& configKey, const int64_t eventTimeNs,
                               vector<shared_ptr<LogEvent>>* data) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> _l(mLock);
     return PullLocked(tagId, configKey, eventTimeNs, data);
 }
 
 bool StatsPullerManager::Pull(int tagId, const vector<int32_t>& uids, const int64_t eventTimeNs,
                               vector<std::shared_ptr<LogEvent>>* data) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> _l(mLock);
     return PullLocked(tagId, uids, eventTimeNs, data);
 }
@@ -91,7 +91,7 @@ bool StatsPullerManager::PullLocked(int tagId, const vector<int32_t>& uids,
                                     const int64_t eventTimeNs, vector<shared_ptr<LogEvent>>* data) {
     VLOG("Initiating pulling %d", tagId);
     for (int32_t uid : uids) {
-        PullerKey key = {.atomTag = tagId, .uid = uid};
+        PullerKey key = {.uid = uid, .atomTag = tagId};
         auto pullerIt = kAllPullAtomInfo.find(key);
         if (pullerIt != kAllPullAtomInfo.end()) {
             PullErrorCode status = pullerIt->second->Pull(eventTimeNs, data);
@@ -137,7 +137,7 @@ void StatsPullerManager::updateAlarmLocked() {
 }
 
 void StatsPullerManager::SetStatsCompanionService(
-        shared_ptr<IStatsCompanionService> statsCompanionService) {
+        const shared_ptr<IStatsCompanionService>& statsCompanionService) {
     std::lock_guard<std::mutex> _l(mLock);
     shared_ptr<IStatsCompanionService> tmpForLock = mStatsCompanionService;
     mStatsCompanionService = statsCompanionService;
@@ -150,8 +150,8 @@ void StatsPullerManager::SetStatsCompanionService(
 }
 
 void StatsPullerManager::RegisterReceiver(int tagId, const ConfigKey& configKey,
-                                          wp<PullDataReceiver> receiver, int64_t nextPullTimeNs,
-                                          int64_t intervalNs) {
+                                          const wp<PullDataReceiver>& receiver,
+                                          int64_t nextPullTimeNs, int64_t intervalNs) {
     std::lock_guard<std::mutex> _l(mLock);
     auto& receivers = mReceivers[{.atomTag = tagId, .configKey = configKey}];
     for (auto it = receivers.begin(); it != receivers.end(); it++) {
@@ -186,7 +186,7 @@ void StatsPullerManager::RegisterReceiver(int tagId, const ConfigKey& configKey,
 }
 
 void StatsPullerManager::UnRegisterReceiver(int tagId, const ConfigKey& configKey,
-                                            wp<PullDataReceiver> receiver) {
+                                            const wp<PullDataReceiver>& receiver) {
     std::lock_guard<std::mutex> _l(mLock);
     auto receiversIt = mReceivers.find({.atomTag = tagId, .configKey = configKey});
     if (receiversIt == mReceivers.end()) {
@@ -204,13 +204,13 @@ void StatsPullerManager::UnRegisterReceiver(int tagId, const ConfigKey& configKe
 }
 
 void StatsPullerManager::RegisterPullUidProvider(const ConfigKey& configKey,
-                                                 wp<PullUidProvider> provider) {
+                                                 const wp<PullUidProvider>& provider) {
     std::lock_guard<std::mutex> _l(mLock);
     mPullUidProviders[configKey] = provider;
 }
 
 void StatsPullerManager::UnregisterPullUidProvider(const ConfigKey& configKey,
-                                                   wp<PullUidProvider> provider) {
+                                                   const wp<PullUidProvider>& provider) {
     std::lock_guard<std::mutex> _l(mLock);
     const auto& it = mPullUidProviders.find(configKey);
     if (it != mPullUidProviders.end() && it->second == provider) {
@@ -219,6 +219,7 @@ void StatsPullerManager::UnregisterPullUidProvider(const ConfigKey& configKey,
 }
 
 void StatsPullerManager::OnAlarmFired(int64_t elapsedTimeNs) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> _l(mLock);
     int64_t wallClockNs = getWallClockNs();
 
@@ -229,33 +230,22 @@ void StatsPullerManager::OnAlarmFired(int64_t elapsedTimeNs) {
         vector<ReceiverInfo*> receivers;
         if (pair.second.size() != 0) {
             for (ReceiverInfo& receiverInfo : pair.second) {
-                // If mLimitPull is true, check if metric needs to pull data (pullNecessary).
                 // If pullNecessary and enough time has passed for the next bucket, then add
                 // receiver to the list that will pull on this alarm.
                 // If pullNecessary is false, check if next pull time needs to be updated.
-                if (mLimitPull) {
-                    sp<PullDataReceiver> receiverPtr = receiverInfo.receiver.promote();
-                    const bool pullNecessary =
-                            receiverPtr != nullptr && receiverPtr->isPullNeeded();
-                    if (receiverInfo.nextPullTimeNs <= elapsedTimeNs && pullNecessary) {
-                        receivers.push_back(&receiverInfo);
-                    } else {
-                        if (receiverInfo.nextPullTimeNs <= elapsedTimeNs) {
-                            receiverPtr->onDataPulled({}, PullResult::PULL_NOT_NEEDED,
-                                                      elapsedTimeNs);
-                            int numBucketsAhead = (elapsedTimeNs - receiverInfo.nextPullTimeNs) /
-                                                  receiverInfo.intervalNs;
-                            receiverInfo.nextPullTimeNs +=
-                                    (numBucketsAhead + 1) * receiverInfo.intervalNs;
-                        }
-                        minNextPullTimeNs = min(receiverInfo.nextPullTimeNs, minNextPullTimeNs);
-                    }
+                sp<PullDataReceiver> receiverPtr = receiverInfo.receiver.promote();
+                if (receiverInfo.nextPullTimeNs <= elapsedTimeNs && receiverPtr != nullptr &&
+                    receiverPtr->isPullNeeded()) {
+                    receivers.push_back(&receiverInfo);
                 } else {
                     if (receiverInfo.nextPullTimeNs <= elapsedTimeNs) {
-                        receivers.push_back(&receiverInfo);
-                    } else {
-                        minNextPullTimeNs = min(receiverInfo.nextPullTimeNs, minNextPullTimeNs);
+                        receiverPtr->onDataPulled({}, PullResult::PULL_NOT_NEEDED, elapsedTimeNs);
+                        int numBucketsAhead = (elapsedTimeNs - receiverInfo.nextPullTimeNs) /
+                                              receiverInfo.intervalNs;
+                        receiverInfo.nextPullTimeNs +=
+                                (numBucketsAhead + 1) * receiverInfo.intervalNs;
                     }
+                    minNextPullTimeNs = min(receiverInfo.nextPullTimeNs, minNextPullTimeNs);
                 }
             }
             if (receivers.size() > 0) {
@@ -307,6 +297,7 @@ void StatsPullerManager::OnAlarmFired(int64_t elapsedTimeNs) {
 }
 
 int StatsPullerManager::ForceClearPullerCache() {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> _l(mLock);
     int totalCleared = 0;
     for (const auto& pulledAtom : kAllPullAtomInfo) {
@@ -316,6 +307,7 @@ int StatsPullerManager::ForceClearPullerCache() {
 }
 
 int StatsPullerManager::ClearPullerCacheIfNecessary(int64_t timestampNs) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> _l(mLock);
     int totalCleared = 0;
     for (const auto& pulledAtom : kAllPullAtomInfo) {
@@ -328,6 +320,7 @@ void StatsPullerManager::RegisterPullAtomCallback(const int uid, const int32_t a
                                                   const int64_t coolDownNs, const int64_t timeoutNs,
                                                   const vector<int32_t>& additiveFields,
                                                   const shared_ptr<IPullAtomCallback>& callback) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> _l(mLock);
     VLOG("RegisterPullerCallback: adding puller for tag %d", atomTag);
 
@@ -341,7 +334,7 @@ void StatsPullerManager::RegisterPullAtomCallback(const int uid, const int32_t a
 
     sp<StatsCallbackPuller> puller = new StatsCallbackPuller(atomTag, callback, actualCoolDownNs,
                                                              actualTimeoutNs, additiveFields);
-    PullerKey key = {.atomTag = atomTag, .uid = uid};
+    PullerKey key = {.uid = uid, .atomTag = atomTag};
     auto it = kAllPullAtomInfo.find(key);
     if (it != kAllPullAtomInfo.end()) {
         StatsdStats::getInstance().notePullerCallbackRegistrationChanged(atomTag,
@@ -352,8 +345,9 @@ void StatsPullerManager::RegisterPullAtomCallback(const int uid, const int32_t a
 }
 
 void StatsPullerManager::UnregisterPullAtomCallback(const int uid, const int32_t atomTag) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> _l(mLock);
-    PullerKey key = {.atomTag = atomTag, .uid = uid};
+    PullerKey key = {.uid = uid, .atomTag = atomTag};
     if (kAllPullAtomInfo.find(key) != kAllPullAtomInfo.end()) {
         StatsdStats::getInstance().notePullerCallbackRegistrationChanged(atomTag,
                                                                          /*registered=*/false);

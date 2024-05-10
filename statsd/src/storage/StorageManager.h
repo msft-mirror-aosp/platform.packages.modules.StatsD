@@ -42,7 +42,7 @@ const uint32_t TRAIN_INFO_FILE_MAGIC = 0xfb7447bf;
 class StorageManager : public virtual RefBase {
 public:
     struct FileInfo {
-        FileInfo(std::string name, bool isHistory, int fileSize, long fileAge)
+        FileInfo(const std::string& name, bool isHistory, int fileSize, long fileAge)
             : mFileName(name),
               mIsHistory(isHistory),
               mFileSizeBytes(fileSize),
@@ -56,6 +56,9 @@ public:
 
     /**
      * Writes a given byte array as a file to the specified file path.
+     *
+     * A new file is created if the file does not already exist.
+     * If the file already exists, it is cleared and then overwritten.
      */
     static void writeFile(const char* file, const void* buffer, int numBytes);
 
@@ -161,6 +164,10 @@ public:
     static string getDataHistoryFileName(long wallClockSec, int uid, int64_t id);
 
     static void sortFiles(vector<FileInfo>* fileNames);
+
+    static void enforceDbGuardrails(const char* path, int64_t wallClockSec, int64_t maxBytes);
+
+    static bool hasFile(const char* file);
 
 private:
     /**

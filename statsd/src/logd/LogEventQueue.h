@@ -16,11 +16,13 @@
 
 #pragma once
 
-#include "LogEvent.h"
+#include <gtest/gtest_prod.h>
 
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+
+#include "LogEvent.h"
 
 namespace android {
 namespace os {
@@ -38,18 +40,32 @@ public:
      */
     std::unique_ptr<LogEvent> waitPop();
 
+    struct Result {
+        bool success = false;
+        int64_t oldestTimestampNs = 0;
+        int32_t size = 0;
+    };
+
     /**
      * Puts a LogEvent ptr to the end of the queue.
      * Returns false on failure when the queue is full, and output the oldest event timestamp
-     * in the queue.
+     * in the queue. Returns true on success and new queue size.
      */
-    bool push(std::unique_ptr<LogEvent> event, int64_t* oldestTimestampNs);
+    Result push(std::unique_ptr<LogEvent> event);
 
 private:
     const size_t mQueueLimit;
     std::condition_variable mCondition;
     std::mutex mMutex;
     std::queue<std::unique_ptr<LogEvent>> mQueue;
+
+    friend class SocketParseMessageTest;
+
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessage);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageEmptySetExplicitSet);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterCompleteSet);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterPartialSet);
+    FRIEND_TEST(SocketParseMessageTest, TestProcessMessageFilterToggle);
 };
 
 }  // namespace statsd

@@ -37,7 +37,7 @@ optional<InvalidConfigReason> determineMatcherUpdateStatus(
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
         const vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
         const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-        vector<UpdateStatus>& matchersToUpdate, vector<bool>& cycleTracker) {
+        vector<UpdateStatus>& matchersToUpdate, vector<uint8_t>& cycleTracker) {
     // Have already examined this matcher.
     if (matchersToUpdate[matcherIdx] != UPDATE_UNKNOWN) {
         return nullopt;
@@ -145,7 +145,7 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
 
     // For combination matchers, we need to determine if any children need to be updated.
     vector<UpdateStatus> matchersToUpdate(atomMatcherCount, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(atomMatcherCount, false);
+    vector<uint8_t> cycleTracker(atomMatcherCount, false);
     for (int i = 0; i < atomMatcherCount; i++) {
         invalidConfigReason = determineMatcherUpdateStatus(
                 config, i, oldAtomMatchingTrackerMap, oldAtomMatchingTrackers,
@@ -171,7 +171,7 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
                 const sp<AtomMatchingTracker>& tracker =
                         oldAtomMatchingTrackers[oldAtomMatchingTrackerIt->second];
                 invalidConfigReason =
-                        tracker->onConfigUpdated(matcherProtos[i], i, newAtomMatchingTrackerMap);
+                        tracker->onConfigUpdated(matcherProtos[i], newAtomMatchingTrackerMap);
                 if (invalidConfigReason.has_value()) {
                     ALOGW("Config update failed for matcher %lld", (long long)id);
                     return invalidConfigReason;
@@ -184,7 +184,7 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
                 [[fallthrough]];  // Intentionally fallthrough to create the new matcher.
             case UPDATE_NEW: {
                 sp<AtomMatchingTracker> tracker =
-                        createAtomMatchingTracker(matcher, i, uidMap, invalidConfigReason);
+                        createAtomMatchingTracker(matcher, uidMap, invalidConfigReason);
                 if (tracker == nullptr) {
                     return invalidConfigReason;
                 }
@@ -203,8 +203,9 @@ optional<InvalidConfigReason> updateAtomMatchingTrackers(
     std::fill(cycleTracker.begin(), cycleTracker.end(), false);
     for (size_t matcherIndex = 0; matcherIndex < newAtomMatchingTrackers.size(); matcherIndex++) {
         auto& matcher = newAtomMatchingTrackers[matcherIndex];
-        invalidConfigReason = matcher->init(matcherProtos, newAtomMatchingTrackers,
-                                            newAtomMatchingTrackerMap, cycleTracker);
+        const auto [invalidConfigReason, _] =
+                matcher->init(matcherIndex, matcherProtos, newAtomMatchingTrackers,
+                              newAtomMatchingTrackerMap, cycleTracker);
         if (invalidConfigReason.has_value()) {
             return invalidConfigReason;
         }
@@ -238,7 +239,7 @@ optional<InvalidConfigReason> determineConditionUpdateStatus(
         const vector<sp<ConditionTracker>>& oldConditionTrackers,
         const unordered_map<int64_t, int>& newConditionTrackerMap,
         const set<int64_t>& replacedMatchers, vector<UpdateStatus>& conditionsToUpdate,
-        vector<bool>& cycleTracker) {
+        vector<uint8_t>& cycleTracker) {
     // Have already examined this condition.
     if (conditionsToUpdate[conditionIdx] != UPDATE_UNKNOWN) {
         return nullopt;
@@ -369,7 +370,7 @@ optional<InvalidConfigReason> updateConditions(
     }
 
     vector<UpdateStatus> conditionsToUpdate(conditionTrackerCount, UPDATE_UNKNOWN);
-    vector<bool> cycleTracker(conditionTrackerCount, false);
+    vector<uint8_t> cycleTracker(conditionTrackerCount, false);
     for (int i = 0; i < conditionTrackerCount; i++) {
         invalidConfigReason = determineConditionUpdateStatus(
                 config, i, oldConditionTrackerMap, oldConditionTrackers, newConditionTrackerMap,
@@ -519,7 +520,7 @@ optional<InvalidConfigReason> determineMetricUpdateStatus(
     if (invalidConfigReason.has_value()) {
         return invalidConfigReason;
     }
-    const sp<MetricProducer> oldMetricProducer = oldMetricProducers[oldMetricProducerIt->second];
+    const sp<MetricProducer>& oldMetricProducer = oldMetricProducers[oldMetricProducerIt->second];
     if (oldMetricProducer->getMetricType() != metricType ||
         oldMetricProducer->getProtoHash() != metricHash) {
         updateStatus = UPDATE_REPLACE;
@@ -729,6 +730,7 @@ optional<InvalidConfigReason> updateMetrics(
         const unordered_map<int64_t, unordered_map<int, int64_t>>& allStateGroupMaps,
         const set<int64_t>& replacedStates, const unordered_map<int64_t, int>& oldMetricProducerMap,
         const vector<sp<MetricProducer>>& oldMetricProducers,
+        const wp<ConfigMetadataProvider> configMetadataProvider,
         unordered_map<int64_t, int>& newMetricProducerMap,
         vector<sp<MetricProducer>>& newMetricProducers,
         unordered_map<int, vector<int>>& conditionToMetricMap,
@@ -743,6 +745,12 @@ optional<InvalidConfigReason> updateMetrics(
                                 config.value_metric_size() + config.kll_metric_size();
     newMetricProducers.reserve(allMetricsCount);
     optional<InvalidConfigReason> invalidConfigReason;
+
+    if (config.has_restricted_metrics_delegate_package_name() &&
+        allMetricsCount != config.event_metric_size()) {
+        ALOGE("Restricted metrics only support event metric");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED);
+    }
 
     // Construct map from metric id to metric activation index. The map will be used to determine
     // the metric activation corresponding to a metric.
@@ -795,7 +803,7 @@ optional<InvalidConfigReason> updateMetrics(
                         allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
                         conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        invalidConfigReason, configMetadataProvider);
                 break;
             }
             default: {
@@ -837,7 +845,7 @@ optional<InvalidConfigReason> updateMetrics(
                         allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
                         conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        invalidConfigReason, configMetadataProvider);
                 break;
             }
             default: {
@@ -878,7 +886,7 @@ optional<InvalidConfigReason> updateMetrics(
                         initialConditionCache, wizard, metricToActivationMap, trackerToMetricMap,
                         conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        invalidConfigReason, configMetadataProvider);
                 break;
             }
             default: {
@@ -921,7 +929,7 @@ optional<InvalidConfigReason> updateMetrics(
                         stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
                         trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        invalidConfigReason, configMetadataProvider);
                 break;
             }
             default: {
@@ -963,7 +971,7 @@ optional<InvalidConfigReason> updateMetrics(
                         conditionTrackerMap, initialConditionCache, wizard, matcherWizard,
                         metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                         activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                        metricsWithActivation, invalidConfigReason);
+                        metricsWithActivation, invalidConfigReason, configMetadataProvider);
                 break;
             }
             default: {
@@ -1007,7 +1015,7 @@ optional<InvalidConfigReason> updateMetrics(
                         stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
                         trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        invalidConfigReason, configMetadataProvider);
                 break;
             }
             default: {
@@ -1056,6 +1064,15 @@ optional<InvalidConfigReason> updateMetrics(
     for (size_t i = 0; i < newMetricProducers.size(); i++) {
         if (metricsToUpdate[i] == UPDATE_REPLACE || metricsToUpdate[i] == UPDATE_NEW) {
             newMetricProducers[i]->prepareFirstBucket();
+        }
+    }
+
+    for (const sp<MetricProducer>& oldMetricProducer : oldMetricProducers) {
+        const auto& it = newMetricProducerMap.find(oldMetricProducer->getMetricId());
+        // Consider metric removed if it's not present in newMetricProducerMap or it's replaced.
+        if (it == newMetricProducerMap.end() ||
+            replacedMetrics.find(oldMetricProducer->getMetricId()) != replacedMetrics.end()) {
+            oldMetricProducer->onMetricRemove();
         }
     }
     return nullopt;
@@ -1191,6 +1208,7 @@ optional<InvalidConfigReason> updateStatsdConfig(
         const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
         const unordered_map<int64_t, int>& oldAlertTrackerMap,
         const map<int64_t, uint64_t>& oldStateProtoHashes,
+        const wp<ConfigMetadataProvider> configMetadataProvider,
         std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
         vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
         unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
@@ -1252,9 +1270,10 @@ optional<InvalidConfigReason> updateStatsdConfig(
             newAtomMatchingTrackerMap, replacedMatchers, newAtomMatchingTrackers,
             newConditionTrackerMap, replacedConditions, newConditionTrackers, conditionCache,
             stateAtomIdMap, allStateGroupMaps, replacedStates, oldMetricProducerMap,
-            oldMetricProducers, newMetricProducerMap, newMetricProducers, conditionToMetricMap,
-            trackerToMetricMap, noReportMetricIds, activationTrackerToMetricMap,
-            deactivationTrackerToMetricMap, metricsWithActivation, replacedMetrics);
+            oldMetricProducers, configMetadataProvider, newMetricProducerMap, newMetricProducers,
+            conditionToMetricMap, trackerToMetricMap, noReportMetricIds,
+            activationTrackerToMetricMap, deactivationTrackerToMetricMap, metricsWithActivation,
+            replacedMetrics);
     if (invalidConfigReason.has_value()) {
         ALOGE("updateMetrics failed");
         return invalidConfigReason;

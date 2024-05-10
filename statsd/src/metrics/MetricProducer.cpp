@@ -34,7 +34,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-
 // for ActiveMetric
 const int FIELD_ID_ACTIVE_METRIC_ID = 1;
 const int FIELD_ID_ACTIVE_METRIC_ACTIVATION = 2;
@@ -45,15 +44,16 @@ const int FIELD_ID_ACTIVE_EVENT_ACTIVATION_REMAINING_TTL_NANOS = 2;
 const int FIELD_ID_ACTIVE_EVENT_ACTIVATION_STATE = 3;
 
 MetricProducer::MetricProducer(
-        const int64_t& metricId, const ConfigKey& key, const int64_t timeBaseNs,
-        const int conditionIndex, const vector<ConditionState>& initialConditionCache,
-        const sp<ConditionWizard>& wizard, const uint64_t protoHash,
+        int64_t metricId, const ConfigKey& key, const int64_t timeBaseNs, const int conditionIndex,
+        const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
+        const uint64_t protoHash,
         const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap,
         const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                 eventDeactivationMap,
         const vector<int>& slicedStateAtoms,
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap,
-        const optional<bool> splitBucketForAppUpgrade)
+        const optional<bool> splitBucketForAppUpgrade,
+        const wp<ConfigMetadataProvider> configMetadataProvider)
     : mMetricId(metricId),
       mProtoHash(protoHash),
       mConfigKey(key),
@@ -78,7 +78,8 @@ MetricProducer::MetricProducer(
       mSplitBucketForAppUpgrade(splitBucketForAppUpgrade),
       mHasHitGuardrail(false),
       mSampledWhatFields({}),
-      mShardCount(0) {
+      mShardCount(0),
+      mConfigMetadataProvider(configMetadataProvider) {
 }
 
 optional<InvalidConfigReason> MetricProducer::onConfigUpdatedLocked(
@@ -185,6 +186,11 @@ void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const Lo
                                     statePrimaryKeys);
 }
 
+void MetricProducer::onMatchedLogEventLostLocked(int32_t /*atomId*/, DataCorruptedReason reason) {
+    mDataCorruptedDueToSocketLoss |= reason == DATA_CORRUPTED_SOCKET_LOSS;
+    mDataCorruptedDueToQueueOverflow |= reason == DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW;
+}
+
 bool MetricProducer::evaluateActiveStateLocked(int64_t elapsedTimestampNs) {
     bool isActive = mEventActivationMap.empty();
     for (auto& it : mEventActivationMap) {
@@ -243,7 +249,7 @@ void MetricProducer::cancelEventActivationLocked(int deactivationTrackerIndex) {
     if (it == mEventDeactivationMap.end()) {
         return;
     }
-    for (auto activationToCancelIt : it->second)  {
+    for (auto& activationToCancelIt : it->second) {
         activationToCancelIt->state = ActivationState::kNotActive;
     }
 }
@@ -319,7 +325,7 @@ void MetricProducer::writeActiveMetricToProtoOutputStream(
     }
 }
 
-void MetricProducer::queryStateValue(const int32_t atomId, const HashableDimensionKey& queryKey,
+void MetricProducer::queryStateValue(int32_t atomId, const HashableDimensionKey& queryKey,
                                      FieldValue* value) {
     if (!StateManager::getInstance().getStateValue(atomId, queryKey, value)) {
         value->mValue = Value(StateTracker::kStateUnknown);
@@ -329,7 +335,7 @@ void MetricProducer::queryStateValue(const int32_t atomId, const HashableDimensi
     }
 }
 
-void MetricProducer::mapStateValue(const int32_t atomId, FieldValue* value) {
+void MetricProducer::mapStateValue(int32_t atomId, FieldValue* value) {
     // check if there is a state map for this atom
     auto atomIt = mStateGroupMap.find(atomId);
     if (atomIt == mStateGroupMap.end()) {
@@ -383,6 +389,69 @@ bool MetricProducer::passesSampleCheckLocked(const vector<FieldValue>& values) c
     }
     return shouldKeepSample(sampleFieldValue, ShardOffsetProvider::getInstance().getShardOffset(),
                             mShardCount);
+}
+
+sp<ConfigMetadataProvider> MetricProducer::getConfigMetadataProvider() const {
+    sp<ConfigMetadataProvider> provider = mConfigMetadataProvider.promote();
+    if (provider == nullptr) {
+        ALOGE("Could not promote ConfigMetadataProvider");
+        StatsdStats::getInstance().noteConfigMetadataProviderPromotionFailed(mConfigKey);
+    }
+    return provider;
+}
+
+size_t MetricProducer::computeBucketSizeLocked(const bool isFullBucket,
+                                               const MetricDimensionKey& dimKey,
+                                               const bool isFirstBucket) const {
+    size_t bucketSize = 0;
+
+    // Bucket timestamps or bucket number
+    bucketSize += isFullBucket ? sizeof(int32_t) : 2 * sizeof(int64_t);
+
+    // Each dimension / state key can have multiple buckets. Add the size only for the first bucket.
+    if (isFirstBucket) {
+        bucketSize += dimKey.getSize(mShouldUseNestedDimensions);
+    }
+
+    return bucketSize;
+}
+
+size_t MetricProducer::computeOverheadSizeLocked(const bool hasPastBuckets,
+                                                 const bool dimensionGuardrailHit) const {
+    size_t overheadSize = 0;
+
+    // MetricId + isActive
+    overheadSize += sizeof(int64_t) + sizeof(bool);
+
+    if (hasPastBuckets) {
+        if (dimensionGuardrailHit) {
+            overheadSize += sizeof(int32_t);
+        }
+
+        // estimated_memory_bytes
+        overheadSize += sizeof(int32_t);
+        // mTimeBase and mBucketSizeNs
+        overheadSize += 2 * sizeof(int64_t);
+
+        if (!mShouldUseNestedDimensions) {
+            // Assume dimensions data adds an additional atomTag + # of dimension fields
+            overheadSize += sizeof(int32_t);
+            overheadSize += sizeof(int32_t) * mDimensionsInWhat.size();
+        }
+    }
+    return overheadSize;
+}
+
+size_t MetricProducer::computeSkippedBucketSizeLocked(const SkippedBucket& skippedBucket) const {
+    size_t skippedBucketSize = 0;
+
+    // Bucket Start, Bucket End
+    skippedBucketSize += 2 * sizeof(int64_t);
+
+    // DropType, Drop Time
+    skippedBucketSize += (sizeof(int32_t) + sizeof(int64_t)) * skippedBucket.dropEvents.size();
+
+    return skippedBucketSize;
 }
 
 }  // namespace statsd

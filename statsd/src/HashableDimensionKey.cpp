@@ -337,16 +337,8 @@ bool HashableDimensionKey::operator!=(const HashableDimensionKey& that) const {
 }
 
 bool HashableDimensionKey::operator==(const HashableDimensionKey& that) const {
-    if (mValues.size() != that.getValues().size()) {
-        return false;
-    }
-    size_t count = mValues.size();
-    for (size_t i = 0; i < count; i++) {
-        if (mValues[i] != (that.getValues())[i]) {
-            return false;
-        }
-    }
-    return true;
+    // according to http://go/cppref/cpp/container/vector/operator_cmp
+    return mValues == that.mValues;
 };
 
 bool HashableDimensionKey::operator<(const HashableDimensionKey& that) const {
@@ -404,6 +396,21 @@ bool MetricDimensionKey::operator<(const MetricDimensionKey& that) const {
     }
 
     return mStateValuesKey < that.getStateValuesKey();
+}
+
+size_t MetricDimensionKey::getSize(const bool usesNestedDimensions) const {
+    size_t dimensionKeySize = 0;
+    // Dimension/State values
+    if (usesNestedDimensions) {
+        // Assume nested dimension adds an additional atomTag + # of dimension fields
+        dimensionKeySize += sizeof(int32_t);
+        dimensionKeySize += sizeof(int32_t) * getDimensionKeyInWhat().getValues().size();
+    }
+    dimensionKeySize += getFieldValuesSizeV2(getDimensionKeyInWhat().getValues());
+    // Each state value has a atomId and group/value
+    dimensionKeySize += sizeof(int32_t) * getStateValuesKey().getValues().size();
+    dimensionKeySize += getFieldValuesSizeV2(getStateValuesKey().getValues());
+    return dimensionKeySize;
 }
 
 bool AtomDimensionKey::operator==(const AtomDimensionKey& that) const {

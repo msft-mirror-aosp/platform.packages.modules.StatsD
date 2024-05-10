@@ -135,6 +135,8 @@ public:
 
     bool operator<(const MetricDimensionKey& that) const;
 
+    size_t getSize(const bool usesNestedDimensions) const;
+
 private:
     HashableDimensionKey mDimensionKeyInWhat;
     HashableDimensionKey mStateValuesKey;
@@ -142,7 +144,7 @@ private:
 
 class AtomDimensionKey {
 public:
-    explicit AtomDimensionKey(const int32_t atomTag, const HashableDimensionKey& atomFieldValues)
+    explicit AtomDimensionKey(int32_t atomTag, const HashableDimensionKey& atomFieldValues)
         : mAtomTag(atomTag), mAtomFieldValues(atomFieldValues){};
 
     AtomDimensionKey(){};
@@ -269,22 +271,16 @@ bool linked(const std::vector<Metric2State>& stateLinks, const int32_t stateAtom
 }  // namespace os
 }  // namespace android
 
-namespace std {
-
-using android::os::statsd::AtomDimensionKey;
-using android::os::statsd::HashableDimensionKey;
-using android::os::statsd::MetricDimensionKey;
-
 template <>
-struct hash<HashableDimensionKey> {
-    std::size_t operator()(const HashableDimensionKey& key) const {
+struct std::hash<android::os::statsd::HashableDimensionKey> {
+    std::size_t operator()(const android::os::statsd::HashableDimensionKey& key) const {
         return hashDimension(key);
     }
 };
 
 template <>
-struct hash<MetricDimensionKey> {
-    std::size_t operator()(const MetricDimensionKey& key) const {
+struct std::hash<android::os::statsd::MetricDimensionKey> {
+    std::size_t operator()(const android::os::statsd::MetricDimensionKey& key) const {
         android::hash_t hash = hashDimension(key.getDimensionKeyInWhat());
         hash = android::JenkinsHashMix(hash, hashDimension(key.getStateValuesKey()));
         return android::JenkinsHashWhiten(hash);
@@ -292,11 +288,10 @@ struct hash<MetricDimensionKey> {
 };
 
 template <>
-struct hash<AtomDimensionKey> {
-    std::size_t operator()(const AtomDimensionKey& key) const {
+struct std::hash<android::os::statsd::AtomDimensionKey> {
+    std::size_t operator()(const android::os::statsd::AtomDimensionKey& key) const {
         android::hash_t hash = hashDimension(key.getAtomFieldValues());
         hash = android::JenkinsHashMix(hash, key.getAtomTag());
         return android::JenkinsHashWhiten(hash);
     }
 };
-}  // namespace std

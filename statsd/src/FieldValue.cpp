@@ -60,6 +60,17 @@ bool Field::matches(const Matcher& matcher) const {
     return false;
 }
 
+std::vector<Matcher> dedupFieldMatchers(const std::vector<Matcher>& fieldMatchers) {
+    std::vector<Matcher> dedupedFieldMatchers;
+    for (size_t i = 0; i < fieldMatchers.size(); i++) {
+        if (std::find(dedupedFieldMatchers.begin(), dedupedFieldMatchers.end(), fieldMatchers[i]) ==
+            dedupedFieldMatchers.end()) {
+            dedupedFieldMatchers.push_back(fieldMatchers[i]);
+        }
+    }
+    return dedupedFieldMatchers;
+}
+
 void translateFieldMatcher(int tag, const FieldMatcher& matcher, int depth, int* pos, int* mask,
                            std::vector<Matcher>* output) {
     if (depth > kMaxLogDepth) {
@@ -348,28 +359,30 @@ Value Value::operator-(const Value& that) const {
 }
 
 Value& Value::operator=(const Value& that) {
-    type = that.type;
-    switch (type) {
-        case INT:
-            int_value = that.int_value;
-            break;
-        case LONG:
-            long_value = that.long_value;
-            break;
-        case FLOAT:
-            float_value = that.float_value;
-            break;
-        case DOUBLE:
-            double_value = that.double_value;
-            break;
-        case STRING:
-            str_value = that.str_value;
-            break;
-        case STORAGE:
-            storage_value = that.storage_value;
-            break;
-        default:
-            break;
+    if (this != &that) {
+        type = that.type;
+        switch (type) {
+            case INT:
+                int_value = that.int_value;
+                break;
+            case LONG:
+                long_value = that.long_value;
+                break;
+            case FLOAT:
+                float_value = that.float_value;
+                break;
+            case DOUBLE:
+                double_value = that.double_value;
+                break;
+            case STRING:
+                str_value = that.str_value;
+                break;
+            case STORAGE:
+                storage_value = that.storage_value;
+                break;
+            default:
+                break;
+        }
     }
     return *this;
 }
@@ -480,6 +493,7 @@ bool equalDimensions(const std::vector<Matcher>& dimension_a,
     return eq;
 }
 
+/* Is dimension_a a subset of dimension_b. */
 bool subsetDimensions(const std::vector<Matcher>& dimension_a,
                       const std::vector<Matcher>& dimension_b) {
     if (dimension_a.size() > dimension_b.size()) {
@@ -490,6 +504,18 @@ bool subsetDimensions(const std::vector<Matcher>& dimension_a,
         for (size_t j = 0; j < dimension_b.size(); ++j) {
             if (dimension_a[i] == dimension_b[j]) {
                 found = true;
+                break;
+            }
+
+            // Check equality of repeated fields with different positions.
+            // Only position FIRST and LAST are considered subsets of position ALL.
+            if (dimension_b[j].hasAllPositionMatcher() &&
+                (dimension_a[i].hasFirstPositionMatcher() ||
+                 dimension_a[i].hasLastPositionMatcher())) {
+                if (dimension_a[i].isEqualWithoutPositionBits(dimension_b[j])) {
+                    found = true;
+                    break;
+                }
             }
         }
         if (!found) {
@@ -540,6 +566,14 @@ size_t getSize(const std::vector<FieldValue>& fieldValues) {
     size_t totalSize = 0;
     for (const FieldValue& fieldValue : fieldValues) {
         totalSize += fieldValue.getSize();
+    }
+    return totalSize;
+}
+
+size_t getFieldValuesSizeV2(const std::vector<FieldValue>& fieldValues) {
+    size_t totalSize = 0;
+    for (const FieldValue& fieldValue : fieldValues) {
+        totalSize += fieldValue.getSizeV2();
     }
     return totalSize;
 }

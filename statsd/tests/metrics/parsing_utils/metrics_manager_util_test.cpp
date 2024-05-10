@@ -28,6 +28,7 @@
 #include "src/metrics/CountMetricProducer.h"
 #include "src/metrics/DurationMetricProducer.h"
 #include "src/metrics/GaugeMetricProducer.h"
+#include "src/metrics/KllMetricProducer.h"
 #include "src/metrics/MetricProducer.h"
 #include "src/metrics/NumericValueMetricProducer.h"
 #include "src/state/StateManager.h"
@@ -50,7 +51,8 @@ namespace os {
 namespace statsd {
 
 namespace {
-const ConfigKey kConfigKey(0, 12345);
+const int kConfigId = 12345;
+const ConfigKey kConfigKey(0, kConfigId);
 const long timeBaseSec = 1000;
 const long kAlertId = 3;
 
@@ -58,6 +60,7 @@ sp<UidMap> uidMap = new UidMap();
 sp<StatsPullerManager> pullerManager = new StatsPullerManager();
 sp<AlarmMonitor> anomalyAlarmMonitor;
 sp<AlarmMonitor> periodicAlarmMonitor;
+sp<ConfigMetadataProvider> configMetadataProvider;
 unordered_map<int, vector<int>> allTagIdsToMatchersMap;
 vector<sp<AtomMatchingTracker>> allAtomMatchingTrackers;
 unordered_map<int64_t, int> atomMatchingTrackerMap;
@@ -81,62 +84,12 @@ optional<InvalidConfigReason> initConfig(const StatsdConfig& config) {
     // initStatsdConfig returns nullopt if config is valid
     return initStatsdConfig(
             kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds);
-}
-
-StatsdConfig buildGoodConfig() {
-    StatsdConfig config;
-    config.set_id(12345);
-
-    AtomMatcher* eventMatcher = config.add_atom_matcher();
-    eventMatcher->set_id(StringToId("SCREEN_IS_ON"));
-
-    SimpleAtomMatcher* simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
-    simpleAtomMatcher->set_atom_id(SCREEN_STATE_ATOM_ID);
-    simpleAtomMatcher->add_field_value_matcher()->set_field(
-            1 /*SCREEN_STATE_CHANGE__DISPLAY_STATE*/);
-    simpleAtomMatcher->mutable_field_value_matcher(0)->set_eq_int(
-            2 /*SCREEN_STATE_CHANGE__DISPLAY_STATE__STATE_ON*/);
-
-    eventMatcher = config.add_atom_matcher();
-    eventMatcher->set_id(StringToId("SCREEN_IS_OFF"));
-
-    simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
-    simpleAtomMatcher->set_atom_id(SCREEN_STATE_ATOM_ID);
-    simpleAtomMatcher->add_field_value_matcher()->set_field(
-            1 /*SCREEN_STATE_CHANGE__DISPLAY_STATE*/);
-    simpleAtomMatcher->mutable_field_value_matcher(0)->set_eq_int(
-            1 /*SCREEN_STATE_CHANGE__DISPLAY_STATE__STATE_OFF*/);
-
-    eventMatcher = config.add_atom_matcher();
-    eventMatcher->set_id(StringToId("SCREEN_ON_OR_OFF"));
-
-    AtomMatcher_Combination* combination = eventMatcher->mutable_combination();
-    combination->set_operation(LogicalOperation::OR);
-    combination->add_matcher(StringToId("SCREEN_IS_ON"));
-    combination->add_matcher(StringToId("SCREEN_IS_OFF"));
-
-    CountMetric* metric = config.add_count_metric();
-    metric->set_id(3);
-    metric->set_what(StringToId("SCREEN_IS_ON"));
-    metric->set_bucket(ONE_MINUTE);
-    metric->mutable_dimensions_in_what()->set_field(SCREEN_STATE_ATOM_ID);
-    metric->mutable_dimensions_in_what()->add_child()->set_field(1);
-
-    config.add_no_report_metric(3);
-
-    auto alert = config.add_alert();
-    alert->set_id(kAlertId);
-    alert->set_metric_id(3);
-    alert->set_num_buckets(10);
-    alert->set_refractory_period_secs(100);
-    alert->set_trigger_if_sum_gt(100);
-    return config;
+            timeBaseSec, timeBaseSec, configMetadataProvider, allTagIdsToMatchersMap,
+            allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
+            conditionTrackerMap, allMetricProducers, metricProducerMap, allAnomalyTrackers,
+            allAlarmTrackers, conditionToMetricMap, trackerToMetricMap, trackerToConditionMap,
+            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap, alertTrackerMap,
+            metricsWithActivation, stateProtoHashes, noReportMetricIds);
 }
 
 StatsdConfig buildCircleMatchers() {
@@ -409,7 +362,6 @@ StatsdConfig buildConfigWithDifferentPredicates() {
 
     return config;
 }
-}  // anonymous namespace
 
 class MetricsManagerUtilTest : public ::testing::Test {
 public:
@@ -435,6 +387,25 @@ public:
         StateManager::getInstance().clear();
     }
 };
+
+struct DimLimitTestCase {
+    int configLimit;
+    int actualLimit;
+
+    friend void PrintTo(const DimLimitTestCase& testCase, ostream* os) {
+        *os << testCase.configLimit;
+    }
+};
+
+class MetricsManagerUtilDimLimitTest : public MetricsManagerUtilTest,
+                                       public WithParamInterface<DimLimitTestCase> {};
+
+const vector<DimLimitTestCase> dimLimitTestCases = {{900, 900}, {799, 800}, {3001, 3000}, {0, 800}};
+
+INSTANTIATE_TEST_SUITE_P(DimLimit, MetricsManagerUtilDimLimitTest, ValuesIn(dimLimitTestCases),
+                         PrintToStringParamName());
+
+}  // anonymous namespace
 
 TEST_F(MetricsManagerUtilTest, TestInitialConditions) {
     // initConfig returns nullopt if config is valid
@@ -465,11 +436,15 @@ TEST_F(MetricsManagerUtilTest, TestInitialConditions) {
 }
 
 TEST_F(MetricsManagerUtilTest, TestGoodConfig) {
-    StatsdConfig config = buildGoodConfig();
+    StatsdConfig config = buildGoodConfig(kConfigId, kAlertId);
     // initConfig returns nullopt if config is valid
     EXPECT_EQ(initConfig(config), nullopt);
-    ASSERT_EQ(1u, allMetricProducers.size());
-    EXPECT_THAT(metricProducerMap, UnorderedElementsAre(Pair(config.count_metric(0).id(), 0)));
+    ASSERT_EQ(5u, allMetricProducers.size());
+    EXPECT_THAT(metricProducerMap, UnorderedElementsAre(Key(config.count_metric(0).id()),
+                                                        Key(config.duration_metric(0).id()),
+                                                        Key(config.value_metric(0).id()),
+                                                        Key(config.kll_metric(0).id()),
+                                                        Key(config.gauge_metric(0).id())));
     ASSERT_EQ(1u, allAnomalyTrackers.size());
     ASSERT_EQ(1u, noReportMetricIds.size());
     ASSERT_EQ(1u, alertTrackerMap.size());
@@ -641,6 +616,171 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricConditionlinkNoCondition) {
                                   StringToId("Event")));
 }
 
+TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentage) {
+    StatsdConfig config;
+    EventMetric* metric = config.add_event_metric();
+    *metric = createEventMetric(/*name=*/"Event", /*what=*/StringToId("ScreenTurnedOn"),
+                                /*condition=*/nullopt);
+    metric->set_sampling_percentage(101);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                  StringToId("Event")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentageZero) {
+    StatsdConfig config;
+    EventMetric* metric = config.add_event_metric();
+    *metric = createEventMetric(/*name=*/"Event", /*what=*/StringToId("ScreenTurnedOn"),
+                                /*condition=*/nullopt);
+    metric->set_sampling_percentage(0);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                  StringToId("Event")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestEventMetricValidSamplingPercentage) {
+    StatsdConfig config;
+    EventMetric* metric = config.add_event_metric();
+    *metric = createEventMetric(/*name=*/"Event", /*what=*/StringToId("ScreenTurnedOn"),
+                                /*condition=*/nullopt);
+    metric->set_sampling_percentage(50);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidSamplingPercentage) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_sampling_percentage(101);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidSamplingPercentageZero) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_sampling_percentage(0);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricValidSamplingPercentage) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_sampling_percentage(50);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestPulledGaugeMetricWithSamplingPercentage) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_sampling_percentage(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(101);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbabilityZero) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(0);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricValidPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestPushedGaugeMetricWithPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricRandomOneSampleWithPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::RANDOM_ONE_SAMPLE,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
+                      StringToId("Gauge")));
+}
+
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingIdOrWhat) {
     StatsdConfig config;
     int64_t metricId = 1;
@@ -664,6 +804,88 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricConditionlinkNoCondition) {
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
                                   StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHasBothSingleAndMultipleAggTypes) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->set_aggregation_type(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
+                      StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMoreAggTypesThanValueFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                                StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMoreValueFieldsThanAggTypes) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    // This only fails if the repeated aggregation field is used. If the single field is used,
+    // we will apply this aggregation type to all value fields.
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+    *metric->mutable_value_field() = CreateDimensions(
+            util::SUBSYSTEM_SLEEP_STATE, {3 /* count */, 4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                                StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricDefaultAggTypeOutOfOrderFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    *metric->mutable_value_field() =
+            CreateDimensions(util::SUBSYSTEM_SLEEP_STATE, {4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMultipleAggTypesOutOfOrderFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+    metric->add_aggregation_types(ValueMetric::SUM);
+    *metric->mutable_value_field() = CreateDimensions(
+            util::SUBSYSTEM_SLEEP_STATE, {3 /* count */, 4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(initConfig(config), nullopt);
 }
 
 TEST_F(MetricsManagerUtilTest, TestKllMetricMissingIdOrWhat) {
@@ -1163,14 +1385,13 @@ TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerInvalidMatcher) {
     // Matcher has no contents_case (simple/combination), so it is invalid.
     matcher.set_id(21);
     optional<InvalidConfigReason> invalidConfigReason;
-    EXPECT_EQ(createAtomMatchingTracker(matcher, 0, uidMap, invalidConfigReason), nullptr);
+    EXPECT_EQ(createAtomMatchingTracker(matcher, uidMap, invalidConfigReason), nullptr);
     EXPECT_EQ(invalidConfigReason,
               createInvalidConfigReasonWithMatcher(
                       INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE, matcher.id()));
 }
 
 TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerSimple) {
-    int index = 1;
     int64_t id = 123;
     sp<UidMap> uidMap = new UidMap();
     AtomMatcher matcher;
@@ -1184,20 +1405,18 @@ TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerSimple) {
 
     optional<InvalidConfigReason> invalidConfigReason;
     sp<AtomMatchingTracker> tracker =
-            createAtomMatchingTracker(matcher, index, uidMap, invalidConfigReason);
+            createAtomMatchingTracker(matcher, uidMap, invalidConfigReason);
     EXPECT_NE(tracker, nullptr);
     EXPECT_EQ(invalidConfigReason, nullopt);
 
     EXPECT_TRUE(tracker->mInitialized);
     EXPECT_EQ(tracker->getId(), id);
-    EXPECT_EQ(tracker->mIndex, index);
     const set<int>& atomIds = tracker->getAtomIds();
     ASSERT_EQ(atomIds.size(), 1);
     EXPECT_EQ(atomIds.count(SCREEN_STATE_ATOM_ID), 1);
 }
 
 TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerCombination) {
-    int index = 1;
     int64_t id = 123;
     sp<UidMap> uidMap = new UidMap();
     AtomMatcher matcher;
@@ -1209,14 +1428,13 @@ TEST_F(MetricsManagerUtilTest, TestCreateAtomMatchingTrackerCombination) {
 
     optional<InvalidConfigReason> invalidConfigReason;
     sp<AtomMatchingTracker> tracker =
-            createAtomMatchingTracker(matcher, index, uidMap, invalidConfigReason);
+            createAtomMatchingTracker(matcher, uidMap, invalidConfigReason);
     EXPECT_NE(tracker, nullptr);
     EXPECT_EQ(invalidConfigReason, nullopt);
 
     // Combination matchers need to be initialized first.
     EXPECT_FALSE(tracker->mInitialized);
     EXPECT_EQ(tracker->getId(), id);
-    EXPECT_EQ(tracker->mIndex, index);
     const set<int>& atomIds = tracker->getAtomIds();
     ASSERT_EQ(atomIds.size(), 0);
 }
@@ -1321,8 +1539,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerNoThreshold) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1344,8 +1564,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerMissingBuckets) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1368,8 +1590,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerGood) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_NE(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1393,10 +1617,11 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerDurationTooLong) {
     metric.set_aggregation_type(DurationMetric_AggregationType_SUM);
     FieldMatcher dimensions;
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     vector<sp<MetricProducer>> metricProducers({new DurationMetricProducer(
             kConfigKey, metric, -1 /*no condition*/, {}, -1 /* what index not needed*/,
             1 /* start index */, 2 /* stop index */, 3 /* stop_all index */, false /*nesting*/,
-            wizard, 0x0123456789, dimensions, 0, 0)});
+            wizard, 0x0123456789, dimensions, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1409,7 +1634,6 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerDurationTooLong) {
 
 TEST_F(MetricsManagerUtilTest, TestCreateDurationProducerDimensionsInWhatInvalid) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = CreateAcquireWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateReleaseWakelockAtomMatcher();
     *config.add_atom_matcher() = CreateMoveToBackgroundAtomMatcher();
@@ -1446,7 +1670,6 @@ TEST_F(MetricsManagerUtilTest, TestCreateDurationProducerDimensionsInWhatInvalid
 
 TEST_F(MetricsManagerUtilTest, TestSampledMetrics) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
 
     AtomMatcher appCrashMatcher =
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
@@ -1598,7 +1821,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasShardCountButNoSampledField) {
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = appCrashMatcher;
 
     CountMetric metric =
@@ -1618,7 +1840,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasSampledFieldIncorrectShardCount) {
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = appCrashMatcher;
 
     CountMetric metric =
@@ -1639,7 +1860,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasMultipleSampledFields) {
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = appCrashMatcher;
 
     CountMetric metric =
@@ -1660,7 +1880,6 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionALL) {
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1678,54 +1897,11 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionALL) {
                                   metric.id()));
 }
 
-TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionFIRST) {
-    AtomMatcher testAtomReportedMatcher =
-            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
-
-    StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
-    *config.add_atom_matcher() = testAtomReportedMatcher;
-
-    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
-                                           testAtomReportedMatcher.id(), nullopt, {});
-    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
-            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::FIRST});
-    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
-            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
-                                     {Position::FIRST});
-    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
-    *config.add_count_metric() = metric;
-
-    EXPECT_EQ(initConfig(config), nullopt);
-}
-
-TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionLAST) {
-    AtomMatcher testAtomReportedMatcher =
-            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
-
-    StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
-    *config.add_atom_matcher() = testAtomReportedMatcher;
-
-    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
-                                           testAtomReportedMatcher.id(), nullopt, {});
-    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
-            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::LAST});
-    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
-            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
-                                     {Position::LAST});
-    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
-    *config.add_count_metric() = metric;
-
-    EXPECT_EQ(initConfig(config), nullopt);
-}
-
 TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
     AtomMatcher testAtomReportedMatcher =
             CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = testAtomReportedMatcher;
 
     CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
@@ -1743,12 +1919,11 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
                                   metric.id()));
 }
 
-TEST_F(MetricsManagerUtilTest, TestMetricSampledFieldNotSubsetDimension) {
+TEST_F(MetricsManagerUtilTest, TestMetricSampledField_DifferentFieldsNotSubsetDimension) {
     AtomMatcher appCrashMatcher =
             CreateSimpleAtomMatcher("APP_CRASH_OCCURRED", util::APP_CRASH_OCCURRED);
 
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");
     *config.add_atom_matcher() = appCrashMatcher;
 
     CountMetric metric =
@@ -1762,6 +1937,522 @@ TEST_F(MetricsManagerUtilTest, TestMetricSampledFieldNotSubsetDimension) {
             initConfig(config),
             InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
                                 metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastNotSubsetDimensionsFirst) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::FIRST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::LAST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
+                                metric.id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstNotSubsetDimensionsLast) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::LAST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::FIRST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
+                                metric.id()));
+}
+
+// dimensions_in_what position ALL, sampled_what_field position FIRST
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstSubsetDimensionsAll) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::ALL});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::FIRST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+// dimensions_in_what position ALL, sampled_what_field position LAST
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastSubsetDimensionsAll) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::ALL});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::LAST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+// dimensions_in_what position FIRST, sampled_what_field position FIRST
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstSubsetDimensionsFirst) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::FIRST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::FIRST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+// dimensions_in_what position LAST, sampled_what_field position LAST
+TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastSubsetDimensionsLast) {
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TEST_ATOM_REPORTED", util::TEST_ATOM_REPORTED);
+
+    StatsdConfig config;
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    CountMetric metric = createCountMetric("CountSampledTestAtomReportedPerRepeatedIntField",
+                                           testAtomReportedMatcher.id(), nullopt, {});
+    *metric.mutable_dimensions_in_what() = CreateRepeatedDimensions(
+            util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::LAST});
+    *metric.mutable_dimensional_sampling_info()->mutable_sampled_what_field() =
+            CreateRepeatedDimensions(util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/},
+                                     {Position::LAST});
+    metric.mutable_dimensional_sampling_info()->set_shard_count(2);
+    *config.add_count_metric() = metric;
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestCountMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    CountMetric* metric = config.add_count_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_F(MetricsManagerUtilTest, TestDurationMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    DurationMetric* metric = config.add_duration_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    ValueMetric* metric = config.add_value_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_F(MetricsManagerUtilTest, TestKllMetricHasRestrictedDelegate) {
+    StatsdConfig config;
+    KllMetric* metric = config.add_kll_metric();
+    config.set_restricted_metrics_delegate_package_name("com.android.app.test");
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
+}
+
+TEST_P(MetricsManagerUtilDimLimitTest, TestDimLimit) {
+    StatsdConfig config = buildGoodConfig(kConfigId, kAlertId);
+    const auto& [configLimit, actualLimit] = GetParam();
+    if (configLimit > 0) {
+        config.mutable_count_metric(0)->set_max_dimensions_per_bucket(configLimit);
+        config.mutable_duration_metric(0)->set_max_dimensions_per_bucket(configLimit);
+        config.mutable_gauge_metric(0)->set_max_dimensions_per_bucket(configLimit);
+        config.mutable_value_metric(0)->set_max_dimensions_per_bucket(configLimit);
+        config.mutable_kll_metric(0)->set_max_dimensions_per_bucket(configLimit);
+    }
+
+    // initConfig returns nullopt if config is valid
+    EXPECT_EQ(initConfig(config), nullopt);
+    ASSERT_EQ(5u, allMetricProducers.size());
+
+    sp<MetricProducer> producer =
+            allMetricProducers[metricProducerMap.at(config.count_metric(0).id())];
+    CountMetricProducer* countProducer = static_cast<CountMetricProducer*>(producer.get());
+    EXPECT_EQ(countProducer->mDimensionHardLimit, actualLimit);
+
+    producer = allMetricProducers[metricProducerMap.at(config.duration_metric(0).id())];
+    DurationMetricProducer* durationProducer = static_cast<DurationMetricProducer*>(producer.get());
+    EXPECT_EQ(durationProducer->mDimensionHardLimit, actualLimit);
+
+    producer = allMetricProducers[metricProducerMap.at(config.gauge_metric(0).id())];
+    GaugeMetricProducer* gaugeProducer = static_cast<GaugeMetricProducer*>(producer.get());
+    EXPECT_EQ(gaugeProducer->mDimensionHardLimit, actualLimit);
+
+    producer = allMetricProducers[metricProducerMap.at(config.value_metric(0).id())];
+    NumericValueMetricProducer* numericValueProducer =
+            static_cast<NumericValueMetricProducer*>(producer.get());
+    EXPECT_EQ(numericValueProducer->mDimensionHardLimit, actualLimit);
+
+    producer = allMetricProducers[metricProducerMap.at(config.kll_metric(0).id())];
+    KllMetricProducer* kllProducer = static_cast<KllMetricProducer*>(producer.get());
+    EXPECT_EQ(kllProducer->mDimensionHardLimit, actualLimit);
+}
+
+TEST_F(MetricsManagerUtilTest, TestMissingValueMatcherAndStringReplacer) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(SCREEN_STATE_ATOM_ID);
+    matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_NO_VALUE_MATCHER_NOR_STRING_REPLACER);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestMatcherWithValueMatcherOnly) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(SCREEN_STATE_ATOM_ID);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(2 /*int_field*/);
+    fvm->set_eq_int(1);
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplacerOnly) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(SCREEN_STATE_ATOM_ID);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(5 /*string_field*/);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("#");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMatcherWithPositionAll) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(9 /*repeated_int_field*/);
+    fvm->set_position(Position::ALL);
+    fvm->set_eq_int(1);
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAll) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(12 /*repeated_string_field*/);
+    fvm->set_position(Position::ALL);
+    fvm->set_eq_string("foo");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMatcherWithPositionAllNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Match on attribution_node[ALL].uid = 1
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ALL);
+    fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(1 /* uid */);
+    fvm->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_int(1);
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAllNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Match on attribution_node[ALL].uid = 1
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ALL);
+    fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(2 /* tag */);
+    fvm->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string("foo");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_regex(R"([0-9]+$)");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAny) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(12 /*repeated_string_field*/);
+    fvm->set_position(Position::ANY);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_STRING_REPLACE_WITH_NO_VALUE_MATCHER_WITH_POSITION_ANY);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAnyNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Match on attribution_node[ALL].uid = 1
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ANY);
+    fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(2 /* tag */);
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_regex(R"([0-9]+$)");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_STRING_REPLACE_WITH_NO_VALUE_MATCHER_WITH_POSITION_ANY);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAny) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(12 /*repeated_string_field*/);
+    fvm->set_position(Position::ANY);
+    fvm->set_eq_string("bar");
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAnyNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Match on attribution_node[ALL].uid = 1
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ANY);
+    fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(2 /* tag */);
+    fvm->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string("bar");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_regex(R"([0-9]+$)");
+    fvm->mutable_matches_tuple()
+            ->mutable_field_value_matcher(0)
+            ->mutable_replace_string()
+            ->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestStringReplaceWithPositionAllNested) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    // Replace attribution_node[ALL].tag using "[0-9]+$" -> "".
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(1 /*attribution_node*/);
+    fvm->set_position(Position::ALL);
+    fvm = fvm->mutable_matches_tuple()->add_field_value_matcher();
+    fvm->set_field(2 /* tag */);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplaceAndNonStringValueMatcher) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(2 /*int_field*/);
+    fvm->set_eq_int(1);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("#");
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_INVALID_VALUE_MATCHER_WITH_STRING_REPLACE);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+}
+
+TEST_F(MetricsManagerUtilTest, TestCombinationMatcherWithStringReplace) {
+    StatsdConfig config;
+    config.set_id(12345);
+
+    AtomMatcher* matcher = config.add_atom_matcher();
+    matcher->set_id(111);
+    matcher->mutable_simple_atom_matcher()->set_atom_id(util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(5 /*string_field*/);
+    fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
+    fvm->mutable_replace_string()->set_replacement("#");
+
+    matcher = config.add_atom_matcher();
+    matcher->set_id(222);
+    matcher->mutable_combination()->set_operation(LogicalOperation::NOT);
+    matcher->mutable_combination()->add_matcher(111);
+
+    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+
+    ASSERT_NE(actualInvalidConfigReason, nullopt);
+    EXPECT_EQ(actualInvalidConfigReason->reason,
+              INVALID_CONFIG_REASON_MATCHER_COMBINATION_WITH_STRING_REPLACE);
+    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(222));
 }
 
 }  // namespace statsd

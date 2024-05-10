@@ -18,10 +18,12 @@
 #include "Log.h"
 
 #include "StatsPuller.h"
+
 #include "StatsPullerManager.h"
 #include "guardrail/StatsdStats.h"
 #include "puller_util.h"
 #include "stats_log_util.h"
+#include "utils/api_tracing.h"
 
 namespace android {
 namespace os {
@@ -33,7 +35,7 @@ sp<UidMap> StatsPuller::mUidMap = nullptr;
 void StatsPuller::SetUidMap(const sp<UidMap>& uidMap) { mUidMap = uidMap; }
 
 StatsPuller::StatsPuller(const int tagId, const int64_t coolDownNs, const int64_t pullTimeoutNs,
-                         const std::vector<int> additiveFields)
+                         const std::vector<int>& additiveFields)
     : mTagId(tagId),
       mPullTimeoutNs(pullTimeoutNs),
       mCoolDownNs(coolDownNs),
@@ -44,6 +46,7 @@ StatsPuller::StatsPuller(const int tagId, const int64_t coolDownNs, const int64_
 
 PullErrorCode StatsPuller::Pull(const int64_t eventTimeNs,
                                 std::vector<std::shared_ptr<LogEvent>>* data) {
+    ATRACE_CALL();
     lock_guard<std::mutex> lock(mLock);
     const int64_t elapsedTimeNs = getElapsedRealtimeNs();
     const int64_t systemUptimeMillis = getSystemUptimeMillis();

@@ -32,28 +32,30 @@ class ShardOffsetProvider final {
 public:
     ~ShardOffsetProvider(){};
 
-    int getShardOffset() const {
+    uint32_t getShardOffset() const {
         return mShardOffset;
     }
 
     static ShardOffsetProvider& getInstance();
 
 private:
-    ShardOffsetProvider(const int shardOffset);
+    ShardOffsetProvider(const uint32_t shardOffset);
 
     // Only used for testing.
-    void setShardOffset(const int shardOffset) {
+    void setShardOffset(const uint32_t shardOffset) {
         mShardOffset = shardOffset;
     }
 
-    int mShardOffset;
+    uint32_t mShardOffset;
 
     FRIEND_TEST(CountMetricE2eTest, TestDimensionalSampling);
     FRIEND_TEST(DurationMetricE2eTest, TestDimensionalSampling);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestDimensionalSampling);
+    FRIEND_TEST(GaugeMetricE2ePushedTest, TestPushedGaugeMetricSamplingWithDimensionalSampling);
     FRIEND_TEST(GaugeMetricProducerTest, TestPullDimensionalSampling);
     FRIEND_TEST(KllMetricE2eTest, TestDimensionalSampling);
     FRIEND_TEST(NumericValueMetricProducerTest, TestDimensionalSampling);
+    FRIEND_TEST(StatsdStatsTest, TestShardOffsetProvider);
 };
 
 }  // namespace statsd

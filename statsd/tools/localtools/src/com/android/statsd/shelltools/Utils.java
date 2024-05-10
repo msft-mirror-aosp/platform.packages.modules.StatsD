@@ -40,6 +40,8 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.android.statsd.shelltools.ExtensionAtomsRegistry;
+
 /**
  * Utilities for local use of statsd.
  */
@@ -112,7 +114,8 @@ public class Utils {
                     "--include_current_bucket",
                     "--proto");
             ConfigMetricsReportList reportList =
-                    ConfigMetricsReportList.parseFrom(new FileInputStream(outputFile));
+                    ConfigMetricsReportList.parseFrom(new FileInputStream(outputFile),
+                            ExtensionAtomsRegistry.REGISTRY);
             return reportList;
         } catch (com.google.protobuf.InvalidProtocolBufferException e) {
             logger.severe("Failed to fetch and parse the statsd output report. "

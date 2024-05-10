@@ -36,6 +36,7 @@
 #include "stats_util.h"
 #include "statslog_statsd.h"
 #include "storage/StorageManager.h"
+#include "utils/api_tracing.h"
 
 using namespace android;
 using android::base::StringPrintf;
@@ -53,12 +54,16 @@ namespace android {
 namespace os {
 namespace statsd {
 
+using aidl::android::os::IStatsQueryCallback;
+
 // for ConfigMetricsReportList
 const int FIELD_ID_CONFIG_KEY = 1;
 const int FIELD_ID_REPORTS = 2;
 // for ConfigKey
 const int FIELD_ID_UID = 1;
 const int FIELD_ID_ID = 2;
+const int FIELD_ID_REPORT_NUMBER = 3;
+const int FIELD_ID_STATSD_STATS_ID = 4;
 // for ConfigMetricsReport
 // const int FIELD_ID_METRICS = 1; // written in MetricsManager.cpp
 const int FIELD_ID_UID_MAP = 2;
@@ -68,6 +73,8 @@ const int FIELD_ID_LAST_REPORT_WALL_CLOCK_NANOS = 5;
 const int FIELD_ID_CURRENT_REPORT_WALL_CLOCK_NANOS = 6;
 const int FIELD_ID_DUMP_REPORT_REASON = 8;
 const int FIELD_ID_STRINGS = 9;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 11;
+const int FIELD_ID_ESTIMATED_DATA_BYTES = 12;
 
 // for ActiveConfigList
 const int FIELD_ID_ACTIVE_CONFIG_LIST_CONFIG = 1;
@@ -84,25 +91,32 @@ constexpr const char* kPermissionUsage = "android.permission.PACKAGE_USAGE_STATS
 // Cool down period for writing data to disk to avoid overwriting files.
 #define WRITE_DATA_COOL_DOWN_SEC 15
 
-StatsLogProcessor::StatsLogProcessor(const sp<UidMap>& uidMap,
-                                     const sp<StatsPullerManager>& pullerManager,
-                                     const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                                     const sp<AlarmMonitor>& periodicAlarmMonitor,
-                                     const int64_t timeBaseNs,
-                                     const std::function<bool(const ConfigKey&)>& sendBroadcast,
-                                     const std::function<bool(
-                                            const int&, const vector<int64_t>&)>& activateBroadcast)
-    : mUidMap(uidMap),
+StatsLogProcessor::StatsLogProcessor(
+        const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
+        const sp<AlarmMonitor>& anomalyAlarmMonitor, const sp<AlarmMonitor>& periodicAlarmMonitor,
+        const int64_t timeBaseNs, const std::function<bool(const ConfigKey&)>& sendBroadcast,
+        const std::function<bool(const int&, const vector<int64_t>&)>& activateBroadcast,
+        const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
+                sendRestrictedMetricsBroadcast,
+        const std::shared_ptr<LogEventFilter>& logEventFilter)
+    : mLastTtlTime(0),
+      mLastFlushRestrictedTime(0),
+      mLastDbGuardrailEnforcementTime(0),
+      mUidMap(uidMap),
       mPullerManager(pullerManager),
       mAnomalyAlarmMonitor(anomalyAlarmMonitor),
       mPeriodicAlarmMonitor(periodicAlarmMonitor),
+      mLogEventFilter(logEventFilter),
       mSendBroadcast(sendBroadcast),
       mSendActivationBroadcast(activateBroadcast),
+      mSendRestrictedMetricsBroadcast(sendRestrictedMetricsBroadcast),
       mTimeBaseNs(timeBaseNs),
       mLargestTimestampSeen(0),
       mLastTimestampSeen(0) {
     mPullerManager->ForceClearPullerCache();
     StateManager::getInstance().updateLogSources(uidMap);
+    // It is safe called locked version at constructor - no concurrent access possible
+    updateLogEventFilterLocked();
 }
 
 StatsLogProcessor::~StatsLogProcessor() {
@@ -122,16 +136,15 @@ static void flushProtoToBuffer(ProtoOutputStream& proto, vector<uint8_t>* outDat
 }
 
 void StatsLogProcessor::processFiredAnomalyAlarmsLocked(
-        const int64_t& timestampNs,
-        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet) {
+        const int64_t timestampNs,
+        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     for (const auto& itr : mMetricsManagers) {
         itr.second->onAnomalyAlarmFired(timestampNs, alarmSet);
     }
 }
 void StatsLogProcessor::onPeriodicAlarmFired(
-        const int64_t& timestampNs,
-        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet) {
-
+        const int64_t timestampNs,
+        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     for (const auto& itr : mMetricsManagers) {
         itr.second->onPeriodicAlarmFired(timestampNs, alarmSet);
@@ -267,17 +280,17 @@ void StatsLogProcessor::getAndUpdateTrainInfoOnDisk(bool is_rollback,
         int64_t firstId = trainInfo->experimentIds.at(0);
         auto& ids = trainInfo->experimentIds;
         switch (trainInfo->status) {
-            case android::os::statsd::util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALL_SUCCESS:
+            case util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALL_SUCCESS:
                 if (find(ids.begin(), ids.end(), firstId + 1) == ids.end()) {
                     ids.push_back(firstId + 1);
                 }
                 break;
-            case android::os::statsd::util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALLER_ROLLBACK_INITIATED:
+            case util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALLER_ROLLBACK_INITIATED:
                 if (find(ids.begin(), ids.end(), firstId + 2) == ids.end()) {
                     ids.push_back(firstId + 2);
                 }
                 break;
-            case android::os::statsd::util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALLER_ROLLBACK_SUCCESS:
+            case util::BINARY_PUSH_STATE_CHANGED__STATE__INSTALLER_ROLLBACK_SUCCESS:
                 if (find(ids.begin(), ids.end(), firstId + 3) == ids.end()) {
                     ids.push_back(firstId + 3);
                 }
@@ -346,13 +359,13 @@ vector<int64_t> StatsLogProcessor::processWatchdogRollbackOccurred(const int32_t
     int64_t firstId = trainInfoOnDisk.experimentIds[0];
     auto& ids = trainInfoOnDisk.experimentIds;
     switch (rollbackTypeIn) {
-      case android::os::statsd::util::WATCHDOG_ROLLBACK_OCCURRED__ROLLBACK_TYPE__ROLLBACK_INITIATE:
+        case util::WATCHDOG_ROLLBACK_OCCURRED__ROLLBACK_TYPE__ROLLBACK_INITIATE:
             if (find(ids.begin(), ids.end(), firstId + 4) == ids.end()) {
                 ids.push_back(firstId + 4);
             }
             StorageManager::writeTrainInfo(trainInfoOnDisk);
             break;
-      case android::os::statsd::util::WATCHDOG_ROLLBACK_OCCURRED__ROLLBACK_TYPE__ROLLBACK_SUCCESS:
+        case util::WATCHDOG_ROLLBACK_OCCURRED__ROLLBACK_TYPE__ROLLBACK_SUCCESS:
             if (find(ids.begin(), ids.end(), firstId + 5) == ids.end()) {
                 ids.push_back(firstId + 5);
             }
@@ -377,6 +390,7 @@ void StatsLogProcessor::resetConfigsLocked(const int64_t timestampNs) {
 }
 
 void StatsLogProcessor::OnLogEvent(LogEvent* event) {
+    ATRACE_CALL();
     OnLogEvent(event, getElapsedRealtimeNs());
 }
 
@@ -385,8 +399,9 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
 
     // Tell StatsdStats about new event
     const int64_t eventElapsedTimeNs = event->GetElapsedTimestampNs();
-    int atomId = event->GetTagId();
-    StatsdStats::getInstance().noteAtomLogged(atomId, eventElapsedTimeNs / NS_PER_SEC);
+    const int atomId = event->GetTagId();
+    StatsdStats::getInstance().noteAtomLogged(atomId, eventElapsedTimeNs / NS_PER_SEC,
+                                              event->isParsedHeaderOnly());
     if (!event->isValid()) {
         StatsdStats::getInstance().noteAtomError(atomId);
         return;
@@ -394,13 +409,13 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
 
     // Hard-coded logic to update train info on disk and fill in any information
     // this log event may be missing.
-    if (atomId == android::os::statsd::util::BINARY_PUSH_STATE_CHANGED) {
+    if (atomId == util::BINARY_PUSH_STATE_CHANGED) {
         onBinaryPushStateChangedEventLocked(event);
     }
 
     // Hard-coded logic to update experiment ids on disk for certain rollback
     // types and fill the rollback atom with experiment ids
-    if (atomId == android::os::statsd::util::WATCHDOG_ROLLBACK_OCCURRED) {
+    if (atomId == util::WATCHDOG_ROLLBACK_OCCURRED) {
         onWatchdogRollbackOccurredLocked(event);
     }
 
@@ -411,7 +426,7 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
 
     // Hard-coded logic to update the isolated uid's in the uid-map.
     // The field numbers need to be currently updated by hand with atoms.proto
-    if (atomId == android::os::statsd::util::ISOLATED_UID_CHANGED) {
+    if (atomId == util::ISOLATED_UID_CHANGED) {
         onIsolatedUidChangedEventLocked(*event);
     } else {
         // Map the isolated uid to host uid if necessary.
@@ -438,16 +453,28 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         informAnomalyAlarmFiredLocked(NanoToMillis(elapsedRealtimeNs));
     }
 
-    int64_t curTimeSec = getElapsedRealtimeSec();
+    const int64_t curTimeSec = NanoToSeconds(elapsedRealtimeNs);
     if (curTimeSec - mLastPullerCacheClearTimeSec > StatsdStats::kPullerCacheClearIntervalSec) {
         mPullerManager->ClearPullerCacheIfNecessary(curTimeSec * NS_PER_SEC);
         mLastPullerCacheClearTimeSec = curTimeSec;
     }
 
+    flushRestrictedDataIfNecessaryLocked(elapsedRealtimeNs);
+    enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
+    enforceDbGuardrailsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
+
+    if (!validateAppBreadcrumbEvent(*event)) {
+        return;
+    }
+
     std::unordered_set<int> uidsWithActiveConfigsChanged;
     std::unordered_map<int, std::vector<int64_t>> activeConfigsPerUid;
+
     // pass the event to metrics managers.
     for (auto& pair : mMetricsManagers) {
+        if (event->isRestricted() && !pair.second->hasRestrictedMetricsDelegate()) {
+            continue;
+        }
         int uid = pair.first.GetUid();
         int64_t configId = pair.first.GetId();
         bool isPrevActive = pair.second->isActive();
@@ -531,9 +558,22 @@ void StatsLogProcessor::OnConfigUpdated(const int64_t timestampNs, const ConfigK
 void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const ConfigKey& key,
                                               const StatsdConfig& config, bool modularUpdate) {
     VLOG("Updated configuration for key %s", key.ToString().c_str());
-    // Create new config if this is not a modular update or if this is a new config.
     const auto& it = mMetricsManagers.find(key);
     bool configValid = false;
+    if (isAtLeastU() && it != mMetricsManagers.end()) {
+        if (it->second->hasRestrictedMetricsDelegate() !=
+            config.has_restricted_metrics_delegate_package_name()) {
+            // Not a modular update if has_restricted_metrics_delegate changes
+            modularUpdate = false;
+        }
+        if (!modularUpdate && it->second->hasRestrictedMetricsDelegate()) {
+            StatsdStats::getInstance().noteDbDeletionConfigUpdated(key);
+            // Always delete the old db if restricted metrics config is not a
+            // modular update.
+            dbutils::deleteDb(key);
+        }
+    }
+    // Create new config if this is not a modular update or if this is a new config.
     if (!modularUpdate || it == mMetricsManagers.end()) {
         sp<MetricsManager> newMetricsManager =
                 new MetricsManager(key, config, mTimeBaseNs, timestampNs, mUidMap, mPullerManager,
@@ -541,8 +581,23 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         configValid = newMetricsManager->isConfigValid();
         if (configValid) {
             newMetricsManager->init();
-            mUidMap->OnConfigUpdated(key);
             newMetricsManager->refreshTtl(timestampNs);
+            // Sdk check for U+ is unnecessary because config with restricted metrics delegate
+            // will be invalid on non U+ devices.
+            if (newMetricsManager->hasRestrictedMetricsDelegate()) {
+                mSendRestrictedMetricsBroadcast(key,
+                                                newMetricsManager->getRestrictedMetricsDelegate(),
+                                                newMetricsManager->getAllMetricIds());
+                string err;
+                if (!dbutils::updateDeviceInfoTable(key, err)) {
+                    ALOGE("Failed to create device_info table for configKey %s, err: %s",
+                          key.ToString().c_str(), err.c_str());
+                    StatsdStats::getInstance().noteDeviceInfoTableCreationFailed(key);
+                }
+            } else if (it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
+                mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
+                                                {});
+            }
             mMetricsManagers[key] = newMetricsManager;
             VLOG("StatsdConfig valid");
         }
@@ -550,16 +605,35 @@ void StatsLogProcessor::OnConfigUpdatedLocked(const int64_t timestampNs, const C
         // Preserve the existing MetricsManager, update necessary components and metadata in place.
         configValid = it->second->updateConfig(config, mTimeBaseNs, timestampNs,
                                                mAnomalyAlarmMonitor, mPeriodicAlarmMonitor);
-        if (configValid) {
-            mUidMap->OnConfigUpdated(key);
+        if (configValid && it->second->hasRestrictedMetricsDelegate()) {
+            mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(),
+                                            it->second->getAllMetricIds());
         }
+    }
+
+    if (configValid && !config.has_restricted_metrics_delegate_package_name()) {
+        // We do not need to track uid map changes for restricted metrics since the uidmap is not
+        // stored in the sqlite db.
+        mUidMap->OnConfigUpdated(key);
+    } else if (configValid && config.has_restricted_metrics_delegate_package_name()) {
+        mUidMap->OnConfigRemoved(key);
     }
     if (!configValid) {
         // If there is any error in the config, don't use it.
         // Remove any existing config with the same key.
         ALOGE("StatsdConfig NOT valid");
+        // Send an empty restricted metrics broadcast if the previous config was restricted.
+        if (isAtLeastU() && it != mMetricsManagers.end() &&
+            it->second->hasRestrictedMetricsDelegate()) {
+            mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+            StatsdStats::getInstance().noteDbConfigInvalid(key);
+            dbutils::deleteDb(key);
+        }
         mMetricsManagers.erase(key);
+        mUidMap->OnConfigRemoved(key);
     }
+
+    updateLogEventFilterLocked();
 }
 
 size_t StatsLogProcessor::GetMetricsSize(const ConfigKey& key) const {
@@ -572,18 +646,12 @@ size_t StatsLogProcessor::GetMetricsSize(const ConfigKey& key) const {
     return it->second->byteSize();
 }
 
-void StatsLogProcessor::dumpStates(int out, bool verbose) {
+void StatsLogProcessor::dumpStates(int out, bool verbose) const {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
-    FILE* fout = fdopen(out, "w");
-    if (fout == NULL) {
-        return;
+    dprintf(out, "MetricsManager count: %lu\n", (unsigned long)mMetricsManagers.size());
+    for (const auto& metricsManager : mMetricsManagers) {
+        metricsManager.second->dumpStates(out, verbose);
     }
-    fprintf(fout, "MetricsManager count: %lu\n", (unsigned long)mMetricsManagers.size());
-    for (auto metricsManager : mMetricsManagers) {
-        metricsManager.second->dumpStates(fout, verbose);
-    }
-
-    fclose(fout);
 }
 
 /*
@@ -596,6 +664,12 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
                                      const DumpLatency dumpLatency, ProtoOutputStream* proto) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
 
+    auto it = mMetricsManagers.find(key);
+    if (it != mMetricsManagers.end() && it->second->hasRestrictedMetricsDelegate()) {
+        VLOG("Unexpected call to StatsLogProcessor::onDumpReport for restricted metrics.");
+        return;
+    }
+
     // Start of ConfigKey.
     uint64_t configKeyToken = proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_KEY);
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_UID, key.GetUid());
@@ -604,7 +678,6 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
     // End of ConfigKey.
 
     bool keepFile = false;
-    auto it = mMetricsManagers.find(key);
     if (it != mMetricsManagers.end() && it->second->shouldPersistLocalHistory()) {
         keepFile = true;
     }
@@ -630,6 +703,18 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
     } else {
         ALOGW("Config source %s does not exist", key.ToString().c_str());
     }
+
+    if (erase_data) {
+        ++mDumpReportNumbers[key];
+    }
+    proto->write(FIELD_TYPE_INT32 | FIELD_ID_REPORT_NUMBER, mDumpReportNumbers[key]);
+
+    proto->write(FIELD_TYPE_INT32 | FIELD_ID_STATSD_STATS_ID,
+                 StatsdStats::getInstance().getStatsdStatsId());
+    if (erase_data) {
+        StatsdStats::getInstance().noteMetricsReportSent(key, proto->size(),
+                                                         mDumpReportNumbers[key]);
+    }
 }
 
 /*
@@ -648,8 +733,6 @@ void StatsLogProcessor::onDumpReport(const ConfigKey& key, const int64_t dumpTim
         flushProtoToBuffer(proto, outData);
         VLOG("output data size %zu", outData->size());
     }
-
-    StatsdStats::getInstance().noteMetricsReportSent(key, proto.size());
 }
 
 /*
@@ -678,10 +761,18 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     if (it == mMetricsManagers.end()) {
         return;
     }
+    if (it->second->hasRestrictedMetricsDelegate()) {
+        VLOG("Unexpected call to StatsLogProcessor::onConfigMetricsReportLocked for restricted "
+             "metrics.");
+        // Do not call onDumpReport for restricted metrics.
+        return;
+    }
     int64_t lastReportTimeNs = it->second->getLastReportTimeNs();
     int64_t lastReportWallClockNs = it->second->getLastReportWallClockNs();
 
     std::set<string> str_set;
+
+    int64_t totalSize = it->second->byteSize();
 
     ProtoOutputStream tempProto;
     // First, fill in ConfigMetricsReport using current data on memory, which
@@ -715,6 +806,14 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     for (const auto& str : str_set) {
         tempProto.write(FIELD_TYPE_STRING | FIELD_COUNT_REPEATED | FIELD_ID_STRINGS, str);
     }
+
+    // Data corrupted reason
+    writeDataCorruptedReasons(tempProto, FIELD_ID_DATA_CORRUPTED_REASON,
+                              StatsdStats::getInstance().hasEventQueueOverflow(),
+                              StatsdStats::getInstance().hasSocketLoss());
+
+    // Estimated memory bytes
+    tempProto.write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_DATA_BYTES, totalSize);
 
     flushProtoToBuffer(tempProto, buffer);
 
@@ -765,16 +864,23 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     if (it != mMetricsManagers.end()) {
         WriteDataToDiskLocked(key, getElapsedRealtimeNs(), getWallClockNs(), CONFIG_REMOVED,
                               NO_TIME_CONSTRAINTS);
+        if (isAtLeastU() && it->second->hasRestrictedMetricsDelegate()) {
+            StatsdStats::getInstance().noteDbDeletionConfigRemoved(key);
+            dbutils::deleteDb(key);
+            mSendRestrictedMetricsBroadcast(key, it->second->getRestrictedMetricsDelegate(), {});
+        }
         mMetricsManagers.erase(it);
         mUidMap->OnConfigRemoved(key);
     }
     StatsdStats::getInstance().noteConfigRemoved(key);
 
     mLastBroadcastTimes.erase(key);
+    mLastByteSizeTimes.erase(key);
+    mDumpReportNumbers.erase(key);
 
     int uid = key.GetUid();
     bool lastConfigForUid = true;
-    for (auto it : mMetricsManagers) {
+    for (const auto& it : mMetricsManagers) {
         if (it.first.GetUid() == uid) {
             lastConfigForUid = false;
             break;
@@ -787,36 +893,263 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
     if (mMetricsManagers.empty()) {
         mPullerManager->ForceClearPullerCache();
     }
+
+    updateLogEventFilterLocked();
+}
+
+// TODO(b/267501143): Add unit tests when metric producer is ready
+void StatsLogProcessor::enforceDataTtlsIfNecessaryLocked(const int64_t wallClockNs,
+                                                         const int64_t elapsedRealtimeNs) {
+    if (!isAtLeastU()) {
+        return;
+    }
+    if (elapsedRealtimeNs - mLastTtlTime < StatsdStats::kMinTtlCheckPeriodNs) {
+        return;
+    }
+    enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+}
+
+void StatsLogProcessor::flushRestrictedDataIfNecessaryLocked(const int64_t elapsedRealtimeNs) {
+    if (!isAtLeastU()) {
+        return;
+    }
+    if (elapsedRealtimeNs - mLastFlushRestrictedTime < StatsdStats::kMinFlushRestrictedPeriodNs) {
+        return;
+    }
+    flushRestrictedDataLocked(elapsedRealtimeNs);
+}
+
+void StatsLogProcessor::querySql(const string& sqlQuery, const int32_t minSqlClientVersion,
+                                 const optional<vector<uint8_t>>& policyConfig,
+                                 const shared_ptr<IStatsQueryCallback>& callback,
+                                 const int64_t configId, const string& configPackage,
+                                 const int32_t callingUid) {
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+    string err = "";
+
+    if (!isAtLeastU()) {
+        ALOGW("Restricted metrics query invoked on U- device");
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(FLAG_DISABLED));
+        return;
+    }
+
+    const int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
+
+    // TODO(b/268416460): validate policyConfig here
+
+    if (minSqlClientVersion > dbutils::getDbVersion()) {
+        callback->sendFailure(StringPrintf(
+                "Unsupported sqlite version. Installed Version: %d, Requested Version: %d.",
+                dbutils::getDbVersion(), minSqlClientVersion));
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(UNSUPPORTED_SQLITE_VERSION));
+        return;
+    }
+
+    set<int32_t> configPackageUids;
+    const auto& uidMapItr = UidMap::sAidToUidMapping.find(configPackage);
+    if (uidMapItr != UidMap::sAidToUidMapping.end()) {
+        configPackageUids.insert(uidMapItr->second);
+    } else {
+        configPackageUids = mUidMap->getAppUid(configPackage);
+    }
+
+    InvalidQueryReason invalidQueryReason;
+    set<ConfigKey> keysToQuery = getRestrictedConfigKeysToQueryLocked(
+            callingUid, configId, configPackageUids, err, invalidQueryReason);
+
+    if (keysToQuery.empty()) {
+        callback->sendFailure(err);
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(invalidQueryReason));
+        return;
+    }
+
+    if (keysToQuery.size() > 1) {
+        err = "Ambiguous ConfigKey";
+        callback->sendFailure(err);
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, std::nullopt, callingUid,
+                InvalidQueryReason(AMBIGUOUS_CONFIG_KEY));
+        return;
+    }
+
+    flushRestrictedDataLocked(elapsedRealtimeNs);
+    enforceDataTtlsLocked(getWallClockNs(), elapsedRealtimeNs);
+
+    std::vector<std::vector<std::string>> rows;
+    std::vector<int32_t> columnTypes;
+    std::vector<string> columnNames;
+    if (!dbutils::query(*(keysToQuery.begin()), sqlQuery, rows, columnTypes, columnNames, err)) {
+        callback->sendFailure(StringPrintf("failed to query db %s:", err.c_str()));
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
+                InvalidQueryReason(QUERY_FAILURE), err.c_str());
+        return;
+    }
+
+    vector<string> queryData;
+    queryData.reserve(rows.size() * columnNames.size());
+    // TODO(b/268415904): avoid this vector transformation.
+    if (columnNames.size() != columnTypes.size()) {
+        callback->sendFailure("Inconsistent row sizes");
+        StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
+                InvalidQueryReason(INCONSISTENT_ROW_SIZE));
+    }
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].size() != columnNames.size()) {
+            callback->sendFailure("Inconsistent row sizes");
+            StatsdStats::getInstance().noteQueryRestrictedMetricFailed(
+                    configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
+                    InvalidQueryReason(INCONSISTENT_ROW_SIZE));
+            return;
+        }
+        queryData.insert(std::end(queryData), std::make_move_iterator(std::begin(rows[i])),
+                         std::make_move_iterator(std::end(rows[i])));
+    }
+    callback->sendResults(queryData, columnNames, columnTypes, rows.size());
+    StatsdStats::getInstance().noteQueryRestrictedMetricSucceed(
+            configId, configPackage, keysToQuery.begin()->GetUid(), callingUid,
+            /*queryLatencyNs=*/getElapsedRealtimeNs() - elapsedRealtimeNs);
+}
+
+set<ConfigKey> StatsLogProcessor::getRestrictedConfigKeysToQueryLocked(
+        const int32_t callingUid, const int64_t configId, const set<int32_t>& configPackageUids,
+        string& err, InvalidQueryReason& invalidQueryReason) {
+    set<ConfigKey> matchedConfigKeys;
+    for (auto uid : configPackageUids) {
+        ConfigKey configKey(uid, configId);
+        if (mMetricsManagers.find(configKey) != mMetricsManagers.end()) {
+            matchedConfigKeys.insert(configKey);
+        }
+    }
+
+    set<ConfigKey> excludedKeys;
+    for (auto& configKey : matchedConfigKeys) {
+        auto it = mMetricsManagers.find(configKey);
+        if (!it->second->validateRestrictedMetricsDelegate(callingUid)) {
+            excludedKeys.insert(configKey);
+        };
+    }
+
+    set<ConfigKey> result;
+    std::set_difference(matchedConfigKeys.begin(), matchedConfigKeys.end(), excludedKeys.begin(),
+                        excludedKeys.end(), std::inserter(result, result.end()));
+    if (matchedConfigKeys.empty()) {
+        err = "No configs found matching the config key";
+        invalidQueryReason = InvalidQueryReason(CONFIG_KEY_NOT_FOUND);
+    } else if (result.empty()) {
+        err = "No matching configs for restricted metrics delegate";
+        invalidQueryReason = InvalidQueryReason(CONFIG_KEY_WITH_UNMATCHED_DELEGATE);
+    }
+
+    return result;
+}
+
+void StatsLogProcessor::EnforceDataTtls(const int64_t wallClockNs,
+                                        const int64_t elapsedRealtimeNs) {
+    if (!isAtLeastU()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+    enforceDataTtlsLocked(wallClockNs, elapsedRealtimeNs);
+}
+
+void StatsLogProcessor::enforceDataTtlsLocked(const int64_t wallClockNs,
+                                              const int64_t elapsedRealtimeNs) {
+    for (const auto& itr : mMetricsManagers) {
+        itr.second->enforceRestrictedDataTtls(wallClockNs);
+    }
+    mLastTtlTime = elapsedRealtimeNs;
+}
+
+void StatsLogProcessor::enforceDbGuardrailsIfNecessaryLocked(const int64_t wallClockNs,
+                                                             const int64_t elapsedRealtimeNs) {
+    if (elapsedRealtimeNs - mLastDbGuardrailEnforcementTime <
+        StatsdStats::kMinDbGuardrailEnforcementPeriodNs) {
+        return;
+    }
+    StorageManager::enforceDbGuardrails(STATS_RESTRICTED_DATA_DIR, wallClockNs / NS_PER_SEC,
+                                        StatsdStats::kMaxFileSize);
+    mLastDbGuardrailEnforcementTime = elapsedRealtimeNs;
+}
+
+void StatsLogProcessor::fillRestrictedMetrics(const int64_t configId, const string& configPackage,
+                                              const int32_t delegateUid, vector<int64_t>* output) {
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
+
+    set<int32_t> configPackageUids;
+    const auto& uidMapItr = UidMap::sAidToUidMapping.find(configPackage);
+    if (uidMapItr != UidMap::sAidToUidMapping.end()) {
+        configPackageUids.insert(uidMapItr->second);
+    } else {
+        configPackageUids = mUidMap->getAppUid(configPackage);
+    }
+    string err;
+    InvalidQueryReason invalidQueryReason;
+    set<ConfigKey> keysToGetMetrics = getRestrictedConfigKeysToQueryLocked(
+            delegateUid, configId, configPackageUids, err, invalidQueryReason);
+
+    for (const ConfigKey& key : keysToGetMetrics) {
+        vector<int64_t> metricIds = mMetricsManagers[key]->getAllMetricIds();
+        output->insert(output->end(), metricIds.begin(), metricIds.end());
+    }
+}
+
+void StatsLogProcessor::flushRestrictedDataLocked(const int64_t elapsedRealtimeNs) {
+    for (const auto& it : mMetricsManagers) {
+        // no-op if metricsManager is not restricted
+        it.second->flushRestrictedData();
+    }
+
+    mLastFlushRestrictedTime = elapsedRealtimeNs;
 }
 
 void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
                                                MetricsManager& metricsManager) {
     int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
     auto lastCheckTime = mLastByteSizeTimes.find(key);
+    int64_t minCheckPeriodNs = metricsManager.useV2SoftMemoryCalculation()
+                                       ? StatsdStats::kMinByteSizeV2CheckPeriodNs
+                                       : StatsdStats::kMinByteSizeCheckPeriodNs;
     if (lastCheckTime != mLastByteSizeTimes.end()) {
-        if (elapsedRealtimeNs - lastCheckTime->second < StatsdStats::kMinByteSizeCheckPeriodNs) {
+        if (elapsedRealtimeNs - lastCheckTime->second < minCheckPeriodNs) {
             return;
         }
     }
 
     // We suspect that the byteSize() computation is expensive, so we set a rate limit.
     size_t totalBytes = metricsManager.byteSize();
+
     mLastByteSizeTimes[key] = elapsedRealtimeNs;
+    const size_t kBytesPerConfig = metricsManager.hasRestrictedMetricsDelegate()
+                                           ? StatsdStats::kBytesPerRestrictedConfigTriggerFlush
+                                           : metricsManager.getTriggerGetDataBytes();
     bool requestDump = false;
-    if (totalBytes > StatsdStats::kMaxMetricsBytesPerConfig) {
+    if (totalBytes > metricsManager.getMaxMetricsBytes()) {
         // Too late. We need to start clearing data.
         metricsManager.dropData(elapsedRealtimeNs);
         StatsdStats::getInstance().noteDataDropped(key, totalBytes);
         VLOG("StatsD had to toss out metrics for %s", key.ToString().c_str());
-    } else if ((totalBytes > StatsdStats::kBytesPerConfigTriggerGetData) ||
+    } else if ((totalBytes > kBytesPerConfig) ||
                (mOnDiskDataConfigs.find(key) != mOnDiskDataConfigs.end())) {
-        // Request to send a broadcast if:
+        // Request to dump if:
         // 1. in memory data > threshold   OR
         // 2. config has old data report on disk.
         requestDump = true;
     }
 
     if (requestDump) {
+        if (metricsManager.hasRestrictedMetricsDelegate()) {
+            metricsManager.flushRestrictedData();
+            // No need to send broadcast for restricted metrics.
+            return;
+        }
         // Send broadcast so that receivers can pull data.
         auto lastBroadcastTime = mLastBroadcastTimes.find(key);
         if (lastBroadcastTime != mLastBroadcastTimes.end()) {
@@ -841,6 +1174,10 @@ void StatsLogProcessor::WriteDataToDiskLocked(const ConfigKey& key, const int64_
                                               const DumpLatency dumpLatency) {
     if (mMetricsManagers.find(key) == mMetricsManagers.end() ||
         !mMetricsManagers.find(key)->second->shouldWriteToDisk()) {
+        return;
+    }
+    if (mMetricsManagers.find(key)->second->hasRestrictedMetricsDelegate()) {
+        mMetricsManagers.find(key)->second->flushRestrictedData();
         return;
     }
     vector<uint8_t> buffer;
@@ -1095,7 +1432,7 @@ int64_t StatsLogProcessor::getLastReportTimeNs(const ConfigKey& key) {
     }
 }
 
-void StatsLogProcessor::notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk,
+void StatsLogProcessor::notifyAppUpgrade(const int64_t eventTimeNs, const string& apk,
                                          const int uid, const int64_t version) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received app upgrade");
@@ -1105,7 +1442,7 @@ void StatsLogProcessor::notifyAppUpgrade(const int64_t& eventTimeNs, const strin
     }
 }
 
-void StatsLogProcessor::notifyAppRemoved(const int64_t& eventTimeNs, const string& apk,
+void StatsLogProcessor::notifyAppRemoved(const int64_t eventTimeNs, const string& apk,
                                          const int uid) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received app removed");
@@ -1115,7 +1452,7 @@ void StatsLogProcessor::notifyAppRemoved(const int64_t& eventTimeNs, const strin
     }
 }
 
-void StatsLogProcessor::onUidMapReceived(const int64_t& eventTimeNs) {
+void StatsLogProcessor::onUidMapReceived(const int64_t eventTimeNs) {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received uid map");
     StateManager::getInstance().updateLogSources(mUidMap);
@@ -1124,7 +1461,8 @@ void StatsLogProcessor::onUidMapReceived(const int64_t& eventTimeNs) {
     }
 }
 
-void StatsLogProcessor::onStatsdInitCompleted(const int64_t& elapsedTimeNs) {
+void StatsLogProcessor::onStatsdInitCompleted(const int64_t elapsedTimeNs) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received boot completed signal");
     for (const auto& it : mMetricsManagers) {
@@ -1149,7 +1487,7 @@ void StatsLogProcessor::cancelAnomalyAlarm() {
 
 void StatsLogProcessor::informAnomalyAlarmFiredLocked(const int64_t elapsedTimeMillis) {
     VLOG("StatsService::informAlarmForSubscriberTriggeringFired was called");
-    std::unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet =
+    unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>> alarmSet =
             mAnomalyAlarmMonitor->popSoonerThan(static_cast<uint32_t>(elapsedTimeMillis / 1000));
     if (alarmSet.size() > 0) {
         VLOG("Found periodic alarm fired.");
@@ -1157,6 +1495,64 @@ void StatsLogProcessor::informAnomalyAlarmFiredLocked(const int64_t elapsedTimeM
     } else {
         ALOGW("Cannot find an periodic alarm that fired. Perhaps it was recently cancelled.");
     }
+}
+
+LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
+    // populate hard-coded list of useful atoms
+    // we add also atoms which could be pushed by statsd itself to simplify the logic
+    // to handle metric configs update: APP_BREADCRUMB_REPORTED & ANOMALY_DETECTED
+    LogEventFilter::AtomIdSet allAtomIds{
+            util::BINARY_PUSH_STATE_CHANGED, util::ISOLATED_UID_CHANGED,
+            util::APP_BREADCRUMB_REPORTED,   util::WATCHDOG_ROLLBACK_OCCURRED,
+            util::ANOMALY_DETECTED,          util::STATS_SOCKET_LOSS_REPORTED};
+    return allAtomIds;
+}
+
+void StatsLogProcessor::updateLogEventFilterLocked() const {
+    VLOG("StatsLogProcessor: Updating allAtomIds");
+    LogEventFilter::AtomIdSet allAtomIds = getDefaultAtomIdSet();
+    for (const auto& metricsManager : mMetricsManagers) {
+        metricsManager.second->addAllAtomIds(allAtomIds);
+    }
+    StateManager::getInstance().addAllAtomIds(allAtomIds);
+    VLOG("StatsLogProcessor: Updating allAtomIds done. Total atoms %d", (int)allAtomIds.size());
+    mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
+}
+
+bool StatsLogProcessor::validateAppBreadcrumbEvent(const LogEvent& event) const {
+    if (event.GetTagId() == util::APP_BREADCRUMB_REPORTED) {
+        // Check that app breadcrumb reported fields are valid.
+        status_t err = NO_ERROR;
+
+        // Uid is 3rd from last field and must match the caller's uid,
+        // unless that caller is statsd itself (statsd is allowed to spoof uids).
+        const long appHookUid = event.GetLong(event.size() - 2, &err);
+        if (err != NO_ERROR) {
+            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the uid");
+            return false;
+        }
+
+        // Because the uid within the LogEvent may have been mapped from
+        // isolated to host, map the loggerUid similarly before comparing.
+        const int32_t loggerUid = mUidMap->getHostUidOrSelf(event.GetUid());
+        if (loggerUid != appHookUid && loggerUid != AID_STATSD) {
+            VLOG("APP_BREADCRUMB_REPORTED has invalid uid: claimed %ld but caller is %d",
+                 appHookUid, loggerUid);
+            return false;
+        }
+
+        // The state must be from 0,3. This part of code must be manually updated.
+        const long appHookState = event.GetLong(event.size(), &err);
+        if (err != NO_ERROR) {
+            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the state field");
+            return false;
+        } else if (appHookState < 0 || appHookState > 3) {
+            VLOG("APP_BREADCRUMB_REPORTED does not have valid state %ld", appHookState);
+            return false;
+        }
+    }
+
+    return true;
 }
 
 }  // namespace statsd

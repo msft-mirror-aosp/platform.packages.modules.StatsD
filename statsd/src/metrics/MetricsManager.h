@@ -23,6 +23,7 @@
 #include "anomaly/AnomalyTracker.h"
 #include "condition/ConditionTracker.h"
 #include "config/ConfigKey.h"
+#include "config/ConfigMetadataProvider.h"
 #include "external/StatsPullerManager.h"
 #include "guardrail/StatsdStats.h"
 #include "logd/LogEvent.h"
@@ -37,9 +38,11 @@ namespace os {
 namespace statsd {
 
 // A MetricsManager is responsible for managing metrics from one single config source.
-class MetricsManager : public virtual RefBase, public virtual PullUidProvider {
+class MetricsManager : public virtual RefBase,
+                       public virtual PullUidProvider,
+                       public virtual ConfigMetadataProvider {
 public:
-    MetricsManager(const ConfigKey& configKey, const StatsdConfig& config, const int64_t timeBaseNs,
+    MetricsManager(const ConfigKey& configKey, const StatsdConfig& config, int64_t timeBaseNs,
                    const int64_t currentTimeNs, const sp<UidMap>& uidMap,
                    const sp<StatsPullerManager>& pullerManager,
                    const sp<AlarmMonitor>& anomalyAlarmMonitor,
@@ -47,39 +50,36 @@ public:
 
     virtual ~MetricsManager();
 
-    bool updateConfig(const StatsdConfig& config, const int64_t timeBaseNs,
-                      const int64_t currentTimeNs, const sp<AlarmMonitor>& anomalyAlarmMonitor,
+    bool updateConfig(const StatsdConfig& config, int64_t timeBaseNs, const int64_t currentTimeNs,
+                      const sp<AlarmMonitor>& anomalyAlarmMonitor,
                       const sp<AlarmMonitor>& periodicAlarmMonitor);
 
     // Return whether the configuration is valid.
     bool isConfigValid() const;
 
-    bool checkLogCredentials(const LogEvent& event);
-
-    bool eventSanityCheck(const LogEvent& event);
-
-    void onLogEvent(const LogEvent& event);
+    virtual void onLogEvent(const LogEvent& event);
 
     void onAnomalyAlarmFired(
-        const int64_t& timestampNs,
-        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
+            int64_t timestampNs,
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
     void onPeriodicAlarmFired(
-        const int64_t& timestampNs,
-        unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
+            int64_t timestampNs,
+            unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet);
 
-    void notifyAppUpgrade(const int64_t& eventTimeNs, const string& apk, const int uid,
-                          const int64_t version);
+    void notifyAppUpgrade(int64_t eventTimeNs, const string& apk, int uid, int64_t version);
 
-    void notifyAppRemoved(const int64_t& eventTimeNs, const string& apk, const int uid);
+    void notifyAppRemoved(int64_t eventTimeNs, const string& apk, int uid);
 
-    void onUidMapReceived(const int64_t& eventTimeNs);
+    void onUidMapReceived(int64_t eventTimeNs);
 
-    void onStatsdInitCompleted(const int64_t& elapsedTimeNs);
+    void onStatsdInitCompleted(int64_t elapsedTimeNs);
 
     void init();
 
     vector<int32_t> getPullAtomUids(int32_t atomId) override;
+
+    bool useV2SoftMemoryCalculation() override;
 
     bool shouldWriteToDisk() const {
         return mNoReportMetricIds.size() != mAllMetricProducers.size();
@@ -89,7 +89,7 @@ public:
         return mShouldPersistHistory;
     }
 
-    void dumpStates(FILE* out, bool verbose);
+    void dumpStates(int out, bool verbose);
 
     inline bool isInTtl(const int64_t timestampNs) const {
         return mTtlNs <= 0 || timestampNs < mTtlEndNs;
@@ -133,7 +133,7 @@ public:
 
     virtual void dropData(const int64_t dropTimeNs);
 
-    virtual void onDumpReport(const int64_t dumpTimeNs, const int64_t wallClockNs,
+    virtual void onDumpReport(const int64_t dumpTimeNs, int64_t wallClockNs,
                               const bool include_current_partial_bucket, const bool erase_data,
                               const DumpLatency dumpLatency, std::set<string>* str_set,
                               android::util::ProtoOutputStream* protoOutput);
@@ -150,20 +150,54 @@ public:
 
     void loadActiveConfig(const ActiveConfig& config, int64_t currentTimeNs);
 
-    void writeActiveConfigToProtoOutputStream(
-            int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto);
+    void writeActiveConfigToProtoOutputStream(int64_t currentTimeNs, const DumpReportReason reason,
+                                              ProtoOutputStream* proto);
 
     // Returns true if at least one piece of metadata is written.
-    bool writeMetadataToProto(int64_t currentWallClockTimeNs,
-                              int64_t systemElapsedTimeNs,
+    bool writeMetadataToProto(int64_t currentWallClockTimeNs, int64_t systemElapsedTimeNs,
                               metadata::StatsMetadata* statsMetadata);
 
-    void loadMetadata(const metadata::StatsMetadata& metadata,
-                      int64_t currentWallClockTimeNs,
+    void loadMetadata(const metadata::StatsMetadata& metadata, int64_t currentWallClockTimeNs,
                       int64_t systemElapsedTimeNs);
+
+    inline bool hasRestrictedMetricsDelegate() const {
+        return mRestrictedMetricsDelegatePackageName.has_value();
+    }
+
+    inline string getRestrictedMetricsDelegate() const {
+        return hasRestrictedMetricsDelegate() ? mRestrictedMetricsDelegatePackageName.value() : "";
+    }
+
+    inline ConfigKey getConfigKey() const {
+        return mConfigKey;
+    }
+
+    void enforceRestrictedDataTtls(const int64_t wallClockNs);
+
+    bool validateRestrictedMetricsDelegate(int32_t callingUid);
+
+    virtual void flushRestrictedData();
+
+    // Slow, should not be called in a hotpath.
+    vector<int64_t> getAllMetricIds() const;
+
+    // Adds all atom ids referenced by matchers in the MetricsManager's config
+    void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
+
+    // Gets the memory limit for the MetricsManager's config
+    inline size_t getMaxMetricsBytes() const {
+        return mMaxMetricsBytes;
+    }
+
+    inline size_t getTriggerGetDataBytes() const {
+        return mTriggerGetDataBytes;
+    }
+
 private:
     // For test only.
-    inline int64_t getTtlEndNs() const { return mTtlEndNs; }
+    inline int64_t getTtlEndNs() const {
+        return mTtlEndNs;
+    }
 
     const ConfigKey mConfigKey;
 
@@ -216,8 +250,7 @@ private:
     std::list<std::pair<const int64_t, const int32_t>> mAnnotations;
 
     bool mShouldPersistHistory;
-
-    const bool mAtomMatcherOptimizationEnabled;
+    bool mUseV2SoftMemoryCalculation;
 
     // All event tags that are interesting to config metrics matchers.
     std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;
@@ -290,6 +323,12 @@ private:
 
     std::vector<int> mMetricIndexesWithActivation;
 
+    inline bool checkLogCredentials(const LogEvent& event) const {
+        return checkLogCredentials(event.GetUid(), event.GetTagId());
+    }
+
+    bool checkLogCredentials(int32_t uid, int32_t atomId) const;
+
     void initAllowedLogSources();
 
     void initPullAtomSources();
@@ -310,7 +349,7 @@ private:
     // The metrics that don't need to be uploaded or even reported.
     std::set<int64_t> mNoReportMetricIds;
 
-   // The config is active if any metric in the config is active.
+    // The config is active if any metric in the config is active.
     bool mIsActive;
 
     // The config is always active if any metric in the config does not have an activation signal.
@@ -319,10 +358,55 @@ private:
     // Hashes of the States used in this config, keyed by the state id, used in config updates.
     std::map<int64_t, uint64_t> mStateProtoHashes;
 
-    FRIEND_TEST(WakelockDurationE2eTest, TestAggregatedPredicateDimensions);
+    // Optional package name of the delegate that processes restricted metrics
+    // If set, restricted metrics are only uploaded to the delegate.
+    optional<string> mRestrictedMetricsDelegatePackageName = nullopt;
+
+    // Only called on config creation/update. Sets the memory limit in bytes for storing metrics.
+    void setMaxMetricsBytesFromConfig(const StatsdConfig& config);
+
+    // Only called on config creation/update. Sets the soft memory limit in bytes for storing
+    // metrics.
+    void setTriggerGetDataBytesFromConfig(const StatsdConfig& config);
+
+    // Parse SocketLossInfo and propagate info to the metrics
+    void onLogEventLost(const SocketLossInfo& socketLossInfo);
+
+    /**
+     * @brief Update metrics depending on #lostAtomId that it was lost due to #reason
+     * @return number of notified metrics
+     */
+    int notifyMetricsAboutLostAtom(int32_t lostAtomId, DataCorruptedReason reason);
+
+    /**
+     * @brief Updates MetricProducers with DataCorruptionReason due to queue overflow atom loss
+     *        Notifies metrics only when new queue overflow happens since previous dumpReport
+     *        Perform QueueOverflowAtomsStats tracking via managing stats local copy
+     *        The assumption is that QueueOverflowAtomsStats collected over time, and that none of
+     *        atom id counters have disappeared (which is StatsdStats logic until it explicitly
+     *        reset, which should not be happen during statsd service lifetime)
+     * @param overflowStats
+     */
+    void processQueueOverflowStats(const StatsdStats::QueueOverflowAtomsStats& overflowStats);
+
+    // The memory limit in bytes for storing metrics
+    size_t mMaxMetricsBytes;
+
+    // The memory limit in bytes for triggering get data.
+    size_t mTriggerGetDataBytes;
+
+    // Dropped atoms stats due to queue overflow observed up to latest dumpReport request
+    // this map is not cleared during onDumpReport to preserve tracking information and avoid
+    // repeated metric notification about past queue overflow lost event
+    // This map represent local copy of StatsdStats::mPushedAtomDropsStats with relevant atoms ids
+    typedef std::unordered_map<int32_t, int32_t> QueueOverflowAtomsStatsMap;
+    QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
+
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
+
+    FRIEND_TEST(GaugeMetricE2ePushedTest, TestDimensionalSampling);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTrigger);
     FRIEND_TEST(GaugeMetricE2ePulledTest, TestFirstNSamplesPulledNoTriggerWithActivation);
     FRIEND_TEST(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent);
@@ -353,15 +437,21 @@ private:
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations);
 
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
+    FRIEND_TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
-    FRIEND_TEST(MetricsManagerTest_SPlus, TestAtomMatcherOptimizationEnabledFlag);
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom);
+    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
+    FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
+    FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);
+    FRIEND_TEST(MetricsManagerQueueOverflowInfoPropagationTest,
+                TestDoNotNotifyInterestedMetricsIfNoUpdate);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
     FRIEND_TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationOnBoot);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivations);
     FRIEND_TEST(StatsLogProcessorTest,
-            TestActivationOnBootMultipleActivationsDifferentActivationTypes);
+                TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
 
     FRIEND_TEST(CountMetricE2eTest, TestInitialConditionChanges);
@@ -379,7 +469,6 @@ private:
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedState);
     FRIEND_TEST(DurationMetricE2eTest, TestWithConditionAndSlicedState);
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStateMapped);
-    FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSuperset);
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset);
     FRIEND_TEST(DurationMetricE2eTest, TestUploadThreshold);
 
@@ -390,7 +479,8 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
-    FRIEND_TEST(GaugeMetricE2ePushedTest, TestDimensionalSampling);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
 };
 
 }  // namespace statsd

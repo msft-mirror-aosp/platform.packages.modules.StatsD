@@ -128,7 +128,8 @@ public:
         translateFieldMatcher(metric.kll_field(), &fieldMatchers);
 
         const auto [dimensionSoftLimit, dimensionHardLimit] =
-                StatsdStats::getAtomDimensionKeySizeLimits(atomId);
+                StatsdStats::getAtomDimensionKeySizeLimits(
+                        atomId, StatsdStats::kDimensionKeySizeHardLimitMin);
 
         int conditionIndex = initialCondition ? 0 : -1;
         vector<ConditionState> initialConditionCache;
@@ -136,6 +137,7 @@ public:
             initialConditionCache.push_back(initialCondition.value());
         }
 
+        sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
         return new KllMetricProducer(
                 kConfigKey, metric, protoHash, {/*pullAtomId=*/-1, /*pullerManager=*/nullptr},
                 {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
@@ -146,7 +148,7 @@ public:
                 {conditionIndex, metric.links(), initialConditionCache, wizard},
                 {metric.state_link(), slicedStateAtoms, stateGroupMap},
                 {/*eventActivationMap=*/{}, /*eventDeactivationMap=*/{}},
-                {dimensionSoftLimit, dimensionHardLimit});
+                {dimensionSoftLimit, dimensionHardLimit}, provider);
     }
 
     static KllMetric createMetric() {

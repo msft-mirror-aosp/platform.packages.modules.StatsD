@@ -84,6 +84,7 @@ const int FIELD_ID_PULLER_NOT_FOUND = 21;
 const int FIELD_ID_PULL_TIMEOUT_METADATA = 22;
 const int FIELD_ID_PULL_TIMEOUT_METADATA_UPTIME_MILLIS = 1;
 const int FIELD_ID_PULL_TIMEOUT_METADATA_ELAPSED_MILLIS = 2;
+const int FIELD_ID_SUBSCRIPTION_PULL_COUNT = 23;
 
 // for AtomMetricStats proto
 const int FIELD_ID_ATOM_METRIC_STATS = 17;
@@ -516,6 +517,8 @@ void writePullerStatsToStream(const std::pair<int, StatsdStats::PulledAtomStats>
                            pullTimeoutMetadata.pullTimeoutElapsedMillis);
         protoOutput->end(timeoutMetadataToken);
     }
+    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_SUBSCRIPTION_PULL_COUNT,
+                             pair.second.subscriptionPullCount, protoOutput);
     protoOutput->end(token);
 }
 
@@ -549,6 +552,18 @@ void writeAtomMetricStatsToStream(const std::pair<int64_t, StatsdStats::AtomMetr
     writeNonZeroStatToStream(FIELD_TYPE_INT64 | FIELD_ID_BUCKET_COUNT,
                              (long long)pair.second.bucketCount, protoOutput);
     protoOutput->end(token);
+}
+
+void writeDataCorruptedReasons(ProtoOutputStream& proto, int fieldIdDataCorruptedReason,
+                               bool hasQueueOverflow, bool hasSocketLoss) {
+    if (hasQueueOverflow) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | fieldIdDataCorruptedReason,
+                    DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    }
+    if (hasSocketLoss) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | fieldIdDataCorruptedReason,
+                    DATA_CORRUPTED_SOCKET_LOSS);
+    }
 }
 
 int64_t getElapsedRealtimeNs() {
@@ -595,6 +610,10 @@ int64_t NanoToMillis(const int64_t nano) {
     return nano / 1000000;
 }
 
+int64_t NanoToSeconds(const int64_t nano) {
+    return nano / NS_PER_SEC;
+}
+
 int64_t MillisToNano(const int64_t millis) {
     return millis * 1000000;
 }
@@ -614,7 +633,7 @@ bool checkPermissionForIds(const char* permission, pid_t pid, uid_t uid) {
     return success;
 }
 
-void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event) {
+void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap>& uidMap, LogEvent& event) {
     uint8_t remainingUidCount = event.getNumUidFields();
     vector<FieldValue>* fieldValues = event.getMutableValues();
     auto it = fieldValues->begin();
@@ -627,10 +646,10 @@ void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event
     }
 }
 
-std::string toHexString(const vector<uint8_t>& bytes) {
+std::string toHexString(const string& bytes) {
     static const char* kLookup = "0123456789ABCDEF";
     string hex;
-    for (const uint8_t byte : bytes) {
+    for (const char byte : bytes) {
         hex.push_back(kLookup[(byte & 0xF0) >> 4]);
         hex.push_back(kLookup[byte & 0x0F]);
     }

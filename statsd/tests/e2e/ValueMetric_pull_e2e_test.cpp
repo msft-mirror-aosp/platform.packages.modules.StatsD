@@ -17,7 +17,6 @@
 
 #include <vector>
 
-#include "flags/FlagProvider.h"
 #include "src/StatsLogProcessor.h"
 #include "src/stats_log_util.h"
 #include "tests/statsd_test_util.h"
@@ -36,7 +35,6 @@ const int64_t metricId = 123456;
 
 StatsdConfig CreateStatsdConfig(bool useCondition = true) {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT"); // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
     auto pulledAtomMatcher =
             CreateSimpleAtomMatcher("TestMatcher", util::SUBSYSTEM_SLEEP_STATE);
@@ -68,7 +66,6 @@ StatsdConfig CreateStatsdConfig(bool useCondition = true) {
 
 StatsdConfig CreateStatsdConfigWithStates() {
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");     // LogEvent defaults to UID of root.
     config.add_default_pull_packages("AID_ROOT");  // Fake puller is registered with root.
 
     auto pulledAtomMatcher = CreateSimpleAtomMatcher("TestMatcher", util::SUBSYSTEM_SLEEP_STATE);
@@ -144,20 +141,6 @@ StatsdConfig CreateStatsdConfigWithStates() {
 
 }  // namespace
 
-// Setup for test fixture.
-class ValueMetricE2eTest : public testing::TestWithParam<string> {
-    void SetUp() override {
-        FlagProvider::getInstance().overrideFlag(LIMIT_PULL_FLAG, GetParam(),
-                                                 /*isBootFlag=*/true);
-    }
-
-    void TearDown() override {
-        FlagProvider::getInstance().resetOverrides();
-    }
-};
-
-INSTANTIATE_TEST_SUITE_P(LimitPull, ValueMetricE2eTest, testing::Values(FLAG_FALSE, FLAG_TRUE));
-
 /**
  * Tests the initial condition and condition after the first log events for
  * value metrics with either a combination condition or simple condition.
@@ -217,7 +200,7 @@ TEST(ValueMetricE2eTest, TestInitialConditionChanges) {
     EXPECT_EQ(ConditionState::kTrue, metricProducer2->mCondition);
 }
 
-TEST_P(ValueMetricE2eTest, TestPulledEvents) {
+TEST(ValueMetricE2eTest, TestPulledEvents) {
     auto config = CreateStatsdConfig();
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -291,6 +274,7 @@ TEST_P(ValueMetricE2eTest, TestPulledEvents) {
     ASSERT_EQ(1, reports.reports_size());
     ASSERT_EQ(1, reports.reports(0).metrics_size());
     StatsLogReport::ValueMetricDataWrapper valueMetrics;
+    EXPECT_TRUE(reports.reports(0).metrics(0).has_estimated_data_bytes());
     sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).value_metrics(), &valueMetrics);
     ASSERT_GT((int)valueMetrics.data_size(), 1);
 
@@ -337,7 +321,7 @@ TEST_P(ValueMetricE2eTest, TestPulledEvents) {
               skipped.end_bucket_elapsed_nanos());
 }
 
-TEST_P(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
+TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
     auto config = CreateStatsdConfig();
     int64_t baseTimeNs = getElapsedRealtimeNs();
     // 10 mins == 2 bucket durations.
@@ -464,7 +448,7 @@ TEST_P(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
               skipped.end_bucket_elapsed_nanos());
 }
 
-TEST_P(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
+TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     auto config = CreateStatsdConfig(false);
     int64_t baseTimeNs = getElapsedRealtimeNs();
     int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
@@ -667,7 +651,6 @@ TEST_P(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
 TEST(ValueMetricE2eTest, TestInitWithSlicedState) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto pulledAtomMatcher =
             CreateSimpleAtomMatcher("TestMatcher", util::SUBSYSTEM_SLEEP_STATE);
@@ -721,7 +704,6 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState) {
 TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto cpuTimePerUidMatcher =
             CreateSimpleAtomMatcher("CpuTimePerUidMatcher", util::CPU_TIME_PER_UID);
@@ -781,7 +763,6 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions) {
 TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     auto cpuTimePerUidMatcher =
             CreateSimpleAtomMatcher("CpuTimePerUidMatcher", util::CPU_TIME_PER_UID);
@@ -824,7 +805,6 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions) {
 TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL) {
     // Create config.
     StatsdConfig config;
-    config.add_allowed_log_source("AID_ROOT");  // LogEvent defaults to UID of root.
 
     AtomMatcher testAtomReportedMatcher =
             CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
@@ -849,6 +829,76 @@ TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL) {
 
     // Config initialization fails.
     ASSERT_EQ(0, processor->mMetricsManagers.size());
+}
+
+TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes) {
+    // Create config.
+    StatsdConfig config;
+
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    // Create value metric.
+    int64_t metricId = 123456;
+    ValueMetric* valueMetric = config.add_value_metric();
+    valueMetric->set_id(metricId);
+    valueMetric->set_bucket(TimeUnit::FIVE_MINUTES);
+    valueMetric->set_what(testAtomReportedMatcher.id());
+    *valueMetric->mutable_value_field() = CreateDimensions(
+            util::TEST_ATOM_REPORTED, {2 /*int_field*/, 2 /*int_field*/, 3 /*long_field*/,
+                                       3 /*long_field*/, 3 /*long_field*/});
+    valueMetric->add_aggregation_types(ValueMetric::SUM);
+    valueMetric->add_aggregation_types(ValueMetric::MIN);
+    valueMetric->add_aggregation_types(ValueMetric::MAX);
+    valueMetric->add_aggregation_types(ValueMetric::AVG);
+    valueMetric->add_aggregation_types(ValueMetric::MIN);
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
+
+    ASSERT_EQ(1, processor->mMetricsManagers.size());
+    sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+    EXPECT_TRUE(metricsManager->isConfigValid());
+    ASSERT_EQ(1, metricsManager->mAllMetricProducers.size());
+    sp<MetricProducer> metricProducer = metricsManager->mAllMetricProducers[0];
+}
+
+TEST(ValueMetricE2eTest, TestInitWithDefaultAggType) {
+    // Create config.
+    StatsdConfig config;
+
+    AtomMatcher testAtomReportedMatcher =
+            CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
+    *config.add_atom_matcher() = testAtomReportedMatcher;
+
+    // Create value metric.
+    int64_t metricId = 123456;
+    ValueMetric* valueMetric = config.add_value_metric();
+    valueMetric->set_id(metricId);
+    valueMetric->set_bucket(TimeUnit::FIVE_MINUTES);
+    valueMetric->set_what(testAtomReportedMatcher.id());
+    *valueMetric->mutable_value_field() =
+            CreateDimensions(util::TEST_ATOM_REPORTED, {3 /*long_field*/, 2 /*int_field*/});
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
+
+    ASSERT_EQ(1, processor->mMetricsManagers.size());
+    sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+    EXPECT_TRUE(metricsManager->isConfigValid());
+    ASSERT_EQ(1, metricsManager->mAllMetricProducers.size());
+    sp<MetricProducer> metricProducer = metricsManager->mAllMetricProducers[0];
 }
 
 #else

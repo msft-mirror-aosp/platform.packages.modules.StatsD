@@ -75,6 +75,7 @@ sdk {
         "com.android.os.statsd",
     ],
     native_shared_libs: [
+        "libstatspull",
         "libstatssocket",
     ],
 }

@@ -76,10 +76,12 @@ int64_t getWallClockSec();
 
 int64_t NanoToMillis(const int64_t nano);
 
+int64_t NanoToSeconds(const int64_t nano);
+
 int64_t MillisToNano(const int64_t millis);
 
 // Helper function to write a stats field to ProtoOutputStream if it's a non-zero value.
-void writeNonZeroStatToStream(const uint64_t fieldId, const int64_t value,
+void writeNonZeroStatToStream(const uint64_t fieldId, int64_t value,
                               ProtoOutputStream* protoOutput);
 
 // Helper function to write PulledAtomStats to ProtoOutputStream
@@ -89,6 +91,9 @@ void writePullerStatsToStream(const std::pair<int, StatsdStats::PulledAtomStats>
 // Helper function to write AtomMetricStats to ProtoOutputStream
 void writeAtomMetricStatsToStream(const std::pair<int64_t, StatsdStats::AtomMetricStats> &pair,
                                   ProtoOutputStream *protoOutput);
+
+void writeDataCorruptedReasons(ProtoOutputStream& proto, int fieldIdDataCorruptedReason,
+                               bool hasQueueOverflow, bool hasSocketLoss);
 
 template<class T>
 bool parseProtoOutputStream(ProtoOutputStream& protoOutput, T* message) {
@@ -117,9 +122,9 @@ inline bool isPulledAtom(int atomId) {
     return atomId >= StatsdStats::kPullAtomStartTag && atomId < StatsdStats::kVendorAtomStartTag;
 }
 
-void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap> uidMap, LogEvent& event);
+void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap>& uidMap, LogEvent& event);
 
-std::string toHexString(const vector<uint8_t>& bytes);
+std::string toHexString(const string& bytes);
 
 }  // namespace statsd
 }  // namespace os

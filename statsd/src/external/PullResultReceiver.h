@@ -29,8 +29,8 @@ namespace statsd {
 
 class PullResultReceiver : public BnPullAtomResultReceiver {
 public:
-    PullResultReceiver(function<void(int32_t, bool, const vector<StatsEventParcel>&)>
-                               pullFinishCallback);
+    PullResultReceiver(
+            function<void(int32_t, bool, const vector<StatsEventParcel>&)> pullFinishCallback);
     ~PullResultReceiver();
 
     /**

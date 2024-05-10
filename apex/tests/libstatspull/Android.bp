@@ -22,7 +22,7 @@ android_test {
         "androidx.test.rules",
         "platformprotoslite",
         "statsdprotolite",
-        "truth-prebuilt",
+        "truth",
     ],
     libs: [
         "android.test.runner.stubs",
@@ -34,7 +34,7 @@ android_test {
     srcs: [
         "src/**/*.java",
         "protos/**/*.proto",
-        ],
+    ],
     test_suites: [
         "device-tests",
         "mts",
@@ -45,20 +45,21 @@ android_test {
     compile_multilib: "both",
 }
 
-cc_library_shared {
+cc_test_library {
     name: "libstatspull_testhelper",
     srcs: ["jni/stats_pull_helper.cpp"],
     cflags: [
         "-Wall",
         "-Werror",
+        "-Wthread-safety",
     ],
     shared_libs: [
-        "libbinder_ndk",
-        "statsd-aidl-ndk",
+        "libstatspull",
+        "libstatssocket",
     ],
+    header_libs: ["libnativehelper_header_only"],
     static_libs: [
-        "libstatspull_private",
-        "libstatssocket_private",
-        "libcutils",
+        "libbase",
     ],
+    test_for: ["com.android.os.statsd"],
 }

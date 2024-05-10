@@ -26,7 +26,9 @@ import android.content.Context;
 import android.os.Binder;
 import android.os.IPullAtomCallback;
 import android.os.IStatsManagerService;
+import android.os.IStatsQueryCallback;
 import android.os.IStatsd;
+import android.os.ParcelFileDescriptor;
 import android.os.PowerManager;
 import android.os.Process;
 import android.os.RemoteException;
@@ -35,6 +37,12 @@ import android.util.Log;
 
 import com.android.internal.annotations.GuardedBy;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.FileDescriptor;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
 
@@ -66,6 +74,9 @@ public class StatsManagerService extends IStatsManagerService.Stub {
     @GuardedBy("mLock")
     private ArrayMap<ConfigKey, ArrayMap<Long, PendingIntentRef>> mBroadcastSubscriberPirMap =
             new ArrayMap<>();
+    @GuardedBy("mLock")
+    private ArrayMap<ConfigKeyWithPackage, ArrayMap<Integer, PendingIntentRef>>
+            mRestrictedMetricsPirMap = new ArrayMap<>();
 
     public StatsManagerService(Context context) {
         super();
@@ -99,6 +110,39 @@ public class StatsManagerService extends IStatsManagerService.Stub {
             if (obj instanceof ConfigKey) {
                 ConfigKey other = (ConfigKey) obj;
                 return this.mUid == other.getUid() && this.mConfigId == other.getConfigId();
+            }
+            return false;
+        }
+    }
+
+    private static class ConfigKeyWithPackage {
+        private final String mConfigPackage;
+        private final long mConfigId;
+
+        ConfigKeyWithPackage(String configPackage, long configId) {
+            mConfigPackage = configPackage;
+            mConfigId = configId;
+        }
+
+        public String getConfigPackage() {
+            return mConfigPackage;
+        }
+
+        public long getConfigId() {
+            return mConfigId;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(mConfigPackage, mConfigId);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj instanceof ConfigKeyWithPackage) {
+                ConfigKeyWithPackage other = (ConfigKeyWithPackage) obj;
+                return this.mConfigPackage.equals(other.getConfigPackage())
+                        && this.mConfigId == other.getConfigId();
             }
             return false;
         }
@@ -413,11 +457,10 @@ public class StatsManagerService extends IStatsManagerService.Stub {
     @Override
     public byte[] getData(long key, String packageName) throws IllegalStateException {
         enforceDumpAndUsageStatsPermission(packageName);
-        PowerManager powerManager = (PowerManager)
-                mContext.getSystemService(Context.POWER_SERVICE);
+        PowerManager powerManager = mContext.getSystemService(PowerManager.class);
         PowerManager.WakeLock wl = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
                 /*tag=*/ StatsManagerService.class.getCanonicalName());
-        int callingUid = Binder.getCallingUid();
+        final int callingUid = Binder.getCallingUid();
         final long token = Binder.clearCallingIdentity();
         wl.acquire();
         try {
@@ -433,6 +476,34 @@ public class StatsManagerService extends IStatsManagerService.Stub {
             Binder.restoreCallingIdentity(token);
         }
         throw new IllegalStateException("Failed to connect to statsd to getData");
+    }
+
+    @Override
+    public void getDataFd(long key, String packageName, ParcelFileDescriptor writeFd)
+            throws IllegalStateException, RemoteException {
+        try (writeFd) {
+            enforceDumpAndUsageStatsPermission(packageName);
+            PowerManager powerManager = mContext.getSystemService(PowerManager.class);
+            PowerManager.WakeLock wl = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,
+                    /*tag=*/ StatsManagerService.class.getCanonicalName());
+            final int callingUid = Binder.getCallingUid();
+            final long token = Binder.clearCallingIdentity();
+            wl.acquire();
+            try {
+                IStatsd statsd = waitForStatsd();
+                if (statsd != null) {
+                    // will create another intermediate pipe for statsd
+                    getDataFdFromStatsd(statsd, key, callingUid, writeFd.getFileDescriptor());
+                    return;
+                }
+            } finally {
+                wl.release();
+                Binder.restoreCallingIdentity(token);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("IOException during getDataFd() call", e);
+        }
+        throw new IllegalStateException("Failed to connect to statsd to getDataFd");
     }
 
     @Override
@@ -477,8 +548,95 @@ public class StatsManagerService extends IStatsManagerService.Stub {
         throw new IllegalStateException("Failed to connect to statsd to removeConfig");
     }
 
+    @Override
+    public long[] setRestrictedMetricsChangedOperation(PendingIntent pendingIntent,
+            long configId, String configPackage) {
+        enforceRestrictedStatsPermission();
+        int callingUid = Binder.getCallingUid();
+        final long token = Binder.clearCallingIdentity();
+        PendingIntentRef pir = new PendingIntentRef(pendingIntent, mContext);
+        ConfigKeyWithPackage key = new ConfigKeyWithPackage(configPackage, configId);
+        // Add the PIR to a map so we can re-register if statsd is unavailable.
+        synchronized (mLock) {
+            ArrayMap<Integer, PendingIntentRef> innerMap = mRestrictedMetricsPirMap.getOrDefault(
+                    key, new ArrayMap<>());
+            innerMap.put(callingUid, pir);
+            mRestrictedMetricsPirMap.put(key, innerMap);
+        }
+        try {
+            IStatsd statsd = getStatsdNonblocking();
+            if (statsd != null) {
+                return statsd.setRestrictedMetricsChangedOperation(configId, configPackage, pir,
+                        callingUid);
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to setRestrictedMetricsChangedOperation with statsd");
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+        return new long[]{};
+    }
+
+    @Override
+    public void removeRestrictedMetricsChangedOperation(long configId, String configPackage) {
+        enforceRestrictedStatsPermission();
+        int callingUid = Binder.getCallingUid();
+        final long token = Binder.clearCallingIdentity();
+        ConfigKeyWithPackage key = new ConfigKeyWithPackage(configPackage, configId);
+        synchronized (mLock) {
+            ArrayMap<Integer, PendingIntentRef> innerMap = mRestrictedMetricsPirMap.getOrDefault(
+                    key, new ArrayMap<>());
+            innerMap.remove(callingUid);
+            if (innerMap.isEmpty()) {
+                mRestrictedMetricsPirMap.remove(key);
+            }
+        }
+        try {
+            IStatsd statsd = getStatsdNonblocking();
+            if (statsd != null) {
+                statsd.removeRestrictedMetricsChangedOperation(configId, configPackage, callingUid);
+            }
+        } catch (RemoteException e) {
+            Log.e(TAG, "Failed to removeRestrictedMetricsChangedOperation with statsd");
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
+    @Override
+    public void querySql(String sqlQuery, int minSqlClientVersion, byte[] policyConfig,
+            IStatsQueryCallback queryCallback, long configKey, String configPackage) {
+        int callingUid = Binder.getCallingUid();
+        enforceRestrictedStatsPermission();
+        final long token = Binder.clearCallingIdentity();
+        try {
+            IStatsd statsd = waitForStatsd();
+            if (statsd != null) {
+                statsd.querySql(
+                    sqlQuery,
+                    minSqlClientVersion,
+                    policyConfig,
+                    queryCallback,
+                    configKey,
+                    configPackage,
+                    callingUid);
+            } else {
+                queryCallback.sendFailure("Could not connect to statsd from system server");
+            }
+        } catch (RemoteException e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
     void setStatsCompanionService(StatsCompanionService statsCompanionService) {
         mStatsCompanionService = statsCompanionService;
+    }
+
+    /** Checks that the caller has READ_RESTRICTED_STATS permission. */
+    private void enforceRestrictedStatsPermission() {
+        mContext.enforceCallingPermission(Manifest.permission.READ_RESTRICTED_STATS, null);
     }
 
     /**
@@ -589,6 +747,8 @@ public class StatsManagerService extends IStatsManagerService.Stub {
             registerAllDataFetchOperations(statsd);
             registerAllActiveConfigsChangedOperations(statsd);
             registerAllBroadcastSubscribers(statsd);
+            registerAllRestrictedMetricsChangedOperations(statsd);
+            // TODO (b/269419485): register all restricted metric operations.
         } catch (RemoteException e) {
             Log.e(TAG, "StatsManager failed to (re-)register data with statsd");
         } finally {
@@ -657,12 +817,97 @@ public class StatsManagerService extends IStatsManagerService.Stub {
         }
 
         for (Map.Entry<ConfigKey, ArrayMap<Long, PendingIntentRef>> entry :
-                mBroadcastSubscriberPirMap.entrySet()) {
+                broadcastSubscriberCopy.entrySet()) {
             ConfigKey configKey = entry.getKey();
             for (Map.Entry<Long, PendingIntentRef> subscriberEntry : entry.getValue().entrySet()) {
                 statsd.setBroadcastSubscriber(configKey.getConfigId(), subscriberEntry.getKey(),
                         subscriberEntry.getValue(), configKey.getUid());
             }
+        }
+    }
+
+    // Pre-condition: the Binder calling identity has already been cleared
+    private void registerAllRestrictedMetricsChangedOperations(IStatsd statsd)
+            throws RemoteException {
+        // Since we do not want to make an IPC with the lock held, we first create a deep copy of
+        // the data with the lock held before iterating through the map.
+        ArrayMap<ConfigKeyWithPackage, ArrayMap<Integer, PendingIntentRef>> restrictedMetricsCopy =
+                new ArrayMap<>();
+        synchronized (mLock) {
+            for (Map.Entry<ConfigKeyWithPackage, ArrayMap<Integer, PendingIntentRef>> entry :
+                    mRestrictedMetricsPirMap.entrySet()) {
+                restrictedMetricsCopy.put(entry.getKey(), new ArrayMap(entry.getValue()));
+            }
+        }
+
+        for (Map.Entry<ConfigKeyWithPackage, ArrayMap<Integer, PendingIntentRef>> entry :
+                restrictedMetricsCopy.entrySet()) {
+            ConfigKeyWithPackage configKey = entry.getKey();
+            for (Map.Entry<Integer, PendingIntentRef> uidEntry : entry.getValue().entrySet()) {
+                statsd.setRestrictedMetricsChangedOperation(configKey.getConfigId(),
+                        configKey.getConfigPackage(), uidEntry.getValue(), uidEntry.getKey());
+            }
+        }
+    }
+    private static final int CHUNK_SIZE = 1024 * 64; // 64 kB
+
+    /**
+     * Executes a binder transaction with file descriptors.
+     *
+     * No exception handling in this API since they will not be propagated back to caller
+     * to make debugging easier, since this API part of oneway binder call flow.
+     */
+    private static void getDataFdFromStatsd(IStatsd service, long configKey, int callingUid,
+            FileDescriptor dstFd)
+            throws IllegalStateException, RemoteException {
+        ParcelFileDescriptor[] pipe;
+        try {
+            pipe = ParcelFileDescriptor.createPipe();
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to create a pipe to receive reports.", e);
+            throw new IllegalStateException("Failed to create a pipe to receive reports.", e);
+        }
+
+        ParcelFileDescriptor readFd = pipe[0];
+        ParcelFileDescriptor writeFd = pipe[1];
+
+        // statsd write/flush will block until read() will start to consume data.
+        // OTOH read cannot start until binder sync operation is over.
+        // To decouple this dependency call to statsd should be async
+        service.getDataFd(configKey, callingUid, writeFd);
+        try {
+            writeFd.close();
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to close FD", e);
+            throw new IllegalStateException("Failed to close FD.", e);
+        }
+
+        // There are many possible exceptions below, to not forget close pipe descriptors
+        // wrapping in the try-with-resources statement
+        try (FileInputStream inputStream = new ParcelFileDescriptor.AutoCloseInputStream(readFd);
+             DataInputStream srcDataStream = new DataInputStream(inputStream);
+             FileOutputStream outStream = new FileOutputStream(dstFd);
+             DataOutputStream dstDataStream = new DataOutputStream(outStream)) {
+
+            byte[] chunk = new byte[CHUNK_SIZE];
+            int chunkLen = 0;
+            int readBytes = 0;
+            // the data protocol is [int ExpectedReportSize][ReportBytes]
+            // where int denotes the following bytes count
+            final int expectedReportSize = srcDataStream.readInt();
+            // communicate the report size
+            dstDataStream.writeInt(expectedReportSize);
+            // -1 denotes EOF
+            while ((chunkLen = inputStream.read(chunk, 0, CHUNK_SIZE)) != -1) {
+                dstDataStream.write(chunk, 0, chunkLen);
+                readBytes += chunkLen;
+            }
+            if (readBytes != expectedReportSize) {
+                throw new IllegalStateException("Incomplete data read from StatsD.");
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to read data from statsd pipe", e);
+            throw new IllegalStateException("Failed to read data from statsd pipe.", e);
         }
     }
 }
