@@ -768,6 +768,9 @@ public:
      */
     bool hasEventQueueOverflow() const;
 
+    typedef std::vector<std::pair<int32_t, int32_t>> QueueOverflowAtomsStats;
+    QueueOverflowAtomsStats getQueueOverflowAtomsStats() const;
+
     /**
      * Returns true if there is recorded socket loss
      */
