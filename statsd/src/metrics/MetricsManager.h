@@ -150,16 +150,14 @@ public:
 
     void loadActiveConfig(const ActiveConfig& config, int64_t currentTimeNs);
 
-    void writeActiveConfigToProtoOutputStream(
-            int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto);
+    void writeActiveConfigToProtoOutputStream(int64_t currentTimeNs, const DumpReportReason reason,
+                                              ProtoOutputStream* proto);
 
     // Returns true if at least one piece of metadata is written.
-    bool writeMetadataToProto(int64_t currentWallClockTimeNs,
-                              int64_t systemElapsedTimeNs,
+    bool writeMetadataToProto(int64_t currentWallClockTimeNs, int64_t systemElapsedTimeNs,
                               metadata::StatsMetadata* statsMetadata);
 
-    void loadMetadata(const metadata::StatsMetadata& metadata,
-                      int64_t currentWallClockTimeNs,
+    void loadMetadata(const metadata::StatsMetadata& metadata, int64_t currentWallClockTimeNs,
                       int64_t systemElapsedTimeNs);
 
     inline bool hasRestrictedMetricsDelegate() const {
@@ -197,7 +195,9 @@ public:
 
 private:
     // For test only.
-    inline int64_t getTtlEndNs() const { return mTtlEndNs; }
+    inline int64_t getTtlEndNs() const {
+        return mTtlEndNs;
+    }
 
     const ConfigKey mConfigKey;
 
@@ -349,7 +349,7 @@ private:
     // The metrics that don't need to be uploaded or even reported.
     std::set<int64_t> mNoReportMetricIds;
 
-   // The config is active if any metric in the config is active.
+    // The config is active if any metric in the config is active.
     bool mIsActive;
 
     // The config is always active if any metric in the config does not have an activation signal.
@@ -369,13 +369,38 @@ private:
     // metrics.
     void setTriggerGetDataBytesFromConfig(const StatsdConfig& config);
 
+    // Parse SocketLossInfo and propagate info to the metrics
     void onLogEventLost(const SocketLossInfo& socketLossInfo);
+
+    /**
+     * @brief Update metrics depending on #lostAtomId that it was lost due to #reason
+     * @return number of notified metrics
+     */
+    int notifyMetricsAboutLostAtom(int32_t lostAtomId, DataCorruptedReason reason);
+
+    /**
+     * @brief Updates MetricProducers with DataCorruptionReason due to queue overflow atom loss
+     *        Notifies metrics only when new queue overflow happens since previous dumpReport
+     *        Perform QueueOverflowAtomsStats tracking via managing stats local copy
+     *        The assumption is that QueueOverflowAtomsStats collected over time, and that none of
+     *        atom id counters have disappeared (which is StatsdStats logic until it explicitly
+     *        reset, which should not be happen during statsd service lifetime)
+     * @param overflowStats
+     */
+    void processQueueOverflowStats(const StatsdStats::QueueOverflowAtomsStats& overflowStats);
 
     // The memory limit in bytes for storing metrics
     size_t mMaxMetricsBytes;
 
     // The memory limit in bytes for triggering get data.
     size_t mTriggerGetDataBytes;
+
+    // Dropped atoms stats due to queue overflow observed up to latest dumpReport request
+    // this map is not cleared during onDumpReport to preserve tracking information and avoid
+    // repeated metric notification about past queue overflow lost event
+    // This map represent local copy of StatsdStats::mPushedAtomDropsStats with relevant atoms ids
+    typedef std::unordered_map<int32_t, int32_t> QueueOverflowAtomsStatsMap;
+    QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
 
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
@@ -418,13 +443,15 @@ private:
     FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);
+    FRIEND_TEST(MetricsManagerQueueOverflowInfoPropagationTest,
+                TestDoNotNotifyInterestedMetricsIfNoUpdate);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
     FRIEND_TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationOnBoot);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivations);
     FRIEND_TEST(StatsLogProcessorTest,
-            TestActivationOnBootMultipleActivationsDifferentActivationTypes);
+                TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
 
     FRIEND_TEST(CountMetricE2eTest, TestInitialConditionChanges);
