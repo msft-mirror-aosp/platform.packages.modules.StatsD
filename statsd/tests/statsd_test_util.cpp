@@ -724,14 +724,16 @@ void writeAttribution(AStatsEvent* statsEvent, const vector<int>& attributionUid
                                       cTags.data(), attributionUids.size());
 }
 
-void parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent) {
+bool parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent) {
     AStatsEvent_build(statsEvent);
 
     size_t size;
     uint8_t* buf = AStatsEvent_getBuffer(statsEvent, &size);
-    logEvent->parseBuffer(buf, size);
+    const bool result = logEvent->parseBuffer(buf, size);
 
     AStatsEvent_release(statsEvent);
+
+    return result;
 }
 
 void CreateTwoValueLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs, int32_t value1,
