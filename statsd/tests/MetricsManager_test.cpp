@@ -30,6 +30,7 @@
 #include "src/metrics/NumericValueMetricProducer.h"
 #include "src/metrics/parsing_utils/metrics_manager_util.h"
 #include "src/state/StateManager.h"
+#include "src/stats_log.pb.h"
 #include "src/statsd_config.pb.h"
 #include "statsd_test_util.h"
 #include "statslog_statsdtest.h"
@@ -629,6 +630,145 @@ TEST(MetricsManagerTest, TestGetTriggerMemoryKbUnset) {
     // Since the memory limit is unset, we default back to 192KB
     EXPECT_EQ(defaultMemoryLimit, metricsManager.getTriggerGetDataBytes());
     EXPECT_TRUE(metricsManager.isConfigValid());
+}
+
+class MetricsManagerQueueOverflowInfoPropagationTest : public testing::Test {
+protected:
+    const int64_t kBucketStartTimeNs = 10000000000;
+    const int64_t kReportRequestTimeNs = kBucketStartTimeNs + 100;
+    const int64_t kAtomsLogTimeNs = kBucketStartTimeNs + 10;
+
+    StatsdConfig mConfig;
+    std::shared_ptr<MetricsManager> mMetricsManager;
+
+    const int32_t kAtomId = 2;
+    const int32_t kInterestAtomId = 3;
+    const int32_t kInterestedMetricId = 4;
+
+    void SetUp() override {
+        StatsdStats::getInstance().reset();
+
+        sp<UidMap> uidMap;
+        sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+        sp<AlarmMonitor> anomalyAlarmMonitor;
+        sp<AlarmMonitor> periodicAlarmMonitor;
+
+        // there will be one event metric interested in kInterestAtomId
+        mConfig = buildGoodEventConfig();
+        mConfig.add_whitelisted_atom_ids(kAtomId);
+        mConfig.add_whitelisted_atom_ids(kInterestAtomId);
+
+        // add one more event metric interested in kInterestAtomId
+        addEventMetricForAnAtom(mConfig, kInterestAtomId, kInterestedMetricId);
+
+        mMetricsManager = std::make_shared<MetricsManager>(
+                kConfigKey, mConfig, timeBaseSec, timeBaseSec, uidMap, pullerManager,
+                anomalyAlarmMonitor, periodicAlarmMonitor);
+    }
+
+    void TearDown() override {
+        StatsdStats::getInstance().reset();
+    }
+
+    ConfigMetricsReport getMetricsReport() {
+        ProtoOutputStream output;
+        std::set<string> str_set;
+        mMetricsManager->onDumpReport(kReportRequestTimeNs, kReportRequestTimeNs,
+                                      /*include_current_partial_bucket*/ true, /*erase_data*/ true,
+                                      /*dumpLatency*/ NO_TIME_CONSTRAINTS, &str_set, &output);
+
+        vector<uint8_t> bytes;
+        output.serializeToVector(&bytes);
+        ConfigMetricsReport metricsReport;
+        metricsReport.ParseFromArray(bytes.data(), bytes.size());
+        return metricsReport;
+    }
+
+    static void makeLogEvent(LogEvent* logEvent, int32_t atomId, int64_t timestampNs) {
+        AStatsEvent* statsEvent = AStatsEvent_obtain();
+        AStatsEvent_setAtomId(statsEvent, atomId);
+        AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
+        AStatsEvent_writeString(statsEvent, "demoString");
+        EXPECT_TRUE(parseStatsEventToLogEvent(statsEvent, logEvent));
+    }
+
+private:
+    static void addEventMetricForAnAtom(StatsdConfig& config, int32_t atomId, int64_t metricId) {
+        const int64_t matcherId = StringToId("CUSTOM_EVENT" + std::to_string(atomId));
+        AtomMatcher* eventMatcher = config.add_atom_matcher();
+        eventMatcher->set_id(matcherId);
+        SimpleAtomMatcher* simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
+        simpleAtomMatcher->set_atom_id(atomId);
+
+        EventMetric* metric = config.add_event_metric();
+        metric->set_id(metricId);
+        metric->set_what(matcherId);
+    }
+};
+
+TEST_F(MetricsManagerQueueOverflowInfoPropagationTest, TestNotifyOnlyInterestedMetrics) {
+    EXPECT_TRUE(mMetricsManager->isConfigValid());
+
+    StatsdStats::getInstance().noteEventQueueOverflow(kAtomsLogTimeNs, kInterestAtomId,
+                                                      /*isSkipped*/ false);
+
+    const int32_t someUnusedAtomId = kInterestAtomId + 100;
+    StatsdStats::getInstance().noteEventQueueOverflow(kAtomsLogTimeNs, someUnusedAtomId,
+                                                      /*isSkipped*/ false);
+
+    ConfigMetricsReport metricsReport = getMetricsReport();
+    ASSERT_EQ(metricsReport.metrics_size(), 2);
+
+    for (const auto& statsLogReport : metricsReport.metrics()) {
+        if (statsLogReport.metric_id() == kInterestedMetricId) {
+            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
+            EXPECT_EQ(statsLogReport.data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+        } else {
+            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 0);
+        }
+    }
+}
+
+TEST_F(MetricsManagerQueueOverflowInfoPropagationTest, TestDoNotNotifyInterestedMetricsIfNoUpdate) {
+    EXPECT_TRUE(mMetricsManager->isConfigValid());
+
+    EXPECT_TRUE(mMetricsManager->mQueueOverflowAtomsStats.empty());
+
+    ConfigMetricsReport metricsReport = getMetricsReport();
+    ASSERT_EQ(metricsReport.metrics_size(), 2);
+    EXPECT_TRUE(mMetricsManager->mQueueOverflowAtomsStats.empty());
+
+    for (const auto& statsLogReport : metricsReport.metrics()) {
+        if (statsLogReport.metric_id() == kInterestedMetricId) {
+            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 0);
+        }
+    }
+
+    StatsdStats::getInstance().noteEventQueueOverflow(kAtomsLogTimeNs, kInterestAtomId,
+                                                      /*isSkipped*/ false);
+
+    metricsReport = getMetricsReport();
+    ASSERT_EQ(metricsReport.metrics_size(), 2);
+    ASSERT_EQ(mMetricsManager->mQueueOverflowAtomsStats.size(), 1);
+    ASSERT_EQ(mMetricsManager->mQueueOverflowAtomsStats[kInterestAtomId], 1);
+
+    for (const auto& statsLogReport : metricsReport.metrics()) {
+        if (statsLogReport.metric_id() == kInterestedMetricId) {
+            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
+            EXPECT_EQ(statsLogReport.data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+        }
+    }
+
+    // no more dropped events as result event metric should not be notified about loss events
+
+    metricsReport = getMetricsReport();
+    ASSERT_EQ(metricsReport.metrics_size(), 2);
+    ASSERT_EQ(mMetricsManager->mQueueOverflowAtomsStats.size(), 1);
+    ASSERT_EQ(mMetricsManager->mQueueOverflowAtomsStats[kInterestAtomId], 1);
+
+    for (const auto& statsLogReport : metricsReport.metrics()) {
+        EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 0);
+    }
 }
 
 }  // namespace statsd
