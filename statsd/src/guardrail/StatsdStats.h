@@ -308,6 +308,9 @@ public:
     static const int32_t kMaxLoggedBucketDropEvents = 10;
 
     static const int32_t kNumBinsInSocketBatchReadHistogram = 30;
+    static const int32_t kLargeBatchReadThreshold = 1000;
+    static const int32_t kMaxLargeBatchReadSize = 20;
+    static const int32_t kMaxLargeBatchReadAtomThreshold = 50;
 
     /**
      * Report a new config has been received and report the static stats about the config.
@@ -719,7 +722,9 @@ public:
      */
     void noteSubscriptionPullThreadWakeup();
 
-    void noteBatchSocketRead(int32_t readSize);
+    void noteBatchSocketRead(int32_t size, int64_t lastReadTimeNs, int64_t currReadTimeNs,
+                             int64_t minAtomReadTimeNs, int64_t maxAtomReadTimeNs,
+                             const std::unordered_map<int32_t, int32_t>& atomCounts);
 
     /**
      * Reset the historical stats. Including all stats in icebox, and the tracked stats about
@@ -955,6 +960,32 @@ private:
     std::list<int32_t> mSystemServerRestartSec;
 
     std::vector<int64_t> mSocketBatchReadHistogram;
+
+    // Stores stats about large socket batch reads
+    struct LargeBatchSocketReadStats {
+        LargeBatchSocketReadStats(int32_t size, int64_t lastReadTimeNs, int64_t currReadTimeNs,
+                                  int64_t minAtomReadTimeNs, int64_t maxAtomReadTimeNs,
+                                  const std::unordered_map<int32_t, int32_t>& atomCounts)
+            : mSize(size),
+              mLastReadTimeNs(lastReadTimeNs),
+              mCurrReadTimeNs(currReadTimeNs),
+              mMinAtomReadTimeNs(minAtomReadTimeNs),
+              mMaxAtomReadTimeNs(maxAtomReadTimeNs),
+              mCommonAtomCounts(atomCounts) {
+        }
+
+        int32_t mSize;
+        // The elapsed time of the previous and current read times.
+        int64_t mLastReadTimeNs;
+        int64_t mCurrReadTimeNs;
+        // The min and max times of the LogEvents processed in the batch
+        int64_t mMinAtomReadTimeNs;
+        int64_t mMaxAtomReadTimeNs;
+        // Map of atom id to count for atoms logged more than kMaxLargeBatchReadAtomThreshold times.
+        std::unordered_map<int32_t, int32_t> mCommonAtomCounts;
+    };
+    // The max size of this list is kMaxSocketLossStatsSize.
+    std::list<LargeBatchSocketReadStats> mLargeBatchSocketReadStats;
 
     struct RestrictedMetricQueryStats {
         RestrictedMetricQueryStats(int32_t callingUid, int64_t configId,

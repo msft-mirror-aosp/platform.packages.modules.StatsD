@@ -60,9 +60,12 @@ private:
      * @param pid arguments for LogEvent constructor
      * @param queue queue to submit the event
      * @param filter to be used for event evaluation
+     * @return tuple of <atom id, elapsed time>
      */
-    static void processSocketMessage(const char* buffer, uint32_t len, uint32_t uid, uint32_t pid,
-                                     LogEventQueue& queue, const LogEventFilter& filter);
+    static std::tuple<int32_t, int64_t> processSocketMessage(const char* buffer, uint32_t len,
+                                                             uint32_t uid, uint32_t pid,
+                                                             LogEventQueue& queue,
+                                                             const LogEventFilter& filter);
 
     /**
      * @brief Helper API to parse buffer, make the LogEvent & submit it into the queue
@@ -74,10 +77,12 @@ private:
      * @param pid arguments for LogEvent constructor
      * @param queue queue to submit the event
      * @param filter to be used for event evaluation
+     * @return tuple of <atom id, elapsed time>
      */
-    static void processStatsEventBuffer(const uint8_t* msg, uint32_t len, uint32_t uid,
-                                        uint32_t pid, LogEventQueue& queue,
-                                        const LogEventFilter& filter);
+    static std::tuple<int32_t, int64_t> processStatsEventBuffer(const uint8_t* msg, uint32_t len,
+                                                                uint32_t uid, uint32_t pid,
+                                                                LogEventQueue& queue,
+                                                                const LogEventFilter& filter);
 
     /**
      * Who is going to get the events when they're read.
@@ -85,6 +90,11 @@ private:
     std::shared_ptr<LogEventQueue> mQueue;
 
     std::shared_ptr<LogEventFilter> mLogEventFilter;
+
+    int64_t mLastSocketReadTimeNs;
+
+    // Tracks the atom counts per read. Member variable to avoid churn.
+    std::unordered_map<int32_t, int32_t> mAtomCounts;
 
     friend void fuzzSocket(const uint8_t* data, size_t size);
 
