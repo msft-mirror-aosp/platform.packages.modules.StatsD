@@ -1150,13 +1150,27 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
     AStatsEvent_writeBool(statsEvent, boolField);
     AStatsEvent_writeInt32(statsEvent, enumField);
     AStatsEvent_writeByteArray(statsEvent, bytesField.data(), bytesField.size());
-    AStatsEvent_writeInt32Array(statsEvent, repeatedIntField.data(), repeatedIntField.size());
-    AStatsEvent_writeInt64Array(statsEvent, repeatedLongField.data(), repeatedLongField.size());
-    AStatsEvent_writeFloatArray(statsEvent, repeatedFloatField.data(), repeatedFloatField.size());
-    AStatsEvent_writeStringArray(statsEvent, cRepeatedStringField.data(),
-                                 repeatedStringField.size());
-    AStatsEvent_writeBoolArray(statsEvent, repeatedBoolField, repeatedBoolFieldLength);
-    AStatsEvent_writeInt32Array(statsEvent, repeatedEnumField.data(), repeatedEnumField.size());
+    if (__builtin_available(android __ANDROID_API_T__, *)) {
+        /* CreateTestAtomReportedEvent is used in CreateTestAtomReportedEventVariableRepeatedFields
+           and CreateTestAtomReportedEventWithPrimitives. Only
+           CreateTestAtomReportedEventVariableRepeatedFields writes repeated fields, so wrapping
+           this portion in a __builtin_available and
+           CreateTestAtomReportedEventVariableRepeatedFields is annotated with __INTRODUCED_IN.
+        */
+        AStatsEvent_writeInt32Array(statsEvent, repeatedIntField.data(), repeatedIntField.size());
+        AStatsEvent_writeInt64Array(statsEvent, repeatedLongField.data(), repeatedLongField.size());
+        AStatsEvent_writeFloatArray(statsEvent, repeatedFloatField.data(),
+                                    repeatedFloatField.size());
+        AStatsEvent_writeStringArray(statsEvent, cRepeatedStringField.data(),
+                                     repeatedStringField.size());
+        AStatsEvent_writeBoolArray(statsEvent, repeatedBoolField, repeatedBoolFieldLength);
+        AStatsEvent_writeInt32Array(statsEvent, repeatedEnumField.data(), repeatedEnumField.size());
+    } else if (!repeatedIntField.empty() || !repeatedLongField.empty() ||
+               !repeatedFloatField.empty() || !cRepeatedStringField.empty() ||
+               repeatedBoolFieldLength != 0 || !repeatedEnumField.empty()) {
+        ADD_FAILURE() << "CreateTestAtomReportedEvent w/ repeated fields is only available in "
+                         "Android T and above.";
+    }
 
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -2328,7 +2342,15 @@ void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId) {
             AStatsEvent_writeString(statsEvent, "test");
             break;
         case LIST_TYPE:
-            AStatsEvent_writeInt32Array(statsEvent, int32Array, 2);
+            if (__builtin_available(android __ANDROID_API_T__, *)) {
+                /* CAUTION: when using this function with LIST_TYPE,
+                    wrap the code in a __builtin_available or __INTRODUCED_IN w/ T.
+                 */
+                AStatsEvent_writeInt32Array(statsEvent, int32Array, 2);
+            } else {
+                ADD_FAILURE() << "fillStatsEventWithSampleValue() w/ typeId LIST_TYPE should only "
+                                 "be used on Android T or above.";
+            }
             break;
         case FLOAT_TYPE:
             AStatsEvent_writeFloat(statsEvent, 1.3f);

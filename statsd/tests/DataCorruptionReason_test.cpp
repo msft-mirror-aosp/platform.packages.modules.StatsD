@@ -170,6 +170,12 @@ protected:
     bool isAtomLoggingAllowed() const {
         return isAtomAllowedFromAnyUid() || isAtomFromAllowedUid();
     }
+
+public:
+    void doPropagationTest() __INTRODUCED_IN(__ANDROID_API_T__);
+    void doTestNotifyOnlyInterestedMetrics() __INTRODUCED_IN(__ANDROID_API_T__);
+    void doTestNotifyInterestedMetricsWithNewLoss() __INTRODUCED_IN(__ANDROID_API_T__);
+    void doTestDoNotNotifyInterestedMetricsIfNoUpdate() __INTRODUCED_IN(__ANDROID_API_T__);
 };
 
 INSTANTIATE_TEST_SUITE_P(
@@ -187,7 +193,7 @@ INSTANTIATE_TEST_SUITE_P(
             return std::get<0>(info.param).label + std::get<1>(info.param).label;
         });
 
-TEST_P(SocketLossInfoTest, PropagationTest) {
+TEST_P_GUARDED(SocketLossInfoTest, PropagationTest, __ANDROID_API_T__) {
     LogEvent eventOfInterest(kAppUid /* uid */, 0 /* pid */);
     CreateNoValuesLogEvent(&eventOfInterest, kInterestAtomId /* atom id */, 0 /* timestamp */);
     EXPECT_EQ(mMetricsManager->checkLogCredentials(eventOfInterest), isAtomLoggingAllowed());
@@ -217,7 +223,7 @@ TEST_P(SocketLossInfoTest, PropagationTest) {
     }
 }
 
-TEST_P(SocketLossInfoTest, TestNotifyOnlyInterestedMetrics) {
+TEST_P_GUARDED(SocketLossInfoTest, TestNotifyOnlyInterestedMetrics, __ANDROID_API_T__) {
     const auto eventSocketLossReported = createSocketLossInfoLogEvent(kAppUid, kUnusedAtomId);
 
     mMetricsManager->onLogEvent(*eventSocketLossReported.get());
@@ -241,7 +247,7 @@ TEST_P(SocketLossInfoTest, TestNotifyOnlyInterestedMetrics) {
     }
 }
 
-TEST_P(SocketLossInfoTest, TestNotifyInterestedMetricsWithNewLoss) {
+TEST_P_GUARDED(SocketLossInfoTest, TestNotifyInterestedMetricsWithNewLoss, __ANDROID_API_T__) {
     auto usedEventSocketLossReported = createSocketLossInfoLogEvent(kAppUid, kInterestAtomId);
     mMetricsManager->onLogEvent(*usedEventSocketLossReported.get());
 
@@ -272,7 +278,7 @@ TEST_P(SocketLossInfoTest, TestNotifyInterestedMetricsWithNewLoss) {
     }
 }
 
-TEST_P(SocketLossInfoTest, TestDoNotNotifyInterestedMetricsIfNoUpdate) {
+TEST_P_GUARDED(SocketLossInfoTest, TestDoNotNotifyInterestedMetricsIfNoUpdate, __ANDROID_API_T__) {
     auto usedEventSocketLossReported = createSocketLossInfoLogEvent(kAppUid, kInterestAtomId);
     mMetricsManager->onLogEvent(*usedEventSocketLossReported.get());
 
@@ -463,7 +469,7 @@ TEST_F(DataCorruptionQueueOverflowTest, TestDoNotNotifyNewInterestedMetricsIfNoU
                 Each(Property(&StatsLogReport::data_corrupted_reason_size, 0)));
 }
 
-TEST(DataCorruptionTest, TestStateLostPropagation) {
+TEST_GUARDED(DataCorruptionTest, TestStateLostPropagation, __ANDROID_API_T__) {
     // Initialize config with state and count metric
     StatsdConfig config;
 
