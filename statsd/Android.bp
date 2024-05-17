@@ -102,6 +102,7 @@ cc_defaults {
         "src/metrics/ValueMetricProducer.cpp",
         "src/metrics/parsing_utils/config_update_utils.cpp",
         "src/metrics/parsing_utils/metrics_manager_util.cpp",
+        "src/metrics/NumericValue.cpp",
         "src/metrics/NumericValueMetricProducer.cpp",
         "src/packages/UidMap.cpp",
         "src/shell/shell_config.proto",
