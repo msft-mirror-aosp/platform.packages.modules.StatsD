@@ -644,6 +644,7 @@ message StatsdConfig {
 
   message StatsdConfigOptions {
     optional bool use_v2_soft_memory_limit = 1;
+    optional bool omit_system_uids_in_uidmap = 2;
   }
 
   optional StatsdConfigOptions statsd_config_options = 30;

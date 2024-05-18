@@ -84,7 +84,8 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
       mShouldPersistHistory(config.persist_locally()),
-      mUseV2SoftMemoryCalculation(config.statsd_config_options().use_v2_soft_memory_limit()) {
+      mUseV2SoftMemoryCalculation(config.statsd_config_options().use_v2_soft_memory_limit()),
+      mOmitSystemUidsInUidMap(config.statsd_config_options().omit_system_uids_in_uidmap()) {
     if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
@@ -198,6 +199,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mShouldPersistHistory = config.persist_locally();
     mPackageCertificateHashSizeBytes = config.package_certificate_hash_size_bytes();
     mUseV2SoftMemoryCalculation = config.statsd_config_options().use_v2_soft_memory_limit();
+    mOmitSystemUidsInUidMap = config.statsd_config_options().omit_system_uids_in_uidmap();
 
     // Store the sub-configs used.
     mAnnotations.clear();
