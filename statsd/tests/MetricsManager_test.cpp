@@ -30,7 +30,6 @@
 #include "src/metrics/NumericValueMetricProducer.h"
 #include "src/metrics/parsing_utils/metrics_manager_util.h"
 #include "src/state/StateManager.h"
-#include "src/stats_log.pb.h"
 #include "src/statsd_config.pb.h"
 #include "statsd_test_util.h"
 #include "statslog_statsdtest.h"
@@ -87,35 +86,6 @@ set<int32_t> unionSet(const vector<set<int32_t>> sets) {
         toRet.insert(s.begin(), s.end());
     }
     return toRet;
-}
-
-SocketLossInfo createSocketLossInfo(int32_t uid, int32_t atomId) {
-    SocketLossInfo lossInfo;
-    lossInfo.uid = uid;
-    lossInfo.errors.push_back(-11);
-    lossInfo.atomIds.push_back(atomId);
-    lossInfo.counts.push_back(1);
-    return lossInfo;
-}
-
-// helper API to create STATS_SOCKET_LOSS_REPORTED LogEvent
-LogEvent createSocketLossInfoLogEvent(int32_t uid, int32_t lossAtomId) {
-    const SocketLossInfo lossInfo = createSocketLossInfo(uid, lossAtomId);
-
-    AStatsEvent* statsEvent = AStatsEvent_obtain();
-    AStatsEvent_setAtomId(statsEvent, util::STATS_SOCKET_LOSS_REPORTED);
-    AStatsEvent_writeInt32(statsEvent, lossInfo.uid);
-    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
-    AStatsEvent_writeInt64(statsEvent, lossInfo.firstLossTsNanos);
-    AStatsEvent_writeInt64(statsEvent, lossInfo.lastLossTsNanos);
-    AStatsEvent_writeInt32(statsEvent, lossInfo.overflowCounter);
-    AStatsEvent_writeInt32Array(statsEvent, lossInfo.errors.data(), lossInfo.errors.size());
-    AStatsEvent_writeInt32Array(statsEvent, lossInfo.atomIds.data(), lossInfo.atomIds.size());
-    AStatsEvent_writeInt32Array(statsEvent, lossInfo.counts.data(), lossInfo.counts.size());
-
-    LogEvent event(uid /* uid */, 0 /* pid */);
-    parseStatsEventToLogEvent(statsEvent, &event);
-    return event;
 }
 
 }  // anonymous namespace
@@ -339,69 +309,6 @@ TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom) {
 
     CreateNoValuesLogEvent(&event, 4 /* atom id */, 0 /* timestamp */);
     EXPECT_TRUE(metricsManager.checkLogCredentials(event));
-}
-
-TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom) {
-    sp<UidMap> uidMap;
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    sp<AlarmMonitor> anomalyAlarmMonitor;
-    sp<AlarmMonitor> periodicAlarmMonitor;
-
-    StatsdConfig config = buildGoodEventConfig();
-    config.add_whitelisted_atom_ids(2);
-
-    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
-                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
-
-    const int32_t customAppUid = AID_APP_START + 1;
-    LogEvent eventOfInterest(customAppUid /* uid */, 0 /* pid */);
-    CreateNoValuesLogEvent(&eventOfInterest, 2 /* atom id */, 0 /* timestamp */);
-    EXPECT_TRUE(metricsManager.checkLogCredentials(eventOfInterest));
-    EXPECT_FALSE(metricsManager.mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
-
-    LogEvent eventSocketLossReported = createSocketLossInfoLogEvent(customAppUid, 2);
-
-    // the STATS_SOCKET_LOSS_REPORTED on its own will not be propagated/consumed by any metric
-    EXPECT_FALSE(metricsManager.checkLogCredentials(eventSocketLossReported));
-
-    // the loss info for an atom of interest (2) will be evaluated even when
-    // STATS_SOCKET_LOSS_REPORTED atom is not explicitly in allowed list
-    metricsManager.onLogEvent(eventSocketLossReported);
-
-    // check that corresponding event metric was updated with loss info
-    // the invariant is there is only one metric in the config
-    EXPECT_TRUE(metricsManager.mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
-}
-
-TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom) {
-    sp<UidMap> uidMap;
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    sp<AlarmMonitor> anomalyAlarmMonitor;
-    sp<AlarmMonitor> periodicAlarmMonitor;
-
-    StatsdConfig config = buildGoodEventConfig();
-
-    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
-                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
-
-    const int32_t customAppUid = AID_APP_START + 1;
-    LogEvent eventOfInterest(customAppUid /* uid */, 0 /* pid */);
-    CreateNoValuesLogEvent(&eventOfInterest, 2 /* atom id */, 0 /* timestamp */);
-    EXPECT_FALSE(metricsManager.checkLogCredentials(eventOfInterest));
-    EXPECT_FALSE(metricsManager.mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
-
-    LogEvent eventSocketLossReported = createSocketLossInfoLogEvent(customAppUid, 2);
-
-    // the STATS_SOCKET_LOSS_REPORTED on its own will not be propagated/consumed by any metric
-    EXPECT_FALSE(metricsManager.checkLogCredentials(eventSocketLossReported));
-
-    // the loss info for an atom of interest (2) will not be evaluated since atom of interest does
-    // not pass credential check
-    metricsManager.onLogEvent(eventSocketLossReported);
-
-    // check that corresponding event metric was not updated with loss info
-    // the invariant is there is only one metric in the config
-    EXPECT_FALSE(metricsManager.mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
 }
 
 TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {
@@ -630,145 +537,6 @@ TEST(MetricsManagerTest, TestGetTriggerMemoryKbUnset) {
     // Since the memory limit is unset, we default back to 192KB
     EXPECT_EQ(defaultMemoryLimit, metricsManager.getTriggerGetDataBytes());
     EXPECT_TRUE(metricsManager.isConfigValid());
-}
-
-class MetricsManagerQueueOverflowInfoPropagationTest : public testing::Test {
-protected:
-    const int64_t kBucketStartTimeNs = 10000000000;
-    const int64_t kReportRequestTimeNs = kBucketStartTimeNs + 100;
-    const int64_t kAtomsLogTimeNs = kBucketStartTimeNs + 10;
-
-    StatsdConfig mConfig;
-    std::shared_ptr<MetricsManager> mMetricsManager;
-
-    const int32_t kAtomId = 2;
-    const int32_t kInterestAtomId = 3;
-    const int32_t kInterestedMetricId = 4;
-
-    void SetUp() override {
-        StatsdStats::getInstance().reset();
-
-        sp<UidMap> uidMap;
-        sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-        sp<AlarmMonitor> anomalyAlarmMonitor;
-        sp<AlarmMonitor> periodicAlarmMonitor;
-
-        // there will be one event metric interested in kInterestAtomId
-        mConfig = buildGoodEventConfig();
-        mConfig.add_whitelisted_atom_ids(kAtomId);
-        mConfig.add_whitelisted_atom_ids(kInterestAtomId);
-
-        // add one more event metric interested in kInterestAtomId
-        addEventMetricForAnAtom(mConfig, kInterestAtomId, kInterestedMetricId);
-
-        mMetricsManager = std::make_shared<MetricsManager>(
-                kConfigKey, mConfig, timeBaseSec, timeBaseSec, uidMap, pullerManager,
-                anomalyAlarmMonitor, periodicAlarmMonitor);
-    }
-
-    void TearDown() override {
-        StatsdStats::getInstance().reset();
-    }
-
-    ConfigMetricsReport getMetricsReport() {
-        ProtoOutputStream output;
-        std::set<string> str_set;
-        mMetricsManager->onDumpReport(kReportRequestTimeNs, kReportRequestTimeNs,
-                                      /*include_current_partial_bucket*/ true, /*erase_data*/ true,
-                                      /*dumpLatency*/ NO_TIME_CONSTRAINTS, &str_set, &output);
-
-        vector<uint8_t> bytes;
-        output.serializeToVector(&bytes);
-        ConfigMetricsReport metricsReport;
-        metricsReport.ParseFromArray(bytes.data(), bytes.size());
-        return metricsReport;
-    }
-
-    static void makeLogEvent(LogEvent* logEvent, int32_t atomId, int64_t timestampNs) {
-        AStatsEvent* statsEvent = AStatsEvent_obtain();
-        AStatsEvent_setAtomId(statsEvent, atomId);
-        AStatsEvent_overwriteTimestamp(statsEvent, timestampNs);
-        AStatsEvent_writeString(statsEvent, "demoString");
-        EXPECT_TRUE(parseStatsEventToLogEvent(statsEvent, logEvent));
-    }
-
-private:
-    static void addEventMetricForAnAtom(StatsdConfig& config, int32_t atomId, int64_t metricId) {
-        const int64_t matcherId = StringToId("CUSTOM_EVENT" + std::to_string(atomId));
-        AtomMatcher* eventMatcher = config.add_atom_matcher();
-        eventMatcher->set_id(matcherId);
-        SimpleAtomMatcher* simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
-        simpleAtomMatcher->set_atom_id(atomId);
-
-        EventMetric* metric = config.add_event_metric();
-        metric->set_id(metricId);
-        metric->set_what(matcherId);
-    }
-};
-
-TEST_F(MetricsManagerQueueOverflowInfoPropagationTest, TestNotifyOnlyInterestedMetrics) {
-    EXPECT_TRUE(mMetricsManager->isConfigValid());
-
-    StatsdStats::getInstance().noteEventQueueOverflow(kAtomsLogTimeNs, kInterestAtomId,
-                                                      /*isSkipped*/ false);
-
-    const int32_t someUnusedAtomId = kInterestAtomId + 100;
-    StatsdStats::getInstance().noteEventQueueOverflow(kAtomsLogTimeNs, someUnusedAtomId,
-                                                      /*isSkipped*/ false);
-
-    ConfigMetricsReport metricsReport = getMetricsReport();
-    ASSERT_EQ(metricsReport.metrics_size(), 2);
-
-    for (const auto& statsLogReport : metricsReport.metrics()) {
-        if (statsLogReport.metric_id() == kInterestedMetricId) {
-            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
-            EXPECT_EQ(statsLogReport.data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
-        } else {
-            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 0);
-        }
-    }
-}
-
-TEST_F(MetricsManagerQueueOverflowInfoPropagationTest, TestDoNotNotifyInterestedMetricsIfNoUpdate) {
-    EXPECT_TRUE(mMetricsManager->isConfigValid());
-
-    EXPECT_TRUE(mMetricsManager->mQueueOverflowAtomsStats.empty());
-
-    ConfigMetricsReport metricsReport = getMetricsReport();
-    ASSERT_EQ(metricsReport.metrics_size(), 2);
-    EXPECT_TRUE(mMetricsManager->mQueueOverflowAtomsStats.empty());
-
-    for (const auto& statsLogReport : metricsReport.metrics()) {
-        if (statsLogReport.metric_id() == kInterestedMetricId) {
-            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 0);
-        }
-    }
-
-    StatsdStats::getInstance().noteEventQueueOverflow(kAtomsLogTimeNs, kInterestAtomId,
-                                                      /*isSkipped*/ false);
-
-    metricsReport = getMetricsReport();
-    ASSERT_EQ(metricsReport.metrics_size(), 2);
-    ASSERT_EQ(mMetricsManager->mQueueOverflowAtomsStats.size(), 1);
-    ASSERT_EQ(mMetricsManager->mQueueOverflowAtomsStats[kInterestAtomId], 1);
-
-    for (const auto& statsLogReport : metricsReport.metrics()) {
-        if (statsLogReport.metric_id() == kInterestedMetricId) {
-            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
-            EXPECT_EQ(statsLogReport.data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
-        }
-    }
-
-    // no more dropped events as result event metric should not be notified about loss events
-
-    metricsReport = getMetricsReport();
-    ASSERT_EQ(metricsReport.metrics_size(), 2);
-    ASSERT_EQ(mMetricsManager->mQueueOverflowAtomsStats.size(), 1);
-    ASSERT_EQ(mMetricsManager->mQueueOverflowAtomsStats[kInterestAtomId], 1);
-
-    for (const auto& statsLogReport : metricsReport.metrics()) {
-        EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 0);
-    }
 }
 
 }  // namespace statsd

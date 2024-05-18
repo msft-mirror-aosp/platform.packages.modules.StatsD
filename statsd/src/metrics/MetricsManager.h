@@ -439,12 +439,8 @@ private:
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
     FRIEND_TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
-    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom);
-    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);
-    FRIEND_TEST(MetricsManagerQueueOverflowInfoPropagationTest,
-                TestDoNotNotifyInterestedMetricsIfNoUpdate);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
 
     FRIEND_TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead);
@@ -481,6 +477,12 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
+
+    FRIEND_TEST(SocketLossInfoTest, PropagationTest);
+
+    FRIEND_TEST(DataCorruptionQueueOverflowTest, TestNotifyOnlyInterestedMetrics);
+    FRIEND_TEST(DataCorruptionQueueOverflowTest, TestNotifyInterestedMetricsWithNewLoss);
+    FRIEND_TEST(DataCorruptionQueueOverflowTest, TestDoNotNotifyInterestedMetricsIfNoUpdate);
 };
 
 }  // namespace statsd

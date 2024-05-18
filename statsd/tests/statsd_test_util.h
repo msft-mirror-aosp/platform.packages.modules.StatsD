@@ -569,6 +569,11 @@ void createStatsEvent(AStatsEvent* statsEvent, uint8_t typeId, uint32_t atomId);
 
 void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId);
 
+SocketLossInfo createSocketLossInfo(int32_t uid, int32_t atomId);
+
+// helper API to create STATS_SOCKET_LOSS_REPORTED LogEvent
+std::unique_ptr<LogEvent> createSocketLossInfoLogEvent(int32_t uid, int32_t lossAtomId);
+
 // Create a statsd log event processor upon the start time in seconds, config and key.
 sp<StatsLogProcessor> CreateStatsLogProcessor(
         const int64_t timeBaseNs, int64_t currentTimeNs, const StatsdConfig& config,
