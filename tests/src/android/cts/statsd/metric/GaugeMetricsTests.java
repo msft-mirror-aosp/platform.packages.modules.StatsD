@@ -274,7 +274,7 @@ public class GaugeMetricsTests extends DeviceTestCase {
         builder.addGaugeMetric(GaugeMetric.newBuilder()
                         .setId(MetricsUtils.GAUGE_METRIC_ID)
                         .setWhat(whatMatcher.getId())
-                        .setBucket(TimeUnit.CTS)
+                        .setBucket(TimeUnit.ONE_MINUTE)
                         .setCondition(predicate.getId())
                         .setGaugeFieldsFilter(FieldFilter.newBuilder()
                                 .setIncludeAll(false)
