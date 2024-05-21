@@ -642,8 +642,7 @@ protected:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
 
-    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom);
-    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
+    FRIEND_TEST(SocketLossInfoTest, PropagationTest);
 
     FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
