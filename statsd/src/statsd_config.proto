@@ -364,6 +364,31 @@ message GaugeMetric {
   reserved 101;
 }
 
+message HistogramBinConfig {
+  message ExplicitBins {
+    repeated float bin = 1;
+  }
+
+  message GeneratedBins {
+    enum Strategy {
+      UNKNOWN = 0;
+      LINEAR = 1;
+      EXPONENTIAL = 2;
+    }
+
+    optional float min = 1;
+    optional float max = 2;
+    optional int32 count = 3;
+    optional Strategy strategy = 4;
+  }
+
+  optional int64 id = 1;
+  oneof binning_strategy {
+    GeneratedBins generated_bins = 2;
+    ExplicitBins explicit_bins = 3;
+  }
+}
+
 message ValueMetric {
   optional int64 id = 1;
 
@@ -392,10 +417,16 @@ message ValueMetric {
     MIN = 2;
     MAX = 3;
     AVG = 4;
+    HISTOGRAM = 5;
   }
   optional AggregationType aggregation_type = 8 [default = SUM];
 
   repeated AggregationType aggregation_types = 25;
+
+  // The number of entries should match the number of times HISTOGRAM appears in aggregation_types.
+  // Each i'th HistogramBinConfig corresponds to the i'th HISTOGRAM entry in aggregation_types so
+  // ordering matters.
+  repeated HistogramBinConfig histogram_bin_configs = 26;
 
   optional bool include_sample_size = 22;
 
