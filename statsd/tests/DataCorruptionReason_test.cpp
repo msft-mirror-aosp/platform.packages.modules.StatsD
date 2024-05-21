@@ -196,7 +196,8 @@ TEST_P(SocketLossInfoTest, PropagationTest) {
     LogEvent eventOfInterest(kAppUid /* uid */, 0 /* pid */);
     CreateNoValuesLogEvent(&eventOfInterest, kInterestAtomId /* atom id */, 0 /* timestamp */);
     EXPECT_EQ(mMetricsManager->checkLogCredentials(eventOfInterest), isAtomLoggingAllowed());
-    EXPECT_FALSE(mMetricsManager->mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
+    EXPECT_EQ(mMetricsManager->mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
     const auto eventSocketLossReported = createSocketLossInfoLogEvent(kAppUid, kInterestAtomId);
 
@@ -211,10 +212,13 @@ TEST_P(SocketLossInfoTest, PropagationTest) {
     // check that corresponding event metric was properly updated (or not) with loss info
     for (const auto& metricProducer : mMetricsManager->mAllMetricProducers) {
         if (metricProducer->getMetricId() == kInterestedMetricId) {
-            EXPECT_EQ(metricProducer->mDataCorruptedDueToSocketLoss, isAtomLoggingAllowed());
+            EXPECT_EQ(metricProducer->mDataCorruptedDueToSocketLoss !=
+                              MetricProducer::DataCorruptionSeverity::kNone,
+                      isAtomLoggingAllowed());
             continue;
         }
-        EXPECT_FALSE(metricProducer->mDataCorruptedDueToSocketLoss);
+        EXPECT_EQ(metricProducer->mDataCorruptedDueToSocketLoss,
+                  MetricProducer::DataCorruptionSeverity::kNone);
     }
 }
 
@@ -338,7 +342,7 @@ TEST_F(DataCorruptionQueueOverflowTest, TestNotifyOnlyInterestedMetrics) {
 
     for (const auto& statsLogReport : metricsReport.metrics()) {
         if (statsLogReport.metric_id() == kInterestedMetricId) {
-            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
+            ASSERT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
             EXPECT_EQ(statsLogReport.data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
             continue;
         }
@@ -357,7 +361,7 @@ TEST_F(DataCorruptionQueueOverflowTest, TestNotifyInterestedMetricsWithNewLoss) 
 
     for (const auto& statsLogReport : metricsReport.metrics()) {
         if (statsLogReport.metric_id() == kInterestedMetricId) {
-            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
+            ASSERT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
             EXPECT_EQ(statsLogReport.data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
             continue;
         }
@@ -375,7 +379,7 @@ TEST_F(DataCorruptionQueueOverflowTest, TestNotifyInterestedMetricsWithNewLoss) 
 
     for (const auto& statsLogReport : metricsReport.metrics()) {
         if (statsLogReport.metric_id() == kInterestedMetricId) {
-            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
+            ASSERT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
             EXPECT_EQ(statsLogReport.data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
             continue;
         }
@@ -394,7 +398,7 @@ TEST_F(DataCorruptionQueueOverflowTest, TestDoNotNotifyInterestedMetricsIfNoUpda
 
     for (const auto& statsLogReport : metricsReport.metrics()) {
         if (statsLogReport.metric_id() == kInterestedMetricId) {
-            EXPECT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
+            ASSERT_EQ(statsLogReport.data_corrupted_reason_size(), 1);
             EXPECT_EQ(statsLogReport.data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
             continue;
         }
