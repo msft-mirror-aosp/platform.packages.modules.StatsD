@@ -350,11 +350,6 @@ public:
         return mCurrentBucketNum;
     }
 
-    int64_t getBucketSizeInNs() const {
-        std::lock_guard<std::mutex> lock(mMutex);
-        return mBucketSizeNs;
-    }
-
     inline const std::vector<int> getSlicedStateAtoms() {
         std::lock_guard<std::mutex> lock(mMutex);
         return mSlicedStateAtoms;
