@@ -642,8 +642,7 @@ protected:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
 
-    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom);
-    FRIEND_TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom);
+    FRIEND_TEST(SocketLossInfoTest, PropagationTest);
 
     FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
@@ -656,9 +655,9 @@ protected:
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMetricsMultipleTypes);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateAlerts);
 
-    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnDumpReport);
-    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnDropData);
-    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReasonSocketLoss_OnClearPastBuckets);
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport);
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnDropData);
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnClearPastBuckets);
 };
 
 }  // namespace statsd

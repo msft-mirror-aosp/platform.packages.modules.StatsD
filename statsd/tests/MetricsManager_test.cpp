@@ -88,35 +88,6 @@ set<int32_t> unionSet(const vector<set<int32_t>> sets) {
     return toRet;
 }
 
-SocketLossInfo createSocketLossInfo(int32_t uid, int32_t atomId) {
-    SocketLossInfo lossInfo;
-    lossInfo.uid = uid;
-    lossInfo.errors.push_back(-11);
-    lossInfo.atomIds.push_back(atomId);
-    lossInfo.counts.push_back(1);
-    return lossInfo;
-}
-
-// helper API to create STATS_SOCKET_LOSS_REPORTED LogEvent
-LogEvent createSocketLossInfoLogEvent(int32_t uid, int32_t lossAtomId) {
-    const SocketLossInfo lossInfo = createSocketLossInfo(uid, lossAtomId);
-
-    AStatsEvent* statsEvent = AStatsEvent_obtain();
-    AStatsEvent_setAtomId(statsEvent, util::STATS_SOCKET_LOSS_REPORTED);
-    AStatsEvent_writeInt32(statsEvent, lossInfo.uid);
-    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
-    AStatsEvent_writeInt64(statsEvent, lossInfo.firstLossTsNanos);
-    AStatsEvent_writeInt64(statsEvent, lossInfo.lastLossTsNanos);
-    AStatsEvent_writeInt32(statsEvent, lossInfo.overflowCounter);
-    AStatsEvent_writeInt32Array(statsEvent, lossInfo.errors.data(), lossInfo.errors.size());
-    AStatsEvent_writeInt32Array(statsEvent, lossInfo.atomIds.data(), lossInfo.atomIds.size());
-    AStatsEvent_writeInt32Array(statsEvent, lossInfo.counts.data(), lossInfo.counts.size());
-
-    LogEvent event(uid /* uid */, 0 /* pid */);
-    parseStatsEventToLogEvent(statsEvent, &event);
-    return event;
-}
-
 }  // anonymous namespace
 
 TEST(MetricsManagerTest, TestLogSources) {
@@ -338,69 +309,6 @@ TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom) {
 
     CreateNoValuesLogEvent(&event, 4 /* atom id */, 0 /* timestamp */);
     EXPECT_TRUE(metricsManager.checkLogCredentials(event));
-}
-
-TEST(MetricsManagerTest, TestOnLogEventLossForAllowedFromAnyUidAtom) {
-    sp<UidMap> uidMap;
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    sp<AlarmMonitor> anomalyAlarmMonitor;
-    sp<AlarmMonitor> periodicAlarmMonitor;
-
-    StatsdConfig config = buildGoodEventConfig();
-    config.add_whitelisted_atom_ids(2);
-
-    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
-                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
-
-    const int32_t customAppUid = AID_APP_START + 1;
-    LogEvent eventOfInterest(customAppUid /* uid */, 0 /* pid */);
-    CreateNoValuesLogEvent(&eventOfInterest, 2 /* atom id */, 0 /* timestamp */);
-    EXPECT_TRUE(metricsManager.checkLogCredentials(eventOfInterest));
-    EXPECT_FALSE(metricsManager.mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
-
-    LogEvent eventSocketLossReported = createSocketLossInfoLogEvent(customAppUid, 2);
-
-    // the STATS_SOCKET_LOSS_REPORTED on its own will not be propagated/consumed by any metric
-    EXPECT_FALSE(metricsManager.checkLogCredentials(eventSocketLossReported));
-
-    // the loss info for an atom of interest (2) will be evaluated even when
-    // STATS_SOCKET_LOSS_REPORTED atom is not explicitly in allowed list
-    metricsManager.onLogEvent(eventSocketLossReported);
-
-    // check that corresponding event metric was updated with loss info
-    // the invariant is there is only one metric in the config
-    EXPECT_TRUE(metricsManager.mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
-}
-
-TEST(MetricsManagerTest, TestOnLogEventLossForNotAllowedAtom) {
-    sp<UidMap> uidMap;
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    sp<AlarmMonitor> anomalyAlarmMonitor;
-    sp<AlarmMonitor> periodicAlarmMonitor;
-
-    StatsdConfig config = buildGoodEventConfig();
-
-    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
-                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
-
-    const int32_t customAppUid = AID_APP_START + 1;
-    LogEvent eventOfInterest(customAppUid /* uid */, 0 /* pid */);
-    CreateNoValuesLogEvent(&eventOfInterest, 2 /* atom id */, 0 /* timestamp */);
-    EXPECT_FALSE(metricsManager.checkLogCredentials(eventOfInterest));
-    EXPECT_FALSE(metricsManager.mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
-
-    LogEvent eventSocketLossReported = createSocketLossInfoLogEvent(customAppUid, 2);
-
-    // the STATS_SOCKET_LOSS_REPORTED on its own will not be propagated/consumed by any metric
-    EXPECT_FALSE(metricsManager.checkLogCredentials(eventSocketLossReported));
-
-    // the loss info for an atom of interest (2) will not be evaluated since atom of interest does
-    // not pass credential check
-    metricsManager.onLogEvent(eventSocketLossReported);
-
-    // check that corresponding event metric was not updated with loss info
-    // the invariant is there is only one metric in the config
-    EXPECT_FALSE(metricsManager.mAllMetricProducers[0]->mDataCorruptedDueToSocketLoss);
 }
 
 TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {

@@ -204,6 +204,19 @@ const int FIELD_ID_PER_SUBSCRIPTION_STATS_FLUSH_COUNT = 6;
 
 // Socket read stats
 const int FIELD_ID_SOCKET_READ_STATS_BATCHED_READ_SIZE = 1;
+const int FIELD_ID_SOCKET_READ_STATS_LARGE_BATCH_STATS = 2;
+
+// Large socket batch stats
+const int FIELD_ID_LARGE_BATCH_SOCKET_READ_LAST_READ_TIME = 1;
+const int FIELD_ID_LARGE_BATCH_SOCKET_READ_CURR_READ_TIME = 2;
+const int FIELD_ID_LARGE_BATCH_SOCKET_READ_MIN_ATOM_TIME = 3;
+const int FIELD_ID_LARGE_BATCH_SOCKET_READ_MAX_ATOM_TIME = 4;
+const int FIELD_ID_LARGE_BATCH_SOCKET_READ_TOTAL_ATOMS = 5;
+const int FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS = 6;
+
+// Large batch socket read atom stats
+const int FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS_ATOM_ID = 1;
+const int FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS_COUNT = 2;
 
 const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySizeLimitMap = {
         {util::BINDER_CALLS, {6000, 10000}},
@@ -298,7 +311,9 @@ void StatsdStats::noteLogLost(int32_t wallClockTimeSec, int32_t count, int32_t l
     mLogLossStats.emplace_back(wallClockTimeSec, count, lastError, lastTag, uid, pid);
 }
 
-void StatsdStats::noteBatchSocketRead(int32_t size) {
+void StatsdStats::noteBatchSocketRead(int32_t size, int64_t lastReadTimeNs, int64_t currReadTimeNs,
+                                      int64_t minAtomReadTimeNs, int64_t maxAtomReadTimeNs,
+                                      const unordered_map<int32_t, int32_t>& atomCounts) {
     // Calculate the bin.
     int bin = 0;
     if (size < 0) {
@@ -319,6 +334,26 @@ void StatsdStats::noteBatchSocketRead(int32_t size) {
     }
     lock_guard<std::mutex> lock(mLock);
     mSocketBatchReadHistogram[bin] += 1;
+
+    // More detailed stats for large batches.
+    if (size >= kLargeBatchReadThreshold) {
+        // make a local copy and filter the map to atoms that pass the threshold
+        unordered_map<int32_t, int32_t> localAtomCounts = atomCounts;
+        for (auto it = localAtomCounts.begin(); it != localAtomCounts.end();) {
+            if (it->second < kMaxLargeBatchReadAtomThreshold) {
+                it = localAtomCounts.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        // Add to list.
+        if (mLargeBatchSocketReadStats.size() == kMaxLargeBatchReadSize) {
+            mLargeBatchSocketReadStats.pop_front();
+        }
+        mLargeBatchSocketReadStats.emplace_back(size, lastReadTimeNs, currReadTimeNs,
+                                                minAtomReadTimeNs, maxAtomReadTimeNs,
+                                                localAtomCounts);
+    }
 }
 void StatsdStats::noteBroadcastSent(const ConfigKey& key) {
     noteBroadcastSent(key, getWallClockSec());
@@ -379,7 +414,7 @@ void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t
 
     mOverflowCount++;
 
-    int64_t history = getElapsedRealtimeNs() - oldestEventTimestampNs;
+    const int64_t history = getElapsedRealtimeNs() - oldestEventTimestampNs;
 
     if (history > mMaxQueueHistoryNs) {
         mMaxQueueHistoryNs = history;
@@ -1140,6 +1175,7 @@ void StatsdStats::resetInternalLocked() {
     mRestrictedMetricQueryStats.clear();
     mSubscriptionPullThreadWakeupCount = 0;
     std::fill(mSocketBatchReadHistogram.begin(), mSocketBatchReadHistogram.end(), 0);
+    mLargeBatchSocketReadStats.clear();
 
     for (auto it = mSubscriptionStats.begin(); it != mSubscriptionStats.end();) {
         if (it->second.end_time_sec > 0) {
@@ -1189,6 +1225,15 @@ bool StatsdStats::hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& 
 bool StatsdStats::hasEventQueueOverflow() const {
     lock_guard<std::mutex> lock(mLock);
     return mOverflowCount != 0;
+}
+
+vector<std::pair<int32_t, int32_t>> StatsdStats::getQueueOverflowAtomsStats() const {
+    lock_guard<std::mutex> lock(mLock);
+
+    vector<std::pair<int32_t, int32_t>> atomsStats(mPushedAtomDropsStats.begin(),
+                                                   mPushedAtomDropsStats.end());
+
+    return atomsStats;
 }
 
 bool StatsdStats::hasSocketLoss() const {
@@ -1477,6 +1522,30 @@ void StatsdStats::dumpStats(int out) const {
             range = "[2000+]";
         }
         dprintf(out, "%s: %lld\n", range.c_str(), (long long)mSocketBatchReadHistogram[i]);
+    }
+
+    if (mLargeBatchSocketReadStats.size() > 0) {
+        dprintf(out, "Large socket read batch stats: \n");
+        for (const auto& batchRead : mLargeBatchSocketReadStats) {
+            dprintf(out,
+                    "Num atoms: %d - read time elapsed ms: %lld, prev read time: %lld, min atom "
+                    "elapsed ms: %lld, max atom elapsed ns: %lld\n",
+                    batchRead.mSize, (long long)NanoToMillis(batchRead.mCurrReadTimeNs),
+                    (long long)NanoToMillis(batchRead.mLastReadTimeNs),
+                    (long long)NanoToMillis(batchRead.mMinAtomReadTimeNs),
+                    (long long)NanoToMillis(batchRead.mMaxAtomReadTimeNs));
+            if (batchRead.mCommonAtomCounts.size() > 0) {
+                string commonAtoms = "  Common atoms: ";
+                auto it = batchRead.mCommonAtomCounts.begin();
+                commonAtoms.append(to_string(it->first).append(": ").append(to_string(it->second)));
+                for (++it; it != batchRead.mCommonAtomCounts.end(); ++it) {
+                    commonAtoms.append(
+                            ", " + to_string(it->first).append(": ").append(to_string(it->second)));
+                }
+                dprintf(out, "%s\n", commonAtoms.c_str());
+            }
+        }
+        dprintf(out, "\n");
     }
 
     for (const auto& loss : mLogLossStats) {
@@ -1770,7 +1839,7 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
     proto->end(token);
 }
 
-void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
+void StatsdStats::dumpStats(vector<uint8_t>* output, bool reset) {
     lock_guard<std::mutex> lock(mLock);
 
     ProtoOutputStream proto;
@@ -2007,6 +2076,33 @@ void StatsdStats::dumpStats(std::vector<uint8_t>* output, bool reset) {
         proto.write(FIELD_TYPE_INT64 | FIELD_ID_SOCKET_READ_STATS_BATCHED_READ_SIZE |
                             FIELD_COUNT_REPEATED,
                     it);
+    }
+
+    for (const auto& batchRead : mLargeBatchSocketReadStats) {
+        const uint64_t largeBatchStatsToken =
+                proto.start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
+                            FIELD_ID_SOCKET_READ_STATS_LARGE_BATCH_STATS);
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_LARGE_BATCH_SOCKET_READ_LAST_READ_TIME,
+                    batchRead.mLastReadTimeNs);
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_LARGE_BATCH_SOCKET_READ_CURR_READ_TIME,
+                    batchRead.mCurrReadTimeNs);
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_LARGE_BATCH_SOCKET_READ_MIN_ATOM_TIME,
+                    batchRead.mMinAtomReadTimeNs);
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_LARGE_BATCH_SOCKET_READ_MAX_ATOM_TIME,
+                    batchRead.mMaxAtomReadTimeNs);
+        proto.write(FIELD_TYPE_INT64 | FIELD_ID_LARGE_BATCH_SOCKET_READ_TOTAL_ATOMS,
+                    batchRead.mSize);
+        for (const auto& [batchAtomId, batchAtomCount] : batchRead.mCommonAtomCounts) {
+            const uint64_t largeBatchAtomStatsToken =
+                    proto.start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
+                                FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS);
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS_ATOM_ID,
+                        batchAtomId);
+            proto.write(FIELD_TYPE_INT32 | FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS_COUNT,
+                        batchAtomCount);
+            proto.end(largeBatchAtomStatsToken);
+        }
+        proto.end(largeBatchStatsToken);
     }
     proto.end(socketReadStatsToken);
 
