@@ -756,14 +756,34 @@ int MetricsManager::notifyMetricsAboutLostAtom(int32_t lostAtomId, DataCorrupted
         return 0;
     }
     int numberOfNotifiedMetrics = 0;
+
     const auto& matchersIndexesListForLostAtom = matchersIt->second;
     for (const auto matcherIndex : matchersIndexesListForLostAtom) {
-        const auto it = mTrackerToMetricMap.find(matcherIndex);
-        if (it != mTrackerToMetricMap.end()) {
-            const auto& metricsList = it->second;
+        // look through any metric which depends on matcher
+        auto metricMapIt = mTrackerToMetricMap.find(matcherIndex);
+        if (metricMapIt != mTrackerToMetricMap.end()) {
+            const auto& metricsList = metricMapIt->second;
             for (const int metricIndex : metricsList) {
-                mAllMetricProducers[metricIndex]->onMatchedLogEventLost(lostAtomId, reason);
+                mAllMetricProducers[metricIndex]->onMatchedLogEventLost(
+                        lostAtomId, reason, MetricProducer::LostAtomType::kWhat);
                 numberOfNotifiedMetrics++;
+            }
+        }
+
+        // look through any condition tracker which depends on matcher
+        const auto conditionMapIt = mTrackerToConditionMap.find(matcherIndex);
+        if (conditionMapIt != mTrackerToConditionMap.end()) {
+            const auto& conditionTrackersList = conditionMapIt->second;
+            for (const int conditionTrackerIndex : conditionTrackersList) {
+                metricMapIt = mConditionToMetricMap.find(conditionTrackerIndex);
+                if (metricMapIt != mConditionToMetricMap.end()) {
+                    const auto& metricsList = metricMapIt->second;
+                    for (const int metricIndex : metricsList) {
+                        mAllMetricProducers[metricIndex]->onMatchedLogEventLost(
+                                lostAtomId, reason, MetricProducer::LostAtomType::kCondition);
+                        numberOfNotifiedMetrics++;
+                    }
+                }
             }
         }
     }

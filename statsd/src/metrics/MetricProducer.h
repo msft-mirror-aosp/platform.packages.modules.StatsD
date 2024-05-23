@@ -210,9 +210,14 @@ public:
         onMatchedLogEventLocked(matcherIndex, event);
     }
 
-    void onMatchedLogEventLost(int32_t atomId, DataCorruptedReason reason) {
+    enum class LostAtomType {
+        kWhat = 0,
+        kCondition,
+    };
+
+    void onMatchedLogEventLost(int32_t atomId, DataCorruptedReason reason, LostAtomType atomType) {
         std::lock_guard<std::mutex> lock(mMutex);
-        onMatchedLogEventLostLocked(atomId, reason);
+        onMatchedLogEventLostLocked(atomId, reason, atomType);
     }
 
     void onConditionChanged(const bool condition, int64_t eventTime) {
@@ -236,12 +241,9 @@ public:
 
     // Output the metrics data to [protoOutput]. All metrics reports end with the same timestamp.
     // This method clears all the past buckets.
-    void onDumpReport(const int64_t dumpTimeNs,
-                      const bool include_current_partial_bucket,
-                      const bool erase_data,
-                      const DumpLatency dumpLatency,
-                      std::set<string> *str_set,
-                      android::util::ProtoOutputStream* protoOutput) {
+    void onDumpReport(const int64_t dumpTimeNs, const bool include_current_partial_bucket,
+                      const bool erase_data, const DumpLatency dumpLatency,
+                      std::set<string>* str_set, android::util::ProtoOutputStream* protoOutput) {
         std::lock_guard<std::mutex> lock(mMutex);
         onDumpReportLocked(dumpTimeNs, include_current_partial_bucket, erase_data, dumpLatency,
                            str_set, protoOutput);
@@ -316,8 +318,8 @@ public:
 
     void flushIfExpire(int64_t elapsedTimestampNs);
 
-    void writeActiveMetricToProtoOutputStream(
-            int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto);
+    void writeActiveMetricToProtoOutputStream(int64_t currentTimeNs, const DumpReportReason reason,
+                                              ProtoOutputStream* proto);
 
     virtual void enforceRestrictedDataTtl(sqlite3* db, int64_t wallClockNs){};
 
@@ -434,7 +436,8 @@ protected:
 
     // Consume the parsed stats log entry that already matched the "what" of the metric.
     virtual void onMatchedLogEventLocked(const size_t matcherIndex, const LogEvent& event);
-    virtual void onMatchedLogEventLostLocked(int32_t atomId, DataCorruptedReason reason);
+    virtual void onMatchedLogEventLostLocked(int32_t atomId, DataCorruptedReason reason,
+                                             LostAtomType atomType);
     virtual void onConditionChangedLocked(const bool condition, int64_t eventTime) = 0;
     virtual void onSlicedConditionMayChangeLocked(bool overallCondition,
                                                   const int64_t eventTime) = 0;
@@ -595,8 +598,26 @@ protected:
     sp<ConfigMetadataProvider> getConfigMetadataProvider() const;
 
     wp<ConfigMetadataProvider> mConfigMetadataProvider;
-    bool mDataCorruptedDueToSocketLoss = false;
-    bool mDataCorruptedDueToQueueOverflow = false;
+
+    enum DataCorruptionSeverity { kNone = 0, kResetOnDump, kUnrecoverable };
+
+    DataCorruptionSeverity mDataCorruptedDueToSocketLoss = DataCorruptionSeverity::kNone;
+    DataCorruptionSeverity mDataCorruptedDueToQueueOverflow = DataCorruptionSeverity::kNone;
+
+    /**
+     * @brief Determines DataCorruptionSeverity based on source and atom type being lost
+     *
+     * @return DataCorruptionSeverity
+     */
+    virtual DataCorruptionSeverity determineCorruptionSeverity(DataCorruptedReason reason,
+                                                               LostAtomType atomType) const {
+        return DataCorruptionSeverity::kNone;
+    };
+
+    /**
+     * @brief Resets data corruption reason info if no unrecoverable errors observed
+     */
+    void resetDataCorruptionFlagsLocked();
 
     size_t mTotalDataSize = 0;
 
@@ -629,7 +650,7 @@ protected:
     FRIEND_TEST(StatsLogProcessorTest, TestActivationOnBoot);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationOnBootMultipleActivations);
     FRIEND_TEST(StatsLogProcessorTest,
-            TestActivationOnBootMultipleActivationsDifferentActivationTypes);
+                TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
 
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState);
@@ -653,6 +674,7 @@ protected:
     FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport);
     FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnDropData);
     FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnClearPastBuckets);
+    FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_UnrecoverableLossOfCondition);
 };
 
 }  // namespace statsd
