@@ -193,6 +193,10 @@ public:
         return mTriggerGetDataBytes;
     }
 
+    inline bool omitSystemUidsInUidMap() const {
+        return mOmitSystemUidsInUidMap;
+    }
+
 private:
     // For test only.
     inline int64_t getTtlEndNs() const {
@@ -251,6 +255,8 @@ private:
 
     bool mShouldPersistHistory;
     bool mUseV2SoftMemoryCalculation;
+
+    bool mOmitSystemUidsInUidMap;
 
     // All event tags that are interesting to config metrics matchers.
     std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;
