@@ -138,8 +138,7 @@ optional<InvalidConfigReason> EventMetricProducer::onConfigUpdatedLocked(
 
 void EventMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
     mAggregatedAtoms.clear();
-    mDataCorruptedDueToSocketLoss = false;
-    mDataCorruptedDueToQueueOverflow = false;
+    resetDataCorruptionFlagsLocked();
     mTotalDataSize = 0;
     StatsdStats::getInstance().noteBucketDropped(mMetricId);
 }
@@ -167,8 +166,7 @@ std::unique_ptr<std::vector<uint8_t>> serializeProtoLocked(ProtoOutputStream& pr
 
 void EventMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     mAggregatedAtoms.clear();
-    mDataCorruptedDueToSocketLoss = false;
-    mDataCorruptedDueToQueueOverflow = false;
+    resetDataCorruptionFlagsLocked();
     mTotalDataSize = 0;
 }
 
@@ -182,7 +180,8 @@ void EventMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
     // Data corrupted reason
     writeDataCorruptedReasons(*protoOutput, FIELD_ID_DATA_CORRUPTED_REASON,
-                              mDataCorruptedDueToQueueOverflow, mDataCorruptedDueToSocketLoss);
+                              mDataCorruptedDueToQueueOverflow != DataCorruptionSeverity::kNone,
+                              mDataCorruptedDueToSocketLoss != DataCorruptionSeverity::kNone);
     if (!mAggregatedAtoms.empty()) {
         protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
                            (long long)byteSizeLocked());
@@ -210,8 +209,7 @@ void EventMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     protoOutput->end(protoToken);
     if (erase_data) {
         mAggregatedAtoms.clear();
-        mDataCorruptedDueToSocketLoss = false;
-        mDataCorruptedDueToQueueOverflow = false;
+        resetDataCorruptionFlagsLocked();
         mTotalDataSize = 0;
     }
 }
@@ -258,6 +256,17 @@ size_t EventMetricProducer::byteSizeLocked() const {
     }
     return mTotalDataSize;
 }
+
+MetricProducer::DataCorruptionSeverity EventMetricProducer::determineCorruptionSeverity(
+        DataCorruptedReason reason, LostAtomType atomType) const {
+    switch (atomType) {
+        case LostAtomType::kWhat:
+            return DataCorruptionSeverity::kResetOnDump;
+        case LostAtomType::kCondition:
+            return DataCorruptionSeverity::kUnrecoverable;
+    };
+    return DataCorruptionSeverity::kNone;
+};
 
 }  // namespace statsd
 }  // namespace os

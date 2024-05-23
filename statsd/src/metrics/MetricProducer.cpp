@@ -186,9 +186,35 @@ void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const Lo
                                     statePrimaryKeys);
 }
 
-void MetricProducer::onMatchedLogEventLostLocked(int32_t /*atomId*/, DataCorruptedReason reason) {
-    mDataCorruptedDueToSocketLoss |= reason == DATA_CORRUPTED_SOCKET_LOSS;
-    mDataCorruptedDueToQueueOverflow |= reason == DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW;
+/**
+ * @brief Updates data corruption state overriding lower severity state with a higher
+ *        Inherited classes are responsible for proper severity determination according
+ *        to loss parameters (see @determineCorruptionSeverity)
+ */
+void MetricProducer::onMatchedLogEventLostLocked(int32_t /*atomId*/, DataCorruptedReason reason,
+                                                 LostAtomType atomType) {
+    const DataCorruptionSeverity newSeverity = determineCorruptionSeverity(reason, atomType);
+    switch (reason) {
+        case DATA_CORRUPTED_SOCKET_LOSS:
+            mDataCorruptedDueToSocketLoss = std::max(mDataCorruptedDueToSocketLoss, newSeverity);
+            break;
+        case DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW:
+            mDataCorruptedDueToQueueOverflow =
+                    std::max(mDataCorruptedDueToQueueOverflow, newSeverity);
+            break;
+        default:
+            ALOGW("Unsupported data corruption reason reported %d", reason);
+            break;
+    }
+}
+
+void MetricProducer::resetDataCorruptionFlagsLocked() {
+    if (mDataCorruptedDueToSocketLoss != DataCorruptionSeverity::kUnrecoverable) {
+        mDataCorruptedDueToSocketLoss = DataCorruptionSeverity::kNone;
+    }
+    if (mDataCorruptedDueToQueueOverflow != DataCorruptionSeverity::kUnrecoverable) {
+        mDataCorruptedDueToQueueOverflow = DataCorruptionSeverity::kNone;
+    }
 }
 
 bool MetricProducer::evaluateActiveStateLocked(int64_t elapsedTimestampNs) {
