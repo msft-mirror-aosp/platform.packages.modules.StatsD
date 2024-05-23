@@ -787,6 +787,7 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
         mUidMap->appendUidMap(dumpTimeStampNs, key, it->second->versionStringsInReport(),
                               it->second->installerInReport(),
                               it->second->packageCertificateHashSizeBytes(),
+                              it->second->omitSystemUidsInUidMap(),
                               it->second->hashStringInReport() ? &str_set : nullptr, &tempProto);
         tempProto.end(uidMapToken);
     }
