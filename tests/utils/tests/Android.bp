@@ -20,7 +20,7 @@ android_test {
     name: "StatsdTestUtilsTest",
     defaults: [
         // For ExtendedMockito dependencies.
-        "modules-utils-extended-mockito-rule-defaults",
+        "modules-utils-testable-device-config-defaults",
     ],
     srcs: [
         ":statslog-statsdtest-java-gen",
