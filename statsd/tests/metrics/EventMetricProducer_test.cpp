@@ -360,40 +360,50 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport) {
     LogEvent event1(/*uid=*/0, /*pid=*/0);
     makeLogEvent(&event1, tagId, bucketStartTimeNs + 10, "111");
 
-    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
     sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs, provider);
+                                      nullptr, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kWhat);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
     {
         // Check dump report content.
         ProtoOutputStream output;
-        std::set<string> strSet;
         eventProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, &strSet, &output);
+                                   true /*erase data*/, FAST, nullptr, &output);
 
         StatsLogReport report = outputStreamToProto(&output);
         EXPECT_TRUE(report.has_event_metrics());
-        ASSERT_EQ(1, report.event_metrics().data_size());
+        EXPECT_EQ(1, report.event_metrics().data_size());
         ASSERT_EQ(1, report.data_corrupted_reason_size());
         ASSERT_EQ(DATA_CORRUPTED_SOCKET_LOSS, report.data_corrupted_reason()[0]);
-        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+                  MetricProducer::DataCorruptionSeverity::kNone);
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+                  MetricProducer::DataCorruptionSeverity::kNone);
     }
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
 
     {
         // Check dump report content.
@@ -404,20 +414,28 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport) {
 
         StatsLogReport report = outputStreamToProto(&output);
         EXPECT_TRUE(report.has_event_metrics());
-        ASSERT_EQ(1, report.event_metrics().data_size());
+        EXPECT_EQ(1, report.event_metrics().data_size());
         ASSERT_EQ(1, report.data_corrupted_reason_size());
         ASSERT_EQ(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, report.data_corrupted_reason()[0]);
-        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+                  MetricProducer::DataCorruptionSeverity::kNone);
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+                  MetricProducer::DataCorruptionSeverity::kNone);
     }
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kWhat);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
 
     {
         // Check dump report content.
@@ -428,12 +446,14 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport) {
 
         StatsLogReport report = outputStreamToProto(&output);
         EXPECT_TRUE(report.has_event_metrics());
-        ASSERT_EQ(1, report.event_metrics().data_size());
-        ASSERT_EQ(2, report.data_corrupted_reason_size());
+        EXPECT_EQ(1, report.event_metrics().data_size());
+        EXPECT_EQ(2, report.data_corrupted_reason_size());
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
-        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+                  MetricProducer::DataCorruptionSeverity::kNone);
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+                  MetricProducer::DataCorruptionSeverity::kNone);
     }
 }
 
@@ -447,45 +467,92 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDropData) {
     LogEvent event1(/*uid=*/0, /*pid=*/0);
     makeLogEvent(&event1, tagId, bucketStartTimeNs + 10, "111");
 
-    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
     sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs, provider);
+                                      nullptr, protoHash, bucketStartTimeNs, provider);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kWhat);
 
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
     eventProducer.dropData(bucketStartTimeNs + 100);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
 
     eventProducer.dropData(bucketStartTimeNs + 200);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kWhat);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
 
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
 
     eventProducer.dropData(bucketStartTimeNs + 300);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kCondition);
+
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+
+    eventProducer.dropData(bucketStartTimeNs + 400);
+
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kCondition);
+
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+
+    eventProducer.dropData(bucketStartTimeNs + 500);
+
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
 }
 
 TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnClearPastBuckets) {
@@ -498,45 +565,200 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnClearPastBuckets) {
     LogEvent event1(/*uid=*/0, /*pid=*/0);
     makeLogEvent(&event1, tagId, bucketStartTimeNs + 10, "111");
 
-    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
     sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs, provider);
+                                      nullptr, protoHash, bucketStartTimeNs, provider);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kWhat);
 
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
     eventProducer.clearPastBuckets(bucketStartTimeNs + 100);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
 
     eventProducer.clearPastBuckets(bucketStartTimeNs + 200);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
 
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
-    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kWhat);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
 
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
 
     eventProducer.clearPastBuckets(bucketStartTimeNs + 300);
 
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
-    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kCondition);
+
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+
+    eventProducer.clearPastBuckets(bucketStartTimeNs + 400);
+
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kCondition);
+
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+
+    eventProducer.clearPastBuckets(bucketStartTimeNs + 500);
+
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+}
+
+TEST_F(EventMetricProducerTest, TestCorruptedDataReason_UnrecoverableLossOfCondition) {
+    const int64_t bucketStartTimeNs = 10000000000;
+    const int tagId = 1;
+
+    EventMetric metric;
+    metric.set_id(1);
+
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
+                                      nullptr, protoHash, bucketStartTimeNs, provider);
+
+    LogEvent event1(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event1, tagId, bucketStartTimeNs + 10, "111");
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kCondition);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        eventProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        ASSERT_EQ(1, report.event_metrics().data_size());
+        EXPECT_EQ(1, report.data_corrupted_reason_size());
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+        // confirm that unrecoverable loss status persist after dumpReport
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+                  MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+                  MetricProducer::DataCorruptionSeverity::kNone);
+    }
+
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kResetOnDump);
+
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        eventProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        EXPECT_EQ(1, report.event_metrics().data_size());
+        EXPECT_EQ(2, report.data_corrupted_reason_size());
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+        // confirm that unrecoverable loss status persist after dumpReport
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+                  MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+        // confirm that kResetOnDump loss status is reset after dumpReport
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+                  MetricProducer::DataCorruptionSeverity::kNone);
+    }
+
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kNone);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kCondition);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+              MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        eventProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        EXPECT_EQ(1, report.event_metrics().data_size());
+        EXPECT_EQ(2, report.data_corrupted_reason_size());
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+        // confirm that unrecoverable loss status persist after dumpReport
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToSocketLoss,
+                  MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+        EXPECT_EQ(eventProducer.mDataCorruptedDueToQueueOverflow,
+                  MetricProducer::DataCorruptionSeverity::kUnrecoverable);
+    }
 }
 
 }  // namespace statsd
