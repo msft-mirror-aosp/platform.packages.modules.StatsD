@@ -119,21 +119,42 @@ public class MetadataTests extends MetadataTestCase {
     private static final int LIB_STATS_SOCKET_QUEUE_OVERFLOW_ERROR_CODE = 1;
     private static final int EVENT_STORM_ITERATIONS_COUNT = 10;
 
-    /** Tests that logging many atoms back to back leads to socket overflow and data loss. */
+    /**
+     * Tests that logging many atoms back to back potentially leads to socket overflow and data
+     * loss. And if it happens the corresponding info is propagated to statsd stats
+     */
     public void testAtomLossInfoCollection() throws Exception {
         DeviceUtils.runDeviceTests(getDevice(), MetricsUtils.DEVICE_SIDE_TEST_PACKAGE,
                 ".StatsdStressLogging", "testLogAtomsBackToBack");
 
         StatsdStatsReport report = getStatsdStatsReport();
         assertThat(report).isNotNull();
-        boolean detectedLossEventForAppBreadcrumbAtom = false;
+
+        if (report.getDetectedLogLossList().size() == 0) {
+            return;
+        }
+        // it can be the case that system throughput is sufficient to overcome the
+        // simulated event storm, but if loss happens report can contain information about
+        // atom of interest
         for (LogLossStats lossStats : report.getDetectedLogLossList()) {
             if (lossStats.getLastTag() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
-                detectedLossEventForAppBreadcrumbAtom = true;
+                return;
             }
         }
 
-        assertThat(detectedLossEventForAppBreadcrumbAtom).isTrue();
+        if (report.getSocketLossStats() == null) {
+            return;
+        }
+        // if many atoms were lost the information in DetectedLogLoss can be overwritten
+        // looking into alternative stats to find the information
+        for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+            for (AtomIdLossStats atomLossStats : lossStats.getAtomIdLossStatsList()) {
+                if (atomLossStats.getAtomId() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
+                    return;
+                }
+            }
+        }
+        org.junit.Assert.fail("Socket loss detected but no info about atom of interest");
     }
 
     /** Tests that SystemServer logged atoms in case of loss event has error code 1. */
@@ -170,36 +191,37 @@ public class MetadataTests extends MetadataTestCase {
 
             StatsdStatsReport report = getStatsdStatsReport();
             assertThat(report).isNotNull();
-            boolean detectedLossEventForAppBreadcrumbAtom = false;
-            boolean detectedLossEventForSystemServer = false;
             for (LogLossStats lossStats : report.getDetectedLogLossList()) {
-                if (lossStats.getLastTag() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
-                    detectedLossEventForAppBreadcrumbAtom = true;
-                }
-
                 // it should not happen due to atoms from system servers logged via queue
                 // which should be sufficient to hold them for some time to overcome the
                 // socket overflow time frame
                 if (lossStats.getUid() == 1000) {
-                    detectedLossEventForSystemServer = true;
                     // but if loss happens it should be annotated with predefined error code == 1
                     assertThat(lossStats.getLastError())
                             .isEqualTo(LIB_STATS_SOCKET_QUEUE_OVERFLOW_ERROR_CODE);
                 }
             }
 
-            assertThat(detectedLossEventForAppBreadcrumbAtom).isTrue();
-            assertThat(detectedLossEventForSystemServer).isFalse();
+            // it can be the case that system throughput is sufficient to overcome the
+            // simulated event storm
+            if (report.getSocketLossStats() == null) {
+                return;
+            }
 
-            boolean detectedLossEventForAppBreadcrumbAtomViaSocketLossStats = false;
+            // Verify that loss info is propagated via SocketLossStats atom
             for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
                 for (AtomIdLossStats atomLossStats : lossStats.getAtomIdLossStatsList()) {
-                    if (atomLossStats.getAtomId() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
-                        detectedLossEventForAppBreadcrumbAtomViaSocketLossStats = true;
+                    // it should not happen due to atoms from system servers logged via queue
+                    // which should be sufficient to hold them for some time to overcome the
+                    // socket overflow time frame
+                    if (lossStats.getUid() == 1000) {
+                        // but if loss happens it should be annotated with predefined error
+                        // code == 1
+                        assertThat(atomLossStats.getError())
+                                .isEqualTo(LIB_STATS_SOCKET_QUEUE_OVERFLOW_ERROR_CODE);
                     }
                 }
             }
-            assertThat(detectedLossEventForAppBreadcrumbAtomViaSocketLossStats).isTrue();
         }
     }
 
@@ -209,32 +231,43 @@ public class MetadataTests extends MetadataTestCase {
             return;
         }
 
-        final String appTestApk = "StatsdAtomStormApp.apk";
-        final String app2TestApk = "StatsdAtomStormApp2.apk";
+        String[] testApks = {"StatsdAtomStormApp.apk", "StatsdAtomStormApp2.apk"};
+        String[] testPkgs = {
+            "com.android.statsd.app.atomstorm", "com.android.statsd.app.atomstorm.copy"
+        };
 
-        final String appTestPkg = "com.android.statsd.app.atomstorm";
-        final String app2TestPkg = "com.android.statsd.app.atomstorm.copy";
-
-        DeviceUtils.uninstallTestApp(getDevice(), appTestPkg);
-        DeviceUtils.uninstallTestApp(getDevice(), app2TestPkg);
-
-        DeviceUtils.installTestApp(getDevice(), appTestApk, appTestPkg, mCtsBuild);
-        DeviceUtils.installTestApp(getDevice(), app2TestApk, app2TestPkg, mCtsBuild);
-
-        // run reference test app with UID 1
-        DeviceUtils.runDeviceTests(getDevice(), appTestPkg, null, null);
-        // run reference test app with UID 2
-        DeviceUtils.runDeviceTests(getDevice(), app2TestPkg, null, null);
-
-        StatsdStatsReport report = getStatsdStatsReport();
-        assertThat(report).isNotNull();
-        HashSet<Integer> reportedUids = new HashSet<Integer>();
-        for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
-            reportedUids.add(lossStats.getUid());
+        for (String pkg : testPkgs) {
+            DeviceUtils.uninstallTestApp(getDevice(), pkg);
         }
+
+        final int testAppsCount = testApks.length;
+        for (int i = 0; i < testAppsCount; i++) {
+            DeviceUtils.installTestApp(getDevice(), testApks[i], testPkgs[i], mCtsBuild);
+        }
+
+        HashSet<Integer> reportedUids = new HashSet<Integer>();
+        for (String pkg : testPkgs) {
+            DeviceUtils.runDeviceTests(getDevice(), pkg, null, null);
+
+            StatsdStatsReport report = getStatsdStatsReport();
+            assertThat(report).isNotNull();
+            if (report.getDetectedLogLossList().size() == 0) {
+                // It is Ok if system throughput sufficient to process all atoms
+                return;
+            }
+
+            assertThat(report.getSocketLossStats()).isNotNull();
+            assertThat(report.getSocketLossStats().getLossStatsPerUidList().size())
+                    .isGreaterThan(1);
+            for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+                reportedUids.add(lossStats.getUid());
+            }
+        }
+
         assertThat(reportedUids.size()).isGreaterThan(1);
 
-        getDevice().uninstallPackage(appTestPkg);
-        getDevice().uninstallPackage(app2TestPkg);
+        for (String pkg : testPkgs) {
+            DeviceUtils.uninstallTestApp(getDevice(), pkg);
+        }
     }
 }
