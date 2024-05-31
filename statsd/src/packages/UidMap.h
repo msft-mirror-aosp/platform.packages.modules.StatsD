@@ -159,7 +159,7 @@ public:
     // str_set: if not null, add new string to the set and write str_hash to proto
     //          if null, write string to proto.
     void writeUidMapSnapshot(int64_t timestamp, bool includeVersionStrings, bool includeInstaller,
-                             const uint8_t truncatedCertificateHashSize,
+                             const uint8_t truncatedCertificateHashSize, bool omitSystemUids,
                              const std::set<int32_t>& interestingUids,
                              std::map<string, int>* installerIndices, std::set<string>* str_set,
                              ProtoOutputStream* proto) const;

@@ -77,7 +77,7 @@ const int FIELD_ID_CHANGE_PREV_VERSION_STRING_HASH = 11;
 inline bool omitUid(int32_t uid, bool omitSystemUids) {
     // If omitSystemUids is true, uids for which (uid % AID_USER_OFFSET) is in [0, AID_APP_START)
     // should be excluded.
-    return omitSystemUids && uid > 0 && uid % AID_USER_OFFSET < AID_APP_START;
+    return omitSystemUids && uid >= 0 && uid % AID_USER_OFFSET < AID_APP_START;
 }
 
 }  // namespace
@@ -327,14 +327,14 @@ size_t UidMap::getBytesUsed() const {
 
 void UidMap::writeUidMapSnapshot(int64_t timestamp, bool includeVersionStrings,
                                  bool includeInstaller, const uint8_t truncatedCertificateHashSize,
-                                 const std::set<int32_t>& interestingUids,
+                                 bool omitSystemUids, const std::set<int32_t>& interestingUids,
                                  map<string, int>* installerIndices, std::set<string>* str_set,
                                  ProtoOutputStream* proto) const {
     lock_guard<mutex> lock(mMutex);
 
     writeUidMapSnapshotLocked(timestamp, includeVersionStrings, includeInstaller,
-                              truncatedCertificateHashSize, false /* omitSystemUids */,
-                              interestingUids, installerIndices, str_set, proto);
+                              truncatedCertificateHashSize, omitSystemUids, interestingUids,
+                              installerIndices, str_set, proto);
 }
 
 void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool includeVersionStrings,
