@@ -377,7 +377,7 @@ void writeAttribution(AStatsEvent* statsEvent, const vector<int>& attributionUid
                       const vector<string>& attributionTags);
 
 // Builds statsEvent to get buffer that is parsed into logEvent then releases statsEvent.
-void parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent);
+bool parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent);
 
 shared_ptr<LogEvent> CreateTwoValueLogEvent(int atomId, int64_t eventTimeNs, int32_t value1,
                                             int32_t value2);
@@ -568,6 +568,11 @@ std::unique_ptr<LogEvent> CreateTestAtomReportedEvent(
 void createStatsEvent(AStatsEvent* statsEvent, uint8_t typeId, uint32_t atomId);
 
 void fillStatsEventWithSampleValue(AStatsEvent* statsEvent, uint8_t typeId);
+
+SocketLossInfo createSocketLossInfo(int32_t uid, int32_t atomId);
+
+// helper API to create STATS_SOCKET_LOSS_REPORTED LogEvent
+std::unique_ptr<LogEvent> createSocketLossInfoLogEvent(int32_t uid, int32_t lossAtomId);
 
 // Create a statsd log event processor upon the start time in seconds, config and key.
 sp<StatsLogProcessor> CreateStatsLogProcessor(
@@ -836,6 +841,13 @@ std::vector<uint8_t> protoToBytes(const P& proto) {
 StatsdConfig buildGoodConfig(int configId);
 
 StatsdConfig buildGoodConfig(int configId, int alertId);
+
+class MockConfigMetadataProvider : public ConfigMetadataProvider {
+public:
+    MOCK_METHOD(bool, useV2SoftMemoryCalculation, (), (override));
+};
+
+sp<MockConfigMetadataProvider> makeMockConfigMetadataProvider(bool enabled);
 
 }  // namespace statsd
 }  // namespace os

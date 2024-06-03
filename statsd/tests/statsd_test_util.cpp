@@ -724,14 +724,16 @@ void writeAttribution(AStatsEvent* statsEvent, const vector<int>& attributionUid
                                       cTags.data(), attributionUids.size());
 }
 
-void parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent) {
+bool parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent) {
     AStatsEvent_build(statsEvent);
 
     size_t size;
     uint8_t* buf = AStatsEvent_getBuffer(statsEvent, &size);
-    logEvent->parseBuffer(buf, size);
+    const bool result = logEvent->parseBuffer(buf, size);
 
     AStatsEvent_release(statsEvent);
+
+    return result;
 }
 
 void CreateTwoValueLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs, int32_t value1,
@@ -2126,6 +2128,7 @@ PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap) {
     ProtoOutputStream protoOutputStream;
     uidMap->writeUidMapSnapshot(/* timestamp */ 1, /* includeVersionStrings */ true,
                                 /* includeInstaller */ true, /* certificateHashSize */ UINT8_MAX,
+                                /* omitSystemUids */ false,
                                 /* interestingUids */ {},
                                 /* installerIndices */ nullptr, /* str_set */ nullptr,
                                 &protoOutputStream);
@@ -2314,6 +2317,42 @@ StatsdConfig buildGoodConfig(int configId, int alertId) {
 
     return config;
 }
+
+sp<MockConfigMetadataProvider> makeMockConfigMetadataProvider(bool enabled) {
+    sp<MockConfigMetadataProvider> metadataProvider = new StrictMock<MockConfigMetadataProvider>();
+    EXPECT_CALL(*metadataProvider, useV2SoftMemoryCalculation()).Times(AnyNumber());
+    EXPECT_CALL(*metadataProvider, useV2SoftMemoryCalculation()).WillRepeatedly(Return(enabled));
+    return nullptr;
+}
+
+SocketLossInfo createSocketLossInfo(int32_t uid, int32_t atomId) {
+    SocketLossInfo lossInfo;
+    lossInfo.uid = uid;
+    lossInfo.errors.push_back(-11);
+    lossInfo.atomIds.push_back(atomId);
+    lossInfo.counts.push_back(1);
+    return lossInfo;
+}
+
+std::unique_ptr<LogEvent> createSocketLossInfoLogEvent(int32_t uid, int32_t lossAtomId) {
+    const SocketLossInfo lossInfo = createSocketLossInfo(uid, lossAtomId);
+
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, util::STATS_SOCKET_LOSS_REPORTED);
+    AStatsEvent_writeInt32(statsEvent, lossInfo.uid);
+    AStatsEvent_addBoolAnnotation(statsEvent, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_writeInt64(statsEvent, lossInfo.firstLossTsNanos);
+    AStatsEvent_writeInt64(statsEvent, lossInfo.lastLossTsNanos);
+    AStatsEvent_writeInt32(statsEvent, lossInfo.overflowCounter);
+    AStatsEvent_writeInt32Array(statsEvent, lossInfo.errors.data(), lossInfo.errors.size());
+    AStatsEvent_writeInt32Array(statsEvent, lossInfo.atomIds.data(), lossInfo.atomIds.size());
+    AStatsEvent_writeInt32Array(statsEvent, lossInfo.counts.data(), lossInfo.counts.size());
+
+    std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid /* uid */, 0 /* pid */);
+    parseStatsEventToLogEvent(statsEvent, logEvent.get());
+    return logEvent;
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
