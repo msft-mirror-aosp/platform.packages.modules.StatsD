@@ -2128,6 +2128,7 @@ PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap) {
     ProtoOutputStream protoOutputStream;
     uidMap->writeUidMapSnapshot(/* timestamp */ 1, /* includeVersionStrings */ true,
                                 /* includeInstaller */ true, /* certificateHashSize */ UINT8_MAX,
+                                /* omitSystemUids */ false,
                                 /* interestingUids */ {},
                                 /* installerIndices */ nullptr, /* str_set */ nullptr,
                                 &protoOutputStream);
