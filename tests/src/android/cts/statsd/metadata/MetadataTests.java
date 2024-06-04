@@ -231,32 +231,43 @@ public class MetadataTests extends MetadataTestCase {
             return;
         }
 
-        final String appTestApk = "StatsdAtomStormApp.apk";
-        final String app2TestApk = "StatsdAtomStormApp2.apk";
+        String[] testApks = {"StatsdAtomStormApp.apk", "StatsdAtomStormApp2.apk"};
+        String[] testPkgs = {
+            "com.android.statsd.app.atomstorm", "com.android.statsd.app.atomstorm.copy"
+        };
 
-        final String appTestPkg = "com.android.statsd.app.atomstorm";
-        final String app2TestPkg = "com.android.statsd.app.atomstorm.copy";
-
-        DeviceUtils.uninstallTestApp(getDevice(), appTestPkg);
-        DeviceUtils.uninstallTestApp(getDevice(), app2TestPkg);
-
-        DeviceUtils.installTestApp(getDevice(), appTestApk, appTestPkg, mCtsBuild);
-        DeviceUtils.installTestApp(getDevice(), app2TestApk, app2TestPkg, mCtsBuild);
-
-        // run reference test app with UID 1
-        DeviceUtils.runDeviceTests(getDevice(), appTestPkg, null, null);
-        // run reference test app with UID 2
-        DeviceUtils.runDeviceTests(getDevice(), app2TestPkg, null, null);
-
-        StatsdStatsReport report = getStatsdStatsReport();
-        assertThat(report).isNotNull();
-        HashSet<Integer> reportedUids = new HashSet<Integer>();
-        for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
-            reportedUids.add(lossStats.getUid());
+        for (String pkg : testPkgs) {
+            DeviceUtils.uninstallTestApp(getDevice(), pkg);
         }
+
+        final int testAppsCount = testApks.length;
+        for (int i = 0; i < testAppsCount; i++) {
+            DeviceUtils.installTestApp(getDevice(), testApks[i], testPkgs[i], mCtsBuild);
+        }
+
+        HashSet<Integer> reportedUids = new HashSet<Integer>();
+        for (String pkg : testPkgs) {
+            DeviceUtils.runDeviceTests(getDevice(), pkg, null, null);
+
+            StatsdStatsReport report = getStatsdStatsReport();
+            assertThat(report).isNotNull();
+            if (report.getDetectedLogLossList().size() == 0) {
+                // It is Ok if system throughput sufficient to process all atoms
+                return;
+            }
+
+            assertThat(report.getSocketLossStats()).isNotNull();
+            assertThat(report.getSocketLossStats().getLossStatsPerUidList().size())
+                    .isGreaterThan(1);
+            for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+                reportedUids.add(lossStats.getUid());
+            }
+        }
+
         assertThat(reportedUids.size()).isGreaterThan(1);
 
-        getDevice().uninstallPackage(appTestPkg);
-        getDevice().uninstallPackage(app2TestPkg);
+        for (String pkg : testPkgs) {
+            DeviceUtils.uninstallTestApp(getDevice(), pkg);
+        }
     }
 }
