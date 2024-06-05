@@ -488,7 +488,7 @@ private:
 
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
 
-    FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
+    FRIEND_TEST(StatsServiceConfigTest, StatsServiceStatsdInitTest);
 
     FRIEND_TEST(StringReplaceE2eTest, TestPulledDimension);
     FRIEND_TEST(StringReplaceE2eTest, TestPulledWhat);
