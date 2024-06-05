@@ -88,7 +88,7 @@ int main(int /*argc*/, char** /*argv*/) {
     ABinderProcess_startThreadPool();
 
     // Initialize boot flags
-    FlagProvider::getInstance().initBootFlags({STATSD_INIT_COMPLETED_NO_DELAY_FLAG});
+    FlagProvider::getInstance().initBootFlags({});
 
     std::shared_ptr<LogEventQueue> eventQueue =
             std::make_shared<LogEventQueue>(50000); /*buffer limit. Buffer is NOT pre-allocated*/
@@ -97,14 +97,9 @@ int main(int /*argc*/, char** /*argv*/) {
 
     std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
 
-    const int initEventDelay = FlagProvider::getInstance().getBootFlagBool(
-                                       STATSD_INIT_COMPLETED_NO_DELAY_FLAG, FLAG_FALSE)
-                                       ? 0
-                                       : StatsService::kStatsdInitDelaySecs;
     initSeedRandom();
     // Create the service
-    gStatsService =
-            SharedRefBase::make<StatsService>(uidMap, eventQueue, logEventFilter, initEventDelay);
+    gStatsService = SharedRefBase::make<StatsService>(uidMap, eventQueue, logEventFilter);
     auto binder = gStatsService->asBinder();
 
     // We want to be able to ask for the selinux context of callers:
