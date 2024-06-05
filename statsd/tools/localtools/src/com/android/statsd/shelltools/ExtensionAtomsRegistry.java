@@ -21,14 +21,17 @@ import com.android.os.ActiveConfigProto;
 import com.android.os.ShellConfig;
 import com.android.os.adservices.AdservicesExtensionAtoms;
 import com.android.os.art.ArtExtensionAtoms;
+import com.android.os.art.BackgroundExtensionDexoptAtoms;
+import com.android.os.art.OdrefreshExtensionAtoms;
 import com.android.os.automotive.caruilib.AutomotiveCaruilibAtoms;
+import com.android.os.bluetooth.BluetoothExtensionAtoms;
 import com.android.os.devicelogs.DeviceLogsAtoms;
 import com.android.os.dnd.DndAtoms;
 import com.android.os.dnd.DndExtensionAtoms;
 import com.android.os.expresslog.ExpresslogExtensionAtoms;
 import com.android.os.framework.FrameworkExtensionAtoms;
 import com.android.os.gps.GpsAtoms;
-import com.android.os.grammaticalinflection.GrammaticalInflection;
+import com.android.os.grammaticalinflection.GrammaticalInflectionExtensionAtoms;
 import com.android.os.hardware.biometrics.BiometricsAtoms;
 import com.android.os.healthfitness.api.ApiExtensionAtoms;
 import com.android.os.healthfitness.ui.UiExtensionAtoms;
@@ -61,6 +64,7 @@ import com.android.os.wifi.WifiExtensionAtoms;
 import android.os.statsd.media.MediaCodecExtensionAtoms;
 import com.android.os.credentials.CredentialsExtensionAtoms;
 import com.android.os.sdksandbox.SdksandboxExtensionAtoms;
+import com.android.os.apex.ApexExtensionAtoms;
 
 import com.google.protobuf.ExtensionRegistry;
 
@@ -96,13 +100,14 @@ public class ExtensionAtomsRegistry {
         ShellConfig.registerAllExtensions(extensionRegistry);
         AdservicesExtensionAtoms.registerAllExtensions(extensionRegistry);
         AutomotiveCaruilibAtoms.registerAllExtensions(extensionRegistry);
+        BluetoothExtensionAtoms.registerAllExtensions(extensionRegistry);
         DeviceLogsAtoms.registerAllExtensions(extensionRegistry);
         DndAtoms.registerAllExtensions(extensionRegistry);
         DndExtensionAtoms.registerAllExtensions(extensionRegistry);
         ExpresslogExtensionAtoms.registerAllExtensions(extensionRegistry);
         FrameworkExtensionAtoms.registerAllExtensions(extensionRegistry);
         GpsAtoms.registerAllExtensions(extensionRegistry);
-        GrammaticalInflection.registerAllExtensions(extensionRegistry);
+        GrammaticalInflectionExtensionAtoms.registerAllExtensions(extensionRegistry);
         BiometricsAtoms.registerAllExtensions(extensionRegistry);
         ApiExtensionAtoms.registerAllExtensions(extensionRegistry);
         UiExtensionAtoms.registerAllExtensions(extensionRegistry);
@@ -136,5 +141,8 @@ public class ExtensionAtomsRegistry {
         CredentialsExtensionAtoms.registerAllExtensions(extensionRegistry);
         SdksandboxExtensionAtoms.registerAllExtensions(extensionRegistry);
         ArtExtensionAtoms.registerAllExtensions(extensionRegistry);
+        ApexExtensionAtoms.registerAllExtensions(extensionRegistry);
+        BackgroundExtensionDexoptAtoms.registerAllExtensions(extensionRegistry);
+        OdrefreshExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
