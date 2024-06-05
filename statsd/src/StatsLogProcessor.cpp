@@ -36,6 +36,7 @@
 #include "stats_util.h"
 #include "statslog_statsd.h"
 #include "storage/StorageManager.h"
+#include "utils/api_tracing.h"
 
 using namespace android;
 using android::base::StringPrintf;
@@ -72,7 +73,8 @@ const int FIELD_ID_LAST_REPORT_WALL_CLOCK_NANOS = 5;
 const int FIELD_ID_CURRENT_REPORT_WALL_CLOCK_NANOS = 6;
 const int FIELD_ID_DUMP_REPORT_REASON = 8;
 const int FIELD_ID_STRINGS = 9;
-const int FIELD_ID_DATA_CORRUPTED_REASON = 10;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 11;
+const int FIELD_ID_ESTIMATED_DATA_BYTES = 12;
 
 // for ActiveConfigList
 const int FIELD_ID_ACTIVE_CONFIG_LIST_CONFIG = 1;
@@ -388,6 +390,7 @@ void StatsLogProcessor::resetConfigsLocked(const int64_t timestampNs) {
 }
 
 void StatsLogProcessor::OnLogEvent(LogEvent* event) {
+    ATRACE_CALL();
     OnLogEvent(event, getElapsedRealtimeNs());
 }
 
@@ -450,7 +453,7 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         informAnomalyAlarmFiredLocked(NanoToMillis(elapsedRealtimeNs));
     }
 
-    const int64_t curTimeSec = getElapsedRealtimeSec();
+    const int64_t curTimeSec = NanoToSeconds(elapsedRealtimeNs);
     if (curTimeSec - mLastPullerCacheClearTimeSec > StatsdStats::kPullerCacheClearIntervalSec) {
         mPullerManager->ClearPullerCacheIfNecessary(curTimeSec * NS_PER_SEC);
         mLastPullerCacheClearTimeSec = curTimeSec;
@@ -459,6 +462,10 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
     flushRestrictedDataIfNecessaryLocked(elapsedRealtimeNs);
     enforceDataTtlsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
     enforceDbGuardrailsIfNecessaryLocked(getWallClockNs(), elapsedRealtimeNs);
+
+    if (!validateAppBreadcrumbEvent(*event)) {
+        return;
+    }
 
     std::unordered_set<int> uidsWithActiveConfigsChanged;
     std::unordered_map<int, std::vector<int64_t>> activeConfigsPerUid;
@@ -639,10 +646,10 @@ size_t StatsLogProcessor::GetMetricsSize(const ConfigKey& key) const {
     return it->second->byteSize();
 }
 
-void StatsLogProcessor::dumpStates(int out, bool verbose) {
+void StatsLogProcessor::dumpStates(int out, bool verbose) const {
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     dprintf(out, "MetricsManager count: %lu\n", (unsigned long)mMetricsManagers.size());
-    for (auto metricsManager : mMetricsManagers) {
+    for (const auto& metricsManager : mMetricsManagers) {
         metricsManager.second->dumpStates(out, verbose);
     }
 }
@@ -765,6 +772,8 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
 
     std::set<string> str_set;
 
+    int64_t totalSize = it->second->byteSize();
+
     ProtoOutputStream tempProto;
     // First, fill in ConfigMetricsReport using current data on memory, which
     // starts from filling in StatsLogReport's.
@@ -799,7 +808,12 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     }
 
     // Data corrupted reason
-    writeDataCorruptedReasons(tempProto);
+    writeDataCorruptedReasons(tempProto, FIELD_ID_DATA_CORRUPTED_REASON,
+                              StatsdStats::getInstance().hasEventQueueOverflow(),
+                              StatsdStats::getInstance().hasSocketLoss());
+
+    // Estimated memory bytes
+    tempProto.write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_DATA_BYTES, totalSize);
 
     flushProtoToBuffer(tempProto, buffer);
 
@@ -866,7 +880,7 @@ void StatsLogProcessor::OnConfigRemoved(const ConfigKey& key) {
 
     int uid = key.GetUid();
     bool lastConfigForUid = true;
-    for (auto it : mMetricsManagers) {
+    for (const auto& it : mMetricsManagers) {
         if (it.first.GetUid() == uid) {
             lastConfigForUid = false;
             break;
@@ -1100,8 +1114,11 @@ void StatsLogProcessor::flushIfNecessaryLocked(const ConfigKey& key,
                                                MetricsManager& metricsManager) {
     int64_t elapsedRealtimeNs = getElapsedRealtimeNs();
     auto lastCheckTime = mLastByteSizeTimes.find(key);
+    int64_t minCheckPeriodNs = metricsManager.useV2SoftMemoryCalculation()
+                                       ? StatsdStats::kMinByteSizeV2CheckPeriodNs
+                                       : StatsdStats::kMinByteSizeCheckPeriodNs;
     if (lastCheckTime != mLastByteSizeTimes.end()) {
-        if (elapsedRealtimeNs - lastCheckTime->second < StatsdStats::kMinByteSizeCheckPeriodNs) {
+        if (elapsedRealtimeNs - lastCheckTime->second < minCheckPeriodNs) {
             return;
         }
     }
@@ -1445,6 +1462,7 @@ void StatsLogProcessor::onUidMapReceived(const int64_t eventTimeNs) {
 }
 
 void StatsLogProcessor::onStatsdInitCompleted(const int64_t elapsedTimeNs) {
+    ATRACE_CALL();
     std::lock_guard<std::mutex> lock(mMetricsMutex);
     VLOG("Received boot completed signal");
     for (const auto& it : mMetricsManagers) {
@@ -1501,15 +1519,40 @@ void StatsLogProcessor::updateLogEventFilterLocked() const {
     mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
 }
 
-void StatsLogProcessor::writeDataCorruptedReasons(ProtoOutputStream& proto) {
-    if (StatsdStats::getInstance().hasEventQueueOverflow()) {
-        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | FIELD_ID_DATA_CORRUPTED_REASON,
-                    DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+bool StatsLogProcessor::validateAppBreadcrumbEvent(const LogEvent& event) const {
+    if (event.GetTagId() == util::APP_BREADCRUMB_REPORTED) {
+        // Check that app breadcrumb reported fields are valid.
+        status_t err = NO_ERROR;
+
+        // Uid is 3rd from last field and must match the caller's uid,
+        // unless that caller is statsd itself (statsd is allowed to spoof uids).
+        const long appHookUid = event.GetLong(event.size() - 2, &err);
+        if (err != NO_ERROR) {
+            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the uid");
+            return false;
+        }
+
+        // Because the uid within the LogEvent may have been mapped from
+        // isolated to host, map the loggerUid similarly before comparing.
+        const int32_t loggerUid = mUidMap->getHostUidOrSelf(event.GetUid());
+        if (loggerUid != appHookUid && loggerUid != AID_STATSD) {
+            VLOG("APP_BREADCRUMB_REPORTED has invalid uid: claimed %ld but caller is %d",
+                 appHookUid, loggerUid);
+            return false;
+        }
+
+        // The state must be from 0,3. This part of code must be manually updated.
+        const long appHookState = event.GetLong(event.size(), &err);
+        if (err != NO_ERROR) {
+            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the state field");
+            return false;
+        } else if (appHookState < 0 || appHookState > 3) {
+            VLOG("APP_BREADCRUMB_REPORTED does not have valid state %ld", appHookState);
+            return false;
+        }
     }
-    if (StatsdStats::getInstance().hasSocketLoss()) {
-        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | FIELD_ID_DATA_CORRUPTED_REASON,
-                    DATA_CORRUPTED_SOCKET_LOSS);
-    }
+
+    return true;
 }
 
 }  // namespace statsd

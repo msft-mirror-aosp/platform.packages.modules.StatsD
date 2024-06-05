@@ -14,36 +14,24 @@
  * limitations under the License.
  */
 
-#include "stats_regex.h"
+#define STATSD_DEBUG false  // STOPSHIP if true
+#include "Log.h"
 
-#include <log/log.h>
+#include <android-base/file.h>
+#include <android-base/properties.h>
+#include <private/android_filesystem_config.h>
+
+#include <string>
+
+#include "src/statsd_config.pb.h"  // Alert
 
 namespace android {
 namespace os {
 namespace statsd {
 
-using std::regex;
-using std::regex_error;
-using std::regex_replace;
-using std::string;
-using std::unique_ptr;
-
-unique_ptr<regex> createRegex(const string& pattern) {
-    try {
-        return std::make_unique<regex>(pattern);
-    } catch (regex_error& e) {
-        ALOGE("regex_error: %s, pattern: %s", e.what(), pattern.c_str());
-        return nullptr;
-    }
-}
-
-string regexReplace(const string& input, const regex& re, const string& format) {
-    try {
-        return regex_replace(input, re, format);
-    } catch (regex_error& e) {
-        ALOGE("regex_error: %s, input: %s, format: %s", e.what(), input.c_str(), format.c_str());
-        return input;
-    }
+bool StartUprobeStats(const UprobestatsDetails& config) {
+    // TODO: Add an implementation.
+    return true;
 }
 
 }  // namespace statsd

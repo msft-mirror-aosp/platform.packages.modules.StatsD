@@ -36,7 +36,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-
 namespace {
 const ConfigKey kConfigKey(0, 12345);
 const uint64_t protoHash = 0x1234567890;
@@ -53,6 +52,7 @@ void makeLogEvent(LogEvent* logEvent, int32_t atomId, int64_t timestampNs, strin
 
     parseStatsEventToLogEvent(statsEvent, logEvent);
 }
+
 }  // anonymous namespace
 
 class EventMetricProducerTest : public ::testing::Test {
@@ -80,9 +80,10 @@ TEST_F(EventMetricProducerTest, TestNoCondition) {
     CreateNoValuesLogEvent(&event2, 1 /*tagId*/, bucketStartTimeNs + 2);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
 
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -117,10 +118,11 @@ TEST_F(EventMetricProducerTest, TestEventsWithNonSlicedCondition) {
     CreateNoValuesLogEvent(&event2, 1 /*tagId*/, bucketStartTimeNs + 10);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
 
     EventMetricProducer eventProducer(kConfigKey, metric, 0 /*condition index*/,
                                       {ConditionState::kUnknown}, wizard, protoHash,
-                                      bucketStartTimeNs);
+                                      bucketStartTimeNs, provider);
 
     eventProducer.onConditionChanged(true /*condition*/, bucketStartTimeNs);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
@@ -174,10 +176,11 @@ TEST_F(EventMetricProducerTest, TestEventsWithSlicedCondition) {
     EXPECT_CALL(*wizard, query(_, key1, _)).WillOnce(Return(ConditionState::kFalse));
     // Condition is true for second event.
     EXPECT_CALL(*wizard, query(_, key2, _)).WillOnce(Return(ConditionState::kTrue));
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
 
     EventMetricProducer eventProducer(kConfigKey, metric, 0 /*condition index*/,
                                       {ConditionState::kUnknown}, wizard, protoHash,
-                                      bucketStartTimeNs);
+                                      bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -213,8 +216,9 @@ TEST_F(EventMetricProducerTest, TestOneAtomTagAggregatedEvents) {
     makeLogEvent(&event4, tagId, bucketStartTimeNs + 40, "222");
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -265,8 +269,9 @@ TEST_F(EventMetricProducerTest, TestBytesFieldAggregatedEvents) {
     makeLogEvent(&event4, tagId, bucketStartTimeNs + 40, "111", &bytesField2);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -314,8 +319,9 @@ TEST_F(EventMetricProducerTest, TestTwoAtomTagAggregatedEvents) {
     makeLogEvent(&event3, tagId2, bucketStartTimeNs + 40, "222");
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, provider);
 
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
     eventProducer.onMatchedLogEvent(1 /*matcher index*/, event2);
@@ -343,6 +349,196 @@ TEST_F(EventMetricProducerTest, TestTwoAtomTagAggregatedEvents) {
         }
     }
 }
+
+TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport) {
+    int64_t bucketStartTimeNs = 10000000000;
+    int tagId = 1;
+
+    EventMetric metric;
+    metric.set_id(1);
+
+    LogEvent event1(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event1, tagId, bucketStartTimeNs + 10, "111");
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
+                                      wizard, protoHash, bucketStartTimeNs, provider);
+
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        std::set<string> strSet;
+        eventProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, &strSet, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        ASSERT_EQ(1, report.event_metrics().data_size());
+        ASSERT_EQ(1, report.data_corrupted_reason_size());
+        ASSERT_EQ(DATA_CORRUPTED_SOCKET_LOSS, report.data_corrupted_reason()[0]);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    }
+
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        std::set<string> strSet;
+        eventProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, &strSet, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        ASSERT_EQ(1, report.event_metrics().data_size());
+        ASSERT_EQ(1, report.data_corrupted_reason_size());
+        ASSERT_EQ(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, report.data_corrupted_reason()[0]);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    }
+
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        std::set<string> strSet;
+        eventProducer.onDumpReport(bucketStartTimeNs + 250, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, &strSet, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_TRUE(report.has_event_metrics());
+        ASSERT_EQ(1, report.event_metrics().data_size());
+        ASSERT_EQ(2, report.data_corrupted_reason_size());
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+        EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+    }
+}
+
+TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDropData) {
+    int64_t bucketStartTimeNs = 10000000000;
+    int tagId = 1;
+
+    EventMetric metric;
+    metric.set_id(1);
+
+    LogEvent event1(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event1, tagId, bucketStartTimeNs + 10, "111");
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
+                                      wizard, protoHash, bucketStartTimeNs, provider);
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.dropData(bucketStartTimeNs + 100);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.dropData(bucketStartTimeNs + 200);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.dropData(bucketStartTimeNs + 300);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+}
+
+TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnClearPastBuckets) {
+    int64_t bucketStartTimeNs = 10000000000;
+    int tagId = 1;
+
+    EventMetric metric;
+    metric.set_id(1);
+
+    LogEvent event1(/*uid=*/0, /*pid=*/0);
+    makeLogEvent(&event1, tagId, bucketStartTimeNs + 10, "111");
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    EventMetricProducer eventProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
+                                      wizard, protoHash, bucketStartTimeNs, provider);
+    eventProducer.onMatchedLogEvent(1 /*matcher index*/, event1);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.clearPastBuckets(bucketStartTimeNs + 100);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.clearPastBuckets(bucketStartTimeNs + 200);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS);
+    eventProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_TRUE(eventProducer.mDataCorruptedDueToQueueOverflow);
+
+    eventProducer.clearPastBuckets(bucketStartTimeNs + 300);
+
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToSocketLoss);
+    EXPECT_FALSE(eventProducer.mDataCorruptedDueToQueueOverflow);
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

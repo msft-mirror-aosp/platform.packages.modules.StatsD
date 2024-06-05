@@ -19,8 +19,6 @@ namespace android {
 namespace os {
 namespace statsd {
 
-using std::vector;
-
 MatchLogEventResult EventMatcherWizard::matchLogEvent(const LogEvent& event, int matcherIndex) {
     if (matcherIndex < 0 || matcherIndex >= (int)mAllEventMatchers.size()) {
         return {MatchingState::kNotComputed, nullptr};

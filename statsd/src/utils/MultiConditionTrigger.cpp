@@ -14,16 +14,17 @@
  * limitations under the License.
  */
 #define STATSD_DEBUG false  // STOPSHIP if true
+#include "Log.h"
 
 #include "MultiConditionTrigger.h"
-
-#include <thread>
-
-using namespace std;
 
 namespace android {
 namespace os {
 namespace statsd {
+
+using std::function;
+using std::set;
+using std::string;
 
 MultiConditionTrigger::MultiConditionTrigger(const set<string>& conditionNames,
                                              function<void()> trigger)
@@ -31,15 +32,14 @@ MultiConditionTrigger::MultiConditionTrigger(const set<string>& conditionNames,
       mTrigger(std::move(trigger)),
       mCompleted(mRemainingConditionNames.empty()) {
     if (mCompleted) {
-        thread executorThread([this] { mTrigger(); });
-        executorThread.detach();
+        startExecutorThread();
     }
 }
 
 void MultiConditionTrigger::markComplete(const string& conditionName) {
     bool doTrigger = false;
     {
-        lock_guard<mutex> lg(mMutex);
+        std::lock_guard<std::mutex> lg(mMutex);
         if (mCompleted) {
             return;
         }
@@ -48,10 +48,21 @@ void MultiConditionTrigger::markComplete(const string& conditionName) {
         doTrigger = mCompleted;
     }
     if (doTrigger) {
-        std::thread executorThread([this] { mTrigger(); });
-        executorThread.detach();
+        startExecutorThread();
     }
 }
+
+void MultiConditionTrigger::startExecutorThread() {
+    mExecutorThread = std::make_unique<std::thread>([this] { mTrigger(); });
+}
+
+MultiConditionTrigger::~MultiConditionTrigger() {
+    if (mExecutorThread != nullptr && mExecutorThread->joinable()) {
+        VLOG("MultiConditionTrigger waiting on execution thread termination");
+        mExecutorThread->join();
+    }
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

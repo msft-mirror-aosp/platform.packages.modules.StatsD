@@ -246,10 +246,10 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
 
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
             "pkg1");
@@ -263,10 +263,10 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "pkg0");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
             "pkg1");
@@ -277,10 +277,10 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "pkg0");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
             "pkg1");
@@ -306,17 +306,17 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "location2");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location1");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
@@ -338,17 +338,17 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "location2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location1");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
@@ -370,17 +370,17 @@ TEST(AtomMatcherTest, TestAttributionMatcher) {
             "location2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");
+            "Pkg2");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location3");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event).matched);
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg3");
+            "PkG3");
     attributionMatcher->mutable_matches_tuple()->mutable_field_value_matcher(1)->set_eq_string(
             "location1");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
@@ -420,8 +420,7 @@ TEST(AtomMatcherTest, TestUidFieldMatcher) {
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event2).matched);
 
     // Event has is_uid annotation, but uid maps to different package name.
-    simpleMatcher->mutable_field_value_matcher(0)->set_eq_string(
-            "pkg2");  // package names are normalized
+    simpleMatcher->mutable_field_value_matcher(0)->set_eq_string("Pkg2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event2).matched);
 }
 
@@ -458,7 +457,7 @@ TEST(AtomMatcherTest, TestRepeatedUidFieldMatcher) {
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event1).matched);
 
     fieldValueMatcher->set_position(Position::ANY);
-    fieldValueMatcher->set_eq_string("pkg2");
+    fieldValueMatcher->set_eq_string("Pkg2");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event1).matched);
 
     // is_uid annotation, mapping from uid to package name.
@@ -478,7 +477,7 @@ TEST(AtomMatcherTest, TestRepeatedUidFieldMatcher) {
     fieldValueMatcher->set_position(Position::ANY);
     fieldValueMatcher->set_eq_string("pkg");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event2).matched);
-    fieldValueMatcher->set_eq_string("pkg2");  // package names are normalized
+    fieldValueMatcher->set_eq_string("Pkg2");
     EXPECT_TRUE(matchesSimple(uidMap, *simpleMatcher, event2).matched);
 }
 
@@ -545,8 +544,8 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_AttributionUids) {
     auto neqStringList = attributionMatcher->mutable_matches_tuple()
                                  ->mutable_field_value_matcher(0)
                                  ->mutable_neq_any_string();
-    neqStringList->add_str_value("pkg2");
-    neqStringList->add_str_value("pkg3");
+    neqStringList->add_str_value("Pkg2");
+    neqStringList->add_str_value("PkG3");
 
     auto fieldMatcher = simpleMatcher->add_field_value_matcher();
     fieldMatcher->set_field(FIELD_ID_2);
@@ -556,7 +555,7 @@ TEST(AtomMatcherTest, TestNeqAnyStringMatcher_AttributionUids) {
 
     neqStringList->Clear();
     neqStringList->add_str_value("pkg1");
-    neqStringList->add_str_value("pkg3");
+    neqStringList->add_str_value("PkG3");
     EXPECT_FALSE(matchesSimple(uidMap, *simpleMatcher, event).matched);
 
     attributionMatcher->set_position(Position::ANY);
@@ -1517,7 +1516,7 @@ TEST(AtomMatcherTest, TestStringReplaceRoot) {
     FieldValueMatcher* fvm = matcher.mutable_simple_atom_matcher()->add_field_value_matcher();
     fvm->set_field(FIELD_ID_2);
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1555,7 +1554,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagFirst) {
             attributionFvm->mutable_matches_tuple()->add_field_value_matcher();
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1592,7 +1591,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagLast) {
             attributionFvm->mutable_matches_tuple()->add_field_value_matcher();
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1630,7 +1629,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagAll) {
             attributionFvm->mutable_matches_tuple()->add_field_value_matcher();
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1674,7 +1673,7 @@ TEST(AtomMatcherTest, TestStringReplaceNestedAllWithMultipleNestedStringFields) 
             attributionFvm->mutable_matches_tuple()->add_field_value_matcher();
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =
@@ -1702,7 +1701,7 @@ TEST(AtomMatcherTest, TestStringReplaceRootOnMatchedField) {
     fvm->set_field(FIELD_ID_2);
     fvm->set_eq_string("bar");
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     // Set up the log event.
@@ -1749,7 +1748,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagFirstOnMatchedField) {
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     // Set up the log event.
@@ -1797,7 +1796,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagLastOnMatchedField) {
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     // Set up the log event.
@@ -1845,7 +1844,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagAnyOnMatchedField) {
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     // Set up the log event.
@@ -1893,13 +1892,13 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagAnyAndRootOnMatchedFields) 
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
     FieldValueMatcher* rootFvm = matcher.mutable_simple_atom_matcher()->add_field_value_matcher();
     rootFvm->set_field(FIELD_ID_2);
     rootFvm->set_eq_string("blah");
     stringReplacer = rootFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     {
@@ -1956,7 +1955,7 @@ TEST(AtomMatcherTest, TestStringReplaceAttributionTagAnyWithAttributionUidValueM
     attributionTagFvm->set_field(ATTRIBUTION_TAG_FIELD_ID);
     attributionTagFvm->set_eq_string("bar");
     StringReplacer* stringReplacer = attributionTagFvm->mutable_replace_string();
-    stringReplacer->set_regex(R"([\d]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
     stringReplacer->set_replacement("");
 
     {
@@ -2009,7 +2008,31 @@ TEST(AtomMatcherTest, TestStringReplaceBadRegex) {
     FieldValueMatcher* fvm = matcher.mutable_simple_atom_matcher()->add_field_value_matcher();
     fvm->set_field(FIELD_ID_2);
     StringReplacer* stringReplacer = fvm->mutable_replace_string();
-    stringReplacer->set_regex(R"(*[\d]+$)");  // bad regex: asterisk not preceded by any expression.
+    stringReplacer->set_regex(
+            R"(*[0-9]+$)");  // bad regex: asterisk not preceded by any expression.
+    stringReplacer->set_replacement("");
+
+    const auto [hasMatched, transformedEvent] =
+            matchesSimple(uidMap, matcher.simple_atom_matcher(), event);
+    EXPECT_TRUE(hasMatched);
+    ASSERT_EQ(transformedEvent, nullptr);
+}
+
+TEST(AtomMatcherTest, TestStringReplaceRegexWithSubgroup) {
+    sp<UidMap> uidMap = new UidMap();
+
+    // Set up the log event.
+    std::vector<int> attributionUids = {1111, 2222, 3333};
+    std::vector<string> attributionTags = {"location1", "location2", "location3"};
+    LogEvent event(/*uid=*/0, /*pid=*/0);
+    makeAttributionLogEvent(&event, TAG_ID, 0, attributionUids, attributionTags, "some value123");
+
+    // Set up the matcher. Replace second field.
+    AtomMatcher matcher = CreateSimpleAtomMatcher("matcher", TAG_ID);
+    FieldValueMatcher* fvm = matcher.mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(FIELD_ID_2);
+    StringReplacer* stringReplacer = fvm->mutable_replace_string();
+    stringReplacer->set_regex(R"(([a-z]+)[0-9]+$)");  // "([a-z]+)" is a subgroup.
     stringReplacer->set_replacement("");
 
     const auto [hasMatched, transformedEvent] =

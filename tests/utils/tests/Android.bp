@@ -20,7 +20,7 @@ android_test {
     name: "StatsdTestUtilsTest",
     defaults: [
         // For ExtendedMockito dependencies.
-        "modules-utils-testable-device-config-defaults",
+        "modules-utils-extended-mockito-rule-defaults",
     ],
     srcs: [
         ":statslog-statsdtest-java-gen",
@@ -48,6 +48,10 @@ android_test {
 genrule {
     name: "statslog-statsdtest-java-gen",
     tools: ["stats-log-api-gen"],
-    cmd: "$(location stats-log-api-gen) --java $(out) --module statsdtest --javaPackage android.util --javaClass StatsdTestStatsLog",
+    cmd: "$(location stats-log-api-gen) " +
+        "--java $(out) " +
+        "--module statsdtest " +
+        "--javaPackage android.util " +
+        "--javaClass StatsdTestStatsLog",
     out: ["android/util/StatsdTestStatsLog.java"],
 }

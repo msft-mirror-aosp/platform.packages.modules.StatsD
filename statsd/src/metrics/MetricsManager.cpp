@@ -14,10 +14,14 @@
  * limitations under the License.
  */
 #define STATSD_DEBUG false  // STOPSHIP if true
+#if !defined(NDEBUG) && !defined(DEBUG)
+#define NDEBUG  // comment to enable assert
+#endif          /* !defined(NDEBUG) && !defined(DEBUG) */
 #include "Log.h"
 
 #include "MetricsManager.h"
 
+#include <assert.h>
 #include <private/android_filesystem_config.h>
 
 #include "CountMetricProducer.h"
@@ -34,6 +38,7 @@
 #include "stats_util.h"
 #include "statslog_statsd.h"
 #include "utils/DbUtils.h"
+#include "utils/api_tracing.h"
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_INT32;
@@ -78,7 +83,8 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mPullerManager(pullerManager),
       mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
                           config.whitelisted_atom_ids().end()),
-      mShouldPersistHistory(config.persist_locally()) {
+      mShouldPersistHistory(config.persist_locally()),
+      mUseV2SoftMemoryCalculation(config.statsd_config_options().use_v2_soft_memory_limit()) {
     if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
@@ -91,7 +97,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
     refreshTtl(timeBaseNs);
     mInvalidConfigReason = initStatsdConfig(
             key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseNs, currentTimeNs, mTagIdsToMatchersMap, mAllAtomMatchingTrackers,
+            timeBaseNs, currentTimeNs, this, mTagIdsToMatchersMap, mAllAtomMatchingTrackers,
             mAtomMatchingTrackerMap, mAllConditionTrackers, mConditionTrackerMap,
             mAllMetricProducers, mMetricProducerMap, mAllAnomalyTrackers, mAllPeriodicAlarmTrackers,
             mConditionToMetricMap, mTrackerToMetricMap, mTrackerToConditionMap,
@@ -162,7 +168,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
             mConfigKey, config, mUidMap, mPullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
             timeBaseNs, currentTimeNs, mAllAtomMatchingTrackers, mAtomMatchingTrackerMap,
             mAllConditionTrackers, mConditionTrackerMap, mAllMetricProducers, mMetricProducerMap,
-            mAllAnomalyTrackers, mAlertTrackerMap, mStateProtoHashes, mTagIdsToMatchersMap,
+            mAllAnomalyTrackers, mAlertTrackerMap, mStateProtoHashes, this, mTagIdsToMatchersMap,
             newAtomMatchingTrackers, newAtomMatchingTrackerMap, newConditionTrackers,
             newConditionTrackerMap, newMetricProducers, newMetricProducerMap, newAnomalyTrackers,
             newAlertTrackerMap, newPeriodicAlarmTrackers, mConditionToMetricMap,
@@ -191,6 +197,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
                                config.whitelisted_atom_ids().end());
     mShouldPersistHistory = config.persist_locally();
     mPackageCertificateHashSizeBytes = config.package_certificate_hash_size_bytes();
+    mUseV2SoftMemoryCalculation = config.statsd_config_options().use_v2_soft_memory_limit();
 
     // Store the sub-configs used.
     mAnnotations.clear();
@@ -419,6 +426,7 @@ void MetricsManager::onUidMapReceived(const int64_t eventTimeNs) {
 }
 
 void MetricsManager::onStatsdInitCompleted(const int64_t eventTimeNs) {
+    ATRACE_CALL();
     // Inform all metric producers.
     for (const auto& it : mAllMetricProducers) {
         it->onStatsdInitCompleted(eventTimeNs);
@@ -440,6 +448,10 @@ vector<int32_t> MetricsManager::getPullAtomUids(int32_t atomId) {
     }
     uids.insert(uids.end(), mDefaultPullUids.begin(), mDefaultPullUids.end());
     return uids;
+}
+
+bool MetricsManager::useV2SoftMemoryCalculation() {
+    return mUseV2SoftMemoryCalculation;
 }
 
 void MetricsManager::dumpStates(int out, bool verbose) {
@@ -471,12 +483,17 @@ void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t w
         VLOG("Unexpected call to onDumpReport in restricted metricsmanager.");
         return;
     }
+
+    vector<std::pair<int32_t, int32_t>> queueOverflowStats =
+            StatsdStats::getInstance().getQueueOverflowAtomsStats();
+    processQueueOverflowStats(queueOverflowStats);
+
     VLOG("=========================Metric Reports Start==========================");
     // one StatsLogReport per MetricProduer
     for (const auto& producer : mAllMetricProducers) {
         if (mNoReportMetricIds.find(producer->getMetricId()) == mNoReportMetricIds.end()) {
-            uint64_t token = protoOutput->start(
-                    FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_METRICS);
+            uint64_t token = protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
+                                                FIELD_ID_METRICS);
             if (mHashStringsInReport) {
                 producer->onDumpReport(dumpTimeStampNs, include_current_partial_bucket, erase_data,
                                        dumpLatency, str_set, protoOutput);
@@ -507,58 +524,21 @@ void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t w
     VLOG("=========================Metric Reports End==========================");
 }
 
-bool MetricsManager::checkLogCredentials(const LogEvent& event) {
-    if (mWhitelistedAtomIds.find(event.GetTagId()) != mWhitelistedAtomIds.end()) {
+bool MetricsManager::checkLogCredentials(const int32_t uid, const int32_t atomId) const {
+    if (mWhitelistedAtomIds.find(atomId) != mWhitelistedAtomIds.end()) {
         return true;
     }
 
-    if (event.GetUid() == AID_ROOT ||
-        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL)) {
+    if (uid == AID_ROOT || (uid >= AID_SYSTEM && uid < AID_SHELL)) {
         // enable atoms logged from pre-installed Android system services
         return true;
     }
 
     std::lock_guard<std::mutex> lock(mAllowedLogSourcesMutex);
-    if (mAllowedLogSources.find(event.GetUid()) == mAllowedLogSources.end()) {
-        VLOG("log source %d not on the whitelist", event.GetUid());
+    if (mAllowedLogSources.find(uid) == mAllowedLogSources.end()) {
+        VLOG("log source %d not on the whitelist", uid);
         return false;
     }
-    return true;
-}
-
-bool MetricsManager::eventSanityCheck(const LogEvent& event) {
-    if (event.GetTagId() == util::APP_BREADCRUMB_REPORTED) {
-        // Check that app breadcrumb reported fields are valid.
-        status_t err = NO_ERROR;
-
-        // Uid is 3rd from last field and must match the caller's uid,
-        // unless that caller is statsd itself (statsd is allowed to spoof uids).
-        long appHookUid = event.GetLong(event.size()-2, &err);
-        if (err != NO_ERROR) {
-            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the uid");
-            return false;
-        }
-
-        // Because the uid within the LogEvent may have been mapped from
-        // isolated to host, map the loggerUid similarly before comparing.
-        int32_t loggerUid = mUidMap->getHostUidOrSelf(event.GetUid());
-        if (loggerUid != appHookUid && loggerUid != AID_STATSD) {
-            VLOG("APP_BREADCRUMB_REPORTED has invalid uid: claimed %ld but caller is %d",
-                 appHookUid, loggerUid);
-            return false;
-        }
-
-        // The state must be from 0,3. This part of code must be manually updated.
-        long appHookState = event.GetLong(event.size(), &err);
-        if (err != NO_ERROR) {
-            VLOG("APP_BREADCRUMB_REPORTED had error when parsing the state field");
-            return false;
-        } else if (appHookState < 0 || appHookState > 3) {
-            VLOG("APP_BREADCRUMB_REPORTED does not have valid state %ld", appHookState);
-            return false;
-        }
-    }
-
     return true;
 }
 
@@ -568,16 +548,24 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
         return;
     }
 
+    const int tagId = event.GetTagId();
+
+    if (tagId == util::STATS_SOCKET_LOSS_REPORTED) {
+        // Hard coded logic to handle socket loss info to highlight metric corruption reason
+        // STATS_SOCKET_LOSS_REPORTED might not be part of atoms allow list - but some of lost
+        // atoms can be always allowed - that is the reason to evaluate SocketLossInfo content prior
+        // the checkLogCredentials below
+        const std::optional<SocketLossInfo>& lossInfo = toSocketLossInfo(event);
+        if (lossInfo) {
+            onLogEventLost(*lossInfo);
+        }
+        // next, atom is going to be propagated to be consumed by metrics if any
+    }
+
     if (!checkLogCredentials(event)) {
         return;
     }
 
-    // TODO(b/212755214): this check could be done once on the StatsLogProcessor level
-    if (!eventSanityCheck(event)) {
-        return;
-    }
-
-    const int tagId = event.GetTagId();
     const int64_t eventTimeNs = event.GetElapsedTimestampNs();
 
     bool isActive = mIsAlwaysActive;
@@ -647,7 +635,6 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     }
 
     isActive |= !activeMetricsIndices.empty();
-
 
     // Determine which metric activations should be turned on and turn them on
     for (const auto& it : mActivationAtomTrackerToMetricMap) {
@@ -736,6 +723,53 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
     }
 }
 
+void MetricsManager::onLogEventLost(const SocketLossInfo& socketLossInfo) {
+    // socketLossInfo stores atomId per UID - to eliminate duplicates using set
+    const set<int> uniqueLostAtomIds(socketLossInfo.atomIds.begin(), socketLossInfo.atomIds.end());
+
+    // pass lost atom id to all relevant metrics
+    for (const auto lostAtomId : uniqueLostAtomIds) {
+        /**
+         * Socket loss atom:
+         *  - comes from a specific uid (originUid)
+         *  - specifies the uid in the atom payload (socketLossInfo.uid)
+         *  - provides a list of atom ids that are lost
+         *
+         * For atom id that is lost (lostAtomId below):
+         * - if that atom id is allowed from any uid, then always count this atom as lost
+         * - else, if the originUid (from ucred) (socketLossInfo.uid below and is the same for all
+         *   uniqueLostAtomIds) is in the allowed log sources - count this atom as lost
+         */
+
+        if (!checkLogCredentials(socketLossInfo.uid, lostAtomId)) {
+            continue;
+        }
+
+        notifyMetricsAboutLostAtom(lostAtomId, DATA_CORRUPTED_SOCKET_LOSS);
+    }
+}
+
+int MetricsManager::notifyMetricsAboutLostAtom(int32_t lostAtomId, DataCorruptedReason reason) {
+    const auto matchersIt = mTagIdsToMatchersMap.find(lostAtomId);
+    if (matchersIt == mTagIdsToMatchersMap.end()) {
+        // atom is lost - but no metrics in config reference it
+        return 0;
+    }
+    int numberOfNotifiedMetrics = 0;
+    const auto& matchersIndexesListForLostAtom = matchersIt->second;
+    for (const auto matcherIndex : matchersIndexesListForLostAtom) {
+        const auto it = mTrackerToMetricMap.find(matcherIndex);
+        if (it != mTrackerToMetricMap.end()) {
+            const auto& metricsList = it->second;
+            for (const int metricIndex : metricsList) {
+                mAllMetricProducers[metricIndex]->onMatchedLogEventLost(lostAtomId, reason);
+                numberOfNotifiedMetrics++;
+            }
+        }
+    }
+    return numberOfNotifiedMetrics;
+}
+
 void MetricsManager::onAnomalyAlarmFired(
         const int64_t timestampNs,
         unordered_set<sp<const InternalAlarm>, SpHash<InternalAlarm>>& alarmSet) {
@@ -776,7 +810,7 @@ void MetricsManager::loadActiveConfig(const ActiveConfig& config, int64_t curren
                 metric->loadActiveMetric(activeMetric, currentTimeNs);
                 if (!mIsActive && metric->isActive()) {
                     StatsdStats::getInstance().noteActiveStatusChanged(mConfigKey,
-                                                                       /*activate=*/ true);
+                                                                       /*activate=*/true);
                 }
                 mIsActive |= metric->isActive();
             }
@@ -784,14 +818,15 @@ void MetricsManager::loadActiveConfig(const ActiveConfig& config, int64_t curren
     }
 }
 
-void MetricsManager::writeActiveConfigToProtoOutputStream(
-        int64_t currentTimeNs, const DumpReportReason reason, ProtoOutputStream* proto) {
+void MetricsManager::writeActiveConfigToProtoOutputStream(int64_t currentTimeNs,
+                                                          const DumpReportReason reason,
+                                                          ProtoOutputStream* proto) {
     proto->write(FIELD_TYPE_INT64 | FIELD_ID_ACTIVE_CONFIG_ID, (long long)mConfigKey.GetId());
     proto->write(FIELD_TYPE_INT32 | FIELD_ID_ACTIVE_CONFIG_UID, mConfigKey.GetUid());
     for (int metricIndex : mMetricIndexesWithActivation) {
         const auto& metric = mAllMetricProducers[metricIndex];
         const uint64_t metricToken = proto->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
-                FIELD_ID_ACTIVE_CONFIG_METRIC);
+                                                  FIELD_ID_ACTIVE_CONFIG_METRIC);
         metric->writeActiveMetricToProtoOutputStream(currentTimeNs, reason, proto);
         proto->end(metricToken);
     }
@@ -806,8 +841,8 @@ bool MetricsManager::writeMetadataToProto(int64_t currentWallClockTimeNs,
     configKey->set_uid(mConfigKey.GetUid());
     for (const auto& anomalyTracker : mAllAnomalyTrackers) {
         metadata::AlertMetadata* alertMetadata = statsMetadata->add_alert_metadata();
-        bool alertWritten = anomalyTracker->writeAlertMetadataToProto(currentWallClockTimeNs,
-                systemElapsedTimeNs, alertMetadata);
+        bool alertWritten = anomalyTracker->writeAlertMetadataToProto(
+                currentWallClockTimeNs, systemElapsedTimeNs, alertMetadata);
         if (!alertWritten) {
             statsMetadata->mutable_alert_metadata()->RemoveLast();
         }
@@ -826,17 +861,15 @@ bool MetricsManager::writeMetadataToProto(int64_t currentWallClockTimeNs,
 }
 
 void MetricsManager::loadMetadata(const metadata::StatsMetadata& metadata,
-                                  int64_t currentWallClockTimeNs,
-                                  int64_t systemElapsedTimeNs) {
+                                  int64_t currentWallClockTimeNs, int64_t systemElapsedTimeNs) {
     for (const metadata::AlertMetadata& alertMetadata : metadata.alert_metadata()) {
         int64_t alertId = alertMetadata.alert_id();
         const auto& it = mAlertTrackerMap.find(alertId);
         if (it == mAlertTrackerMap.end()) {
-            ALOGE("No anomalyTracker found for alertId %lld", (long long) alertId);
+            ALOGE("No anomalyTracker found for alertId %lld", (long long)alertId);
             continue;
         }
-        mAllAnomalyTrackers[it->second]->loadAlertMetadata(alertMetadata,
-                                                           currentWallClockTimeNs,
+        mAllAnomalyTrackers[it->second]->loadAlertMetadata(alertMetadata, currentWallClockTimeNs,
                                                            systemElapsedTimeNs);
     }
     for (const metadata::MetricMetadata& metricMetadata : metadata.metric_metadata()) {
@@ -899,6 +932,34 @@ vector<int64_t> MetricsManager::getAllMetricIds() const {
 void MetricsManager::addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const {
     for (const auto& [atomId, _] : mTagIdsToMatchersMap) {
         allIds.insert(atomId);
+    }
+}
+
+void MetricsManager::processQueueOverflowStats(
+        const StatsdStats::QueueOverflowAtomsStats& overflowStats) {
+    assert((overflowStats.size() < mQueueOverflowAtomsStats.size()) &&
+           "StatsdStats reset unexpected");
+
+    for (const auto [atomId, count] : overflowStats) {
+        // are there new atoms dropped due to queue overflow since previous dumpReport request
+        auto droppedAtomStatsIt = mQueueOverflowAtomsStats.find(atomId);
+        if (droppedAtomStatsIt != mQueueOverflowAtomsStats.end() &&
+            droppedAtomStatsIt->second == count) {
+            // no new dropped atoms detected for the atomId
+            continue;
+        }
+
+        if (notifyMetricsAboutLostAtom(atomId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW) > 0) {
+            // there is at least one metric interested in the lost atom, keep track of it
+            // to update it again only if there will be more dropped atoms
+            mQueueOverflowAtomsStats[atomId] = count;
+        } else {
+            // there are no metrics interested in dropped atom
+            if (droppedAtomStatsIt != mQueueOverflowAtomsStats.end()) {
+                // but there were metrics which are interested in the atom and now they are removed
+                mQueueOverflowAtomsStats.erase(droppedAtomStatsIt);
+            }
+        }
     }
 }
 

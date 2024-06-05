@@ -554,6 +554,18 @@ void writeAtomMetricStatsToStream(const std::pair<int64_t, StatsdStats::AtomMetr
     protoOutput->end(token);
 }
 
+void writeDataCorruptedReasons(ProtoOutputStream& proto, int fieldIdDataCorruptedReason,
+                               bool hasQueueOverflow, bool hasSocketLoss) {
+    if (hasQueueOverflow) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | fieldIdDataCorruptedReason,
+                    DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    }
+    if (hasSocketLoss) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | fieldIdDataCorruptedReason,
+                    DATA_CORRUPTED_SOCKET_LOSS);
+    }
+}
+
 int64_t getElapsedRealtimeNs() {
     return ::android::elapsedRealtimeNano();
 }
@@ -596,6 +608,10 @@ int64_t truncateTimestampIfNecessary(const LogEvent& event) {
 
 int64_t NanoToMillis(const int64_t nano) {
     return nano / 1000000;
+}
+
+int64_t NanoToSeconds(const int64_t nano) {
+    return nano / NS_PER_SEC;
 }
 
 int64_t MillisToNano(const int64_t millis) {

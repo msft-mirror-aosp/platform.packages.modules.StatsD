@@ -13,18 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #pragma once
 
-#include <regex>
+#include <utils/RefBase.h>
 
 namespace android {
 namespace os {
 namespace statsd {
 
-std::unique_ptr<std::regex> createRegex(const std::string& pattern);
+class ConfigMetadataProvider : virtual public RefBase {
+public:
+    virtual ~ConfigMetadataProvider() {
+    }
 
-std::string regexReplace(const std::string& input, const std::regex& re, const std::string& format);
+    virtual bool useV2SoftMemoryCalculation() = 0;
+};
 
 }  // namespace statsd
 }  // namespace os

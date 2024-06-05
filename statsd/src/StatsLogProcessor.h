@@ -140,7 +140,7 @@ public:
         return mUidMap;
     }
 
-    void dumpStates(int outFd, bool verbose);
+    void dumpStates(int outFd, bool verbose) const;
 
     void informPullAlarmFired(const int64_t timestampNs);
 
@@ -327,7 +327,7 @@ private:
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
 
-    void writeDataCorruptedReasons(ProtoOutputStream& proto);
+    bool validateAppBreadcrumbEvent(const LogEvent& event) const;
 
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
@@ -483,6 +483,8 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
 
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
 
