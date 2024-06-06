@@ -159,6 +159,10 @@ public class MetadataTests extends MetadataTestCase {
 
     /** Tests that SystemServer logged atoms in case of loss event has error code 1. */
     public void testSystemServerLossErrorCode() throws Exception {
+        if (!sdkLevelAtLeast(34, "V")) {
+            return;
+        }
+
         // Starting from VanillaIceCream libstatssocket uses worker thread & dedicated logging queue
         // to handle atoms for system server (logged with UID 1000)
         // this test might fail for previous versions due to loss stats last error code check
@@ -227,12 +231,12 @@ public class MetadataTests extends MetadataTestCase {
 
     /** Test libstatssocket logging queue atom id distribution collection */
     public void testAtomIdLossDistributionCollection() throws Exception {
-        final String testPkgName = "com.android.statsd.app.atomstorm";
-        final String testApk = "StatsdAtomStormApp.apk";
-
-        if (!ApiLevelUtil.codenameEquals(getDevice(), "VanillaIceCream")) {
+        if (!sdkLevelAtLeast(34, "V")) {
             return;
         }
+
+        final String testPkgName = "com.android.statsd.app.atomstorm";
+        final String testApk = "StatsdAtomStormApp.apk";
 
         String[][] testPkgs = {
             {testPkgName, ".StatsdAtomStorm", "testLogManyAtomsBackToBack"},
@@ -287,5 +291,10 @@ public class MetadataTests extends MetadataTestCase {
             result.add(lossStats.getUid());
         }
         return result;
+    }
+
+    private boolean sdkLevelAtLeast(int sdkLevel, String codename) throws Exception {
+        return ApiLevelUtil.isAtLeast(getDevice(), sdkLevel)
+                || ApiLevelUtil.codenameEquals(getDevice(), codename);
     }
 }
