@@ -1056,9 +1056,7 @@ Status StatsService::systemRunning() {
     ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
-    // When system_server is up and running, schedule the dropbox task to run.
-    VLOG("StatsService::systemRunning");
-    sayHiToStatsCompanion();
+    // TODO(b/345534941): This function is never called. It should be deleted.
     return Status::ok();
 }
 
@@ -1076,7 +1074,8 @@ Status StatsService::informDeviceShutdown() {
 }
 
 void StatsService::sayHiToStatsCompanion() {
-    shared_ptr<IStatsCompanionService> statsCompanion = getStatsCompanionService();
+    shared_ptr<IStatsCompanionService> statsCompanion =
+            getStatsCompanionService(/*blocking=*/false);
     if (statsCompanion != nullptr) {
         VLOG("Telling statsCompanion that statsd is ready");
         statsCompanion->statsdReady();
@@ -1090,7 +1089,7 @@ Status StatsService::statsCompanionReady() {
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::statsCompanionReady was called");
-    shared_ptr<IStatsCompanionService> statsCompanion = getStatsCompanionService();
+    shared_ptr<IStatsCompanionService> statsCompanion = getStatsCompanionService(/*blocking*/ true);
     if (statsCompanion == nullptr) {
         return exception(EX_NULL_POINTER,
                          "StatsCompanion unavailable despite it contacting statsd.");
