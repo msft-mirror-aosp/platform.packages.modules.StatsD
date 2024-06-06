@@ -30,6 +30,7 @@
 #include "src/hash.h"
 #include "src/logd/LogEvent.h"
 #include "src/matchers/EventMatcherWizard.h"
+#include "src/metrics/NumericValueMetricProducer.h"
 #include "src/packages/UidMap.h"
 #include "src/stats_log.pb.h"
 #include "src/stats_log_util.h"
@@ -37,6 +38,7 @@
 #include "stats_annotations.h"
 #include "stats_event.h"
 #include "statslog_statsdtest.h"
+#include "tests/metrics/metrics_test_helper.h"
 
 namespace android {
 namespace os {
@@ -580,6 +582,15 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(
         const ConfigKey& key, const shared_ptr<IPullAtomCallback>& puller = nullptr,
         const int32_t atomTag = 0 /*for puller only*/, const sp<UidMap> = new UidMap(),
         const shared_ptr<LogEventFilter>& logEventFilter = std::make_shared<LogEventFilter>());
+
+sp<NumericValueMetricProducer> createNumericValueMetricProducer(
+        sp<MockStatsPullerManager>& pullerManager, const ValueMetric& metric, const int atomId,
+        bool isPulled, const ConfigKey& configKey, const uint64_t protoHash,
+        const int64_t timeBaseNs, const int64_t startTimeNs, const int logEventMatcherIndex,
+        optional<ConditionState> conditionAfterFirstBucketPrepared = nullopt,
+        vector<int32_t> slicedStateAtoms = {},
+        unordered_map<int, unordered_map<int, int64_t>> stateGroupMap = {},
+        sp<EventMatcherWizard> eventMatcherWizard = nullptr);
 
 LogEventFilter::AtomIdSet CreateAtomIdSetDefault();
 LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config);
