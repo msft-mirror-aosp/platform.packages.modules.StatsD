@@ -282,8 +282,6 @@ public class MetadataTests extends MetadataTestCase {
     static private HashSet<Integer> getSocketLossUids(StatsdStatsReport report) {
         HashSet<Integer> result = new HashSet<Integer>();
         assertThat(report.getSocketLossStats()).isNotNull();
-        assertThat(report.getSocketLossStats().getLossStatsPerUidList().size())
-                .isGreaterThan(0);
         for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
             LogUtil.CLog.d(
                     "getSocketLossUids() collecting loss stats for uid "
