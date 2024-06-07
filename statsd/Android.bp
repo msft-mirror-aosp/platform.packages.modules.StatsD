@@ -310,6 +310,7 @@ cc_library_static {
     name: "libstats_test_utils",
     defaults: ["statsd_test_defaults"],
     srcs: [
+        "tests/metrics/metrics_test_helper.cpp",
         "tests/statsd_test_util.cpp",
     ],
     tidy_timeout_srcs: [
@@ -428,7 +429,6 @@ cc_test {
         "tests/metrics/GaugeMetricProducer_test.cpp",
         "tests/metrics/KllMetricProducer_test.cpp",
         "tests/metrics/MaxDurationTracker_test.cpp",
-        "tests/metrics/metrics_test_helper.cpp",
         "tests/metrics/OringDurationTracker_test.cpp",
         "tests/metrics/NumericValueMetricProducer_test.cpp",
         "tests/metrics/RestrictedEventMetricProducer_test.cpp",
@@ -481,6 +481,7 @@ cc_benchmark {
         "benchmark/stats_write_benchmark.cpp",
         "benchmark/loss_info_container_benchmark.cpp",
         "benchmark/string_transform_benchmark.cpp",
+        "benchmark/value_metric_benchmark.cpp",
     ],
 
     cflags: [
