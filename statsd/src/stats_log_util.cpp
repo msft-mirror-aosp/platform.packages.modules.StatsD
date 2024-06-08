@@ -619,7 +619,7 @@ int64_t MillisToNano(const int64_t millis) {
 }
 
 bool checkPermissionForIds(const char* permission, pid_t pid, uid_t uid) {
-    shared_ptr<IStatsCompanionService> scs = getStatsCompanionService();
+    shared_ptr<IStatsCompanionService> scs = getStatsCompanionService(/*blocking=*/true);
     if (scs == nullptr) {
         return false;
     }

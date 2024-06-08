@@ -145,6 +145,7 @@ TEST(SocketParseMessageTest, TestProcessMessageFilterPartialSet) {
     LogEventQueue eventQueue(kEventCount /*buffer limit*/);
 
     LogEventFilter logEventFilter;
+    logEventFilter.setFilteringEnabled(true);
 
     LogEventFilter::AtomIdSet idsList;
     for (int i = 0; i < kEventFilteredCount; i++) {
@@ -175,6 +176,7 @@ TEST(SocketParseMessageTest, TestProcessMessageFilterToggle) {
     LogEventQueue eventQueue(kEventCount * 3 /*buffer limit*/);
 
     LogEventFilter logEventFilter;
+    logEventFilter.setFilteringEnabled(true);
 
     LogEventFilter::AtomIdSet idsList;
     for (int i = 0; i < kEventFilteredCount; i++) {
