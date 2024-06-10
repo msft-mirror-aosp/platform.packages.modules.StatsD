@@ -159,6 +159,10 @@ public class MetadataTests extends MetadataTestCase {
 
     /** Tests that SystemServer logged atoms in case of loss event has error code 1. */
     public void testSystemServerLossErrorCode() throws Exception {
+        if (!sdkLevelAtLeast(34, "V")) {
+            return;
+        }
+
         // Starting from VanillaIceCream libstatssocket uses worker thread & dedicated logging queue
         // to handle atoms for system server (logged with UID 1000)
         // this test might fail for previous versions due to loss stats last error code check
@@ -227,47 +231,68 @@ public class MetadataTests extends MetadataTestCase {
 
     /** Test libstatssocket logging queue atom id distribution collection */
     public void testAtomIdLossDistributionCollection() throws Exception {
-        if (!ApiLevelUtil.codenameEquals(getDevice(), "VanillaIceCream")) {
+        if (!sdkLevelAtLeast(34, "V")) {
             return;
         }
 
-        String[] testApks = {"StatsdAtomStormApp.apk", "StatsdAtomStormApp2.apk"};
-        String[] testPkgs = {
-            "com.android.statsd.app.atomstorm", "com.android.statsd.app.atomstorm.copy"
+        final String testPkgName = "com.android.statsd.app.atomstorm";
+        final String testApk = "StatsdAtomStormApp.apk";
+
+        String[][] testPkgs = {
+            {testPkgName, ".StatsdAtomStorm", "testLogManyAtomsBackToBack"},
+            {
+                MetricsUtils.DEVICE_SIDE_TEST_PACKAGE,
+                ".StatsdStressLogging",
+                "testLogAtomsBackToBack"
+            }
         };
 
-        for (String pkg : testPkgs) {
-            DeviceUtils.uninstallTestApp(getDevice(), pkg);
-        }
+        DeviceUtils.uninstallTestApp(getDevice(), testPkgName);
 
-        final int testAppsCount = testApks.length;
-        for (int i = 0; i < testAppsCount; i++) {
-            DeviceUtils.installTestApp(getDevice(), testApks[i], testPkgs[i], mCtsBuild);
-        }
+        DeviceUtils.installTestApp(getDevice(), testApk, testPkgName, mCtsBuild);
 
+        StatsdStatsReport report = getStatsdStatsReport();
+        assertThat(report).isNotNull();
+
+        // since the statsdstats accumulated from boot - we need to look only into diff if any
+        final HashSet<Integer> initialUids = getSocketLossUids(report);
         HashSet<Integer> reportedUids = new HashSet<Integer>();
-        for (String pkg : testPkgs) {
-            DeviceUtils.runDeviceTests(getDevice(), pkg, null, null);
 
-            StatsdStatsReport report = getStatsdStatsReport();
+        // intention is to run two distinct package tests to collect 2 different uids
+        for (String[] pkg : testPkgs) {
+            DeviceUtils.runDeviceTests(getDevice(), pkg[0], pkg[1], pkg[2]);
+
+            // the sleep is required since atoms are processed in async way by statsd
+            // need to give time so statsd will process SocketLossStats atom
+            RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
+            LogUtil.CLog.d(
+                    "testAtomIdLossDistributionCollection getStatsdStatsReport for " + pkg[0]);
+            report = getStatsdStatsReport();
             assertThat(report).isNotNull();
-            if (report.getDetectedLogLossList().size() == 0) {
-                // It is Ok if system throughput sufficient to process all atoms
-                return;
-            }
-
-            assertThat(report.getSocketLossStats()).isNotNull();
-            assertThat(report.getSocketLossStats().getLossStatsPerUidList().size())
-                    .isGreaterThan(1);
-            for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
-                reportedUids.add(lossStats.getUid());
-            }
+            reportedUids.addAll(getSocketLossUids(report));
         }
 
+        // obtaining the diff between initial loss info and loss info collected during the test
+        reportedUids.removeAll(initialUids);
         assertThat(reportedUids.size()).isGreaterThan(1);
 
-        for (String pkg : testPkgs) {
-            DeviceUtils.uninstallTestApp(getDevice(), pkg);
+        DeviceUtils.uninstallTestApp(getDevice(), testPkgName);
+    }
+
+    static private HashSet<Integer> getSocketLossUids(StatsdStatsReport report) {
+        HashSet<Integer> result = new HashSet<Integer>();
+        assertThat(report.getSocketLossStats()).isNotNull();
+        for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+            LogUtil.CLog.d(
+                    "getSocketLossUids() collecting loss stats for uid "
+                            + lossStats.getUid());
+            result.add(lossStats.getUid());
         }
+        return result;
+    }
+
+    private boolean sdkLevelAtLeast(int sdkLevel, String codename) throws Exception {
+        return ApiLevelUtil.isAtLeast(getDevice(), sdkLevel)
+                || ApiLevelUtil.codenameEquals(getDevice(), codename);
     }
 }
