@@ -117,49 +117,6 @@ protected:
     }
 };
 
-class UidMapTestAppendUidMapSystemUids : public UidMapTestAppendUidMapBase {
-protected:
-    static const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
-    uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
-    StatsdConfig config;
-
-    void SetUp() override {
-        UidData uidData = createUidData(
-                {AID_LMKD, AID_APP_START + 1, AID_USER_OFFSET + AID_UWB,
-                 AID_USER_OFFSET + AID_APP_START + 2} /* uids */,
-                {1, 2, 3, 4} /* versions */, {"v1", "v2", "v3", "v4"} /* versionStrings */,
-                {"LMKD", "app1", "UWB", "app2"} /* apps */,
-                {"installer", "installer", "installer", "installer"} /* installers */,
-                {{}, {}, {}, {}, {}} /* certificateHashes */);
-
-        uidMap->updateMap(/* timestamp */ 1, uidData);
-
-        uidMap->updateApp(/* timestamp */ 5, "LMKD", AID_LMKD, /* versionCode */ 10, "v10",
-                          /* installer */ "", /* certificateHash */ {});
-        uidMap->updateApp(/* timestamp */ 6, "UWB", AID_USER_OFFSET + AID_UWB, /* versionCode */ 20,
-                          "v20", /* installer */ "", /* certificateHash */ {});
-
-        *config.add_atom_matcher() =
-                CreateSimpleAtomMatcher("TestAtomMatcher", util::TEST_ATOM_REPORTED);
-        *config.add_event_metric() =
-                createEventMetric("TestAtomReported", config.atom_matcher(0).id(), nullopt);
-    }
-
-    inline sp<StatsLogProcessor> createStatsLogProcessor(const StatsdConfig& config) const {
-        return CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey,
-                                       /* puller */ nullptr, /* puller atomTag */ 0, uidMap);
-    }
-
-    UidMapping getUidMapping(const sp<StatsLogProcessor>& processor) const {
-        vector<uint8_t> buffer;
-        processor->onDumpReport(cfgKey, bucketStartTimeNs + bucketSizeNs + 1, false, true, ADB_DUMP,
-                                FAST, &buffer);
-        ConfigMetricsReportList reports;
-        reports.ParseFromArray(&buffer[0], buffer.size());
-        return reports.reports(0).uid_map();
-    }
-};
-
 }  // anonymous namespace
 
 TEST(UidMapTest, TestIsolatedUID) {
@@ -592,6 +549,7 @@ TEST(UidMapTest, TestMemoryGuardrail) {
     ASSERT_EQ(1U, m.mChanges.size());
 }
 
+namespace {
 class UidMapTestAppendUidMap : public UidMapTestAppendUidMapBase {
 protected:
     const shared_ptr<StatsService> service;
@@ -765,18 +723,76 @@ TEST_P(UidMapTestTruncateCertificateHash, TestCertificateHashesTruncated) {
                 UnorderedPointwise(EqPackageInfo(), expectedPackageInfos));
 }
 
+class UidMapTestAppendUidMapSystemUids : public UidMapTestAppendUidMapBase {
+protected:
+    static const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
+    StatsdConfig config;
+
+    void SetUp() override {
+        UidData uidData =
+                createUidData({AID_LMKD, AID_APP_START + 1, AID_USER_OFFSET + AID_UWB,
+                               AID_USER_OFFSET + AID_APP_START + 2, AID_ROOT, AID_APP_START - 1,
+                               AID_APP_START} /* uids */,
+                              {1, 2, 3, 4, 5, 6, 7} /* versions */,
+                              {"v1", "v2", "v3", "v4", "v5", "v6", "v7"} /* versionStrings */,
+                              {"LMKD", "app1", "UWB", "app2", "root", "app3", "app4"} /* apps */,
+                              vector(7, string("installer")) /* installers */,
+                              vector(7, vector<uint8_t>{}) /* certificateHashes */);
+
+        uidMap->updateMap(/* timestamp */ 1, uidData);
+
+        uidMap->updateApp(/* timestamp */ 5, "LMKD", AID_LMKD, /* versionCode */ 10, "v10",
+                          /* installer */ "", /* certificateHash */ {});
+        uidMap->updateApp(/* timestamp */ 6, "UWB", AID_USER_OFFSET + AID_UWB, /* versionCode */ 20,
+                          "v20", /* installer */ "", /* certificateHash */ {});
+        uidMap->updateApp(/* timestamp */ 7, "root", AID_ROOT, /* versionCode */ 50, "v50",
+                          /* installer */ "", /* certificateHash */ {});
+        uidMap->updateApp(/* timestamp */ 8, "app3", AID_APP_START - 1, /* versionCode */ 60, "v60",
+                          /* installer */ "", /* certificateHash */ {});
+        uidMap->updateApp(/* timestamp */ 9, "app4", AID_APP_START, /* versionCode */ 70, "v70",
+                          /* installer */ "", /* certificateHash */ {});
+
+        *config.add_atom_matcher() =
+                CreateSimpleAtomMatcher("TestAtomMatcher", util::TEST_ATOM_REPORTED);
+        *config.add_event_metric() =
+                createEventMetric("TestAtomReported", config.atom_matcher(0).id(), nullopt);
+    }
+
+    inline sp<StatsLogProcessor> createStatsLogProcessor(const StatsdConfig& config) const {
+        return CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey,
+                                       /* puller */ nullptr, /* puller atomTag */ 0, uidMap);
+    }
+
+    UidMapping getUidMapping(const sp<StatsLogProcessor>& processor) const {
+        vector<uint8_t> buffer;
+        processor->onDumpReport(cfgKey, bucketStartTimeNs + bucketSizeNs + 1, false, true, ADB_DUMP,
+                                FAST, &buffer);
+        ConfigMetricsReportList reports;
+        reports.ParseFromArray(&buffer[0], buffer.size());
+        return reports.reports(0).uid_map();
+    }
+};
+
 TEST_F(UidMapTestAppendUidMapSystemUids, testHasSystemUids) {
     sp<StatsLogProcessor> processor = createStatsLogProcessor(config);
     UidMapping results = getUidMapping(processor);
 
     ASSERT_EQ(results.snapshots_size(), 1);
     EXPECT_THAT(results.snapshots(0).package_info(),
-                Contains(Property(&PackageInfo::uid, AID_LMKD)));
-    EXPECT_THAT(results.snapshots(0).package_info(),
-                Contains(Property(&PackageInfo::uid, AID_USER_OFFSET + AID_UWB)));
+                IsSupersetOf({
+                        Property(&PackageInfo::uid, AID_LMKD),
+                        Property(&PackageInfo::uid, AID_USER_OFFSET + AID_UWB),
+                        Property(&PackageInfo::uid, AID_ROOT),
+                        Property(&PackageInfo::uid, AID_APP_START - 1),
+                }));
 
-    EXPECT_THAT(results.changes(), Contains(Property(&Change::uid, AID_LMKD)));
-    EXPECT_THAT(results.changes(), Contains(Property(&Change::uid, AID_USER_OFFSET + AID_UWB)));
+    EXPECT_THAT(results.changes(), IsSupersetOf({
+                                           Property(&Change::uid, AID_LMKD),
+                                           Property(&Change::uid, AID_USER_OFFSET + AID_UWB),
+                                           Property(&Change::uid, AID_ROOT),
+                                           Property(&Change::uid, AID_APP_START - 1),
+                                   }));
 }
 
 TEST_F(UidMapTestAppendUidMapSystemUids, testHasNoSystemUids) {
@@ -786,13 +802,14 @@ TEST_F(UidMapTestAppendUidMapSystemUids, testHasNoSystemUids) {
 
     ASSERT_EQ(results.snapshots_size(), 1);
     EXPECT_THAT(results.snapshots(0).package_info(),
-                Contains(Property(&PackageInfo::uid, AID_LMKD)).Times(0));
-    EXPECT_THAT(results.snapshots(0).package_info(),
-                Contains(Property(&PackageInfo::uid, AID_USER_OFFSET + AID_UWB)).Times(0));
+                Each(Property(&PackageInfo::uid,
+                              AllOf(Not(Eq(AID_LMKD)), Not(Eq(AID_USER_OFFSET + AID_UWB)),
+                                    Not(Eq(AID_ROOT)), Not(Eq(AID_APP_START - 1))))));
 
-    EXPECT_THAT(results.changes(), IsEmpty());
+    EXPECT_THAT(results.changes(), ElementsAre(Property(&Change::uid, AID_APP_START)));
 }
 
+}  // anonymous namespace
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif
