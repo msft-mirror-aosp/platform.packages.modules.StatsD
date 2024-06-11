@@ -179,63 +179,10 @@ public:
             const int64_t timeBaseNs = bucketStartTimeNs,
             const int64_t startTimeNs = bucketStartTimeNs,
             sp<EventMatcherWizard> eventMatcherWizard = nullptr) {
-        if (eventMatcherWizard == nullptr) {
-            eventMatcherWizard = createEventMatcherWizard(tagId, logEventMatcherIndex);
-        }
-        sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-        if (pullAtomId != -1) {
-            EXPECT_CALL(*pullerManager, RegisterReceiver(tagId, kConfigKey, _, _, _))
-                    .WillOnce(Return());
-            EXPECT_CALL(*pullerManager, UnRegisterReceiver(tagId, kConfigKey, _))
-                    .WillRepeatedly(Return());
-        }
-        const int64_t bucketSizeNs = MillisToNano(
-                TimeUnitToBucketSizeInMillisGuardrailed(kConfigKey.GetUid(), metric.bucket()));
-        const bool containsAnyPositionInDimensionsInWhat =
-                HasPositionANY(metric.dimensions_in_what());
-        const bool shouldUseNestedDimensions =
-                ShouldUseNestedDimensions(metric.dimensions_in_what());
-
-        vector<Matcher> fieldMatchers;
-        translateFieldMatcher(metric.value_field(), &fieldMatchers);
-
-        const auto [dimensionSoftLimit, dimensionHardLimit] =
-                StatsdStats::getAtomDimensionKeySizeLimits(
-                        tagId, StatsdStats::kDimensionKeySizeHardLimitMin);
-
-        int conditionIndex = conditionAfterFirstBucketPrepared ? 0 : -1;
-        vector<ConditionState> initialConditionCache;
-        if (conditionAfterFirstBucketPrepared) {
-            initialConditionCache.push_back(ConditionState::kUnknown);
-        }
-
-        // get the condition_correction_threshold_nanos value
-        const optional<int64_t> conditionCorrectionThresholdNs =
-                metric.has_condition_correction_threshold_nanos()
-                        ? optional<int64_t>(metric.condition_correction_threshold_nanos())
-                        : nullopt;
-
-        std::vector<ValueMetric::AggregationType> aggregationTypes;
-        if (metric.aggregation_types_size() != 0) {
-            for (int i = 0; i < metric.aggregation_types_size(); i++) {
-                aggregationTypes.push_back(metric.aggregation_types(i));
-            }
-        } else {  // aggregation_type() is set or default is used.
-            aggregationTypes.push_back(metric.aggregation_type());
-        }
-
-        sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
-        sp<NumericValueMetricProducer> valueProducer = new NumericValueMetricProducer(
-                kConfigKey, metric, protoHash, {pullAtomId, pullerManager},
-                {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
-                 conditionCorrectionThresholdNs, metric.split_bucket_for_app_upgrade()},
-                {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions,
-                 logEventMatcherIndex, eventMatcherWizard, metric.dimensions_in_what(),
-                 fieldMatchers, aggregationTypes},
-                {conditionIndex, metric.links(), initialConditionCache, wizard},
-                {metric.state_link(), slicedStateAtoms, stateGroupMap},
-                {/*eventActivationMap=*/{}, /*eventDeactivationMap=*/{}},
-                {dimensionSoftLimit, dimensionHardLimit}, provider);
+        sp<NumericValueMetricProducer> valueProducer = createNumericValueMetricProducer(
+                pullerManager, metric, tagId, pullAtomId != -1, kConfigKey, protoHash, timeBaseNs,
+                startTimeNs, logEventMatcherIndex, conditionAfterFirstBucketPrepared,
+                slicedStateAtoms, stateGroupMap, eventMatcherWizard);
 
         valueProducer->prepareFirstBucket();
         if (conditionAfterFirstBucketPrepared) {
