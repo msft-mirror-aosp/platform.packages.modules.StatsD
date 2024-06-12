@@ -125,8 +125,7 @@ Status checkSid(const char* expectedSid) {
     }
 
 StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
-                           const std::shared_ptr<LogEventFilter>& logEventFilter,
-                           int initEventDelaySecs)
+                           const std::shared_ptr<LogEventFilter>& logEventFilter)
     : mUidMap(uidMap),
       mAnomalyAlarmMonitor(new AlarmMonitor(
               MIN_DIFF_TO_UPDATE_REGISTERED_ALARM_SECS,
@@ -155,10 +154,9 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
       mEventQueue(std::move(queue)),
       mLogEventFilter(logEventFilter),
       mBootCompleteTrigger({kBootCompleteTag, kUidMapReceivedTag, kAllPullersRegisteredTag},
-                           [this]() { onStatsdInitCompleted(); }),
+                           [this]() { onStatsdInitCompleted(kStatsdInitDelaySecs); }),
       mStatsCompanionServiceDeathRecipient(
-              AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)),
-      mInitEventDelaySecs(initEventDelaySecs) {
+              AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)) {
     mPullerManager = new StatsPullerManager();
     StatsPuller::SetUidMap(mUidMap);
     mConfigManager = new ConfigManager();
@@ -1120,18 +1118,16 @@ Status StatsService::bootCompleted() {
     return Status::ok();
 }
 
-void StatsService::onStatsdInitCompleted() {
-    if (mInitEventDelaySecs > 0) {
-        // The hard-coded delay is determined based on perfetto traces evaluation
-        // for statsd during the boot.
-        // The delay is required to properly process event storm which often has place
-        // after device boot.
-        // This function is called from a dedicated thread without holding locks, so sleeping is ok.
-        // See MultiConditionTrigger::markComplete() executorThread for details
-        // For more details see http://b/277958338
-        std::this_thread::sleep_for(std::chrono::seconds(mInitEventDelaySecs));
-    }
+void StatsService::onStatsdInitCompleted(int initEventDelaySecs) {
+    // The hard-coded delay is determined based on perfetto traces evaluation
+    // for statsd during the boot.
+    // The delay is required to properly process event storm which often has place
+    // after device boot.
+    // This function is called from a dedicated thread without holding locks, so sleeping is ok.
+    // See MultiConditionTrigger::markComplete() executorThread for details
+    // For more details see http://b/277958338
 
+    std::this_thread::sleep_for(std::chrono::seconds(initEventDelaySecs));
     mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs());
 }
 
