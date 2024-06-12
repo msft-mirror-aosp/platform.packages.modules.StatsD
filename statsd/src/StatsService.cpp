@@ -226,13 +226,6 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
     mConfigManager->AddListener(mProcessor);
 
     init_system_properties();
-
-    if (mEventQueue != nullptr) {
-        mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
-        if (mLogsReaderThread) {
-            pthread_setname_np(mLogsReaderThread->native_handle(), "statsd.reader");
-        }
-    }
 }
 
 StatsService::~StatsService() {
@@ -1139,6 +1132,14 @@ void StatsService::Startup() {
     mProcessor->LoadActiveConfigsFromDisk();
     mProcessor->LoadMetadataFromDisk(wallClockNs, elapsedRealtimeNs);
     mProcessor->EnforceDataTtls(wallClockNs, elapsedRealtimeNs);
+
+    // Now that configs are initialized, begin reading logs
+    if (mEventQueue != nullptr) {
+        mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
+        if (mLogsReaderThread) {
+            pthread_setname_np(mLogsReaderThread->native_handle(), "statsd.reader");
+        }
+    }
 }
 
 void StatsService::Terminate() {
