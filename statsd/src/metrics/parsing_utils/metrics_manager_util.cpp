@@ -927,7 +927,7 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
     }
 
     std::vector<ValueMetric::AggregationType> aggregationTypes;
-    if (metric.aggregation_types_size() != 0) {
+    if (!metric.aggregation_types().empty()) {
         if (metric.has_aggregation_type()) {
             invalidConfigReason = InvalidConfigReason(
                     INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
