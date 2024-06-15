@@ -867,6 +867,15 @@ TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes) {
     EXPECT_TRUE(metricsManager->isConfigValid());
     ASSERT_EQ(1, metricsManager->mAllMetricProducers.size());
     sp<MetricProducer> metricProducer = metricsManager->mAllMetricProducers[0];
+    NumericValueMetricProducer* valueProducer =
+            static_cast<NumericValueMetricProducer*>(metricProducer.get());
+    ASSERT_EQ(5u, valueProducer->mAggregationTypes.size());
+    EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[0]);
+    EXPECT_EQ(ValueMetric::MIN, valueProducer->mAggregationTypes[1]);
+    EXPECT_EQ(ValueMetric::MAX, valueProducer->mAggregationTypes[2]);
+    EXPECT_EQ(ValueMetric::AVG, valueProducer->mAggregationTypes[3]);
+    EXPECT_EQ(ValueMetric::MIN, valueProducer->mAggregationTypes[4]);
+    EXPECT_TRUE(valueProducer->mIncludeSampleSize);
 }
 
 TEST(ValueMetricE2eTest, TestInitWithDefaultAggType) {
@@ -899,6 +908,11 @@ TEST(ValueMetricE2eTest, TestInitWithDefaultAggType) {
     EXPECT_TRUE(metricsManager->isConfigValid());
     ASSERT_EQ(1, metricsManager->mAllMetricProducers.size());
     sp<MetricProducer> metricProducer = metricsManager->mAllMetricProducers[0];
+    NumericValueMetricProducer* valueProducer =
+            static_cast<NumericValueMetricProducer*>(metricProducer.get());
+    ASSERT_EQ(1u, valueProducer->mAggregationTypes.size());
+    EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[0]);
+    EXPECT_FALSE(valueProducer->mIncludeSampleSize);
 }
 
 #else

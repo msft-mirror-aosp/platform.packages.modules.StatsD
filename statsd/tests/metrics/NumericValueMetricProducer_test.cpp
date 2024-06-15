@@ -1417,6 +1417,8 @@ TEST(NumericValueMetricProducerTest, TestPushedAggregateAvg) {
             NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
                     pullerManager, metric, /*pullAtomId=*/-1);
 
+    EXPECT_TRUE(valueProducer->mIncludeSampleSize);
+
     LogEvent event1(/*uid=*/0, /*pid=*/0);
     CreateRepeatedValueLogEvent(&event1, tagId, bucketStartTimeNs + 10, 10);
 
@@ -7760,6 +7762,7 @@ TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPulled) {
     EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[2]);
     EXPECT_EQ(ValueMetric::AVG, valueProducer->mAggregationTypes[3]);
     EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[4]);
+    EXPECT_TRUE(valueProducer->mIncludeSampleSize);
 
     // Screen On. Pull 1.
     valueProducer->onConditionChanged(true, bucketStartTimeNs + 30 * NS_PER_SEC);
@@ -7815,8 +7818,14 @@ TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPulled) {
     ASSERT_EQ(2, data.bucket_info_size());
     ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs,
                         {8, 40, 48, 24, 28}, 20 * NS_PER_SEC, 0);
+    for (int i = 0; i < data.bucket_info(0).values_size(); ++i) {
+        EXPECT_EQ(2, data.bucket_info(0).values(i).sample_size());
+    }
     ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs,
                         {70, 70, 70, 70, 25}, 55 * NS_PER_SEC, 0);
+    for (int i = 0; i < data.bucket_info(1).values_size(); ++i) {
+        EXPECT_EQ(1, data.bucket_info(1).values(i).sample_size());
+    }
 }
 
 TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPushed) {
@@ -7850,6 +7859,7 @@ TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPushed) {
     EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[2]);
     EXPECT_EQ(ValueMetric::AVG, valueProducer->mAggregationTypes[3]);
     EXPECT_EQ(ValueMetric::SUM, valueProducer->mAggregationTypes[4]);
+    EXPECT_TRUE(valueProducer->mIncludeSampleSize);
 
     // Bucket 1 events.
     LogEvent event1(/*uid=*/0, /*pid=*/0);
@@ -7947,8 +7957,14 @@ TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPushed) {
     ASSERT_EQ(2, data.bucket_info_size());
     ValidateValueBucket(data.bucket_info(0), bucketStartTimeNs, bucket2StartTimeNs,
                         {3, 20, 27, 9, 24}, 0, 0);
+    for (int i = 0; i < data.bucket_info(0).values_size(); ++i) {
+        EXPECT_EQ(3, data.bucket_info(0).values(i).sample_size());
+    }
     ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, bucket3StartTimeNs,
                         {3, 20, 30, 10, 93}, 0, 0);
+    for (int i = 0; i < data.bucket_info(1).values_size(); ++i) {
+        EXPECT_EQ(3, data.bucket_info(1).values(i).sample_size());
+    }
 }
 
 }  // namespace statsd
