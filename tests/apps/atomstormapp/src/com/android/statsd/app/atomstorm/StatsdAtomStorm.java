@@ -27,7 +27,7 @@ import org.junit.runner.RunWith;
 @MediumTest
 @RunWith(AndroidJUnit4.class)
 public class StatsdAtomStorm {
-    private static final int EventStormAtomsCount = 10000;
+    private static final int EventStormAtomsCount = 50000;
     private static final int RelaxedLoggingAtomsCount = 10;
     private static final int RecommendedLoggingIntervalMs = 10;
 
