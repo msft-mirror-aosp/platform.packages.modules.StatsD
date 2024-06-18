@@ -76,7 +76,7 @@ NumericValueMetricProducer::NumericValueMetricProducer(
       mAggregationTypes(whatOptions.aggregationTypes),
       mIncludeSampleSize(metric.has_include_sample_size()
                                  ? metric.include_sample_size()
-                                 : metric.aggregation_type() == ValueMetric_AggregationType_AVG),
+                                 : hasAvgAggregationType(whatOptions.aggregationTypes)),
       mUseDiff(metric.has_use_diff() ? metric.use_diff() : isPulled()),
       mValueDirection(metric.value_direction()),
       mSkipZeroDiffOutput(metric.skip_zero_diff_output()),
