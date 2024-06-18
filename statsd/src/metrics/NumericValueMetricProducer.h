@@ -152,6 +152,15 @@ private:
 
     size_t getAggregatedValueSize(const Value& value) const override;
 
+    bool hasAvgAggregationType(const vector<ValueMetric::AggregationType> aggregationTypes) const {
+        for (const int aggType : aggregationTypes) {
+            if (aggType == ValueMetric_AggregationType_AVG) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     const bool mUseAbsoluteValueOnReset;
 
     const std::vector<ValueMetric::AggregationType> mAggregationTypes;
@@ -294,6 +303,9 @@ private:
     FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
 
     FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
 
     friend class NumericValueMetricProducerTestHelper;
 };
