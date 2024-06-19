@@ -598,12 +598,25 @@ GaugeMetric createGaugeMetric(const string& name, const int64_t what,
 
 ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const int valueField,
                               const optional<int64_t>& condition, const vector<int64_t>& states) {
+    return createValueMetric(name, what, {valueField}, /* aggregationTypes */ {}, condition,
+                             states);
+}
+
+ValueMetric createValueMetric(const string& name, const AtomMatcher& what,
+                              const vector<int>& valueFields,
+                              const vector<ValueMetric::AggregationType>& aggregationTypes,
+                              const optional<int64_t>& condition, const vector<int64_t>& states) {
     ValueMetric metric;
     metric.set_id(StringToId(name));
     metric.set_what(what.id());
     metric.set_bucket(TEN_MINUTES);
     metric.mutable_value_field()->set_field(what.simple_atom_matcher().atom_id());
-    metric.mutable_value_field()->add_child()->set_field(valueField);
+    for (int valueField : valueFields) {
+        metric.mutable_value_field()->add_child()->set_field(valueField);
+    }
+    for (const ValueMetric::AggregationType aggType : aggregationTypes) {
+        metric.add_aggregation_types(aggType);
+    }
     if (condition) {
         metric.set_condition(condition.value());
     }
@@ -611,6 +624,24 @@ ValueMetric createValueMetric(const string& name, const AtomMatcher& what, const
         metric.add_slice_by_state(state);
     }
     return metric;
+}
+
+HistogramBinConfig createGeneratedBinConfig(int id, float min, float max, int count,
+                                            HistogramBinConfig::GeneratedBins::Strategy strategy) {
+    HistogramBinConfig binConfig;
+    binConfig.set_id(id);
+    binConfig.mutable_generated_bins()->set_min(min);
+    binConfig.mutable_generated_bins()->set_max(max);
+    binConfig.mutable_generated_bins()->set_count(count);
+    binConfig.mutable_generated_bins()->set_strategy(strategy);
+    return binConfig;
+}
+
+HistogramBinConfig createExplicitBinConfig(int id, const vector<float>& bins) {
+    HistogramBinConfig binConfig;
+    binConfig.set_id(id);
+    *binConfig.mutable_explicit_bins()->mutable_bin() = {bins.begin(), bins.end()};
+    return binConfig;
 }
 
 KllMetric createKllMetric(const string& name, const AtomMatcher& what, const int kllField,

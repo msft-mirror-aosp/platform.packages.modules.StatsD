@@ -51,6 +51,9 @@ struct InvalidConfigReason {
                (this->alarmId == other.alarmId) && (this->subscriptionId == other.subscriptionId) &&
                (this->matcherIds == other.matcherIds) && (this->conditionIds == other.conditionIds);
     }
+
+    // For better failure messages in statsd_test
+    friend void PrintTo(const InvalidConfigReason& obj, std::ostream* os);
 };
 
 typedef struct {
