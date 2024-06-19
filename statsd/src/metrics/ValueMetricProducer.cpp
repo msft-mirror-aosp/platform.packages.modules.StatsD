@@ -26,6 +26,7 @@
 #include "FieldValue.h"
 #include "HashableDimensionKey.h"
 #include "guardrail/StatsdStats.h"
+#include "metrics/NumericValue.h"
 #include "metrics/parsing_utils/metrics_manager_util.h"
 #include "stats_log_util.h"
 #include "stats_util.h"
@@ -929,7 +930,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
 }
 
 // Explicit template instantiations
-template class ValueMetricProducer<Value, vector<optional<Value>>>;
+template class ValueMetricProducer<NumericValue, vector<NumericValue>>;
 template class ValueMetricProducer<unique_ptr<KllQuantile>, Empty>;
 
 }  // namespace statsd
