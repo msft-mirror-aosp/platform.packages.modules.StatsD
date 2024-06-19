@@ -450,8 +450,8 @@ cc_test {
         "tests/StatsService_test.cpp",
         "tests/storage/StorageManager_test.cpp",
         "tests/UidMap_test.cpp",
-        "tests/utils/MultiConditionTrigger_test.cpp",
         "tests/utils/DbUtils_test.cpp",
+        "tests/utils/MultiConditionTrigger_test.cpp",
     ],
 
     static_libs: [
