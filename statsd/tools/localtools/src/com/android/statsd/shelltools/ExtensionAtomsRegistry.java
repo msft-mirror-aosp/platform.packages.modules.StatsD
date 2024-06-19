@@ -21,7 +21,7 @@ import com.android.os.ActiveConfigProto;
 import com.android.os.ShellConfig;
 import com.android.os.adservices.AdservicesExtensionAtoms;
 import com.android.os.art.ArtExtensionAtoms;
-import com.android.os.art.BackgroundDexoptExtensionAtoms;
+import com.android.os.art.BackgroundExtensionDexoptAtoms;
 import com.android.os.art.OdrefreshExtensionAtoms;
 import com.android.os.automotive.caruilib.AutomotiveCaruilibAtoms;
 import com.android.os.bluetooth.BluetoothExtensionAtoms;
@@ -142,7 +142,7 @@ public class ExtensionAtomsRegistry {
         SdksandboxExtensionAtoms.registerAllExtensions(extensionRegistry);
         ArtExtensionAtoms.registerAllExtensions(extensionRegistry);
         ApexExtensionAtoms.registerAllExtensions(extensionRegistry);
-        BackgroundDexoptExtensionAtoms.registerAllExtensions(extensionRegistry);
+        BackgroundExtensionDexoptAtoms.registerAllExtensions(extensionRegistry);
         OdrefreshExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
