@@ -609,8 +609,9 @@ protected:
      *
      * @return DataCorruptionSeverity
      */
-    virtual DataCorruptionSeverity determineCorruptionSeverity(DataCorruptedReason reason,
-                                                               LostAtomType atomType) const {
+    virtual DataCorruptionSeverity determineCorruptionSeverity(int32_t /*atomId*/,
+                                                               DataCorruptedReason /*reason*/,
+                                                               LostAtomType /*atomType*/) const {
         return DataCorruptionSeverity::kNone;
     };
 
