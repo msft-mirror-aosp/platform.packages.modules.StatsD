@@ -176,7 +176,7 @@ private:
     }
 
     DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
-                                                       LostAtomType atomType) const;
+                                                       LostAtomType atomType) const override;
 
     int mWhatMatcherIndex;
 
