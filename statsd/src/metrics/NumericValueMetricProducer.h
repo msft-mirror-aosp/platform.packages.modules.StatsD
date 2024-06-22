@@ -161,6 +161,9 @@ private:
         return false;
     }
 
+    DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
+                                                       LostAtomType atomType) const override;
+
     const bool mUseAbsoluteValueOnReset;
 
     const std::vector<ValueMetric::AggregationType> mAggregationTypes;

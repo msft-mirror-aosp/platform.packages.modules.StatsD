@@ -54,6 +54,7 @@ const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 19;
 // for DurationMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 // for DurationMetricData
@@ -501,10 +502,12 @@ void DurationMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
     flushIfNeededLocked(dropTimeNs);
     StatsdStats::getInstance().noteBucketDropped(mMetricId);
     mPastBuckets.clear();
+    resetDataCorruptionFlagsLocked();
 }
 
 void DurationMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     flushIfNeededLocked(dumpTimeNs);
+    resetDataCorruptionFlagsLocked();
     mPastBuckets.clear();
 }
 
@@ -520,8 +523,16 @@ void DurationMetricProducer::onDumpReportLocked(
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
 
+    // Data corrupted reason
+    writeDataCorruptedReasons(*protoOutput, FIELD_ID_DATA_CORRUPTED_REASON,
+                              mDataCorruptedDueToQueueOverflow != DataCorruptionSeverity::kNone,
+                              mDataCorruptedDueToSocketLoss != DataCorruptionSeverity::kNone);
+
     if (mPastBuckets.empty()) {
         VLOG(" Duration metric, empty return");
+        if (erase_data) {
+            resetDataCorruptionFlagsLocked();
+        }
         return;
     }
 
@@ -606,6 +617,7 @@ void DurationMetricProducer::onDumpReportLocked(
     protoOutput->end(protoToken);
     if (erase_data) {
         mPastBuckets.clear();
+        resetDataCorruptionFlagsLocked();
     }
 }
 
@@ -888,6 +900,19 @@ size_t DurationMetricProducer::byteSizeLocked() const {
     }
     return totalSize;
 }
+
+MetricProducer::DataCorruptionSeverity DurationMetricProducer::determineCorruptionSeverity(
+        int32_t /*atomId*/, DataCorruptedReason /*reason*/, LostAtomType atomType) const {
+    switch (atomType) {
+        case LostAtomType::kWhat:
+            // in case of loss stop/start/stopall event the error will be propagated
+            // to next bucket
+            return DataCorruptionSeverity::kUnrecoverable;
+        case LostAtomType::kCondition:
+            return DataCorruptionSeverity::kUnrecoverable;
+    };
+    return DataCorruptionSeverity::kNone;
+};
 
 }  // namespace statsd
 }  // namespace os

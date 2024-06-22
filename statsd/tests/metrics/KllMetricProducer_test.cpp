@@ -461,6 +461,86 @@ TEST(KllMetricProducerTest, TestByteSize) {
     EXPECT_EQ(expectedSize, kllProducer->byteSize());
 }
 
+TEST(KllMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
+    const KllMetric& metric = KllMetricProducerTestHelper::createMetric();
+    sp<KllMetricProducer> kllProducer =
+            KllMetricProducerTestHelper::createKllProducerNoConditions(metric);
+
+    kllProducer->onMatchedLogEventLost(atomId, DATA_CORRUPTED_SOCKET_LOSS,
+                                       MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        kllProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                  true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    kllProducer->onMatchedLogEventLost(atomId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                       MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        kllProducer->onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                  true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW));
+    }
+
+    kllProducer->onMatchedLogEventLost(atomId, DATA_CORRUPTED_SOCKET_LOSS,
+                                       MetricProducer::LostAtomType::kWhat);
+    kllProducer->onMatchedLogEventLost(atomId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                       MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        kllProducer->onDumpReport(bucketStartTimeNs + 250, true /*include current partial bucket*/,
+                                  true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
+TEST(KllMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
+    const int conditionId = 10;
+
+    const KllMetric& metric = KllMetricProducerTestHelper::createMetricWithCondition();
+
+    sp<KllMetricProducer> kllProducer = KllMetricProducerTestHelper::createKllProducerWithCondition(
+            metric, ConditionState::kFalse);
+
+    kllProducer->onMatchedLogEventLost(conditionId, DATA_CORRUPTED_SOCKET_LOSS,
+                                       MetricProducer::LostAtomType::kCondition);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        kllProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                  true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    kllProducer->onMatchedLogEventLost(conditionId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                       MetricProducer::LostAtomType::kCondition);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        kllProducer->onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                  true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

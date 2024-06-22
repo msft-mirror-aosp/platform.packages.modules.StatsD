@@ -720,6 +720,19 @@ NumericValueMetricProducer::DumpProtoFields NumericValueMetricProducer::getDumpP
             FIELD_ID_CONDITION_TRUE_NS,
             FIELD_ID_CONDITION_CORRECTION_NS};
 }
+
+MetricProducer::DataCorruptionSeverity NumericValueMetricProducer::determineCorruptionSeverity(
+        int32_t atomId, DataCorruptedReason /*reason*/, LostAtomType atomType) const {
+    switch (atomType) {
+        case LostAtomType::kWhat:
+            return mUseDiff ? DataCorruptionSeverity::kUnrecoverable
+                            : DataCorruptionSeverity::kResetOnDump;
+        case LostAtomType::kCondition:
+            return DataCorruptionSeverity::kUnrecoverable;
+    };
+    return DataCorruptionSeverity::kNone;
+};
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

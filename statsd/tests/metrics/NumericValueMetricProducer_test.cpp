@@ -7970,6 +7970,116 @@ TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPushed) {
     }
 }
 
+TEST(NumericValueMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetric();
+    *metric.mutable_dimensions_in_what() = CreateDimensions(tagId, {1 /*uid*/});
+
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+    sp<NumericValueMetricProducer> valueProducer =
+            NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
+                    pullerManager, metric, /*pullAtomId=*/-1);
+
+    valueProducer->onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                         MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                    true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    valueProducer->onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                         MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 150,
+                                    true /*include current partial bucket*/, true /*erase data*/,
+                                    FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW));
+    }
+}
+
+TEST(NumericValueMetricProducerTest, TestCorruptedDataReason_WhatLossDiffedMetric) {
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetric();
+    *metric.mutable_dimensions_in_what() = CreateDimensions(tagId, {1 /*uid*/});
+
+    sp<MockStatsPullerManager> pullerManager = new NiceMock<MockStatsPullerManager>();
+    sp<NumericValueMetricProducer> valueProducer =
+            NumericValueMetricProducerTestHelper::createValueProducerNoConditions(
+                    pullerManager, metric, /*pullAtomId=*/1);
+
+    valueProducer->onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                         MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                    true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    valueProducer->onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                         MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 150,
+                                    true /*include current partial bucket*/, true /*erase data*/,
+                                    FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
+TEST(NumericValueMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
+    const int conditionId = 10;
+
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetricWithCondition();
+
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+    sp<NumericValueMetricProducer> valueProducer =
+            NumericValueMetricProducerTestHelper::createValueProducerWithCondition(
+                    pullerManager, metric, ConditionState::kFalse);
+
+    valueProducer->onMatchedLogEventLost(conditionId, DATA_CORRUPTED_SOCKET_LOSS,
+                                         MetricProducer::LostAtomType::kCondition);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                    true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    valueProducer->onMatchedLogEventLost(conditionId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                         MetricProducer::LostAtomType::kCondition);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 150,
+                                    true /*include current partial bucket*/, true /*erase data*/,
+                                    FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
