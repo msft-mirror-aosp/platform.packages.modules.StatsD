@@ -191,9 +191,10 @@ void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const Lo
  *        Inherited classes are responsible for proper severity determination according
  *        to loss parameters (see @determineCorruptionSeverity)
  */
-void MetricProducer::onMatchedLogEventLostLocked(int32_t /*atomId*/, DataCorruptedReason reason,
+void MetricProducer::onMatchedLogEventLostLocked(int32_t atomId, DataCorruptedReason reason,
                                                  LostAtomType atomType) {
-    const DataCorruptionSeverity newSeverity = determineCorruptionSeverity(reason, atomType);
+    const DataCorruptionSeverity newSeverity =
+            determineCorruptionSeverity(atomId, reason, atomType);
     switch (reason) {
         case DATA_CORRUPTED_SOCKET_LOSS:
             mDataCorruptedDueToSocketLoss = std::max(mDataCorruptedDueToSocketLoss, newSeverity);
