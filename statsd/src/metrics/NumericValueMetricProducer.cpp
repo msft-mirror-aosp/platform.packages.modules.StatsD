@@ -25,6 +25,7 @@
 
 #include "FieldValue.h"
 #include "guardrail/StatsdStats.h"
+#include "metrics/HistogramValue.h"
 #include "metrics/NumericValue.h"
 #include "metrics/parsing_utils/metrics_manager_util.h"
 #include "stats_log_util.h"
@@ -52,6 +53,7 @@ const int FIELD_ID_VALUE_METRICS = 7;
 const int FIELD_ID_VALUE_INDEX = 1;
 const int FIELD_ID_VALUE_LONG = 2;
 const int FIELD_ID_VALUE_DOUBLE = 3;
+const int FIELD_ID_VALUE_HISTOGRAM = 5;
 const int FIELD_ID_VALUE_SAMPLESIZE = 4;
 const int FIELD_ID_VALUES = 9;
 const int FIELD_ID_BUCKET_NUM = 4;
@@ -60,8 +62,13 @@ const int FIELD_ID_END_BUCKET_ELAPSED_MILLIS = 6;
 const int FIELD_ID_CONDITION_TRUE_NS = 10;
 const int FIELD_ID_CONDITION_CORRECTION_NS = 11;
 
-constexpr NumericValue ZERO_LONG((int64_t)0);
-constexpr NumericValue ZERO_DOUBLE((double)0);
+const NumericValue ZERO_LONG((int64_t)0);
+const NumericValue ZERO_DOUBLE((double)0);
+const NumericValue ZERO_HIST_VALUE(std::move(HistogramValue()));
+
+double toDouble(const NumericValue& value) {
+    return value.is<int64_t>() ? value.getValue<int64_t>() : value.getValueOrDefault<double>(0);
+}
 
 }  // anonymous namespace
 
@@ -88,7 +95,8 @@ NumericValueMetricProducer::NumericValueMetricProducer(
       mHasGlobalBase(false),
       mMaxPullDelayNs(metric.has_max_pull_delay_sec() ? metric.max_pull_delay_sec() * NS_PER_SEC
                                                       : StatsdStats::kPullMaxDelayNs),
-      mDedupedFieldMatchers(dedupFieldMatchers(whatOptions.fieldMatchers)) {
+      mDedupedFieldMatchers(dedupFieldMatchers(whatOptions.fieldMatchers)),
+      mBinStartsList(whatOptions.binStartsList) {
     // TODO(b/186677791): Use initializer list to initialize mUploadThreshold.
     if (metric.has_threshold()) {
         mUploadThreshold = metric.threshold();
@@ -139,6 +147,13 @@ void NumericValueMetricProducer::writePastBucketAggregateToProto(
         const double val = value.getValue<double>();
         protoOutput->write(FIELD_TYPE_DOUBLE | FIELD_ID_VALUE_DOUBLE, val);
         VLOG("\t\t value %d: %.2f", aggIndex, val);
+    } else if (value.is<HistogramValue>()) {
+        const HistogramValue& val = value.getValue<HistogramValue>();
+        const uint64_t histToken =
+                protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_VALUE_HISTOGRAM);
+        val.toProto(*protoOutput);
+        protoOutput->end(histToken);
+        VLOG("\t\t value %d: %s", aggIndex, val.toString().c_str());
     } else {
         VLOG("Wrong value type for ValueMetric output");
     }
@@ -488,8 +503,9 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
             value = diff;
         }
 
+        const ValueMetric::AggregationType aggType = getAggregationTypeLocked(i);
         if (interval.hasValue()) {
-            switch (getAggregationTypeLocked(i)) {
+            switch (aggType) {
                 case ValueMetric::SUM:
                     // for AVG, we add up and take average when flushing the bucket
                 case ValueMetric::AVG:
@@ -501,9 +517,15 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                 case ValueMetric::MAX:
                     interval.aggregate = max(value, interval.aggregate);
                     break;
+                case ValueMetric::HISTOGRAM:
+                    addValueToHistogram(value, i, interval.aggregate.getValue<HistogramValue>());
+                    break;
                 default:
                     break;
             }
+        } else if (aggType == ValueMetric::HISTOGRAM) {
+            interval.aggregate = ZERO_HIST_VALUE;
+            addValueToHistogram(value, i, interval.aggregate.getValue<HistogramValue>());
         } else {
             interval.aggregate = value;
         }
@@ -639,6 +661,11 @@ void NumericValueMetricProducer::appendToFullBucket(const bool isFullBucketReach
     }
 }
 
+const optional<const BinStarts>& NumericValueMetricProducer::getBinStarts(
+        int valueFieldIndex) const {
+    return mBinStartsList.size() == 1 ? mBinStartsList[0] : mBinStartsList[valueFieldIndex];
+}
+
 // Estimate for the size of NumericValues.
 size_t NumericValueMetricProducer::getAggregatedValueSize(const NumericValue& value) const {
     size_t valueSize = 0;
@@ -671,12 +698,6 @@ size_t NumericValueMetricProducer::byteSizeLocked() const {
     return totalSize;
 }
 
-namespace {
-double toDouble(const NumericValue& value) {
-    return value.is<int64_t>() ? value.getValue<int64_t>() : value.getValueOrDefault<double>(0);
-}
-}  // anonymous namespace
-
 bool NumericValueMetricProducer::valuePassesThreshold(const Interval& interval) const {
     if (mUploadThreshold == nullopt) {
         return true;
@@ -704,6 +725,9 @@ bool NumericValueMetricProducer::valuePassesThreshold(const Interval& interval) 
 }
 
 NumericValue NumericValueMetricProducer::getFinalValue(const Interval& interval) const {
+    if (interval.aggregate.is<HistogramValue>()) {
+        return interval.aggregate.getValue<HistogramValue>().getCompactedHistogramValue();
+    }
     if (getAggregationTypeLocked(interval.aggIndex) != ValueMetric::AVG) {
         return interval.aggregate;
     } else {
@@ -732,6 +756,16 @@ MetricProducer::DataCorruptionSeverity NumericValueMetricProducer::determineCorr
     };
     return DataCorruptionSeverity::kNone;
 };
+
+void NumericValueMetricProducer::addValueToHistogram(const NumericValue& value, int valueFieldIndex,
+                                                     HistogramValue& histValue) {
+    const optional<const BinStarts>& binStarts = getBinStarts(valueFieldIndex);
+    if (binStarts == nullopt) {
+        ALOGE("Missing bin configuration!");
+        return;
+    }
+    histValue.addValue(static_cast<float>(toDouble(value)), *binStarts);
+}
 
 }  // namespace statsd
 }  // namespace os
