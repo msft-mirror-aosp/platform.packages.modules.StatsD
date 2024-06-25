@@ -175,6 +175,9 @@ private:
                mSamplingType == GaugeMetric::RANDOM_ONE_SAMPLE;
     }
 
+    DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
+                                                       LostAtomType atomType) const;
+
     int mWhatMatcherIndex;
 
     sp<EventMatcherWizard> mEventMatcherWizard;
