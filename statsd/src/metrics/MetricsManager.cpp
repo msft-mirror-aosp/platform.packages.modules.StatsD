@@ -727,7 +727,8 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
 void MetricsManager::onLogEventLost(const SocketLossInfo& socketLossInfo) {
     // socketLossInfo stores atomId per UID - to eliminate duplicates using set
-    const set<int> uniqueLostAtomIds(socketLossInfo.atomIds.begin(), socketLossInfo.atomIds.end());
+    const unordered_set<int> uniqueLostAtomIds(socketLossInfo.atomIds.begin(),
+                                               socketLossInfo.atomIds.end());
 
     // pass lost atom id to all relevant metrics
     for (const auto lostAtomId : uniqueLostAtomIds) {
