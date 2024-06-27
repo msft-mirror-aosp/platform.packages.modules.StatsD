@@ -8080,6 +8080,41 @@ TEST(NumericValueMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
     }
 }
 
+TEST(NumericValueMetricProducerTest, TestCorruptedDataReason_StateLoss) {
+    const int stateAtomId = 10;
+
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetricWithCondition();
+
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+    sp<NumericValueMetricProducer> valueProducer =
+            NumericValueMetricProducerTestHelper::createValueProducerWithCondition(
+                    pullerManager, metric, ConditionState::kFalse);
+
+    valueProducer->onStateEventLost(stateAtomId, DATA_CORRUPTED_SOCKET_LOSS);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                    true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    // validation that data corruption signal remains accurate after another dump
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 150,
+                                    true /*include current partial bucket*/, true /*erase data*/,
+                                    FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
