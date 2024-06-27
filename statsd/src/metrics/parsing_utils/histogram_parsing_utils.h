@@ -21,13 +21,15 @@
 
 #include "guardrail/StatsdStats.h"
 #include "src/statsd_config.pb.h"
+#include "stats_util.h"
 
 namespace android {
 namespace os {
 namespace statsd {
 
-using ParseHistogramBinConfigsResult =
-        std::variant<std::vector<std::vector<float>>, InvalidConfigReason>;
+constexpr float UNDERFLOW_BIN_START = std::numeric_limits<float>::min();
+
+using ParseHistogramBinConfigsResult = std::variant<std::vector<BinStarts>, InvalidConfigReason>;
 
 ParseHistogramBinConfigsResult parseHistogramBinConfigs(const ValueMetric& valueMetric);
 

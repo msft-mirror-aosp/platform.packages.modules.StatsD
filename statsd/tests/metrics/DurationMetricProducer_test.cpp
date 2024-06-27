@@ -717,6 +717,49 @@ TEST(DurationMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
     }
 }
 
+TEST(DurationMetricProducerTest, TestCorruptedDataReason_StateLoss) {
+    const int64_t bucketStartTimeNs = 10000000000;
+    const int stateAtomId = 10;
+
+    DurationMetric metric;
+    metric.set_id(1);
+    metric.set_bucket(ONE_MINUTE);
+    metric.set_aggregation_type(DurationMetric_AggregationType_SUM);
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    FieldMatcher dimensions;
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+
+    DurationMetricProducer durationProducer(
+            kConfigKey, metric, 0 /* condition index */, {ConditionState::kUnknown},
+            -1 /*what index not needed*/, 1 /* start index */, 2 /* stop index */,
+            3 /* stop_all index */, false /*nesting*/, wizard, protoHash, dimensions,
+            bucketStartTimeNs, bucketStartTimeNs, provider);
+
+    durationProducer.onStateEventLost(stateAtomId, DATA_CORRUPTED_SOCKET_LOSS);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        durationProducer.onDumpReport(bucketStartTimeNs + 50,
+                                      true /*include current partial bucket*/, true /*erase data*/,
+                                      FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    // validation that data corruption signal remains accurate after another dump
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        durationProducer.onDumpReport(bucketStartTimeNs + 150,
+                                      true /*include current partial bucket*/, true /*erase data*/,
+                                      FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

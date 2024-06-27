@@ -415,6 +415,51 @@ TEST_F(DataCorruptionQueueOverflowTest, TestDoNotNotifyInterestedMetricsIfNoUpda
                 Each(Property(&StatsLogReport::data_corrupted_reason_size, 0)));
 }
 
+TEST(DataCorruptionTest, TestStateLostPropagation) {
+    // Initialize config with state and count metric
+    StatsdConfig config;
+
+    auto syncStartMatcher = CreateSyncStartAtomMatcher();
+    *config.add_atom_matcher() = syncStartMatcher;
+
+    auto state = CreateScreenState();
+    *config.add_state() = state;
+
+    // Create count metric that slices by screen state.
+    auto countMetric = config.add_count_metric();
+    countMetric->set_id(kNotInterestedMetricId);
+    countMetric->set_what(syncStartMatcher.id());
+    countMetric->set_bucket(TimeUnit::FIVE_MINUTES);
+    countMetric->add_slice_by_state(state.id());
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketSizeNs =
+            TimeUnitToBucketSizeInMillis(config.count_metric(0).bucket()) * 1000000LL;
+    int uid = 12345;
+    int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+    auto processor =
+            CreateStatsLogProcessor(kBucketStartTimeNs, kBucketStartTimeNs, config, cfgKey);
+
+    // Check that CountMetricProducer was initialized correctly.
+    ASSERT_EQ(processor->mMetricsManagers.size(), 1u);
+    sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+    EXPECT_TRUE(metricsManager->isConfigValid());
+
+    // Check that StateTrackers were initialized correctly.
+    EXPECT_EQ(1, StateManager::getInstance().getStateTrackersCount());
+    EXPECT_EQ(1, StateManager::getInstance().getListenersCount(SCREEN_STATE_ATOM_ID));
+
+    auto usedEventSocketLossReported =
+            createSocketLossInfoLogEvent(AID_SYSTEM, util::SCREEN_STATE_CHANGED);
+    processor->OnLogEvent(usedEventSocketLossReported.get());
+
+    ConfigMetricsReport metricsReport = getMetricsReport(*metricsManager);
+    ASSERT_EQ(metricsReport.metrics_size(), 1);
+    const auto& statsLogReport = metricsReport.metrics(0);
+    EXPECT_THAT(statsLogReport.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

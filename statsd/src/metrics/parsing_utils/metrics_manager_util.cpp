@@ -1064,12 +1064,14 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
                     ? optional<int64_t>(metric.condition_correction_threshold_nanos())
                     : nullopt;
 
+    const vector<BinStarts>& binStartsList = std::get<vector<BinStarts>>(parseBinConfigsResult);
     sp<MetricProducer> metricProducer = new NumericValueMetricProducer(
             key, metric, metricHash, {pullTagId, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              conditionCorrectionThresholdNs, getAppUpgradeBucketSplit(metric)},
             {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
-             matcherWizard, metric.dimensions_in_what(), fieldMatchers, aggregationTypes},
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers, aggregationTypes,
+             binStartsList},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit},

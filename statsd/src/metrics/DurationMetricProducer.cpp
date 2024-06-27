@@ -909,6 +909,7 @@ MetricProducer::DataCorruptionSeverity DurationMetricProducer::determineCorrupti
             // to next bucket
             return DataCorruptionSeverity::kUnrecoverable;
         case LostAtomType::kCondition:
+        case LostAtomType::kState:
             return DataCorruptionSeverity::kUnrecoverable;
     };
     return DataCorruptionSeverity::kNone;

@@ -728,6 +728,7 @@ MetricProducer::DataCorruptionSeverity NumericValueMetricProducer::determineCorr
             return mUseDiff ? DataCorruptionSeverity::kUnrecoverable
                             : DataCorruptionSeverity::kResetOnDump;
         case LostAtomType::kCondition:
+        case LostAtomType::kState:
             return DataCorruptionSeverity::kUnrecoverable;
     };
     return DataCorruptionSeverity::kNone;
