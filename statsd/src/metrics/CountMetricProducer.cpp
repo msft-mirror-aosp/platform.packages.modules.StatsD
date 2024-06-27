@@ -570,6 +570,7 @@ MetricProducer::DataCorruptionSeverity CountMetricProducer::determineCorruptionS
         case LostAtomType::kWhat:
             return DataCorruptionSeverity::kResetOnDump;
         case LostAtomType::kCondition:
+        case LostAtomType::kState:
             return DataCorruptionSeverity::kUnrecoverable;
     };
     return DataCorruptionSeverity::kNone;
