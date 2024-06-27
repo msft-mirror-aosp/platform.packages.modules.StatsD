@@ -353,6 +353,16 @@ GaugeMetric createGaugeMetric(const string& name, int64_t what,
 ValueMetric createValueMetric(const string& name, const AtomMatcher& what, int valueField,
                               const optional<int64_t>& condition, const vector<int64_t>& states);
 
+ValueMetric createValueMetric(const string& name, const AtomMatcher& what,
+                              const vector<int>& valueFields,
+                              const vector<ValueMetric::AggregationType>& aggregationTypes,
+                              const optional<int64_t>& condition, const vector<int64_t>& states);
+
+HistogramBinConfig createGeneratedBinConfig(int id, float min, float max, int count,
+                                            HistogramBinConfig::GeneratedBins::Strategy strategy);
+
+HistogramBinConfig createExplicitBinConfig(int id, const std::vector<float>& bins);
+
 KllMetric createKllMetric(const string& name, const AtomMatcher& what, int kllField,
                           const optional<int64_t>& condition);
 
