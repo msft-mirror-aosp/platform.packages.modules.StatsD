@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,20 @@
 
 #pragma once
 
-#include <aidl/android/os/IStatsCompanionService.h>
+#include <variant>
+#include <vector>
 
-using aidl::android::os::IStatsCompanionService;
-using std::shared_ptr;
+#include "guardrail/StatsdStats.h"
+#include "src/statsd_config.pb.h"
 
 namespace android {
 namespace os {
 namespace statsd {
 
-/** Fetches and returns the StatsCompanionService. */
-shared_ptr<IStatsCompanionService> getStatsCompanionService(const bool blocking);
+using ParseHistogramBinConfigsResult =
+        std::variant<std::vector<std::vector<float>>, InvalidConfigReason>;
+
+ParseHistogramBinConfigsResult parseHistogramBinConfigs(const ValueMetric& valueMetric);
 
 }  // namespace statsd
 }  // namespace os
