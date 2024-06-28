@@ -408,9 +408,8 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport) {
     {
         // Check dump report content.
         ProtoOutputStream output;
-        std::set<string> strSet;
         eventProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, &strSet, &output);
+                                   true /*erase data*/, FAST, nullptr, &output);
 
         StatsLogReport report = outputStreamToProto(&output);
         EXPECT_TRUE(report.has_event_metrics());
@@ -440,9 +439,8 @@ TEST_F(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport) {
     {
         // Check dump report content.
         ProtoOutputStream output;
-        std::set<string> strSet;
         eventProducer.onDumpReport(bucketStartTimeNs + 250, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, &strSet, &output);
+                                   true /*erase data*/, FAST, nullptr, &output);
 
         StatsLogReport report = outputStreamToProto(&output);
         EXPECT_TRUE(report.has_event_metrics());

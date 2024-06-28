@@ -213,6 +213,7 @@ public:
     enum class LostAtomType {
         kWhat = 0,
         kCondition,
+        kState,
     };
 
     void onMatchedLogEventLost(int32_t atomId, DataCorruptedReason reason, LostAtomType atomType) {
@@ -238,6 +239,11 @@ public:
     void onStateChanged(const int64_t eventTimeNs, const int32_t atomId,
                         const HashableDimensionKey& primaryKey, const FieldValue& oldState,
                         const FieldValue& newState){};
+
+    void onStateEventLost(int32_t atomId, DataCorruptedReason reason) override {
+        std::lock_guard<std::mutex> lock(mMutex);
+        onMatchedLogEventLostLocked(atomId, reason, LostAtomType::kState);
+    }
 
     // Output the metrics data to [protoOutput]. All metrics reports end with the same timestamp.
     // This method clears all the past buckets.
@@ -609,8 +615,9 @@ protected:
      *
      * @return DataCorruptionSeverity
      */
-    virtual DataCorruptionSeverity determineCorruptionSeverity(DataCorruptedReason reason,
-                                                               LostAtomType atomType) const {
+    virtual DataCorruptionSeverity determineCorruptionSeverity(int32_t /*atomId*/,
+                                                               DataCorruptedReason /*reason*/,
+                                                               LostAtomType /*atomType*/) const {
         return DataCorruptionSeverity::kNone;
     };
 
