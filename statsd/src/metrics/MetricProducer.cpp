@@ -357,7 +357,6 @@ void MetricProducer::queryStateValue(int32_t atomId, const HashableDimensionKey&
     if (!StateManager::getInstance().getStateValue(atomId, queryKey, value)) {
         value->mValue = Value(StateTracker::kStateUnknown);
         value->mField.setTag(atomId);
-        ALOGW("StateTracker not found for state atom %d", atomId);
         return;
     }
 }

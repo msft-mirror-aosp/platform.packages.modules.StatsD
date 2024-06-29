@@ -147,6 +147,7 @@ cc_defaults {
         "libutils",
         "server_configurable_flags",
         "statsd-aidl-ndk",
+        "statsd_flags_c_lib",
         "libsqlite_static_noicu",
     ],
     shared_libs: [
@@ -271,6 +272,7 @@ cc_binary {
         "com.android.os.statsd",
         "test_com.android.os.statsd",
     ],
+    runtime_libs: ["libuprobestats_client"],
     min_sdk_version: "30",
 }
 
