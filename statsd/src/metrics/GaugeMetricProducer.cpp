@@ -51,6 +51,7 @@ const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 19;
 // for GaugeMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 const int FIELD_ID_SKIPPED = 2;
@@ -244,6 +245,7 @@ void GaugeMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     flushIfNeededLocked(dumpTimeNs);
     mPastBuckets.clear();
     mSkippedBuckets.clear();
+    resetDataCorruptionFlagsLocked();
     mTotalDataSize = 0;
 }
 
@@ -263,7 +265,15 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
 
+    // Data corrupted reason
+    writeDataCorruptedReasons(*protoOutput, FIELD_ID_DATA_CORRUPTED_REASON,
+                              mDataCorruptedDueToQueueOverflow != DataCorruptionSeverity::kNone,
+                              mDataCorruptedDueToSocketLoss != DataCorruptionSeverity::kNone);
+
     if (mPastBuckets.empty() && mSkippedBuckets.empty()) {
+        if (erase_data) {
+            resetDataCorruptionFlagsLocked();
+        }
         return;
     }
 
@@ -375,6 +385,7 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
         mPastBuckets.clear();
         mSkippedBuckets.clear();
         mDimensionGuardrailHit = false;
+        resetDataCorruptionFlagsLocked();
         mTotalDataSize = 0;
     }
 }
@@ -548,7 +559,7 @@ bool GaugeMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
 void GaugeMetricProducer::onMatchedLogEventInternalLocked(
         const size_t matcherIndex, const MetricDimensionKey& eventKey,
         const ConditionKey& conditionKey, bool condition, const LogEvent& event,
-        const map<int, HashableDimensionKey>& statePrimaryKeys) {
+        const map<int, HashableDimensionKey>& /*statePrimaryKeys*/) {
     if (condition == false) {
         return;
     }
@@ -629,6 +640,7 @@ void GaugeMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
     flushIfNeededLocked(dropTimeNs);
     StatsdStats::getInstance().noteBucketDropped(mMetricId);
     mPastBuckets.clear();
+    resetDataCorruptionFlagsLocked();
     mTotalDataSize = 0;
 }
 
@@ -752,6 +764,19 @@ size_t GaugeMetricProducer::byteSizeLocked() const {
     }
     return totalSize;
 }
+
+MetricProducer::DataCorruptionSeverity GaugeMetricProducer::determineCorruptionSeverity(
+        int32_t atomId, DataCorruptedReason reason, LostAtomType atomType) const {
+    switch (atomType) {
+        case LostAtomType::kWhat:
+            return DataCorruptionSeverity::kResetOnDump;
+        case LostAtomType::kCondition:
+            return DataCorruptionSeverity::kUnrecoverable;
+        case LostAtomType::kState:
+            break;
+    };
+    return DataCorruptionSeverity::kNone;
+};
 
 }  // namespace statsd
 }  // namespace os
