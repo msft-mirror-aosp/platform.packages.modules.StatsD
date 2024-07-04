@@ -767,6 +767,12 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
         // Do not call onDumpReport for restricted metrics.
         return;
     }
+
+    // get & forward queue overflow stats to StateManager only when
+    // there is a metric report to be collected, the data loss flags
+    // are not used otherwise
+    processQueueOverflowStatsLocked();
+
     int64_t lastReportTimeNs = it->second->getLastReportTimeNs();
     int64_t lastReportWallClockNs = it->second->getLastReportWallClockNs();
 
@@ -1554,6 +1560,23 @@ bool StatsLogProcessor::validateAppBreadcrumbEvent(const LogEvent& event) const 
     }
 
     return true;
+}
+
+void StatsLogProcessor::processQueueOverflowStatsLocked() {
+    auto queueOverflowStats = StatsdStats::getInstance().getQueueOverflowAtomsStats();
+
+    for (const auto [atomId, count] : queueOverflowStats) {
+        // are there new atoms dropped due to queue overflow since previous request
+        auto droppedAtomStatsIt = mQueueOverflowAtomsStats.find(atomId);
+        if (droppedAtomStatsIt != mQueueOverflowAtomsStats.end() &&
+            droppedAtomStatsIt->second == count) {
+            // no new dropped atoms detected for the atomId
+            continue;
+        }
+
+        StateManager::getInstance().onLogEventLost(atomId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+    }
+    mQueueOverflowAtomsStats = std::move(queueOverflowStats);
 }
 
 }  // namespace statsd
