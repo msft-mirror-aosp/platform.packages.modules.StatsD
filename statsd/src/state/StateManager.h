@@ -74,6 +74,12 @@ public:
 
     void notifyAppChanged(const string& apk, const sp<UidMap>& uidMap);
 
+    /**
+     * @brief Update State Tracker depending on #lostAtomId that it was lost due to #reason
+     * @return true if State Tracker was notified
+     */
+    bool onLogEventLost(int32_t lostAtomId, DataCorruptedReason reason);
+
     inline int getStateTrackersCount() const {
         return mStateTrackers.size();
     }
@@ -90,7 +96,7 @@ public:
 
 private:
     // Notifies the correct StateTracker of lost event.
-    void onLogEventLost(const SocketLossInfo& socketLossInfo);
+    void handleSocketLossInfo(const SocketLossInfo& socketLossInfo);
 
     mutable std::mutex mMutex;
 

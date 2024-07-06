@@ -486,9 +486,7 @@ void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t w
         return;
     }
 
-    vector<std::pair<int32_t, int32_t>> queueOverflowStats =
-            StatsdStats::getInstance().getQueueOverflowAtomsStats();
-    processQueueOverflowStats(queueOverflowStats);
+    processQueueOverflowStats();
 
     VLOG("=========================Metric Reports Start==========================");
     // one StatsLogReport per MetricProduer
@@ -958,13 +956,13 @@ void MetricsManager::addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const {
     }
 }
 
-void MetricsManager::processQueueOverflowStats(
-        const StatsdStats::QueueOverflowAtomsStats& overflowStats) {
-    assert((overflowStats.size() < mQueueOverflowAtomsStats.size()) &&
+void MetricsManager::processQueueOverflowStats() {
+    auto queueOverflowStats = StatsdStats::getInstance().getQueueOverflowAtomsStats();
+    assert((queueOverflowStats.size() < mQueueOverflowAtomsStats.size()) &&
            "StatsdStats reset unexpected");
 
-    for (const auto [atomId, count] : overflowStats) {
-        // are there new atoms dropped due to queue overflow since previous dumpReport request
+    for (const auto [atomId, count] : queueOverflowStats) {
+        // are there new atoms dropped due to queue overflow since previous request
         auto droppedAtomStatsIt = mQueueOverflowAtomsStats.find(atomId);
         if (droppedAtomStatsIt != mQueueOverflowAtomsStats.end() &&
             droppedAtomStatsIt->second == count) {
@@ -972,18 +970,9 @@ void MetricsManager::processQueueOverflowStats(
             continue;
         }
 
-        if (notifyMetricsAboutLostAtom(atomId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW) > 0) {
-            // there is at least one metric interested in the lost atom, keep track of it
-            // to update it again only if there will be more dropped atoms
-            mQueueOverflowAtomsStats[atomId] = count;
-        } else {
-            // there are no metrics interested in dropped atom
-            if (droppedAtomStatsIt != mQueueOverflowAtomsStats.end()) {
-                // but there were metrics which are interested in the atom and now they are removed
-                mQueueOverflowAtomsStats.erase(droppedAtomStatsIt);
-            }
-        }
+        notifyMetricsAboutLostAtom(atomId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
     }
+    mQueueOverflowAtomsStats = std::move(queueOverflowStats);
 }
 
 }  // namespace statsd
