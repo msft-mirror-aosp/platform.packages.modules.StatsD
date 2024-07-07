@@ -493,6 +493,8 @@ private:
     FRIEND_TEST(StringReplaceE2eTest, TestPulledDimension);
     FRIEND_TEST(StringReplaceE2eTest, TestPulledWhat);
     FRIEND_TEST(StringReplaceE2eTest, TestMultipleMatchersForAtom);
+
+    FRIEND_TEST(DataCorruptionTest, TestStateLostPropagation);
 };
 
 }  // namespace statsd

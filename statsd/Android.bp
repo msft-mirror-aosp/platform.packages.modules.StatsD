@@ -16,6 +16,7 @@
 
 package {
     default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_android_telemetry_client_infra",
 }
 
 cc_defaults {
@@ -464,8 +465,8 @@ cc_test {
         "tests/StatsService_test.cpp",
         "tests/storage/StorageManager_test.cpp",
         "tests/UidMap_test.cpp",
-        "tests/utils/MultiConditionTrigger_test.cpp",
         "tests/utils/DbUtils_test.cpp",
+        "tests/utils/MultiConditionTrigger_test.cpp",
     ],
 
     static_libs: [
