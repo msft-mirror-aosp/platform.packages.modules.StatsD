@@ -55,6 +55,7 @@ const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 19;
 
 // for CountMetricDataWrapper
 const int FIELD_ID_DATA = 1;
@@ -216,6 +217,7 @@ void CountMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
 
 void CountMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     mPastBuckets.clear();
+    resetDataCorruptionFlagsLocked();
     mTotalDataSize = 0;
 }
 
@@ -233,7 +235,15 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
 
+    // Data corrupted reason
+    writeDataCorruptedReasons(*protoOutput, FIELD_ID_DATA_CORRUPTED_REASON,
+                              mDataCorruptedDueToQueueOverflow != DataCorruptionSeverity::kNone,
+                              mDataCorruptedDueToSocketLoss != DataCorruptionSeverity::kNone);
+
     if (mPastBuckets.empty()) {
+        if (erase_data) {
+            resetDataCorruptionFlagsLocked();
+        }
         return;
     }
 
@@ -319,6 +329,7 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
     if (erase_data) {
         mPastBuckets.clear();
         mDimensionGuardrailHit = false;
+        resetDataCorruptionFlagsLocked();
         mTotalDataSize = 0;
     }
 }
@@ -327,6 +338,7 @@ void CountMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
     flushIfNeededLocked(dropTimeNs);
     StatsdStats::getInstance().noteBucketDropped(mMetricId);
     mPastBuckets.clear();
+    resetDataCorruptionFlagsLocked();
     mTotalDataSize = 0;
 }
 
@@ -551,6 +563,18 @@ void CountMetricProducer::onActiveStateChangedLocked(const int64_t eventTimeNs,
 
     mConditionTimer.onConditionChanged(isActive, eventTimeNs);
 }
+
+MetricProducer::DataCorruptionSeverity CountMetricProducer::determineCorruptionSeverity(
+        int32_t atomId, DataCorruptedReason /*reason*/, LostAtomType atomType) const {
+    switch (atomType) {
+        case LostAtomType::kWhat:
+            return DataCorruptionSeverity::kResetOnDump;
+        case LostAtomType::kCondition:
+        case LostAtomType::kState:
+            return DataCorruptionSeverity::kUnrecoverable;
+    };
+    return DataCorruptionSeverity::kNone;
+};
 
 }  // namespace statsd
 }  // namespace os
