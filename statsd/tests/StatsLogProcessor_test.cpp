@@ -2026,7 +2026,8 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogIsolatedUidAttributionCha
  * - multiple isolated uids
  * - multiple host and isolated uids
  */
-TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField) {
+TEST_GUARDED(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField,
+             __ANDROID_API_T__) {
     int hostUid1 = 21;
     int hostUid2 = 22;
     int isolatedUid1 = 31;

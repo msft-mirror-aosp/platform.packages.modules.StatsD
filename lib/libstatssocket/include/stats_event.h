@@ -42,6 +42,14 @@
  * order that they are defined in the atom.
  */
 
+#ifndef __ANDROID_API_T__
+#define __ANDROID_API_T__ 33
+#endif
+
+#ifndef __INTRODUCED_IN
+#define __INTRODUCED_IN(api_level)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif  // __CPLUSPLUS
@@ -150,7 +158,8 @@ void AStatsEvent_writeAttributionChain(AStatsEvent* event, const uint32_t* uids,
  * Max size of array is 127. If exceeded, array is not written and ERROR_LIST_TOO_LONG is appended
  * to StatsEvent.
  **/
-void AStatsEvent_writeInt32Array(AStatsEvent* event, const int32_t* elements, size_t numElements);
+void AStatsEvent_writeInt32Array(AStatsEvent* event, const int32_t* elements, size_t numElements)
+        __INTRODUCED_IN(__ANDROID_API_T__);
 
 /**
  * Write a int64 array field to this StatsEvent.
@@ -158,7 +167,8 @@ void AStatsEvent_writeInt32Array(AStatsEvent* event, const int32_t* elements, si
  * Max size of array is 127. If exceeded, array is not written and ERROR_LIST_TOO_LONG is appended
  * to StatsEvent.
  **/
-void AStatsEvent_writeInt64Array(AStatsEvent* event, const int64_t* elements, size_t numElements);
+void AStatsEvent_writeInt64Array(AStatsEvent* event, const int64_t* elements, size_t numElements)
+        __INTRODUCED_IN(__ANDROID_API_T__);
 
 /**
  * Write a float array field to this StatsEvent.
@@ -166,7 +176,8 @@ void AStatsEvent_writeInt64Array(AStatsEvent* event, const int64_t* elements, si
  * Max size of array is 127. If exceeded, array is not written and ERROR_LIST_TOO_LONG is appended
  * to StatsEvent.
  **/
-void AStatsEvent_writeFloatArray(AStatsEvent* event, const float* elements, size_t numElements);
+void AStatsEvent_writeFloatArray(AStatsEvent* event, const float* elements, size_t numElements)
+        __INTRODUCED_IN(__ANDROID_API_T__);
 
 /**
  * Write a bool array field to this StatsEvent.
@@ -174,7 +185,8 @@ void AStatsEvent_writeFloatArray(AStatsEvent* event, const float* elements, size
  * Max size of array is 127. If exceeded, array is not written and ERROR_LIST_TOO_LONG is appended
  * to StatsEvent.
  **/
-void AStatsEvent_writeBoolArray(AStatsEvent* event, const bool* elements, size_t numElements);
+void AStatsEvent_writeBoolArray(AStatsEvent* event, const bool* elements, size_t numElements)
+        __INTRODUCED_IN(__ANDROID_API_T__);
 
 /**
  * Write a string array field to this StatsEvent.
@@ -185,7 +197,7 @@ void AStatsEvent_writeBoolArray(AStatsEvent* event, const bool* elements, size_t
  * ERROR_LIST_TOO_LONG is appended to StatsEvent.
  **/
 void AStatsEvent_writeStringArray(AStatsEvent* event, const char* const* elements,
-                                  size_t numElements);
+                                  size_t numElements) __INTRODUCED_IN(__ANDROID_API_T__);
 
 /**
  * Write a bool annotation for the previous field written.

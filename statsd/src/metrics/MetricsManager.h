@@ -406,6 +406,7 @@ private:
     // This map represent local copy of StatsdStats::mPushedAtomDropsStats with relevant atoms ids
     StatsdStats::QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
 
+    friend class SocketLossInfoTest;
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
@@ -481,8 +482,6 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
-
-    FRIEND_TEST(SocketLossInfoTest, PropagationTest);
 
     FRIEND_TEST(DataCorruptionQueueOverflowTest, TestNotifyOnlyInterestedMetrics);
     FRIEND_TEST(DataCorruptionQueueOverflowTest, TestNotifyInterestedMetricsWithNewLoss);
