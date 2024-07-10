@@ -377,6 +377,7 @@ private:
 
     StatsdStats::QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
 
+    friend class GuardedDataCorruptionTestTestStateLostPropagation;
     friend class StatsLogProcessorTestRestricted;
     FRIEND_TEST(StatsLogProcessorTest, TestOutOfOrderLogs);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitByteSize);
@@ -505,7 +506,6 @@ private:
     FRIEND_TEST(StringReplaceE2eTest, TestPulledWhat);
     FRIEND_TEST(StringReplaceE2eTest, TestMultipleMatchersForAtom);
 
-    FRIEND_TEST(DataCorruptionTest, TestStateLostPropagation);
     FRIEND_TEST(DataCorruptionTest, TestStateLostFromQueueOverflowPropagation);
 };
 
