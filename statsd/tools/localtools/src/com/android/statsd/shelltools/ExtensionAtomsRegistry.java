@@ -66,6 +66,7 @@ import android.os.statsd.media.MediaCodecExtensionAtoms;
 import com.android.os.credentials.CredentialsExtensionAtoms;
 import com.android.os.sdksandbox.SdksandboxExtensionAtoms;
 import com.android.os.apex.ApexExtensionAtoms;
+import com.android.os.photopicker.PhotopickerExtensionAtoms;
 
 import com.google.protobuf.ExtensionRegistry;
 
@@ -146,5 +147,7 @@ public class ExtensionAtomsRegistry {
         BackgroundDexoptExtensionAtoms.registerAllExtensions(extensionRegistry);
         OdrefreshExtensionAtoms.registerAllExtensions(extensionRegistry);
         AdpfExtensionAtoms.registerAllExtensions(extensionRegistry);
+        PhotopickerExtensionAtoms.registerAllExtensions(extensionRegistry);
+
     }
 }
