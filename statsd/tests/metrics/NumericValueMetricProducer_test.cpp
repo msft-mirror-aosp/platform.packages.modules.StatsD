@@ -7439,7 +7439,8 @@ TEST(NumericValueMetricProducerTest, TestSubsetDimensions) {
     ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, {26}, -1, 0);
 }
 
-TEST(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions) {
+TEST_GUARDED(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions,
+             __ANDROID_API_T__) {
     ValueMetric metric = NumericValueMetricProducerTestHelper::createMetricWithRepeatedValueField();
     metric.mutable_dimensions_in_what()->set_field(tagId);
     FieldMatcher* valueChild = metric.mutable_dimensions_in_what()->add_child();
