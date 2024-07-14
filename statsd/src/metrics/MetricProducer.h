@@ -525,7 +525,7 @@ protected:
 
     // The time when this metric producer was first created. The end time for the current bucket
     // can be computed from this based on mCurrentBucketNum.
-    int64_t mTimeBaseNs;
+    const int64_t mTimeBaseNs;
 
     // Start time may not be aligned with the start of statsd if there is an app upgrade in the
     // middle of a bucket.
