@@ -61,8 +61,8 @@ void makeLogEvent(LogEvent* logEvent, const int32_t atomId, const int64_t timest
     parseStatsEventToLogEvent(statsEvent, logEvent);
 }
 
-void makeRepeatedIntLogEvent(LogEvent* logEvent, const int32_t atomId,
-                             const vector<int>& intArray) {
+void makeRepeatedIntLogEvent(LogEvent* logEvent, const int32_t atomId, const vector<int>& intArray)
+        __INTRODUCED_IN(__ANDROID_API_T__) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_writeInt32Array(statsEvent, intArray.data(), intArray.size());
@@ -192,7 +192,7 @@ TEST(AtomMatcherTest, TestFilter_FIRST) {
     EXPECT_EQ("some value", output.getValues()[2].mValue.str_value);
 };
 
-TEST(AtomMatcherTest, TestFilterRepeated_FIRST) {
+TEST_GUARDED(AtomMatcherTest, TestFilterRepeated_FIRST, __ANDROID_API_T__) {
     FieldMatcher matcher;
     matcher.set_field(123);
     FieldMatcher* child = matcher.add_child();
@@ -214,7 +214,7 @@ TEST(AtomMatcherTest, TestFilterRepeated_FIRST) {
     EXPECT_EQ((int32_t)21, output.getValues()[0].mValue.int_value);
 }
 
-TEST(AtomMatcherTest, TestFilterRepeated_LAST) {
+TEST_GUARDED(AtomMatcherTest, TestFilterRepeated_LAST, __ANDROID_API_T__) {
     FieldMatcher matcher;
     matcher.set_field(123);
     FieldMatcher* child = matcher.add_child();
@@ -236,7 +236,7 @@ TEST(AtomMatcherTest, TestFilterRepeated_LAST) {
     EXPECT_EQ((int32_t)13, output.getValues()[0].mValue.int_value);
 }
 
-TEST(AtomMatcherTest, TestFilterRepeated_ALL) {
+TEST_GUARDED(AtomMatcherTest, TestFilterRepeated_ALL, __ANDROID_API_T__) {
     FieldMatcher matcher;
     matcher.set_field(123);
     FieldMatcher* child = matcher.add_child();
@@ -882,7 +882,7 @@ TEST(AtomMatcherTest, TestWriteAtomToProto) {
     EXPECT_EQ(999, atom.num_results());
 }
 
-TEST(AtomMatcherTest, TestWriteAtomWithRepeatedFieldsToProto) {
+TEST_GUARDED(AtomMatcherTest, TestWriteAtomWithRepeatedFieldsToProto, __ANDROID_API_T__) {
     vector<int> intArray = {3, 6};
     vector<int64_t> longArray = {1000L, 10002L};
     vector<float> floatArray = {0.3f, 0.09f};
