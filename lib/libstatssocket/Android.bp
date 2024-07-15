@@ -50,6 +50,7 @@ cc_defaults {
     static_libs: [
         "libbase",
     ],
+    min_sdk_version: "30",
 }
 
 cc_library_shared {
@@ -89,6 +90,12 @@ filegroup {
     srcs: ["libstatssocket_test_default.map"],
 }
 
+cc_library_headers {
+    name: "libstatssocket_test_headers",
+    export_include_dirs: ["tests/include"],
+    min_sdk_version: "30",
+}
+
 cc_test {
     name: "libstatssocket_test",
     srcs: [
@@ -121,6 +128,9 @@ cc_test {
     shared_libs: [
         "libutils",
         "libstatssocket",
+    ],
+    header_libs: [
+        "libstatssocket_test_headers",
     ],
     test_suites: [
         "device-tests",
