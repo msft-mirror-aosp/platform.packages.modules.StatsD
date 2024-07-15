@@ -158,6 +158,7 @@ cc_defaults {
     header_libs: [
         "libgtest_prod_headers",
     ],
+    min_sdk_version: "30",
 }
 
 genrule {
@@ -298,6 +299,9 @@ cc_defaults {
     static_libs: [
         "libgmock",
         "libstatslog_statsdtest",
+    ],
+    header_libs: [
+        "libstatssocket_test_headers",
     ],
     proto: {
         type: "lite",
