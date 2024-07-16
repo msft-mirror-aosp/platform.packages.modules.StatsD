@@ -232,7 +232,9 @@ StatsService::~StatsService() {
     ATRACE_CALL();
     if (mEventQueue != nullptr) {
         stopReadingLogs();
-        mLogsReaderThread->join();
+        if (mLogsReaderThread != nullptr) {
+            mLogsReaderThread->join();
+        }
     }
 }
 
