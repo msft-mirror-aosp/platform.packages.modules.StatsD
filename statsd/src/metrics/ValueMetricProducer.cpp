@@ -26,6 +26,7 @@
 #include "FieldValue.h"
 #include "HashableDimensionKey.h"
 #include "guardrail/StatsdStats.h"
+#include "metrics/NumericValue.h"
 #include "metrics/parsing_utils/metrics_manager_util.h"
 #include "stats_log_util.h"
 #include "stats_util.h"
@@ -55,6 +56,7 @@ const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
 const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 19;
 // for *MetricDataWrapper
 const int FIELD_ID_DATA = 1;
 const int FIELD_ID_SKIPPED = 2;
@@ -309,6 +311,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::dropDataLocked(const int64
     // so the data is still valid.
     flushIfNeededLocked(dropTimeNs);
     clearPastBucketsLocked(dropTimeNs);
+    resetDataCorruptionFlagsLocked();
 }
 
 template <typename AggregatedValue, typename DimExtras>
@@ -316,6 +319,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::clearPastBucketsLocked(
         const int64_t dumpTimeNs) {
     mPastBuckets.clear();
     mSkippedBuckets.clear();
+    resetDataCorruptionFlagsLocked();
     mTotalDataSize = 0;
 }
 
@@ -350,7 +354,16 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
+
+    // Data corrupted reason
+    writeDataCorruptedReasons(*protoOutput, FIELD_ID_DATA_CORRUPTED_REASON,
+                              mDataCorruptedDueToQueueOverflow != DataCorruptionSeverity::kNone,
+                              mDataCorruptedDueToSocketLoss != DataCorruptionSeverity::kNone);
+
     if (mPastBuckets.empty() && mSkippedBuckets.empty()) {
+        if (eraseData) {
+            resetDataCorruptionFlagsLocked();
+        }
         return;
     }
 
@@ -474,6 +487,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
     if (eraseData) {
         mPastBuckets.clear();
         mSkippedBuckets.clear();
+        resetDataCorruptionFlagsLocked();
         mTotalDataSize = 0;
     }
 }
@@ -929,7 +943,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
 }
 
 // Explicit template instantiations
-template class ValueMetricProducer<Value, vector<optional<Value>>>;
+template class ValueMetricProducer<NumericValue, vector<NumericValue>>;
 template class ValueMetricProducer<unique_ptr<KllQuantile>, Empty>;
 
 }  // namespace statsd

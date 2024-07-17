@@ -21,6 +21,8 @@
 
 #include <inttypes.h>
 
+#include <variant>
+
 #include "FieldValue.h"
 #include "condition/CombinationConditionTracker.h"
 #include "condition/SimpleConditionTracker.h"
@@ -38,6 +40,7 @@
 #include "metrics/MetricProducer.h"
 #include "metrics/NumericValueMetricProducer.h"
 #include "metrics/RestrictedEventMetricProducer.h"
+#include "metrics/parsing_utils/histogram_parsing_utils.h"
 #include "state/StateManager.h"
 #include "stats_util.h"
 
@@ -927,7 +930,8 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
     }
 
     std::vector<ValueMetric::AggregationType> aggregationTypes;
-    if (metric.aggregation_types_size() != 0) {
+    int histogramCount = 0;
+    if (!metric.aggregation_types().empty()) {
         if (metric.has_aggregation_type()) {
             invalidConfigReason = InvalidConfigReason(
                     INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
@@ -942,9 +946,37 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         }
         for (int i = 0; i < metric.aggregation_types_size(); i++) {
             aggregationTypes.push_back(metric.aggregation_types(i));
+            if (aggregationTypes.back() == ValueMetric::HISTOGRAM) {
+                histogramCount++;
+            }
         }
     } else {  // aggregation_type() is set or default is used.
         aggregationTypes.push_back(metric.aggregation_type());
+        if (aggregationTypes.back() == ValueMetric::HISTOGRAM) {
+            histogramCount++;
+        }
+    }
+
+    if (metric.histogram_bin_configs_size() != histogramCount) {
+        ALOGE("%d histogram aggregations specified but there are %d histogram_bin_configs",
+              histogramCount, metric.histogram_bin_configs_size());
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
+                metric.id());
+        return nullopt;
+    }
+
+    if (aggregationTypes.front() == ValueMetric::HISTOGRAM && metric.has_threshold()) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD, metric.id());
+        return nullopt;
+    }
+
+    ParseHistogramBinConfigsResult parseBinConfigsResult =
+            parseHistogramBinConfigs(metric, aggregationTypes);
+    if (std::holds_alternative<InvalidConfigReason>(parseBinConfigsResult)) {
+        invalidConfigReason = std::get<InvalidConfigReason>(parseBinConfigsResult);
+        return nullopt;
     }
 
     int trackerIndex;
@@ -1039,12 +1071,15 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
                     ? optional<int64_t>(metric.condition_correction_threshold_nanos())
                     : nullopt;
 
+    const vector<optional<const BinStarts>>& binStartsList =
+            std::get<vector<optional<const BinStarts>>>(parseBinConfigsResult);
     sp<MetricProducer> metricProducer = new NumericValueMetricProducer(
             key, metric, metricHash, {pullTagId, pullerManager},
             {timeBaseNs, currentTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              conditionCorrectionThresholdNs, getAppUpgradeBucketSplit(metric)},
             {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, trackerIndex,
-             matcherWizard, metric.dimensions_in_what(), fieldMatchers, aggregationTypes},
+             matcherWizard, metric.dimensions_in_what(), fieldMatchers, aggregationTypes,
+             binStartsList},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit},
