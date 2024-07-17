@@ -20,6 +20,7 @@
 #include <android-base/stringprintf.h>
 
 #include "matchers/SimpleAtomMatchingTracker.h"
+#include "metrics/parsing_utils/histogram_parsing_utils.h"
 #include "stats_event.h"
 #include "stats_util.h"
 
@@ -1552,6 +1553,11 @@ sp<NumericValueMetricProducer> createNumericValueMetricProducer(
         aggregationTypes.push_back(metric.aggregation_type());
     }
 
+    ParseHistogramBinConfigsResult parseBinConfigsResult =
+            parseHistogramBinConfigs(metric, aggregationTypes);
+    const vector<optional<const BinStarts>>& binStartsList =
+            std::get<vector<optional<const BinStarts>>>(parseBinConfigsResult);
+
     sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     const int pullAtomId = isPulled ? atomId : -1;
     return new NumericValueMetricProducer(
@@ -1559,7 +1565,8 @@ sp<NumericValueMetricProducer> createNumericValueMetricProducer(
             {timeBaseNs, startTimeNs, bucketSizeNs, metric.min_bucket_size_nanos(),
              conditionCorrectionThresholdNs, metric.split_bucket_for_app_upgrade()},
             {containsAnyPositionInDimensionsInWhat, shouldUseNestedDimensions, logEventMatcherIndex,
-             eventMatcherWizard, metric.dimensions_in_what(), fieldMatchers, aggregationTypes},
+             eventMatcherWizard, metric.dimensions_in_what(), fieldMatchers, aggregationTypes,
+             binStartsList},
             {conditionIndex, metric.links(), initialConditionCache, wizard},
             {metric.state_link(), slicedStateAtoms, stateGroupMap},
             {/*eventActivationMap=*/{}, /*eventDeactivationMap=*/{}},

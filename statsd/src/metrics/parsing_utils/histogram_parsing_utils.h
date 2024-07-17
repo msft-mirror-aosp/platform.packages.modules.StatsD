@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -29,9 +30,12 @@ namespace statsd {
 
 constexpr float UNDERFLOW_BIN_START = std::numeric_limits<float>::min();
 
-using ParseHistogramBinConfigsResult = std::variant<std::vector<BinStarts>, InvalidConfigReason>;
+using ParseHistogramBinConfigsResult =
+        std::variant<std::vector<std::optional<const BinStarts>>, InvalidConfigReason>;
 
-ParseHistogramBinConfigsResult parseHistogramBinConfigs(const ValueMetric& valueMetric);
+ParseHistogramBinConfigsResult parseHistogramBinConfigs(
+        const ValueMetric& valueMetric,
+        const std::vector<ValueMetric::AggregationType>& aggregationTypes);
 
 }  // namespace statsd
 }  // namespace os

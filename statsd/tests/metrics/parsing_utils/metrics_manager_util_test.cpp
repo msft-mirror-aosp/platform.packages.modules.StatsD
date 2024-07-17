@@ -2434,6 +2434,25 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramMultipleValueField
     EXPECT_EQ(initConfig(config), nullopt);
 }
 
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramWithUploadThreshold) {
+    StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
+    config.mutable_value_metric(0)->mutable_threshold()->set_lt_float(1.0);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                  config.value_metric(0).id()));
+
+    clearData();
+    config.mutable_value_metric(0)->clear_aggregation_type();
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::HISTOGRAM);
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                  config.value_metric(0).id()));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

@@ -259,20 +259,22 @@ TEST_F(HistogramParsingUtilsTest, TestExplicitBinsUnsortedValues) {
                       config.value_metric(0).id()));
 }
 
-BinStarts getParsedBins(const ValueMetric& metric) {
-    ParseHistogramBinConfigsResult result = parseHistogramBinConfigs(metric);
-    return holds_alternative<vector<BinStarts>>(result) ? get<vector<BinStarts>>(result).front()
-                                                        : BinStarts();
+const BinStarts getParsedBins(const ValueMetric& metric) {
+    ParseHistogramBinConfigsResult result =
+            parseHistogramBinConfigs(metric, /* aggregationTypes */ {ValueMetric::HISTOGRAM});
+    return holds_alternative<vector<optional<const BinStarts>>>(result)
+                   ? *get<vector<optional<const BinStarts>>>(result).front()
+                   : BinStarts();
 }
 
-BinStarts getParsedGeneratedBins(float min, float max, int count,
-                                 HistogramBinConfig::GeneratedBins::Strategy strategy) {
+const BinStarts getParsedGeneratedBins(float min, float max, int count,
+                                       HistogramBinConfig::GeneratedBins::Strategy strategy) {
     StatsdConfig config = createGeneratedHistogramStatsdConfig(min, max, count, strategy);
 
     return getParsedBins(config.value_metric(0));
 }
 
-BinStarts getParsedLinearBins(float min, float max, int count) {
+const BinStarts getParsedLinearBins(float min, float max, int count) {
     return getParsedGeneratedBins(min, max, count, LINEAR);
 }
 
@@ -323,13 +325,16 @@ TEST_F(HistogramParsingUtilsTest, TestMultipleHistogramBinConfigs) {
     *config.mutable_value_metric(0)->add_histogram_bin_configs() =
             createExplicitBinConfig(/* id */ 2, {1, 9, 30});
 
-    ParseHistogramBinConfigsResult result = parseHistogramBinConfigs(config.value_metric(0));
-    ASSERT_TRUE(holds_alternative<vector<BinStarts>>(result));
-    const vector<BinStarts>& histograms = get<vector<BinStarts>>(result);
+    ParseHistogramBinConfigsResult result = parseHistogramBinConfigs(
+            config.value_metric(0),
+            /* aggregationTypes */ {ValueMetric::HISTOGRAM, ValueMetric::HISTOGRAM});
+    ASSERT_TRUE(holds_alternative<vector<optional<const BinStarts>>>(result));
+    const vector<optional<const BinStarts>>& histograms =
+            get<vector<optional<const BinStarts>>>(result);
     ASSERT_EQ(histograms.size(), 2);
 
-    EXPECT_THAT(histograms[0], ElementsAre(UNDERFLOW_BIN_START, -100, -80, -60, -40, -20, 0));
-    EXPECT_THAT(histograms[1], ElementsAre(UNDERFLOW_BIN_START, 1, 9, 30));
+    EXPECT_THAT(*(histograms[0]), ElementsAre(UNDERFLOW_BIN_START, -100, -80, -60, -40, -20, 0));
+    EXPECT_THAT(*(histograms[1]), ElementsAre(UNDERFLOW_BIN_START, 1, 9, 30));
 }
 
 }  // anonymous namespace
