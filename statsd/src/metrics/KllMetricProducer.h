@@ -48,7 +48,8 @@ public:
                       const PullOptions& pullOptions, const BucketOptions& bucketOptions,
                       const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
                       const StateOptions& stateOptions, const ActivationOptions& activationOptions,
-                      const GuardrailOptions& guardrailOptions);
+                      const GuardrailOptions& guardrailOptions,
+                      const wp<ConfigMetadataProvider> configMetadataProvider);
 
     inline MetricType getMetricType() const override {
         return METRIC_TYPE_KLL;
@@ -102,12 +103,17 @@ private:
                                          const int sampleSize,
                                          ProtoOutputStream* const protoOutput) const override;
 
+    size_t getAggregatedValueSize(const std::unique_ptr<KllQuantile>& kll) const override;
+
     bool aggregateFields(const int64_t eventTimeNs, const MetricDimensionKey& eventKey,
                          const LogEvent& event, std::vector<Interval>& intervals,
                          Empty& empty) override;
 
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
+
+    DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
+                                                       LostAtomType atomType) const override;
 
     FRIEND_TEST(KllMetricProducerTest, TestByteSize);
     FRIEND_TEST(KllMetricProducerTest, TestPushedEventsWithoutCondition);

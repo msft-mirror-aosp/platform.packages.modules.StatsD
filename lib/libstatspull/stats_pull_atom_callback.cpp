@@ -21,6 +21,7 @@
 #include <android/binder_auto_utils.h>
 #include <android/binder_ibinder.h>
 #include <android/binder_manager.h>
+#include <com_android_os_statsd_flags.h>
 #include <stats_event.h>
 #include <stats_pull_atom_callback.h>
 
@@ -35,6 +36,8 @@ using aidl::android::os::IPullAtomResultReceiver;
 using aidl::android::os::IStatsd;
 using aidl::android::util::StatsEventParcel;
 using ::ndk::SharedRefBase;
+
+namespace flags = com::android::os::statsd::flags;
 
 struct AStatsEventList {
     std::vector<AStatsEvent*> data;
@@ -121,8 +124,6 @@ class StatsPullAtomCallbackInternal : public BnPullAtomCallback {
         // Convert stats_events into StatsEventParcels.
         std::vector<StatsEventParcel> parcels;
 
-        // Resolves fuzz build failure in b/161575591.
-#if defined(__ANDROID_APEX__) || defined(LIB_STATS_PULL_TESTS_FLAG)
         for (int i = 0; i < statsEventList.data.size(); i++) {
             size_t size;
             uint8_t* buffer = AStatsEvent_getBuffer(statsEventList.data[i], &size);
@@ -133,7 +134,6 @@ class StatsPullAtomCallbackInternal : public BnPullAtomCallback {
             p.buffer.assign(buffer, buffer + size);
             parcels.push_back(std::move(p));
         }
-#endif
 
         Status status = resultReceiver->pullFinished(atomTag, success, parcels);
         if (!status.isOk()) {
@@ -187,7 +187,22 @@ public:
         std::lock_guard<std::mutex> lock(mStatsdMutex);
         if (!mStatsd) {
             // Fetch statsd
-            ::ndk::SpAIBinder binder(AServiceManager_getService("stats"));
+
+            ::ndk::SpAIBinder binder;
+            // below ifs cannot be combined into single statement due to the way how
+            // macro __builtin_available is handler by compiler:
+            // - it should be used explicitly & independently to guard the corresponding API call
+            // once use_wait_for_service_api flag will be finalized, external if/else pair will be
+            // removed
+            if (flags::use_wait_for_service_api()) {
+                if (__builtin_available(android __ANDROID_API_S__, *)) {
+                    binder.set(AServiceManager_waitForService("stats"));
+                } else {
+                    binder.set(AServiceManager_getService("stats"));
+                }
+            } else {
+                binder.set(AServiceManager_getService("stats"));
+            }
             mStatsd = IStatsd::fromBinder(binder);
             if (mStatsd) {
                 AIBinder_linkToDeath(binder.get(), mDeathRecipient.get(), this);

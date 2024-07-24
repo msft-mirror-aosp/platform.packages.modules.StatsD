@@ -15,8 +15,11 @@
  */
 
 #include "stats_event.h"
+
 #include <gtest/gtest.h>
 #include <utils/SystemClock.h>
+
+#include "sdk_guard_util.h"
 
 // Keep in sync with stats_event.c. Consider moving to separate header file to avoid duplication.
 /* ERRORS */
@@ -277,7 +280,7 @@ TEST(StatsEventTest, TestNullByteArrays) {
     AStatsEvent_release(event);
 }
 
-TEST(StatsEventTest, TestAllArrays) {
+TEST_GUARDED(StatsEventTest, TestAllArrays, __ANDROID_API_T__) {
     uint32_t atomId = 100;
 
     uint8_t numElements = 3;
@@ -427,7 +430,7 @@ TEST(StatsEventTest, TestFieldAnnotations) {
     AStatsEvent_release(event);
 }
 
-TEST(StatsEventTest, TestArrayFieldAnnotations) {
+TEST_GUARDED(StatsEventTest, TestArrayFieldAnnotations, __ANDROID_API_T__) {
     uint32_t atomId = 100;
 
     // array annotation info
@@ -531,6 +534,50 @@ TEST(StatsEventTest, TestPushOverflowError) {
     AStatsEvent_write(event);
 
     uint32_t errors = AStatsEvent_getErrors(event);
+    EXPECT_EQ(errors & ERROR_OVERFLOW, ERROR_OVERFLOW);
+
+    AStatsEvent_release(event);
+}
+
+TEST(StatsEventTest, TestHeapBufferOverflowError) {
+    const std::string testString(4039, 'A');
+    const std::string testString2(47135, 'B');
+
+    AStatsEvent* event = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(event, 100);
+
+    AStatsEvent_writeString(event, testString.c_str());
+    size_t bufferSize = 0;
+    AStatsEvent_getBuffer(event, &bufferSize);
+    EXPECT_EQ(bufferSize, 4060);
+    uint32_t errors = AStatsEvent_getErrors(event);
+    EXPECT_EQ(errors, 0);
+
+    // expand the buffer and fill with data up to the very last byte
+    AStatsEvent_writeString(event, testString2.c_str());
+    bufferSize = 0;
+    AStatsEvent_getBuffer(event, &bufferSize);
+    EXPECT_EQ(bufferSize, 50 * 1024);
+
+    errors = AStatsEvent_getErrors(event);
+    EXPECT_EQ(errors, 0);
+
+    // this write is no-op due to buffer reached its max capacity
+    // should set the overflow flag
+    AStatsEvent_writeString(event, testString2.c_str());
+    bufferSize = 0;
+    AStatsEvent_getBuffer(event, &bufferSize);
+    EXPECT_EQ(bufferSize, 50 * 1024);
+
+    errors = AStatsEvent_getErrors(event);
+    EXPECT_EQ(errors & ERROR_OVERFLOW, ERROR_OVERFLOW);
+
+    // here should be crash
+    AStatsEvent_addBoolAnnotation(event, 1, false);
+
+    AStatsEvent_write(event);
+
+    errors = AStatsEvent_getErrors(event);
     EXPECT_EQ(errors & ERROR_OVERFLOW, ERROR_OVERFLOW);
 
     AStatsEvent_release(event);
@@ -651,7 +698,7 @@ TEST(StatsEventTest, TestAttributionChainTooLongError) {
     EXPECT_EQ(errors & ERROR_ATTRIBUTION_CHAIN_TOO_LONG, ERROR_ATTRIBUTION_CHAIN_TOO_LONG);
 }
 
-TEST(StatsEventTest, TestListTooLongError) {
+TEST_GUARDED(StatsEventTest, TestListTooLongError, __ANDROID_API_T__) {
     uint32_t atomId = 100;
     uint8_t numElements = 128;
     int32_t int32Array[128] = {1};

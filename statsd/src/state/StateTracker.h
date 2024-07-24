@@ -16,12 +16,13 @@
 #pragma once
 
 #include <utils/RefBase.h>
+
+#include <set>
+#include <unordered_map>
+
 #include "HashableDimensionKey.h"
 #include "logd/LogEvent.h"
-
 #include "state/StateListener.h"
-
-#include <unordered_map>
 
 namespace android {
 namespace os {
@@ -37,6 +38,8 @@ public:
     // Checks if a state change has occurred by getting the state value from
     // the log event and comparing the old and new states.
     void onLogEvent(const LogEvent& event);
+
+    void onLogEventLost(DataCorruptedReason reason);
 
     // Adds new listeners to set of StateListeners. If a listener is already
     // registered, it is ignored.

@@ -47,6 +47,7 @@ public:
             const ConfigKey& key, const CountMetric& countMetric, int conditionIndex,
             const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
             const uint64_t protoHash, int64_t timeBaseNs, int64_t startTimeNs,
+            const wp<ConfigMetadataProvider> configMetadataProvider,
             const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap = {},
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
@@ -100,6 +101,9 @@ private:
 
     void onActiveStateChangedLocked(const int64_t eventTimeNs, const bool isActive) override;
 
+    size_t computeBucketSizeLocked(const bool isFullBucket, const MetricDimensionKey& dimKey,
+                                   const bool isFirstBucket) const override;
+
     optional<InvalidConfigReason> onConfigUpdatedLocked(
             const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
@@ -115,6 +119,9 @@ private:
             std::unordered_map<int, std::vector<int>>& activationAtomTrackerToMetricMap,
             std::unordered_map<int, std::vector<int>>& deactivationAtomTrackerToMetricMap,
             std::vector<int>& metricsWithActivation) override;
+
+    DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
+                                                       LostAtomType atomType) const override;
 
     std::unordered_map<MetricDimensionKey, std::vector<CountBucket>> mPastBuckets;
 

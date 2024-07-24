@@ -14,6 +14,7 @@
 
 package {
     default_applicable_licenses: ["Android-Apache-2.0"],
+    default_team: "trendy_team_android_telemetry_client_infra",
 }
 
 java_test_host {
@@ -29,6 +30,7 @@ java_test_host {
         "cts",
         "general-tests",
         "mts-statsd",
+        "mcts-statsd",
     ],
 
     libs: [
@@ -42,11 +44,11 @@ java_test_host {
     static_libs: [
         "core_cts_test_resources",
         "perfetto_config-full",
+        "cts-statsd-atom-host-test-utils",
     ],
     data: [
         "**/*.pbtxt",
         ":CtsStatsdApp",
         ":StatsdAtomStormApp",
-        ":StatsdAtomStormApp2",
     ],
 }

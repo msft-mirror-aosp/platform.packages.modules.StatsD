@@ -327,9 +327,16 @@ private:
     /* Tells LogEventFilter about atom ids to parse */
     void updateLogEventFilterLocked() const;
 
-    void writeDataCorruptedReasons(ProtoOutputStream& proto);
-
     bool validateAppBreadcrumbEvent(const LogEvent& event) const;
+
+    /**
+     * Notifies metrics only when new queue overflow happens since previous request
+     * Performs QueueOverflowAtomsStatsMap tracking via managing stats local copy
+     * The assumption is that QueueOverflowAtomsStatsMap is collected over time, and that
+     * none of atom id counters have disappeared (which is StatsdStats logic until it explicitly
+     * reset, which should not be happen during statsd service lifetime)
+     */
+    void processQueueOverflowStatsLocked();
 
     // Function used to send a broadcast so that receiver for the config key can call getData
     // to retrieve the stored data.
@@ -368,6 +375,9 @@ private:
 
     bool mPrintAllLogs = false;
 
+    StatsdStats::QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
+
+    friend class GuardedDataCorruptionTestTestStateLostPropagation;
     friend class StatsLogProcessorTestRestricted;
     FRIEND_TEST(StatsLogProcessorTest, TestOutOfOrderLogs);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitByteSize);
@@ -485,14 +495,18 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
 
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
 
-    FRIEND_TEST(StatsServiceStatsdInitTest, StatsServiceStatsdInitTest);
+    FRIEND_TEST(StatsServiceConfigTest, StatsServiceStatsdInitTest);
 
     FRIEND_TEST(StringReplaceE2eTest, TestPulledDimension);
     FRIEND_TEST(StringReplaceE2eTest, TestPulledWhat);
     FRIEND_TEST(StringReplaceE2eTest, TestMultipleMatchersForAtom);
+
+    FRIEND_TEST(DataCorruptionTest, TestStateLostFromQueueOverflowPropagation);
 };
 
 }  // namespace statsd

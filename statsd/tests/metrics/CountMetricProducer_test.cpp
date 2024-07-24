@@ -75,8 +75,10 @@ TEST(CountMetricProducerTest, TestFirstBucket) {
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
 
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, 5, 600 * NS_PER_SEC + NS_PER_SEC / 2);
+                                      wizard, protoHash, 5, 600 * NS_PER_SEC + NS_PER_SEC / 2,
+                                      provider);
     EXPECT_EQ(600500000000, countProducer.mCurrentBucketStartTimeNs);
     EXPECT_EQ(10, countProducer.mCurrentBucketNum);
     EXPECT_EQ(660000000005, countProducer.getCurrentBucketEndTimeNs());
@@ -94,9 +96,10 @@ TEST(CountMetricProducerTest, TestNonDimensionalEvents) {
     metric.set_bucket(ONE_MINUTE);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, bucketStartTimeNs,
+                                      provider);
 
     // 2 events in bucket 1.
     LogEvent event1(/*uid=*/0, /*pid=*/0);
@@ -158,8 +161,9 @@ TEST(CountMetricProducerTest, TestEventsWithNonSlicedCondition) {
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
 
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
-                                      protoHash, bucketStartTimeNs, bucketStartTimeNs);
+                                      protoHash, bucketStartTimeNs, bucketStartTimeNs, provider);
     assertConditionTimer(countProducer.mConditionTimer, false, 0, 0);
 
     countProducer.onConditionChanged(true, bucketStartTimeNs);
@@ -229,9 +233,10 @@ TEST(CountMetricProducerTest, TestEventsWithSlicedCondition) {
 
     EXPECT_CALL(*wizard, query(_, key2, _)).WillOnce(Return(ConditionState::kTrue));
 
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, 0 /*condition tracker index*/,
                                       {ConditionState::kUnknown}, wizard, protoHash,
-                                      bucketStartTimeNs, bucketStartTimeNs);
+                                      bucketStartTimeNs, bucketStartTimeNs, provider);
 
     countProducer.onMatchedLogEvent(1 /*log matcher index*/, event1);
     countProducer.flushIfNeededLocked(bucketStartTimeNs + 1);
@@ -268,9 +273,9 @@ TEST_P(CountMetricProducerTest_PartialBucket, TestSplitInCurrentBucket) {
     alert.set_trigger_if_sum_gt(2);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, -1 /* no condition */, {}, wizard,
-                                      protoHash, bucketStartTimeNs, bucketStartTimeNs);
+                                      protoHash, bucketStartTimeNs, bucketStartTimeNs, provider);
 
     sp<AnomalyTracker> anomalyTracker =
             countProducer.addAnomalyTracker(alert, alarmMonitor, UPDATE_NEW, bucketStartTimeNs);
@@ -337,9 +342,9 @@ TEST_P(CountMetricProducerTest_PartialBucket, TestSplitInNextBucket) {
     metric.set_split_bucket_for_app_upgrade(true);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, -1 /* no condition */, {}, wizard,
-                                      protoHash, bucketStartTimeNs, bucketStartTimeNs);
+                                      protoHash, bucketStartTimeNs, bucketStartTimeNs, provider);
 
     // Bucket is flushed yet.
     LogEvent event1(/*uid=*/0, /*pid=*/0);
@@ -399,8 +404,9 @@ TEST(CountMetricProducerTest, TestSplitOnAppUpgradeDisabled) {
     alert.set_trigger_if_sum_gt(2);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, -1 /* no condition */, {}, wizard,
-                                      protoHash, bucketStartTimeNs, bucketStartTimeNs);
+                                      protoHash, bucketStartTimeNs, bucketStartTimeNs, provider);
 
     sp<AnomalyTracker> anomalyTracker =
             countProducer.addAnomalyTracker(alert, alarmMonitor, UPDATE_NEW, bucketStartTimeNs);
@@ -467,9 +473,10 @@ TEST(CountMetricProducerTest, TestAnomalyDetectionUnSliced) {
     metric.set_bucket(ONE_MINUTE);
 
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, -1 /*-1 meaning no condition*/, {},
-                                      wizard, protoHash, bucketStartTimeNs, bucketStartTimeNs);
+                                      wizard, protoHash, bucketStartTimeNs, bucketStartTimeNs,
+                                      provider);
 
     sp<AnomalyTracker> anomalyTracker =
             countProducer.addAnomalyTracker(alert, alarmMonitor, UPDATE_NEW, bucketStartTimeNs);
@@ -531,14 +538,148 @@ TEST(CountMetricProducerTest, TestOneWeekTimeUnit) {
     int64_t oneDayNs = 24 * 60 * 60 * 1e9;
     int64_t fiveWeeksNs = 5 * 7 * oneDayNs;
 
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     CountMetricProducer countProducer(kConfigKey, metric, -1 /* meaning no condition */, {}, wizard,
-                                      protoHash, oneDayNs, fiveWeeksNs);
+                                      protoHash, oneDayNs, fiveWeeksNs, provider);
 
     int64_t fiveWeeksOneDayNs = fiveWeeksNs + oneDayNs;
 
     EXPECT_EQ(fiveWeeksNs, countProducer.mCurrentBucketStartTimeNs);
     EXPECT_EQ(4, countProducer.mCurrentBucketNum);
     EXPECT_EQ(fiveWeeksOneDayNs, countProducer.getCurrentBucketEndTimeNs());
+}
+
+TEST(CountMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
+    const int64_t bucketStartTimeNs = 10000000000;
+    const int tagId = 1;
+    const int conditionId = 10;
+
+    CountMetric metric;
+    metric.set_id(1);
+    metric.set_bucket(ONE_MINUTE);
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    CountMetricProducer countProducer(kConfigKey, metric, 0 /*condition index*/,
+                                      {ConditionState::kUnknown}, wizard, protoHash,
+                                      bucketStartTimeNs, bucketStartTimeNs, provider);
+
+    countProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        countProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    countProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        countProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW));
+    }
+
+    countProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kWhat);
+    countProducer.onMatchedLogEventLost(tagId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kWhat);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        countProducer.onDumpReport(bucketStartTimeNs + 250, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
+TEST(CountMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
+    const int64_t bucketStartTimeNs = 10000000000;
+    const int conditionId = 10;
+
+    CountMetric metric;
+    metric.set_id(1);
+    metric.set_bucket(ONE_MINUTE);
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    CountMetricProducer countProducer(kConfigKey, metric, 0 /*condition index*/,
+                                      {ConditionState::kUnknown}, wizard, protoHash,
+                                      bucketStartTimeNs, bucketStartTimeNs, provider);
+
+    countProducer.onMatchedLogEventLost(conditionId, DATA_CORRUPTED_SOCKET_LOSS,
+                                        MetricProducer::LostAtomType::kCondition);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        countProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    countProducer.onMatchedLogEventLost(conditionId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW,
+                                        MetricProducer::LostAtomType::kCondition);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        countProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(),
+                    ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
+TEST(CountMetricProducerTest, TestCorruptedDataReason_StateLoss) {
+    const int64_t bucketStartTimeNs = 10000000000;
+    const int stateAtomId = 10;
+
+    CountMetric metric;
+    metric.set_id(1);
+    metric.set_bucket(ONE_MINUTE);
+
+    sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    CountMetricProducer countProducer(kConfigKey, metric, 0 /*condition index*/,
+                                      {ConditionState::kUnknown}, wizard, protoHash,
+                                      bucketStartTimeNs, bucketStartTimeNs, provider);
+
+    countProducer.onStateEventLost(stateAtomId, DATA_CORRUPTED_SOCKET_LOSS);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        countProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    // validation that data corruption signal remains accurate after another dump
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        countProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
+                                   true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
 }
 
 }  // namespace statsd

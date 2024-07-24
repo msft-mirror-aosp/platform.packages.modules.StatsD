@@ -26,6 +26,7 @@
 #include "FieldValue.h"
 #include "HashableDimensionKey.h"
 #include "guardrail/StatsdStats.h"
+#include "metrics/NumericValue.h"
 #include "metrics/parsing_utils/metrics_manager_util.h"
 #include "stats_log_util.h"
 #include "stats_util.h"
@@ -54,6 +55,8 @@ const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
+const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 19;
 // for *MetricDataWrapper
 const int FIELD_ID_DATA = 1;
 const int FIELD_ID_SKIPPED = 2;
@@ -76,12 +79,14 @@ ValueMetricProducer<AggregatedValue, DimExtras>::ValueMetricProducer(
         const PullOptions& pullOptions, const BucketOptions& bucketOptions,
         const WhatOptions& whatOptions, const ConditionOptions& conditionOptions,
         const StateOptions& stateOptions, const ActivationOptions& activationOptions,
-        const GuardrailOptions& guardrailOptions)
+        const GuardrailOptions& guardrailOptions,
+        const wp<ConfigMetadataProvider> configMetadataProvider)
     : MetricProducer(metricId, key, bucketOptions.timeBaseNs, conditionOptions.conditionIndex,
                      conditionOptions.initialConditionCache, conditionOptions.conditionWizard,
                      protoHash, activationOptions.eventActivationMap,
                      activationOptions.eventDeactivationMap, stateOptions.slicedStateAtoms,
-                     stateOptions.stateGroupMap, bucketOptions.splitBucketForAppUpgrade),
+                     stateOptions.stateGroupMap, bucketOptions.splitBucketForAppUpgrade,
+                     configMetadataProvider),
       mWhatMatcherIndex(whatOptions.whatMatcherIndex),
       mEventMatcherWizard(whatOptions.matcherWizard),
       mPullerManager(pullOptions.pullerManager),
@@ -155,6 +160,7 @@ ValueMetricProducer<AggregatedValue, DimExtras>::~ValueMetricProducer() {
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onStatsdInitCompleted(
         const int64_t eventTimeNs) {
+    ATRACE_CALL();
     lock_guard<mutex> lock(mMutex);
 
     if (isPulled() && mCondition == ConditionState::kTrue && mIsActive) {
@@ -222,10 +228,35 @@ ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
 }
 
 template <typename AggregatedValue, typename DimExtras>
+size_t ValueMetricProducer<AggregatedValue, DimExtras>::computeValueBucketSizeLocked(
+        const bool isFullBucket, const MetricDimensionKey& dimKey, const bool isFirstBucket,
+        const PastBucket<AggregatedValue>& bucket) const {
+    size_t bucketSize =
+            MetricProducer::computeBucketSizeLocked(isFullBucket, dimKey, isFirstBucket);
+
+    for (const auto& value : bucket.aggregates) {
+        bucketSize += getAggregatedValueSize(value);
+    }
+
+    // ConditionTrueNanos
+    if (mConditionTrackerIndex >= 0 || !mSlicedStateAtoms.empty()) {
+        bucketSize += sizeof(int64_t);
+    }
+
+    // ConditionCorrectionNanos
+    if (getDumpProtoFields().conditionCorrectionNsFieldId.has_value() && isPulled() &&
+        mConditionCorrectionThresholdNs &&
+        (abs(bucket.mConditionCorrectionNs) >= mConditionCorrectionThresholdNs)) {
+        bucketSize += sizeof(int64_t);
+    }
+    return bucketSize;
+}
+
+template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onStateChanged(
         int64_t eventTimeNs, int32_t atomId, const HashableDimensionKey& primaryKey,
         const FieldValue& oldState, const FieldValue& newState) {
-    // TODO(b/189353769): Acquire lock.
+    std::lock_guard<std::mutex> lock(mMutex);
     VLOG("ValueMetricProducer %lld onStateChanged time %lld, State %d, key %s, %d -> %d",
          (long long)mMetricId, (long long)eventTimeNs, atomId, primaryKey.toString().c_str(),
          oldState.mValue.int_value, newState.mValue.int_value);
@@ -280,6 +311,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::dropDataLocked(const int64
     // so the data is still valid.
     flushIfNeededLocked(dropTimeNs);
     clearPastBucketsLocked(dropTimeNs);
+    resetDataCorruptionFlagsLocked();
 }
 
 template <typename AggregatedValue, typename DimExtras>
@@ -287,6 +319,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::clearPastBucketsLocked(
         const int64_t dumpTimeNs) {
     mPastBuckets.clear();
     mSkippedBuckets.clear();
+    resetDataCorruptionFlagsLocked();
+    mTotalDataSize = 0;
 }
 
 template <typename AggregatedValue, typename DimExtras>
@@ -320,9 +354,21 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
 
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
+
+    // Data corrupted reason
+    writeDataCorruptedReasons(*protoOutput, FIELD_ID_DATA_CORRUPTED_REASON,
+                              mDataCorruptedDueToQueueOverflow != DataCorruptionSeverity::kNone,
+                              mDataCorruptedDueToSocketLoss != DataCorruptionSeverity::kNone);
+
     if (mPastBuckets.empty() && mSkippedBuckets.empty()) {
+        if (eraseData) {
+            resetDataCorruptionFlagsLocked();
+        }
         return;
     }
+
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
 
     if (StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId)) {
         protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT, true);
@@ -441,6 +487,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
     if (eraseData) {
         mPastBuckets.clear();
         mSkippedBuckets.clear();
+        resetDataCorruptionFlagsLocked();
+        mTotalDataSize = 0;
     }
 }
 
@@ -816,6 +864,9 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
             }
 
             auto& bucketList = mPastBuckets[metricDimensionKey];
+            const bool isFirstBucket = bucketList.empty();
+            mTotalDataSize += computeValueBucketSizeLocked(
+                    eventTimeNs >= fullBucketEndTimeNs, metricDimensionKey, isFirstBucket, bucket);
             bucketList.push_back(std::move(bucket));
         }
         if (!bucketHasData) {
@@ -827,6 +878,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::closeCurrentBucket(
         mCurrentSkippedBucket.bucketStartTimeNs = mCurrentBucketStartTimeNs;
         mCurrentSkippedBucket.bucketEndTimeNs = bucketEndTimeNs;
         mSkippedBuckets.push_back(mCurrentSkippedBucket);
+        mTotalDataSize += computeSkippedBucketSizeLocked(mCurrentSkippedBucket);
     }
 
     // This means that the current bucket was not flushed before a forced bucket split.
@@ -891,7 +943,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::initNextSlicedBucket(
 }
 
 // Explicit template instantiations
-template class ValueMetricProducer<Value, vector<optional<Value>>>;
+template class ValueMetricProducer<NumericValue, vector<NumericValue>>;
 template class ValueMetricProducer<unique_ptr<KllQuantile>, Empty>;
 
 }  // namespace statsd

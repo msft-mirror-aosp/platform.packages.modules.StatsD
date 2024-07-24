@@ -53,6 +53,8 @@ const int FIELD_ID_BUCKET_SIZE = 10;
 const int FIELD_ID_DIMENSION_PATH_IN_WHAT = 11;
 const int FIELD_ID_IS_ACTIVE = 14;
 const int FIELD_ID_DIMENSION_GUARDRAIL_HIT = 17;
+const int FIELD_ID_ESTIMATED_MEMORY_BYTES = 18;
+const int FIELD_ID_DATA_CORRUPTED_REASON = 19;
 // for DurationMetricDataWrapper
 const int FIELD_ID_DATA = 1;
 // for DurationMetricData
@@ -73,13 +75,14 @@ DurationMetricProducer::DurationMetricProducer(
         const int startIndex, const int stopIndex, const int stopAllIndex, const bool nesting,
         const sp<ConditionWizard>& wizard, const uint64_t protoHash,
         const FieldMatcher& internalDimensions, const int64_t timeBaseNs, const int64_t startTimeNs,
+        const wp<ConfigMetadataProvider> configMetadataProvider,
         const unordered_map<int, shared_ptr<Activation>>& eventActivationMap,
         const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap,
         const vector<int>& slicedStateAtoms,
         const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
-                     stateGroupMap, getAppUpgradeBucketSplit(metric)),
+                     stateGroupMap, getAppUpgradeBucketSplit(metric), configMetadataProvider),
       mAggregationType(metric.aggregation_type()),
       mStartIndex(startIndex),
       mStopIndex(stopIndex),
@@ -318,6 +321,7 @@ void DurationMetricProducer::onStateChanged(const int64_t eventTimeNs, const int
                                             const HashableDimensionKey& primaryKey,
                                             const FieldValue& oldState,
                                             const FieldValue& newState) {
+    std::lock_guard<std::mutex> lock(mMutex);
     // Check if this metric has a StateMap. If so, map the new state value to
     // the correct state group id.
     FieldValue newStateCopy = newState;
@@ -498,10 +502,12 @@ void DurationMetricProducer::dropDataLocked(const int64_t dropTimeNs) {
     flushIfNeededLocked(dropTimeNs);
     StatsdStats::getInstance().noteBucketDropped(mMetricId);
     mPastBuckets.clear();
+    resetDataCorruptionFlagsLocked();
 }
 
 void DurationMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
     flushIfNeededLocked(dumpTimeNs);
+    resetDataCorruptionFlagsLocked();
     mPastBuckets.clear();
 }
 
@@ -517,10 +523,21 @@ void DurationMetricProducer::onDumpReportLocked(
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
 
+    // Data corrupted reason
+    writeDataCorruptedReasons(*protoOutput, FIELD_ID_DATA_CORRUPTED_REASON,
+                              mDataCorruptedDueToQueueOverflow != DataCorruptionSeverity::kNone,
+                              mDataCorruptedDueToSocketLoss != DataCorruptionSeverity::kNone);
+
     if (mPastBuckets.empty()) {
         VLOG(" Duration metric, empty return");
+        if (erase_data) {
+            resetDataCorruptionFlagsLocked();
+        }
         return;
     }
+
+    protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_MEMORY_BYTES,
+                       (long long)byteSizeLocked());
 
     if (StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId)) {
         protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_DIMENSION_GUARDRAIL_HIT, true);
@@ -600,6 +617,7 @@ void DurationMetricProducer::onDumpReportLocked(
     protoOutput->end(protoToken);
     if (erase_data) {
         mPastBuckets.clear();
+        resetDataCorruptionFlagsLocked();
     }
 }
 
@@ -841,13 +859,61 @@ void DurationMetricProducer::handleMatchedLogEventValuesLocked(const size_t matc
                      eventTimeNs, values);
 }
 
+// Estimate for the size of a DurationBucket.
+size_t DurationMetricProducer::computeBucketSizeLocked(const bool isFullBucket,
+                                                       const MetricDimensionKey& dimKey,
+                                                       const bool isFirstBucket) const {
+    size_t bucketSize =
+            MetricProducer::computeBucketSizeLocked(isFullBucket, dimKey, isFirstBucket);
+
+    // Duration Value
+    bucketSize += sizeof(int64_t);
+
+    // ConditionTrueNanos
+    if (mConditionTrackerIndex >= 0 && mSlicedStateAtoms.empty() && !mConditionSliced) {
+        bucketSize += sizeof(int64_t);
+    }
+
+    return bucketSize;
+}
+
 size_t DurationMetricProducer::byteSizeLocked() const {
     size_t totalSize = 0;
+    sp<ConfigMetadataProvider> configMetadataProvider = getConfigMetadataProvider();
+    if (configMetadataProvider != nullptr && configMetadataProvider->useV2SoftMemoryCalculation()) {
+        bool hasHitDimensionGuardrail =
+                StatsdStats::getInstance().hasHitDimensionGuardrail(mMetricId);
+        totalSize += computeOverheadSizeLocked(!mPastBuckets.empty(), hasHitDimensionGuardrail);
+        for (const auto& pair : mPastBuckets) {
+            bool isFirstBucket = true;
+            for (const auto& bucket : pair.second) {
+                bool isFullBucket = bucket.mBucketEndNs - bucket.mBucketStartNs >= mBucketSizeNs;
+                totalSize +=
+                        computeBucketSizeLocked(isFullBucket, /*dimKey=*/pair.first, isFirstBucket);
+                isFirstBucket = false;
+            }
+        }
+        return totalSize;
+    }
     for (const auto& pair : mPastBuckets) {
         totalSize += pair.second.size() * kBucketSize;
     }
     return totalSize;
 }
+
+MetricProducer::DataCorruptionSeverity DurationMetricProducer::determineCorruptionSeverity(
+        int32_t /*atomId*/, DataCorruptedReason /*reason*/, LostAtomType atomType) const {
+    switch (atomType) {
+        case LostAtomType::kWhat:
+            // in case of loss stop/start/stopall event the error will be propagated
+            // to next bucket
+            return DataCorruptionSeverity::kUnrecoverable;
+        case LostAtomType::kCondition:
+        case LostAtomType::kState:
+            return DataCorruptionSeverity::kUnrecoverable;
+    };
+    return DataCorruptionSeverity::kNone;
+};
 
 }  // namespace statsd
 }  // namespace os

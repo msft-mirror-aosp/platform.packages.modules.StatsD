@@ -37,7 +37,9 @@ void StateTracker::onLogEvent(const LogEvent& event) {
 
     FieldValue newState;
     if (!getStateFieldValueFromLogEvent(event, &newState)) {
-        ALOGE("StateTracker error extracting state from log event. Missing exclusive state field.");
+        ALOGE("StateTracker error extracting state from log event %d. "
+              "Missing exclusive state field.",
+              event.GetTagId());
         clearStateForPrimaryKey(eventTimeNs, primaryKey);
         return;
     }
@@ -60,6 +62,17 @@ void StateTracker::onLogEvent(const LogEvent& event) {
 
     const bool nested = newState.mAnnotations.isNested();
     updateStateForPrimaryKey(eventTimeNs, primaryKey, newState, nested, mStateMap[primaryKey]);
+}
+
+void StateTracker::onLogEventLost(DataCorruptedReason reason) {
+    // notify listeners about lost state event
+
+    for (const auto& l : mListeners) {
+        auto sl = l.promote();
+        if (sl != nullptr) {
+            sl->onStateEventLost(mField.getTag(), reason);
+        }
+    }
 }
 
 void StateTracker::registerListener(const wp<StateListener>& listener) {
@@ -176,7 +189,6 @@ void StateTracker::notifyListeners(const int64_t eventTimeNs,
 bool getStateFieldValueFromLogEvent(const LogEvent& event, FieldValue* output) {
     const std::optional<size_t>& exclusiveStateFieldIndex = event.getExclusiveStateFieldIndex();
     if (!exclusiveStateFieldIndex) {
-        ALOGE("error extracting state from log event. Missing exclusive state field.");
         return false;
     }
 

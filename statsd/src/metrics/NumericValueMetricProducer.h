@@ -21,14 +21,15 @@
 #include <optional>
 
 #include "ValueMetricProducer.h"
+#include "metrics/NumericValue.h"
+#include "src/stats_util.h"
 
 namespace android {
 namespace os {
 namespace statsd {
 
-// TODO(b/185796344): don't use Value from FieldValue.
-using ValueBases = std::vector<std::optional<Value>>;
-class NumericValueMetricProducer : public ValueMetricProducer<Value, ValueBases> {
+using Bases = std::vector<NumericValue>;
+class NumericValueMetricProducer : public ValueMetricProducer<NumericValue, Bases> {
 public:
     NumericValueMetricProducer(const ConfigKey& key, const ValueMetric& valueMetric,
                                const uint64_t protoHash, const PullOptions& pullOptions,
@@ -36,7 +37,8 @@ public:
                                const ConditionOptions& conditionOptions,
                                const StateOptions& stateOptions,
                                const ActivationOptions& activationOptions,
-                               const GuardrailOptions& guardrailOptions);
+                               const GuardrailOptions& guardrailOptions,
+                               const wp<ConfigMetadataProvider> configMetadataProvider);
 
     // Process data pulled on bucket boundary.
     void onDataPulled(const std::vector<std::shared_ptr<LogEvent>>& allData, PullResult pullResult,
@@ -80,7 +82,7 @@ private:
                                           const ConditionState newCondition,
                                           const int64_t eventTimeNs) override;
 
-    inline std::string aggregatedValueToString(const Value& value) const override {
+    inline std::string aggregatedValueToString(const NumericValue& value) const override {
         return value.toString();
     }
 
@@ -104,12 +106,12 @@ private:
     void closeCurrentBucket(const int64_t eventTimeNs,
                             const int64_t nextBucketStartTimeNs) override;
 
-    PastBucket<Value> buildPartialBucket(int64_t bucketEndTime,
-                                         std::vector<Interval>& intervals) override;
+    PastBucket<NumericValue> buildPartialBucket(int64_t bucketEndTime,
+                                                std::vector<Interval>& intervals) override;
 
     bool valuePassesThreshold(const Interval& interval) const;
 
-    Value getFinalValue(const Interval& interval) const;
+    NumericValue getFinalValue(const Interval& interval) const;
 
     void initNextSlicedBucket(int64_t nextBucketStartTimeNs) override;
 
@@ -129,25 +131,48 @@ private:
 
     bool aggregateFields(const int64_t eventTimeNs, const MetricDimensionKey& eventKey,
                          const LogEvent& event, std::vector<Interval>& intervals,
-                         ValueBases& bases) override;
+                         Bases& bases) override;
 
     void pullAndMatchEventsLocked(const int64_t timestampNs) override;
 
     DumpProtoFields getDumpProtoFields() const override;
 
-    void writePastBucketAggregateToProto(const int aggIndex, const Value& value,
+    void writePastBucketAggregateToProto(const int aggIndex, const NumericValue& value,
                                          const int sampleSize,
                                          ProtoOutputStream* const protoOutput) const override;
 
     // Internal function to calculate the current used bytes.
     size_t byteSizeLocked() const override;
 
-    void combineValueFields(pair<LogEvent, vector<int>>& eventValues, const LogEvent& newEvent,
-                            const vector<int>& newValueIndices) const;
+    void combineValueFields(pair<LogEvent, std::vector<int>>& eventValues, const LogEvent& newEvent,
+                            const std::vector<int>& newValueIndices) const;
+
+    ValueMetric::AggregationType getAggregationTypeLocked(int index) const {
+        return mAggregationTypes.size() == 1 ? mAggregationTypes[0] : mAggregationTypes[index];
+    }
+
+    // Should only be called if there is at least one HISTOGRAM in mAggregationTypes
+    const std::optional<const BinStarts>& getBinStarts(int valueFieldIndex) const;
+
+    size_t getAggregatedValueSize(const NumericValue& value) const override;
+
+    bool hasAvgAggregationType(const vector<ValueMetric::AggregationType> aggregationTypes) const {
+        for (const int aggType : aggregationTypes) {
+            if (aggType == ValueMetric_AggregationType_AVG) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
+                                                       LostAtomType atomType) const override;
+
+    void addValueToHistogram(const NumericValue& value, int aggIndex, HistogramValue& histValue);
 
     const bool mUseAbsoluteValueOnReset;
 
-    const ValueMetric::AggregationType mAggregationType;
+    const std::vector<ValueMetric::AggregationType> mAggregationTypes;
 
     const bool mIncludeSampleSize;
 
@@ -171,8 +196,13 @@ private:
 
     const int64_t mMaxPullDelayNs;
 
+    // Deduped value fields for matching.
+    const std::vector<Matcher> mDedupedFieldMatchers;
+
     // For anomaly detection.
     std::unordered_map<MetricDimensionKey, int64_t> mCurrentFullBucket;
+
+    const std::vector<std::optional<const BinStarts>> mBinStartsList;
 
     FRIEND_TEST(NumericValueMetricProducerTest, TestAnomalyDetection);
     FRIEND_TEST(NumericValueMetricProducerTest, TestBaseSetOnConditionChange);
@@ -232,6 +262,8 @@ private:
     FRIEND_TEST(NumericValueMetricProducerTest,
                 TestSlicedStateWithMultipleDimensionsMissingDataInPull);
     FRIEND_TEST(NumericValueMetricProducerTest, TestUploadThreshold);
+    FRIEND_TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPulled);
+    FRIEND_TEST(NumericValueMetricProducerTest, TestMultipleAggTypesPushed);
 
     FRIEND_TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenOneConditionFailed);
     FRIEND_TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenInitialPullFailed);
@@ -282,6 +314,9 @@ private:
     FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
 
     FRIEND_TEST(ConfigUpdateDimLimitTest, TestDimLimit);
+
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
 
     friend class NumericValueMetricProducerTestHelper;
 };

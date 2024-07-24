@@ -122,6 +122,9 @@ class GaugeMetricE2ePushedTest : public ::testing::Test {
     void TearDown() override {
         FlagProvider::getInstance().resetOverrides();
     }
+
+public:
+    void doTestRepeatedFieldsForPushedEvent();
 };
 
 TEST_F(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent) {
@@ -195,6 +198,7 @@ TEST_F(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent) {
         backfillAggregatedAtoms(&reports);
         ASSERT_EQ(1, reports.reports_size());
         ASSERT_EQ(1, reports.reports(0).metrics_size());
+        EXPECT_TRUE(reports.reports(0).metrics(0).has_estimated_data_bytes());
         StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;
         sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).gauge_metrics(),
                                         &gaugeMetrics);
@@ -319,7 +323,7 @@ TEST_F(GaugeMetricE2ePushedTest, TestMultipleFieldsForPushedEvent) {
     }
 }
 
-TEST_F(GaugeMetricE2ePushedTest, TestRepeatedFieldsForPushedEvent) {
+TEST_F_GUARDED(GaugeMetricE2ePushedTest, TestRepeatedFieldsForPushedEvent, __ANDROID_API_T__) {
     for (const auto& sampling_type :
          {GaugeMetric::FIRST_N_SAMPLES, GaugeMetric::RANDOM_ONE_SAMPLE}) {
         StatsdConfig config = CreateStatsdConfigForRepeatedFieldsPushedEvent(sampling_type);

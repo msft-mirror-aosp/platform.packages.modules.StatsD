@@ -19,6 +19,7 @@
 #include <private/android_filesystem_config.h>
 #include <stdio.h>
 
+#include <numeric>
 #include <set>
 #include <unordered_map>
 #include <vector>
@@ -34,6 +35,7 @@
 #include "src/state/StateManager.h"
 #include "src/statsd_config.pb.h"
 #include "tests/metrics/metrics_test_helper.h"
+#include "tests/metrics/parsing_utils/parsing_test_utils.h"
 #include "tests/statsd_test_util.h"
 
 using namespace testing;
@@ -51,45 +53,6 @@ namespace os {
 namespace statsd {
 
 namespace {
-const int kConfigId = 12345;
-const ConfigKey kConfigKey(0, kConfigId);
-const long timeBaseSec = 1000;
-const long kAlertId = 3;
-
-sp<UidMap> uidMap = new UidMap();
-sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-sp<AlarmMonitor> anomalyAlarmMonitor;
-sp<AlarmMonitor> periodicAlarmMonitor;
-unordered_map<int, vector<int>> allTagIdsToMatchersMap;
-vector<sp<AtomMatchingTracker>> allAtomMatchingTrackers;
-unordered_map<int64_t, int> atomMatchingTrackerMap;
-vector<sp<ConditionTracker>> allConditionTrackers;
-unordered_map<int64_t, int> conditionTrackerMap;
-vector<sp<MetricProducer>> allMetricProducers;
-unordered_map<int64_t, int> metricProducerMap;
-vector<sp<AnomalyTracker>> allAnomalyTrackers;
-unordered_map<int64_t, int> alertTrackerMap;
-vector<sp<AlarmTracker>> allAlarmTrackers;
-unordered_map<int, vector<int>> conditionToMetricMap;
-unordered_map<int, vector<int>> trackerToMetricMap;
-unordered_map<int, vector<int>> trackerToConditionMap;
-unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
-unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
-vector<int> metricsWithActivation;
-map<int64_t, uint64_t> stateProtoHashes;
-set<int64_t> noReportMetricIds;
-
-optional<InvalidConfigReason> initConfig(const StatsdConfig& config) {
-    // initStatsdConfig returns nullopt if config is valid
-    return initStatsdConfig(
-            kConfigKey, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-            timeBaseSec, timeBaseSec, allTagIdsToMatchersMap, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap, allMetricProducers,
-            metricProducerMap, allAnomalyTrackers, allAlarmTrackers, conditionToMetricMap,
-            trackerToMetricMap, trackerToConditionMap, activationAtomTrackerToMetricMap,
-            deactivationAtomTrackerToMetricMap, alertTrackerMap, metricsWithActivation,
-            stateProtoHashes, noReportMetricIds);
-}
 
 StatsdConfig buildCircleMatchers() {
     StatsdConfig config;
@@ -362,30 +325,7 @@ StatsdConfig buildConfigWithDifferentPredicates() {
     return config;
 }
 
-class MetricsManagerUtilTest : public ::testing::Test {
-public:
-    void SetUp() override {
-        allTagIdsToMatchersMap.clear();
-        allAtomMatchingTrackers.clear();
-        atomMatchingTrackerMap.clear();
-        allConditionTrackers.clear();
-        conditionTrackerMap.clear();
-        allMetricProducers.clear();
-        metricProducerMap.clear();
-        allAnomalyTrackers.clear();
-        allAlarmTrackers.clear();
-        conditionToMetricMap.clear();
-        trackerToMetricMap.clear();
-        trackerToConditionMap.clear();
-        activationAtomTrackerToMetricMap.clear();
-        deactivationAtomTrackerToMetricMap.clear();
-        alertTrackerMap.clear();
-        metricsWithActivation.clear();
-        stateProtoHashes.clear();
-        noReportMetricIds.clear();
-        StateManager::getInstance().clear();
-    }
-};
+using MetricsManagerUtilTest = InitConfigTest;
 
 struct DimLimitTestCase {
     int configLimit;
@@ -707,6 +647,79 @@ TEST_F(MetricsManagerUtilTest, TestPulledGaugeMetricWithSamplingPercentage) {
                                   StringToId("Gauge")));
 }
 
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(101);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbabilityZero) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(0);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricValidPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestPushedGaugeMetricWithPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("ScreenTurnedOn"),
+                                GaugeMetric::FIRST_N_SAMPLES,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY,
+                                  StringToId("Gauge")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricRandomOneSampleWithPullProbability) {
+    StatsdConfig config;
+    GaugeMetric* metric = config.add_gauge_metric();
+    *metric = createGaugeMetric(/*name=*/"Gauge", /*what=*/StringToId("SubsystemSleep"),
+                                GaugeMetric::RANDOM_ONE_SAMPLE,
+                                /*condition=*/nullopt, /*triggerEvent=*/nullopt);
+    metric->set_pull_probability(50);
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
+                      StringToId("Gauge")));
+}
+
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingIdOrWhat) {
     StatsdConfig config;
     int64_t metricId = 1;
@@ -730,6 +743,88 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricConditionlinkNoCondition) {
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
                                   StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHasBothSingleAndMultipleAggTypes) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->set_aggregation_type(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
+                      StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMoreAggTypesThanValueFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                                StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMoreValueFieldsThanAggTypes) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    // This only fails if the repeated aggregation field is used. If the single field is used,
+    // we will apply this aggregation type to all value fields.
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+    *metric->mutable_value_field() = CreateDimensions(
+            util::SUBSYSTEM_SLEEP_STATE, {3 /* count */, 4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(
+            initConfig(config),
+            InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                                StringToId("NumericValue")));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricDefaultAggTypeOutOfOrderFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    *metric->mutable_value_field() =
+            CreateDimensions(util::SUBSYSTEM_SLEEP_STATE, {4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMultipleAggTypesOutOfOrderFields) {
+    StatsdConfig config;
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+
+    ValueMetric* metric = config.add_value_metric();
+    *metric = createValueMetric(/*name=*/"NumericValue", /*what=*/CreateScreenTurnedOnAtomMatcher(),
+                                /*valueField=*/2, /*condition=*/nullopt, /*states=*/{});
+    metric->add_aggregation_types(ValueMetric::SUM);
+    metric->add_aggregation_types(ValueMetric::MIN);
+    metric->add_aggregation_types(ValueMetric::SUM);
+    *metric->mutable_value_field() = CreateDimensions(
+            util::SUBSYSTEM_SLEEP_STATE, {3 /* count */, 4 /* time_millis */, 3 /* count */});
+
+    EXPECT_EQ(initConfig(config), nullopt);
 }
 
 TEST_F(MetricsManagerUtilTest, TestKllMetricMissingIdOrWhat) {
@@ -1383,8 +1478,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerNoThreshold) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1406,8 +1503,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerMissingBuckets) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1430,8 +1529,10 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerGood) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
-    vector<sp<MetricProducer>> metricProducers({new CountMetricProducer(
-            kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard, 0x0123456789, 0, 0)});
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_NE(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -1455,10 +1556,11 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerDurationTooLong) {
     metric.set_aggregation_type(DurationMetric_AggregationType_SUM);
     FieldMatcher dimensions;
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
     vector<sp<MetricProducer>> metricProducers({new DurationMetricProducer(
             kConfigKey, metric, -1 /*no condition*/, {}, -1 /* what index not needed*/,
             1 /* start index */, 2 /* stop index */, 3 /* stop_all index */, false /*nesting*/,
-            wizard, 0x0123456789, dimensions, 0, 0)});
+            wizard, 0x0123456789, dimensions, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
     optional<InvalidConfigReason> invalidConfigReason;
     EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
@@ -2290,6 +2392,65 @@ TEST_F(MetricsManagerUtilTest, TestCombinationMatcherWithStringReplace) {
     EXPECT_EQ(actualInvalidConfigReason->reason,
               INVALID_CONFIG_REASON_MATCHER_COMBINATION_WITH_STRING_REPLACE);
     EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(222));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingHistogramBinConfigSingleAggType) {
+    StatsdConfig config = createHistogramStatsdConfig();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
+                      config.value_metric(0).id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingHistogramBinConfigMultipleAggTypes) {
+    StatsdConfig config = createHistogramStatsdConfig();
+    config.mutable_value_metric(0)->clear_aggregation_type();
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::HISTOGRAM);
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
+                      config.value_metric(0).id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricExtraHistogramBinConfig) {
+    StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
+    *config.mutable_value_metric(0)->add_histogram_bin_configs() =
+            createExplicitBinConfig(/* id */ 1, /* bins */ {5, 10, 20});
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
+                      config.value_metric(0).id()));
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramMultipleValueFields) {
+    StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramWithUploadThreshold) {
+    StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
+    config.mutable_value_metric(0)->mutable_threshold()->set_lt_float(1.0);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                  config.value_metric(0).id()));
+
+    clearData();
+    config.mutable_value_metric(0)->clear_aggregation_type();
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::HISTOGRAM);
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                  config.value_metric(0).id()));
 }
 
 }  // namespace statsd
