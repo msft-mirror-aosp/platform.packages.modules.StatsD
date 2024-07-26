@@ -2395,12 +2395,7 @@ TEST_F(MetricsManagerUtilTest, TestCombinationMatcherWithStringReplace) {
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingHistogramBinConfigSingleAggType) {
-    StatsdConfig config;
-    *config.add_atom_matcher() = CreateSimpleAtomMatcher("matcher", /* atomId */ 1);
-    *config.add_value_metric() =
-            createValueMetric("ValueMetric", config.atom_matcher(0), /* valueField */ 1,
-                              /* condition */ nullopt, /* states */ {});
-    config.mutable_value_metric(0)->set_aggregation_type(ValueMetric::HISTOGRAM);
+    StatsdConfig config = createHistogramStatsdConfig();
 
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(
@@ -2409,11 +2404,11 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingHistogramBinConfigSi
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingHistogramBinConfigMultipleAggTypes) {
-    StatsdConfig config;
-    *config.add_atom_matcher() = CreateSimpleAtomMatcher("matcher", /* atomId */ 1);
-    *config.add_value_metric() = createValueMetric(
-            "ValueMetric", config.atom_matcher(0), /* valueFields */ {1, 2},
-            {ValueMetric::SUM, ValueMetric::HISTOGRAM}, /* condition */ nullopt, /* states */ {});
+    StatsdConfig config = createHistogramStatsdConfig();
+    config.mutable_value_metric(0)->clear_aggregation_type();
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::HISTOGRAM);
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
 
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(
@@ -2422,14 +2417,9 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingHistogramBinConfigMu
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricExtraHistogramBinConfig) {
-    StatsdConfig config;
-    *config.add_atom_matcher() = CreateSimpleAtomMatcher("matcher", /* atomId */ 1);
-    *config.add_value_metric() =
-            createValueMetric("ValueMetric", config.atom_matcher(0), /* valueField */ 1,
-                              /* condition */ nullopt, /* states */ {});
-
+    StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
     *config.mutable_value_metric(0)->add_histogram_bin_configs() =
-            createExplicitBinConfig(/* id */ 1, /* bins */ {5});
+            createExplicitBinConfig(/* id */ 1, /* bins */ {5, 10, 20});
 
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(
@@ -2438,17 +2428,29 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricExtraHistogramBinConfig) {
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramMultipleValueFields) {
-    StatsdConfig config;
-    *config.add_atom_matcher() = CreateSimpleAtomMatcher("matcher", /* atomId */ 1);
-    *config.add_value_metric() =
-            createValueMetric("ValueMetric", config.atom_matcher(0), /* valueFields */ {1, 2},
-                              /* aggregationTypes */ {}, /* condition */ nullopt, /* states */ {});
-    config.mutable_value_metric(0)->set_aggregation_type(ValueMetric::HISTOGRAM);
-
-    *config.mutable_value_metric(0)->add_histogram_bin_configs() =
-            createExplicitBinConfig(/* id */ 1, /* bins */ {5, 10, 12});
+    StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
 
     EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramWithUploadThreshold) {
+    StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
+    config.mutable_value_metric(0)->mutable_threshold()->set_lt_float(1.0);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                  config.value_metric(0).id()));
+
+    clearData();
+    config.mutable_value_metric(0)->clear_aggregation_type();
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::HISTOGRAM);
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                  config.value_metric(0).id()));
 }
 
 }  // namespace statsd

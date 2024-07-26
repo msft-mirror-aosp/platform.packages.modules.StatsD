@@ -7439,7 +7439,8 @@ TEST(NumericValueMetricProducerTest, TestSubsetDimensions) {
     ValidateValueBucket(data.bucket_info(1), bucket2StartTimeNs, dumpReportTimeNs, {26}, -1, 0);
 }
 
-TEST(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions) {
+TEST_GUARDED(NumericValueMetricProducerTest, TestRepeatedValueFieldAndDimensions,
+             __ANDROID_API_T__) {
     ValueMetric metric = NumericValueMetricProducerTestHelper::createMetricWithRepeatedValueField();
     metric.mutable_dimensions_in_what()->set_field(tagId);
     FieldMatcher* valueChild = metric.mutable_dimensions_in_what()->add_child();
@@ -8077,6 +8078,41 @@ TEST(NumericValueMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
         StatsLogReport report = outputStreamToProto(&output);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
+    }
+}
+
+TEST(NumericValueMetricProducerTest, TestCorruptedDataReason_StateLoss) {
+    const int stateAtomId = 10;
+
+    ValueMetric metric = NumericValueMetricProducerTestHelper::createMetricWithCondition();
+
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
+    sp<NumericValueMetricProducer> valueProducer =
+            NumericValueMetricProducerTestHelper::createValueProducerWithCondition(
+                    pullerManager, metric, ConditionState::kFalse);
+
+    valueProducer->onStateEventLost(stateAtomId, DATA_CORRUPTED_SOCKET_LOSS);
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
+                                    true /*erase data*/, FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
+    }
+
+    // validation that data corruption signal remains accurate after another dump
+    {
+        // Check dump report content.
+        ProtoOutputStream output;
+        valueProducer->onDumpReport(bucketStartTimeNs + 150,
+                                    true /*include current partial bucket*/, true /*erase data*/,
+                                    FAST, nullptr, &output);
+
+        StatsLogReport report = outputStreamToProto(&output);
+        EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 }
 
