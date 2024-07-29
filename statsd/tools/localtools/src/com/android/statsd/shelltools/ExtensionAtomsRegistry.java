@@ -19,6 +19,8 @@ import com.android.internal.os.ExperimentIdsProto;
 import com.android.internal.os.UidDataProto;
 import com.android.os.ActiveConfigProto;
 import com.android.os.ShellConfig;
+import com.android.os.accessibility.AccessibilityExtensionAtoms;
+import com.android.os.adpf.AdpfExtensionAtoms;
 import com.android.os.adservices.AdservicesExtensionAtoms;
 import com.android.os.art.ArtExtensionAtoms;
 import com.android.os.art.BackgroundDexoptExtensionAtoms;
@@ -65,6 +67,8 @@ import android.os.statsd.media.MediaCodecExtensionAtoms;
 import com.android.os.credentials.CredentialsExtensionAtoms;
 import com.android.os.sdksandbox.SdksandboxExtensionAtoms;
 import com.android.os.apex.ApexExtensionAtoms;
+import com.android.os.photopicker.PhotopickerExtensionAtoms;
+import com.android.os.uprobestats.UprobestatsExtensionAtoms;
 
 import com.google.protobuf.ExtensionRegistry;
 
@@ -144,5 +148,9 @@ public class ExtensionAtomsRegistry {
         ApexExtensionAtoms.registerAllExtensions(extensionRegistry);
         BackgroundDexoptExtensionAtoms.registerAllExtensions(extensionRegistry);
         OdrefreshExtensionAtoms.registerAllExtensions(extensionRegistry);
+        AdpfExtensionAtoms.registerAllExtensions(extensionRegistry);
+        PhotopickerExtensionAtoms.registerAllExtensions(extensionRegistry);
+        UprobestatsExtensionAtoms.registerAllExtensions(extensionRegistry);
+        AccessibilityExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
