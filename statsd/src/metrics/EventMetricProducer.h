@@ -94,7 +94,7 @@ private:
 
     void dumpStatesLocked(int out, bool verbose) const override{};
 
-    DataCorruptionSeverity determineCorruptionSeverity(DataCorruptedReason reason,
+    DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
                                                        LostAtomType atomType) const override;
 
     // Maps the field/value pairs of an atom to a list of timestamps used to deduplicate atoms.
