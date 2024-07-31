@@ -385,15 +385,14 @@ private:
     int notifyMetricsAboutLostAtom(int32_t lostAtomId, DataCorruptedReason reason);
 
     /**
-     * @brief Updates MetricProducers with DataCorruptionReason due to queue overflow atom loss
-     *        Notifies metrics only when new queue overflow happens since previous dumpReport
-     *        Perform QueueOverflowAtomsStats tracking via managing stats local copy
-     *        The assumption is that QueueOverflowAtomsStats collected over time, and that none of
-     *        atom id counters have disappeared (which is StatsdStats logic until it explicitly
-     *        reset, which should not be happen during statsd service lifetime)
-     * @param overflowStats
+     * Updates MetricProducers with DataCorruptionReason due to queue overflow atom loss
+     * Notifies metrics only when new queue overflow happens since previous request
+     * Performs QueueOverflowAtomsStatsMap tracking via managing stats local copy
+     * The assumption is that QueueOverflowAtomsStatsMap collected over time, and that none
+     * of atom id counters have disappeared (which is StatsdStats logic until it explicitly reset,
+     * which should not be happen during statsd service lifetime)
      */
-    void processQueueOverflowStats(const StatsdStats::QueueOverflowAtomsStats& overflowStats);
+    void processQueueOverflowStats();
 
     // The memory limit in bytes for storing metrics
     size_t mMaxMetricsBytes;
@@ -405,9 +404,9 @@ private:
     // this map is not cleared during onDumpReport to preserve tracking information and avoid
     // repeated metric notification about past queue overflow lost event
     // This map represent local copy of StatsdStats::mPushedAtomDropsStats with relevant atoms ids
-    typedef std::unordered_map<int32_t, int32_t> QueueOverflowAtomsStatsMap;
-    QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
+    StatsdStats::QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
 
+    friend class SocketLossInfoTest;
     FRIEND_TEST(MetricConditionLinkE2eTest, TestMultiplePredicatesAndLinks);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByFirstUid);
     FRIEND_TEST(AttributionE2eTest, TestAttributionMatchAndSliceByChain);
@@ -484,11 +483,10 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
 
-    FRIEND_TEST(SocketLossInfoTest, PropagationTest);
-
     FRIEND_TEST(DataCorruptionQueueOverflowTest, TestNotifyOnlyInterestedMetrics);
     FRIEND_TEST(DataCorruptionQueueOverflowTest, TestNotifyInterestedMetricsWithNewLoss);
     FRIEND_TEST(DataCorruptionQueueOverflowTest, TestDoNotNotifyInterestedMetricsIfNoUpdate);
+    FRIEND_TEST(DataCorruptionQueueOverflowTest, TestDoNotNotifyNewInterestedMetricsIfNoUpdate);
 };
 
 }  // namespace statsd
