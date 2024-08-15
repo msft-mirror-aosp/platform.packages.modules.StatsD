@@ -125,8 +125,7 @@ Status checkSid(const char* expectedSid) {
     }
 
 StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> queue,
-                           const std::shared_ptr<LogEventFilter>& logEventFilter,
-                           int initEventDelaySecs)
+                           const std::shared_ptr<LogEventFilter>& logEventFilter)
     : mUidMap(uidMap),
       mAnomalyAlarmMonitor(new AlarmMonitor(
               MIN_DIFF_TO_UPDATE_REGISTERED_ALARM_SECS,
@@ -155,10 +154,9 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
       mEventQueue(std::move(queue)),
       mLogEventFilter(logEventFilter),
       mBootCompleteTrigger({kBootCompleteTag, kUidMapReceivedTag, kAllPullersRegisteredTag},
-                           [this]() { onStatsdInitCompleted(); }),
+                           [this]() { onStatsdInitCompleted(kStatsdInitDelaySecs); }),
       mStatsCompanionServiceDeathRecipient(
-              AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)),
-      mInitEventDelaySecs(initEventDelaySecs) {
+              AIBinder_DeathRecipient_new(StatsService::statsCompanionServiceDied)) {
     mPullerManager = new StatsPullerManager();
     StatsPuller::SetUidMap(mUidMap);
     mConfigManager = new ConfigManager();
@@ -228,13 +226,6 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
     mConfigManager->AddListener(mProcessor);
 
     init_system_properties();
-
-    if (mEventQueue != nullptr) {
-        mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
-        if (mLogsReaderThread) {
-            pthread_setname_np(mLogsReaderThread->native_handle(), "statsd.reader");
-        }
-    }
 }
 
 StatsService::~StatsService() {
@@ -242,7 +233,9 @@ StatsService::~StatsService() {
     onStatsdInitCompletedHandlerTermination();
     if (mEventQueue != nullptr) {
         stopReadingLogs();
-        mLogsReaderThread->join();
+        if (mLogsReaderThread != nullptr) {
+            mLogsReaderThread->join();
+        }
     }
 }
 
@@ -1065,9 +1058,7 @@ Status StatsService::systemRunning() {
     ATRACE_CALL();
     ENFORCE_UID(AID_SYSTEM);
 
-    // When system_server is up and running, schedule the dropbox task to run.
-    VLOG("StatsService::systemRunning");
-    sayHiToStatsCompanion();
+    // TODO(b/345534941): This function is never called. It should be deleted.
     return Status::ok();
 }
 
@@ -1085,7 +1076,8 @@ Status StatsService::informDeviceShutdown() {
 }
 
 void StatsService::sayHiToStatsCompanion() {
-    shared_ptr<IStatsCompanionService> statsCompanion = getStatsCompanionService();
+    shared_ptr<IStatsCompanionService> statsCompanion =
+            getStatsCompanionService(/*blocking=*/false);
     if (statsCompanion != nullptr) {
         VLOG("Telling statsCompanion that statsd is ready");
         statsCompanion->statsdReady();
@@ -1099,7 +1091,7 @@ Status StatsService::statsCompanionReady() {
     ENFORCE_UID(AID_SYSTEM);
 
     VLOG("StatsService::statsCompanionReady was called");
-    shared_ptr<IStatsCompanionService> statsCompanion = getStatsCompanionService();
+    shared_ptr<IStatsCompanionService> statsCompanion = getStatsCompanionService(/*blocking*/ true);
     if (statsCompanion == nullptr) {
         return exception(EX_NULL_POINTER,
                          "StatsCompanion unavailable despite it contacting statsd.");
@@ -1122,23 +1114,21 @@ Status StatsService::bootCompleted() {
     return Status::ok();
 }
 
-void StatsService::onStatsdInitCompleted() {
-    if (mInitEventDelaySecs > 0) {
-        // The hard-coded delay is determined based on perfetto traces evaluation
-        // for statsd during the boot.
-        // The delay is required to properly process event storm which often has place
-        // after device boot.
-        // This function is called from a dedicated thread without holding locks, so sleeping is ok.
-        // See MultiConditionTrigger::markComplete() executorThread for details
-        // For more details see http://b/277958338
+void StatsService::onStatsdInitCompleted(int initEventDelaySecs) {
+    // The hard-coded delay is determined based on perfetto traces evaluation
+    // for statsd during the boot.
+    // The delay is required to properly process event storm which often has place
+    // after device boot.
+    // This function is called from a dedicated thread without holding locks, so sleeping is ok.
+    // See MultiConditionTrigger::markComplete() executorThread for details
+    // For more details see http://b/277958338
 
-        std::unique_lock<std::mutex> lk(mStatsdInitCompletedHandlerTerminationFlagMutex);
-        if (mStatsdInitCompletedHandlerTerminationFlag.wait_for(
-                    lk, std::chrono::seconds(mInitEventDelaySecs),
-                    [this] { return mStatsdInitCompletedHandlerTerminationRequested; })) {
-            VLOG("StatsService::onStatsdInitCompleted() Early termination is requested");
-            return;
-        }
+    std::unique_lock<std::mutex> lk(mStatsdInitCompletedHandlerTerminationFlagMutex);
+    if (mStatsdInitCompletedHandlerTerminationFlag.wait_for(
+                lk, std::chrono::seconds(initEventDelaySecs),
+                [this] { return mStatsdInitCompletedHandlerTerminationRequested; })) {
+        VLOG("StatsService::onStatsdInitCompleted() Early termination is requested");
+        return;
     }
 
     mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs());
@@ -1152,6 +1142,14 @@ void StatsService::Startup() {
     mProcessor->LoadActiveConfigsFromDisk();
     mProcessor->LoadMetadataFromDisk(wallClockNs, elapsedRealtimeNs);
     mProcessor->EnforceDataTtls(wallClockNs, elapsedRealtimeNs);
+
+    // Now that configs are initialized, begin reading logs
+    if (mEventQueue != nullptr) {
+        mLogsReaderThread = std::make_unique<std::thread>([this] { readLogs(); });
+        if (mLogsReaderThread) {
+            pthread_setname_np(mLogsReaderThread->native_handle(), "statsd.reader");
+        }
+    }
 }
 
 void StatsService::Terminate() {
