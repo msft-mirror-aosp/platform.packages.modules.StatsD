@@ -89,6 +89,7 @@ public:
         const FieldMatcher& dimensionsInWhat;
         const vector<Matcher>& fieldMatchers;
         const vector<ValueMetric::AggregationType> aggregationTypes;
+        const std::vector<std::optional<const BinStarts>> binStartsList;
     };
 
     struct ConditionOptions {

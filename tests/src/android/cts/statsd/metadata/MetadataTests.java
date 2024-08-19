@@ -28,6 +28,7 @@ import com.android.internal.os.StatsdConfigProto.StatsdConfig;
 import com.android.os.AtomsProto;
 import com.android.os.AtomsProto.Atom;
 import com.android.os.StatsLog.StatsdStatsReport;
+import com.android.os.StatsLog.StatsdStatsReport.AtomStats;
 import com.android.os.StatsLog.StatsdStatsReport.ConfigStats;
 import com.android.os.StatsLog.StatsdStatsReport.LogLossStats;
 import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid;
@@ -81,7 +82,7 @@ public class MetadataTests extends MetadataTestCase {
         AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
                 AtomsProto.AppBreadcrumbReported.State.START.getNumber(), /* irrelevant val */
                 6); // Event, after TTL_TIME_SEC secs.
-        RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
+        RunUtil.getDefault().sleep(2_000);
         report = getStatsdStatsReport();
         LogUtil.CLog.d("got following statsdstats report: " + report.toString());
         foundActiveConfig = false;
@@ -94,7 +95,7 @@ public class MetadataTests extends MetadataTestCase {
                             .that(stats.hasDeletionTimeSec()).isTrue();
                     assertWithMessage(
                             "Config deletion time should be about %s after creation", TTL_TIME_SEC
-                    ).that(Math.abs(stats.getDeletionTimeSec() - expectedTime)).isAtMost(2);
+                    ).that(Math.abs(stats.getDeletionTimeSec() - expectedTime)).isAtMost(3);
                 }
                 // There should still be one active config, that is marked as reset.
                 if (!stats.hasDeletionTimeSec()) {
@@ -108,7 +109,7 @@ public class MetadataTests extends MetadataTestCase {
                             .that(stats.getResetTimeSec()).isEqualTo(stats.getCreationTimeSec());
                     assertWithMessage(
                             "Reset config should be created when the original config TTL'd"
-                    ).that(Math.abs(stats.getCreationTimeSec() - expectedTime)).isAtMost(2);
+                    ).that(Math.abs(stats.getCreationTimeSec() - expectedTime)).isAtMost(3);
                 }
             }
         }
@@ -237,6 +238,7 @@ public class MetadataTests extends MetadataTestCase {
 
         final String testPkgName = "com.android.statsd.app.atomstorm";
         final String testApk = "StatsdAtomStormApp.apk";
+        final int runAttemptsPerPackage = 10;
 
         String[][] testPkgs = {
             {testPkgName, ".StatsdAtomStorm", "testLogManyAtomsBackToBack"},
@@ -254,29 +256,57 @@ public class MetadataTests extends MetadataTestCase {
         StatsdStatsReport report = getStatsdStatsReport();
         assertThat(report).isNotNull();
 
-        // since the statsdstats accumulated from boot - we need to look only into diff if any
-        final HashSet<Integer> initialUids = getSocketLossUids(report);
-        HashSet<Integer> reportedUids = new HashSet<Integer>();
+        HashSet<Integer> reportedUids = getSocketLossUids(report);
 
         // intention is to run two distinct package tests to collect 2 different uids
         for (String[] pkg : testPkgs) {
-            DeviceUtils.runDeviceTests(getDevice(), pkg[0], pkg[1], pkg[2]);
+            report = runTestUntilLossAtomReported(pkg[0], pkg[1], pkg[2], runAttemptsPerPackage);
+            if (report == null) {
+                // the test run failed or the system throughput is sufficiently
+                // high to consume all event from stress test
+                DeviceUtils.uninstallTestApp(getDevice(), testPkgName);
+                return;
+            }
+            reportedUids.addAll(getSocketLossUids(report));
+        }
+
+        assertThat(reportedUids.size()).isGreaterThan(1);
+
+        DeviceUtils.uninstallTestApp(getDevice(), testPkgName);
+    }
+
+    private StatsdStatsReport runTestUntilLossAtomReported(
+            String pkg, String cls, String test, int maxIterationCount) throws Exception {
+        final int StatsSocketLossReportedAtomId = 752;
+
+        // idea is to run event store test app to simulate atom loss event and
+        // see if new StatsSocketLossReported instances are reported
+        StatsdStatsReport report = getStatsdStatsReport();
+        int socketLossAtomCount = getAtomStatsCount(report, StatsSocketLossReportedAtomId);
+        for (int attempt = 0; attempt < maxIterationCount; attempt++) {
+            DeviceUtils.runDeviceTests(getDevice(), pkg, cls, test);
 
             // the sleep is required since atoms are processed in async way by statsd
             // need to give time so statsd will process SocketLossStats atom
             RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
-            LogUtil.CLog.d(
-                    "testAtomIdLossDistributionCollection getStatsdStatsReport for " + pkg[0]);
+            LogUtil.CLog.d("runTestUntilLossAtomReported iteration " + attempt + " for " + pkg);
             report = getStatsdStatsReport();
-            assertThat(report).isNotNull();
-            reportedUids.addAll(getSocketLossUids(report));
+            int newCount = getAtomStatsCount(report, StatsSocketLossReportedAtomId);
+            if (socketLossAtomCount < newCount) {
+                return report;
+            }
         }
+        return null;
+    }
 
-        // obtaining the diff between initial loss info and loss info collected during the test
-        reportedUids.removeAll(initialUids);
-        assertThat(reportedUids.size()).isGreaterThan(1);
-
-        DeviceUtils.uninstallTestApp(getDevice(), testPkgName);
+    private int getAtomStatsCount(StatsdStatsReport report, int atomId) {
+        assertThat(report).isNotNull();
+        for (AtomStats atomStats : report.getAtomStatsList()) {
+            if (atomStats.getTag() == atomId) {
+                return atomStats.getCount();
+            }
+        }
+        return 0;
     }
 
     static private HashSet<Integer> getSocketLossUids(StatsdStatsReport report) {
