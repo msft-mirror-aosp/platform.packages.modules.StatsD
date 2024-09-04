@@ -27,6 +27,7 @@ import com.android.os.art.BackgroundDexoptExtensionAtoms;
 import com.android.os.art.OdrefreshExtensionAtoms;
 import com.android.os.automotive.caruilib.AutomotiveCaruilibAtoms;
 import com.android.os.bluetooth.BluetoothExtensionAtoms;
+import com.android.os.broadcasts.BroadcastsExtensionAtoms;
 import com.android.os.devicelogs.DeviceLogsAtoms;
 import com.android.os.dnd.DndAtoms;
 import com.android.os.dnd.DndExtensionAtoms;
@@ -152,5 +153,6 @@ public class ExtensionAtomsRegistry {
         PhotopickerExtensionAtoms.registerAllExtensions(extensionRegistry);
         UprobestatsExtensionAtoms.registerAllExtensions(extensionRegistry);
         AccessibilityExtensionAtoms.registerAllExtensions(extensionRegistry);
+        BroadcastsExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
