@@ -776,7 +776,7 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     int64_t lastReportTimeNs = it->second->getLastReportTimeNs();
     int64_t lastReportWallClockNs = it->second->getLastReportWallClockNs();
 
-    std::set<string> str_set;
+    std::set<string> strSet;
 
     int64_t totalSize = it->second->byteSize();
 
@@ -784,17 +784,14 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     // First, fill in ConfigMetricsReport using current data on memory, which
     // starts from filling in StatsLogReport's.
     it->second->onDumpReport(dumpTimeStampNs, wallClockNs, include_current_partial_bucket,
-                             erase_data, dumpLatency, &str_set, &tempProto);
+                             erase_data, dumpLatency, &strSet, &tempProto);
 
     // Fill in UidMap if there is at least one metric to report.
     // This skips the uid map if it's an empty config.
     if (it->second->getNumMetrics() > 0) {
         uint64_t uidMapToken = tempProto.start(FIELD_TYPE_MESSAGE | FIELD_ID_UID_MAP);
-        mUidMap->appendUidMap(dumpTimeStampNs, key, it->second->versionStringsInReport(),
-                              it->second->installerInReport(),
-                              it->second->packageCertificateHashSizeBytes(),
-                              it->second->omitSystemUidsInUidMap(),
-                              it->second->hashStringInReport() ? &str_set : nullptr, &tempProto);
+        mUidMap->appendUidMap(dumpTimeStampNs, key, it->second->getUidMapOptions(),
+                              it->second->hashStringInReport() ? &strSet : nullptr, &tempProto);
         tempProto.end(uidMapToken);
     }
 
@@ -810,7 +807,7 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     // Dump report reason
     tempProto.write(FIELD_TYPE_INT32 | FIELD_ID_DUMP_REPORT_REASON, dumpReportReason);
 
-    for (const auto& str : str_set) {
+    for (const auto& str : strSet) {
         tempProto.write(FIELD_TYPE_STRING | FIELD_COUNT_REPEATED | FIELD_ID_STRINGS, str);
     }
 

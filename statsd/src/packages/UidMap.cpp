@@ -325,22 +325,17 @@ size_t UidMap::getBytesUsed() const {
     return mBytesUsed;
 }
 
-void UidMap::writeUidMapSnapshot(int64_t timestamp, bool includeVersionStrings,
-                                 bool includeInstaller, const uint8_t truncatedCertificateHashSize,
-                                 bool omitSystemUids, const std::set<int32_t>& interestingUids,
+void UidMap::writeUidMapSnapshot(int64_t timestamp, const UidMapOptions& options,
+                                 const std::set<int32_t>& interestingUids,
                                  map<string, int>* installerIndices, std::set<string>* str_set,
                                  ProtoOutputStream* proto) const {
     lock_guard<mutex> lock(mMutex);
 
-    writeUidMapSnapshotLocked(timestamp, includeVersionStrings, includeInstaller,
-                              truncatedCertificateHashSize, omitSystemUids, interestingUids,
-                              installerIndices, str_set, proto);
+    writeUidMapSnapshotLocked(timestamp, options, interestingUids, installerIndices, str_set,
+                              proto);
 }
 
-void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool includeVersionStrings,
-                                       const bool includeInstaller,
-                                       const uint8_t truncatedCertificateHashSize,
-                                       const bool omitSystemUids,
+void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const UidMapOptions& options,
                                        const std::set<int32_t>& interestingUids,
                                        map<string, int>* installerIndices,
                                        std::set<string>* str_set, ProtoOutputStream* proto) const {
@@ -349,7 +344,7 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
     proto->write(FIELD_TYPE_INT64 | FIELD_ID_SNAPSHOT_TIMESTAMP, (long long)timestamp);
     for (const auto& [keyPair, appData] : mMap) {
         const auto& [uid, packageName] = keyPair;
-        if (omitUid(uid, omitSystemUids) ||
+        if (omitUid(uid, options.omitSystemUids) ||
             (!interestingUids.empty() && interestingUids.find(uid) == interestingUids.end())) {
             continue;
         }
@@ -357,7 +352,7 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
                                       FIELD_ID_SNAPSHOT_PACKAGE_INFO);
         // Get installer index.
         int installerIndex = -1;
-        if (includeInstaller && installerIndices != nullptr) {
+        if (options.includeInstaller && installerIndices != nullptr) {
             const auto& it = installerIndices->find(appData.installer);
             if (it == installerIndices->end()) {
                 // We have not encountered this installer yet; add it to installerIndices.
@@ -373,12 +368,12 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
             str_set->insert(packageName);
             proto->write(FIELD_TYPE_UINT64 | FIELD_ID_SNAPSHOT_PACKAGE_NAME_HASH,
                          (long long)Hash64(packageName));
-            if (includeVersionStrings) {
+            if (options.includeVersionStrings) {
                 str_set->insert(appData.versionString);
                 proto->write(FIELD_TYPE_UINT64 | FIELD_ID_SNAPSHOT_PACKAGE_VERSION_STRING_HASH,
                              (long long)Hash64(appData.versionString));
             }
-            if (includeInstaller) {
+            if (options.includeInstaller) {
                 str_set->insert(appData.installer);
                 if (installerIndex != -1) {
                     // Write installer index.
@@ -391,11 +386,11 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
             }
         } else {  // Strings not hashed in report
             proto->write(FIELD_TYPE_STRING | FIELD_ID_SNAPSHOT_PACKAGE_NAME, packageName);
-            if (includeVersionStrings) {
+            if (options.includeVersionStrings) {
                 proto->write(FIELD_TYPE_STRING | FIELD_ID_SNAPSHOT_PACKAGE_VERSION_STRING,
                              appData.versionString);
             }
-            if (includeInstaller) {
+            if (options.includeInstaller) {
                 if (installerIndex != -1) {
                     proto->write(FIELD_TYPE_UINT32 | FIELD_ID_SNAPSHOT_PACKAGE_INSTALLER_INDEX,
                                  installerIndex);
@@ -406,9 +401,10 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
             }
         }
 
-        const size_t dumpHashSize = truncatedCertificateHashSize <= appData.certificateHash.size()
-                                            ? truncatedCertificateHashSize
-                                            : appData.certificateHash.size();
+        const size_t dumpHashSize =
+                options.truncatedCertificateHashSize <= appData.certificateHash.size()
+                        ? options.truncatedCertificateHashSize
+                        : appData.certificateHash.size();
         if (dumpHashSize > 0) {
             proto->write(FIELD_TYPE_BYTES | FIELD_ID_SNAPSHOT_PACKAGE_TRUNCATED_CERTIFICATE_HASH,
                          appData.certificateHash.c_str(), dumpHashSize);
@@ -423,13 +419,12 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const bool inclu
 }
 
 void UidMap::appendUidMap(const int64_t timestamp, const ConfigKey& key,
-                          const bool includeVersionStrings, const bool includeInstaller,
-                          const uint8_t truncatedCertificateHashSize, const bool omitSystemUids,
-                          std::set<string>* str_set, ProtoOutputStream* proto) {
+                          const UidMapOptions& options, std::set<string>* str_set,
+                          ProtoOutputStream* proto) {
     lock_guard<mutex> lock(mMutex);  // Lock for updates
 
     for (const ChangeRecord& record : mChanges) {
-        if (omitUid(record.uid, omitSystemUids) ||
+        if (omitUid(record.uid, options.omitSystemUids) ||
             record.timestampNs <= mLastUpdatePerConfigKey[key]) {
             continue;
         }
@@ -442,7 +437,7 @@ void UidMap::appendUidMap(const int64_t timestamp, const ConfigKey& key,
             str_set->insert(record.package);
             proto->write(FIELD_TYPE_UINT64 | FIELD_ID_CHANGE_PACKAGE_HASH,
                          (long long)Hash64(record.package));
-            if (includeVersionStrings) {
+            if (options.includeVersionStrings) {
                 str_set->insert(record.versionString);
                 proto->write(FIELD_TYPE_UINT64 | FIELD_ID_CHANGE_NEW_VERSION_STRING_HASH,
                              (long long)Hash64(record.versionString));
@@ -452,7 +447,7 @@ void UidMap::appendUidMap(const int64_t timestamp, const ConfigKey& key,
             }
         } else {
             proto->write(FIELD_TYPE_STRING | FIELD_ID_CHANGE_PACKAGE, record.package);
-            if (includeVersionStrings) {
+            if (options.includeVersionStrings) {
                 proto->write(FIELD_TYPE_STRING | FIELD_ID_CHANGE_NEW_VERSION_STRING,
                              record.versionString);
                 proto->write(FIELD_TYPE_STRING | FIELD_ID_CHANGE_PREV_VERSION_STRING,
@@ -472,8 +467,7 @@ void UidMap::appendUidMap(const int64_t timestamp, const ConfigKey& key,
     // Write snapshot from current uid map state.
     uint64_t snapshotsToken =
             proto->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_SNAPSHOTS);
-    writeUidMapSnapshotLocked(timestamp, includeVersionStrings, includeInstaller,
-                              truncatedCertificateHashSize, omitSystemUids,
+    writeUidMapSnapshotLocked(timestamp, options,
                               std::set<int32_t>() /*empty uid set means including every uid*/,
                               &installerIndices, str_set, proto);
     proto->end(snapshotsToken);
@@ -484,7 +478,7 @@ void UidMap::appendUidMap(const int64_t timestamp, const ConfigKey& key,
         installers[index] = installer;
     }
 
-    if (includeInstaller) {
+    if (options.includeInstaller) {
         // Write installer list; either strings or hashes.
         for (const string& installerName : installers) {
             if (str_set == nullptr) {  // Strings not hashed

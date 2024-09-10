@@ -91,6 +91,11 @@ public:
 
     void dumpStates(int out, bool verbose);
 
+    inline UidMapOptions getUidMapOptions() const {
+        return {mVersionStringsInReport, mInstallerInReport, mPackageCertificateHashSizeBytes,
+                mOmitSystemUidsInUidMap};
+    }
+
     inline bool isInTtl(const int64_t timestampNs) const {
         return mTtlNs <= 0 || timestampNs < mTtlEndNs;
     };
@@ -98,18 +103,6 @@ public:
     inline bool hashStringInReport() const {
         return mHashStringsInReport;
     };
-
-    inline bool versionStringsInReport() const {
-        return mVersionStringsInReport;
-    };
-
-    inline bool installerInReport() const {
-        return mInstallerInReport;
-    };
-
-    inline uint8_t packageCertificateHashSizeBytes() const {
-        return mPackageCertificateHashSizeBytes;
-    }
 
     void refreshTtl(const int64_t currentTimestampNs) {
         if (mTtlNs > 0) {
@@ -191,10 +184,6 @@ public:
 
     inline size_t getTriggerGetDataBytes() const {
         return mTriggerGetDataBytes;
-    }
-
-    inline bool omitSystemUidsInUidMap() const {
-        return mOmitSystemUidsInUidMap;
     }
 
 private:
