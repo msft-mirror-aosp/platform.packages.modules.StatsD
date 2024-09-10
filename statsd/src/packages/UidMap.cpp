@@ -74,10 +74,18 @@ const int FIELD_ID_CHANGE_PREV_VERSION_STRING = 9;
 const int FIELD_ID_CHANGE_NEW_VERSION_STRING_HASH = 10;
 const int FIELD_ID_CHANGE_PREV_VERSION_STRING_HASH = 11;
 
-inline bool omitUid(int32_t uid, bool omitSystemUids) {
+bool omitUid(int32_t uid, const string& packageName, const UidMapOptions& options) {
+    // Always allow allowlisted packages
+    if (options.allowlistedPackages.contains(packageName)) {
+        return false;
+    }
     // If omitSystemUids is true, uids for which (uid % AID_USER_OFFSET) is in [0, AID_APP_START)
-    // should be excluded.
-    return omitSystemUids && uid >= 0 && uid % AID_USER_OFFSET < AID_APP_START;
+    // should be excluded. This takes precedence over if the uid is used or not.
+    if (options.omitSystemUids && uid >= 0 && uid % AID_USER_OFFSET < AID_APP_START) {
+        return true;
+    }
+    // If omitUnusedUids is true, omit the uid unless it is in the used set.
+    return options.omitUnusedUids && !options.usedUids.contains(uid);
 }
 
 }  // namespace
@@ -344,7 +352,7 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const UidMapOpti
     proto->write(FIELD_TYPE_INT64 | FIELD_ID_SNAPSHOT_TIMESTAMP, (long long)timestamp);
     for (const auto& [keyPair, appData] : mMap) {
         const auto& [uid, packageName] = keyPair;
-        if (omitUid(uid, options.omitSystemUids) ||
+        if (omitUid(uid, packageName, options) ||
             (!interestingUids.empty() && interestingUids.find(uid) == interestingUids.end())) {
             continue;
         }
@@ -424,7 +432,7 @@ void UidMap::appendUidMap(const int64_t timestamp, const ConfigKey& key,
     lock_guard<mutex> lock(mMutex);  // Lock for updates
 
     for (const ChangeRecord& record : mChanges) {
-        if (omitUid(record.uid, options.omitSystemUids) ||
+        if (omitUid(record.uid, record.package, options) ||
             record.timestampNs <= mLastUpdatePerConfigKey[key]) {
             continue;
         }

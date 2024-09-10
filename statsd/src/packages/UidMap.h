@@ -92,6 +92,9 @@ struct UidMapOptions {
     bool includeInstaller = false;
     uint8_t truncatedCertificateHashSize = 0;
     bool omitSystemUids = false;
+    bool omitUnusedUids = false;
+    set<int32_t> usedUids = {};
+    set<string> allowlistedPackages = {};
 };
 
 const unsigned int kBytesChangeRecord = sizeof(struct ChangeRecord);

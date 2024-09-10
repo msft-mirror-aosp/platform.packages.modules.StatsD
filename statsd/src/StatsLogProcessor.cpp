@@ -777,6 +777,7 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     int64_t lastReportWallClockNs = it->second->getLastReportWallClockNs();
 
     std::set<string> strSet;
+    std::set<int32_t> usedUids;
 
     int64_t totalSize = it->second->byteSize();
 
@@ -784,13 +785,15 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     // First, fill in ConfigMetricsReport using current data on memory, which
     // starts from filling in StatsLogReport's.
     it->second->onDumpReport(dumpTimeStampNs, wallClockNs, include_current_partial_bucket,
-                             erase_data, dumpLatency, &strSet, &tempProto);
+                             erase_data, dumpLatency, &strSet, usedUids, &tempProto);
 
     // Fill in UidMap if there is at least one metric to report.
     // This skips the uid map if it's an empty config.
     if (it->second->getNumMetrics() > 0) {
         uint64_t uidMapToken = tempProto.start(FIELD_TYPE_MESSAGE | FIELD_ID_UID_MAP);
-        mUidMap->appendUidMap(dumpTimeStampNs, key, it->second->getUidMapOptions(),
+        UidMapOptions uidMapOptions = it->second->getUidMapOptions();
+        uidMapOptions.usedUids = std::move(usedUids);
+        mUidMap->appendUidMap(dumpTimeStampNs, key, uidMapOptions,
                               it->second->hashStringInReport() ? &strSet : nullptr, &tempProto);
         tempProto.end(uidMapToken);
     }

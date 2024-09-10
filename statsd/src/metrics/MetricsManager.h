@@ -91,9 +91,14 @@ public:
 
     void dumpStates(int out, bool verbose);
 
+    // Does not set the used uids.
     inline UidMapOptions getUidMapOptions() const {
-        return {mVersionStringsInReport, mInstallerInReport, mPackageCertificateHashSizeBytes,
-                mOmitSystemUidsInUidMap};
+        return {.includeVersionStrings = mVersionStringsInReport,
+                .includeInstaller = mInstallerInReport,
+                .truncatedCertificateHashSize = mPackageCertificateHashSizeBytes,
+                .omitSystemUids = mOmitSystemUidsInUidMap,
+                .omitUnusedUids = mOmitUnusedUidsInUidMap,
+                .allowlistedPackages = mAllowlistedUidMapPackages};
     }
 
     inline bool isInTtl(const int64_t timestampNs) const {
@@ -129,6 +134,7 @@ public:
     virtual void onDumpReport(const int64_t dumpTimeNs, int64_t wallClockNs,
                               const bool include_current_partial_bucket, const bool erase_data,
                               const DumpLatency dumpLatency, std::set<string>* str_set,
+                              std::set<int32_t>& usedUids,
                               android::util::ProtoOutputStream* protoOutput);
 
     // Computes the total byte size of all metrics managed by a single config source.
@@ -246,6 +252,8 @@ private:
     bool mUseV2SoftMemoryCalculation;
 
     bool mOmitSystemUidsInUidMap;
+    bool mOmitUnusedUidsInUidMap;
+    set<string> mAllowlistedUidMapPackages;
 
     // All event tags that are interesting to config metrics matchers.
     std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;

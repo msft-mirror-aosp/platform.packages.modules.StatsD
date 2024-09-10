@@ -77,7 +77,8 @@ void getProtoData(const int64_t& rule_id, int64_t metricId, const MetricDimensio
     // optional DimensionsValue dimension_in_what = 2;
     uint64_t dimToken =
             headerProto.start(FIELD_TYPE_MESSAGE | FIELD_ID_METRIC_VALUE_DIMENSION_IN_WHAT);
-    writeDimensionToProto(dimensionKey.getDimensionKeyInWhat(), nullptr, &headerProto);
+    set<int32_t> usedUids;
+    writeDimensionToProto(dimensionKey.getDimensionKeyInWhat(), nullptr, usedUids, &headerProto);
     headerProto.end(dimToken);
 
     // deprecated field
@@ -105,7 +106,7 @@ void getProtoData(const int64_t& rule_id, int64_t metricId, const MetricDimensio
         UidMap::getInstance()->writeUidMapSnapshot(
                 getElapsedRealtimeNs(),
                 {true, true,
-                 /*trucnatedCertificateHashSize*/ 0, /*omitSystemUids*/ false},
+                 /*truncatedCertificateHashSize*/ 0, /*omitSystemUids*/ false},
                 uids, nullptr /*installerIndices*/, nullptr /*string set*/, &headerProto);
         headerProto.end(token);
     }
