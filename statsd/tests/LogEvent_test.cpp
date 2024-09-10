@@ -199,12 +199,14 @@ public:
     void doTestEmptyStringArray() __INTRODUCED_IN(__ANDROID_API_T__);
     void doTestArrayTooManyElements() __INTRODUCED_IN(__ANDROID_API_T__);
     void doTestEmptyArray() __INTRODUCED_IN(__ANDROID_API_T__);
+    void doTestEmptyArrayWithAnnotations() __INTRODUCED_IN(__ANDROID_API_T__);
     void doTestAnnotationIdIsUid_RepeatedIntAndOtherFields() __INTRODUCED_IN(__ANDROID_API_T__);
     void doTestAnnotationIdIsUid_RepeatedIntOneEntry() __INTRODUCED_IN(__ANDROID_API_T__);
     void doTestAnnotationIdIsUid_EmptyIntArray() __INTRODUCED_IN(__ANDROID_API_T__);
     void doTestAnnotationIdIsUid_BadRepeatedInt64() __INTRODUCED_IN(__ANDROID_API_T__);
     void doTestAnnotationIdIsUid_BadRepeatedString() __INTRODUCED_IN(__ANDROID_API_T__);
     void doTestUidAnnotationWithInt8MaxValues() __INTRODUCED_IN(__ANDROID_API_T__);
+    void doTestInvalidBufferParsing() __INTRODUCED_IN(__ANDROID_API_T__);
 };
 
 INSTANTIATE_TEST_SUITE_P(LogEventTestBufferParsing, LogEventTest, testing::Bool(),
@@ -714,6 +716,30 @@ TEST_P_GUARDED(LogEventTest, TestEmptyArray, __ANDROID_API_T__) {
     AStatsEvent_release(event);
 }
 
+TEST_P_GUARDED(LogEventTest, TestEmptyArrayWithAnnotations, __ANDROID_API_T__) {
+    int32_t int32Array[0] = {};
+
+    AStatsEvent* event = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(event, 100);
+    AStatsEvent_writeInt32Array(event, int32Array, 0);
+    AStatsEvent_addBoolAnnotation(event, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_build(event);
+
+    size_t size;
+    const uint8_t* buf = AStatsEvent_getBuffer(event, &size);
+
+    LogEvent logEvent(/*uid=*/1000, /*pid=*/1001);
+    EXPECT_TRUE(ParseBuffer(logEvent, buf, size));
+
+    EXPECT_EQ(100, logEvent.GetTagId());
+    EXPECT_EQ(1000, logEvent.GetUid());
+    EXPECT_EQ(1001, logEvent.GetPid());
+
+    ASSERT_EQ(logEvent.getValues().size(), 0);
+
+    AStatsEvent_release(event);
+}
+
 TEST_P(LogEventTest, TestAnnotationIdIsUid) {
     LogEvent event(/*uid=*/0, /*pid=*/0);
     EXPECT_TRUE(createFieldWithBoolAnnotationLogEvent(&event, INT32_TYPE,
@@ -1111,6 +1137,47 @@ TEST_P(LogEventTest, TestEmptyAttributionChainWithPrimaryFieldFirstUidAnnotation
     EXPECT_FALSE(ParseBuffer(logEvent, buf, size));
 
     AStatsEvent_release(event);
+}
+
+TEST_P_GUARDED(LogEventTest, TestInvalidBufferParsing, __ANDROID_API_T__) {
+    size_t emptyAtomBufferSize = 0;
+    {
+        // creating valid event to get valid buffer header size when no data fields
+        AStatsEvent* event = AStatsEvent_obtain();
+        AStatsEvent_setAtomId(event, 100);
+        AStatsEvent_build(event);
+        AStatsEvent_getBuffer(event, &emptyAtomBufferSize);
+        AStatsEvent_release(event);
+    }
+
+    uint8_t buffer[4096];
+    memset(buffer, 0, 4096);
+    {
+        // creating valid event to get valid buffer header with 1 array field and 1 annotation
+        AStatsEvent* event = AStatsEvent_obtain();
+        AStatsEvent_setAtomId(event, 100);
+        AStatsEvent_writeInt32Array(event, nullptr, 0);
+        AStatsEvent_addBoolAnnotation(event, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
+        EXPECT_EQ(AStatsEvent_getErrors(event), 0);
+        AStatsEvent_build(event);
+
+        const uint8_t* buf = AStatsEvent_getBuffer(event, nullptr);
+        memcpy(buffer, buf, emptyAtomBufferSize);
+        AStatsEvent_release(event);
+    }
+
+    size_t bufferPosWithAlteredData = emptyAtomBufferSize;
+
+    // adding extra data to test the logEvent parser logic
+
+    buffer[bufferPosWithAlteredData++] = 0x13;  // array with 1 annotation
+    buffer[bufferPosWithAlteredData++] = 0x00;  // size of array is 0
+    buffer[bufferPosWithAlteredData++] = 0x00;  // type of array is int32
+    buffer[bufferPosWithAlteredData++] = 0x01;  // annotation type is isUid
+    buffer[bufferPosWithAlteredData++] = 0x01;  // annotation value type is not bool
+
+    LogEvent logEvent(/*uid=*/1000, /*pid=*/1001);
+    EXPECT_FALSE(ParseBuffer(logEvent, buffer, bufferPosWithAlteredData));
 }
 
 // Setup for parameterized tests.
