@@ -19,8 +19,11 @@
 
 #include "histogram_parsing_utils.h"
 
+#include <google/protobuf/repeated_field.h>
+
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -28,6 +31,9 @@
 #include "src/statsd_config.pb.h"
 #include "stats_util.h"
 
+using google::protobuf::RepeatedPtrField;
+using std::nullopt;
+using std::optional;
 using std::pow;
 using std::variant;
 using std::vector;
@@ -81,9 +87,21 @@ BinStarts createExplicitBins(const BinStarts& configBins) {
 }
 }  // anonymous namespace
 
-ParseHistogramBinConfigsResult parseHistogramBinConfigs(const ValueMetric& metric) {
-    vector<BinStarts> binStartsList;
-    for (const HistogramBinConfig& binConfig : metric.histogram_bin_configs()) {
+ParseHistogramBinConfigsResult parseHistogramBinConfigs(
+        const ValueMetric& metric, const vector<ValueMetric::AggregationType>& aggregationTypes) {
+    if (metric.histogram_bin_configs_size() == 0) {
+        return {};
+    }
+    vector<optional<const BinStarts>> binStartsList;
+    binStartsList.reserve(aggregationTypes.size());
+    RepeatedPtrField<HistogramBinConfig>::const_iterator binConfigIt =
+            metric.histogram_bin_configs().cbegin();
+    for (const ValueMetric::AggregationType aggType : aggregationTypes) {
+        if (aggType != ValueMetric::HISTOGRAM) {
+            binStartsList.push_back(nullopt);
+            continue;
+        }
+        const HistogramBinConfig& binConfig = *binConfigIt;
         if (!binConfig.has_id()) {
             ALOGE("cannot find id in HistogramBinConfig");
             return InvalidConfigReason(
@@ -174,6 +192,10 @@ ParseHistogramBinConfigsResult parseHistogramBinConfigs(const ValueMetric& metri
 
                 break;
             }
+            case HistogramBinConfig::kClientAggregatedBins: {
+                binStartsList.push_back(nullopt);
+                break;
+            }
             default: {
                 ALOGE("Either generated or explicit binning strategy must be set");
                 return InvalidConfigReason(
@@ -182,6 +204,7 @@ ParseHistogramBinConfigsResult parseHistogramBinConfigs(const ValueMetric& metri
                 break;
             }
         }
+        binConfigIt++;
     }
     return binStartsList;
 }

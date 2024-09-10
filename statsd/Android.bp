@@ -97,6 +97,7 @@ cc_defaults {
         "src/metrics/EventMetricProducer.cpp",
         "src/metrics/RestrictedEventMetricProducer.cpp",
         "src/metrics/GaugeMetricProducer.cpp",
+        "src/metrics/HistogramValue.cpp",
         "src/metrics/KllMetricProducer.cpp",
         "src/metrics/MetricProducer.cpp",
         "src/metrics/MetricsManager.cpp",
@@ -159,6 +160,7 @@ cc_defaults {
     header_libs: [
         "libgtest_prod_headers",
     ],
+    min_sdk_version: "30",
 }
 
 genrule {
@@ -301,6 +303,9 @@ cc_defaults {
         "libgmock",
         "libstatslog_statsdtest",
     ],
+    header_libs: [
+        "libstatssocket_test_headers",
+    ],
     proto: {
         type: "lite",
         include_dirs: [
@@ -428,6 +433,7 @@ cc_test {
         "tests/e2e/RestrictedConfig_e2e_test.cpp",
         "tests/e2e/RestrictedEventMetric_e2e_test.cpp",
         "tests/e2e/StringReplace_e2e_test.cpp",
+        "tests/e2e/ValueMetric_histogram_e2e_test.cpp",
         "tests/e2e/ValueMetric_pull_e2e_test.cpp",
         "tests/e2e/WakelockDuration_e2e_test.cpp",
         "tests/external/puller_util_test.cpp",
@@ -447,6 +453,7 @@ cc_test {
         "tests/metrics/DurationMetricProducer_test.cpp",
         "tests/metrics/EventMetricProducer_test.cpp",
         "tests/metrics/GaugeMetricProducer_test.cpp",
+        "tests/metrics/HistogramValue_test.cpp",
         "tests/metrics/KllMetricProducer_test.cpp",
         "tests/metrics/MaxDurationTracker_test.cpp",
         "tests/metrics/OringDurationTracker_test.cpp",
