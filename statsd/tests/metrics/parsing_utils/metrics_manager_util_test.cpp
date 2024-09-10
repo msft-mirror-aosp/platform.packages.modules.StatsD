@@ -1062,7 +1062,8 @@ TEST_F(MetricsManagerUtilTest, TestValueMetricValueFieldHasPositionAll) {
     metric->set_id(metricId);
     metric->set_what(1);
 
-    metric->mutable_value_field()->set_position(ALL);
+    metric->mutable_value_field()->add_child()->set_field(2);
+    metric->mutable_value_field()->mutable_child(0)->set_position(ALL);
 
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL,
@@ -2450,6 +2451,79 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramWithUploadThreshol
 
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                  config.value_metric(0).id()));
+}
+
+TEST_F(MetricsManagerUtilTest,
+       TestValueMetricValueFieldHasPositionAllWithStatsdAggregatedHistogram) {
+    StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
+    config.mutable_value_metric(0)->mutable_value_field()->mutable_child(0)->set_position(ALL);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL,
+                                  config.value_metric(0).id()));
+
+    clearData();
+    config.mutable_value_metric(0)->clear_aggregation_type();
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::HISTOGRAM);
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL,
+                                  config.value_metric(0).id()));
+}
+
+TEST_F(MetricsManagerUtilTest,
+       TestValueMetricValueFieldHasNoPositionAllWithClientAggregatedHistogram) {
+    StatsdConfig config = createHistogramStatsdConfig();
+    config.mutable_value_metric(0)->add_histogram_bin_configs()->set_id(1);
+    config.mutable_value_metric(0)
+            ->mutable_histogram_bin_configs(0)
+            ->mutable_client_aggregated_bins();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(
+                      INVALID_CONFIG_REASON_VALUE_METRIC_HIST_CLIENT_AGGREGATED_NO_POSITION_ALL,
+                      config.value_metric(0).id()));
+}
+
+TEST_F(MetricsManagerUtilTest,
+       TestValueMetricValueFieldHasPositionAllWithClientAggregatedHistogram) {
+    StatsdConfig config = createHistogramStatsdConfig();
+    config.mutable_value_metric(0)->add_histogram_bin_configs()->set_id(1);
+    config.mutable_value_metric(0)
+            ->mutable_histogram_bin_configs(0)
+            ->mutable_client_aggregated_bins();
+    config.mutable_value_metric(0)->mutable_value_field()->mutable_child(0)->set_position(ALL);
+
+    EXPECT_EQ(initConfig(config), nullopt);
+}
+
+TEST_F(MetricsManagerUtilTest, TestValueMetricHistogramWithValueDirectionNotIncreasing) {
+    StatsdConfig config = createHistogramStatsdConfig();
+    config.mutable_value_metric(0)->mutable_value_field()->mutable_child(0)->set_position(ALL);
+    config.mutable_value_metric(0)->add_histogram_bin_configs()->set_id(1);
+    config.mutable_value_metric(0)
+            ->mutable_histogram_bin_configs(0)
+            ->mutable_client_aggregated_bins();
+    config.mutable_value_metric(0)->set_value_direction(ValueMetric::DECREASING);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION,
+                                  config.value_metric(0).id()));
+
+    clearData();
+    config.mutable_value_metric(0)->clear_aggregation_type();
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
+    config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::HISTOGRAM);
+    config.mutable_value_metric(0)->mutable_value_field()->mutable_child(0)->clear_position();
+    config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
+    config.mutable_value_metric(0)->mutable_value_field()->mutable_child(1)->set_position(ALL);
+    config.mutable_value_metric(0)->set_value_direction(ValueMetric::ANY);
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION,
                                   config.value_metric(0).id()));
 }
 
