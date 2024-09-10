@@ -192,6 +192,10 @@ ParseHistogramBinConfigsResult parseHistogramBinConfigs(
 
                 break;
             }
+            case HistogramBinConfig::kClientAggregatedBins: {
+                binStartsList.push_back(nullopt);
+                break;
+            }
             default: {
                 ALOGE("Either generated or explicit binning strategy must be set");
                 return InvalidConfigReason(
