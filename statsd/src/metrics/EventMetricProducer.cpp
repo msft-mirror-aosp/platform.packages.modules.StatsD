@@ -258,12 +258,14 @@ size_t EventMetricProducer::byteSizeLocked() const {
 }
 
 MetricProducer::DataCorruptionSeverity EventMetricProducer::determineCorruptionSeverity(
-        DataCorruptedReason reason, LostAtomType atomType) const {
+        int32_t /*atomId*/, DataCorruptedReason reason, LostAtomType atomType) const {
     switch (atomType) {
         case LostAtomType::kWhat:
             return DataCorruptionSeverity::kResetOnDump;
         case LostAtomType::kCondition:
             return DataCorruptionSeverity::kUnrecoverable;
+        case LostAtomType::kState:
+            break;
     };
     return DataCorruptionSeverity::kNone;
 };

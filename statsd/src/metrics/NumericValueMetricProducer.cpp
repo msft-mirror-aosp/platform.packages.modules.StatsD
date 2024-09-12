@@ -19,11 +19,14 @@
 
 #include "NumericValueMetricProducer.h"
 
-#include <limits.h>
 #include <stdlib.h>
+
+#include <algorithm>
 
 #include "FieldValue.h"
 #include "guardrail/StatsdStats.h"
+#include "metrics/HistogramValue.h"
+#include "metrics/NumericValue.h"
 #include "metrics/parsing_utils/metrics_manager_util.h"
 #include "stats_log_util.h"
 
@@ -35,7 +38,6 @@ using android::util::FIELD_TYPE_INT64;
 using android::util::FIELD_TYPE_MESSAGE;
 using android::util::FIELD_TYPE_STRING;
 using android::util::ProtoOutputStream;
-using std::optional;
 using std::shared_ptr;
 using std::string;
 using std::unordered_map;
@@ -44,12 +46,14 @@ namespace android {
 namespace os {
 namespace statsd {
 
+namespace {  // anonymous namespace
 // for StatsLogReport
 const int FIELD_ID_VALUE_METRICS = 7;
 // for ValueBucketInfo
 const int FIELD_ID_VALUE_INDEX = 1;
 const int FIELD_ID_VALUE_LONG = 2;
 const int FIELD_ID_VALUE_DOUBLE = 3;
+const int FIELD_ID_VALUE_HISTOGRAM = 5;
 const int FIELD_ID_VALUE_SAMPLESIZE = 4;
 const int FIELD_ID_VALUES = 9;
 const int FIELD_ID_BUCKET_NUM = 4;
@@ -58,8 +62,15 @@ const int FIELD_ID_END_BUCKET_ELAPSED_MILLIS = 6;
 const int FIELD_ID_CONDITION_TRUE_NS = 10;
 const int FIELD_ID_CONDITION_CORRECTION_NS = 11;
 
-const Value ZERO_LONG((int64_t)0);
-const Value ZERO_DOUBLE(0.0);
+const NumericValue ZERO_LONG((int64_t)0);
+const NumericValue ZERO_DOUBLE((double)0);
+const NumericValue ZERO_HIST_VALUE(std::move(HistogramValue()));
+
+double toDouble(const NumericValue& value) {
+    return value.is<int64_t>() ? value.getValue<int64_t>() : value.getValueOrDefault<double>(0);
+}
+
+}  // anonymous namespace
 
 // ValueMetric has a minimum bucket size of 10min so that we don't pull too frequently
 NumericValueMetricProducer::NumericValueMetricProducer(
@@ -84,7 +95,8 @@ NumericValueMetricProducer::NumericValueMetricProducer(
       mHasGlobalBase(false),
       mMaxPullDelayNs(metric.has_max_pull_delay_sec() ? metric.max_pull_delay_sec() * NS_PER_SEC
                                                       : StatsdStats::kPullMaxDelayNs),
-      mDedupedFieldMatchers(dedupFieldMatchers(whatOptions.fieldMatchers)) {
+      mDedupedFieldMatchers(dedupFieldMatchers(whatOptions.fieldMatchers)),
+      mBinStartsList(whatOptions.binStartsList) {
     // TODO(b/186677791): Use initializer list to initialize mUploadThreshold.
     if (metric.has_threshold()) {
         mUploadThreshold = metric.threshold();
@@ -111,7 +123,7 @@ void NumericValueMetricProducer::invalidateCurrentBucket(const int64_t dropTimeN
 
 void NumericValueMetricProducer::resetBase() {
     for (auto& [_, dimInfo] : mDimInfos) {
-        for (optional<Value>& base : dimInfo.dimExtras) {
+        for (NumericValue& base : dimInfo.dimExtras) {
             base.reset();
         }
     }
@@ -119,7 +131,7 @@ void NumericValueMetricProducer::resetBase() {
 }
 
 void NumericValueMetricProducer::writePastBucketAggregateToProto(
-        const int aggIndex, const Value& value, const int sampleSize,
+        const int aggIndex, const NumericValue& value, const int sampleSize,
         ProtoOutputStream* const protoOutput) const {
     uint64_t valueToken =
             protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_VALUES);
@@ -127,14 +139,23 @@ void NumericValueMetricProducer::writePastBucketAggregateToProto(
     if (mIncludeSampleSize) {
         protoOutput->write(FIELD_TYPE_INT32 | FIELD_ID_VALUE_SAMPLESIZE, sampleSize);
     }
-    if (value.getType() == LONG) {
-        protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_VALUE_LONG, (long long)value.long_value);
-        VLOG("\t\t value %d: %lld", aggIndex, (long long)value.long_value);
-    } else if (value.getType() == DOUBLE) {
-        protoOutput->write(FIELD_TYPE_DOUBLE | FIELD_ID_VALUE_DOUBLE, value.double_value);
-        VLOG("\t\t value %d: %.2f", aggIndex, value.double_value);
+    if (value.is<int64_t>()) {
+        const int64_t val = value.getValue<int64_t>();
+        protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_VALUE_LONG, (long long)val);
+        VLOG("\t\t value %d: %lld", aggIndex, (long long)val);
+    } else if (value.is<double>()) {
+        const double val = value.getValue<double>();
+        protoOutput->write(FIELD_TYPE_DOUBLE | FIELD_ID_VALUE_DOUBLE, val);
+        VLOG("\t\t value %d: %.2f", aggIndex, val);
+    } else if (value.is<HistogramValue>()) {
+        const HistogramValue& val = value.getValue<HistogramValue>();
+        const uint64_t histToken =
+                protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_VALUE_HISTOGRAM);
+        val.toProto(*protoOutput);
+        protoOutput->end(histToken);
+        VLOG("\t\t value %d: %s", aggIndex, val.toString().c_str());
     } else {
-        VLOG("Wrong value type for ValueMetric output: %d", value.getType());
+        VLOG("Wrong value type for ValueMetric output");
     }
     protoOutput->end(valueToken);
 }
@@ -369,36 +390,33 @@ bool NumericValueMetricProducer::hitFullBucketGuardRailLocked(const MetricDimens
     return false;
 }
 
-bool getDoubleOrLong(const LogEvent& event, const Matcher& matcher, Value& ret) {
+namespace {
+NumericValue getDoubleOrLong(const LogEvent& event, const Matcher& matcher) {
     for (const FieldValue& value : event.getValues()) {
-        if (value.mField.matches(matcher)) {
-            switch (value.mValue.type) {
-                case INT:
-                    ret.setLong(value.mValue.int_value);
-                    break;
-                case LONG:
-                    ret.setLong(value.mValue.long_value);
-                    break;
-                case FLOAT:
-                    ret.setDouble(value.mValue.float_value);
-                    break;
-                case DOUBLE:
-                    ret.setDouble(value.mValue.double_value);
-                    break;
-                default:
-                    return false;
-                    break;
-            }
-            return true;
+        if (!value.mField.matches(matcher)) {
+            continue;
+        }
+        switch (value.mValue.type) {
+            case INT:
+                return NumericValue((int64_t)value.mValue.int_value);
+            case LONG:
+                return NumericValue((int64_t)value.mValue.long_value);
+            case FLOAT:
+                return NumericValue((double)value.mValue.float_value);
+            case DOUBLE:
+                return NumericValue((double)value.mValue.double_value);
+            default:
+                return NumericValue{};
         }
     }
-    return false;
+    return NumericValue{};
 }
+}  // anonymous namespace
 
 bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                                                  const MetricDimensionKey& eventKey,
                                                  const LogEvent& event, vector<Interval>& intervals,
-                                                 ValueBases& bases) {
+                                                 Bases& bases) {
     if (bases.size() < mFieldMatchers.size()) {
         VLOG("Resizing number of bases to %zu", mFieldMatchers.size());
         bases.resize(mFieldMatchers.size());
@@ -416,20 +434,24 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
         const Matcher& matcher = mFieldMatchers[i];
         Interval& interval = intervals[i];
         interval.aggIndex = i;
-        optional<Value>& base = bases[i];
-        Value value;
-        if (!getDoubleOrLong(event, matcher, value)) {
+        NumericValue& base = bases[i];
+        NumericValue value = getDoubleOrLong(event, matcher);
+        if (!value.hasValue()) {
             VLOG("Failed to get value %zu from event %s", i, event.ToString().c_str());
             StatsdStats::getInstance().noteBadValueType(mMetricId);
             return seenNewData;
         }
         seenNewData = true;
         if (mUseDiff) {
-            if (!base.has_value()) {
+            if (!base.hasValue()) {
                 if (mHasGlobalBase && mUseZeroDefaultBase) {
                     // The bucket has global base. This key does not.
                     // Optionally use zero as base.
-                    base = (value.type == LONG ? ZERO_LONG : ZERO_DOUBLE);
+                    if (value.is<int64_t>()) {
+                        base = ZERO_LONG;
+                    } else if (value.is<double>()) {
+                        base = ZERO_DOUBLE;
+                    }
                 } else {
                     // no base. just update base and return.
                     base = value;
@@ -441,11 +463,11 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                     continue;
                 }
             }
-            Value diff;
+            NumericValue diff{};
             switch (mValueDirection) {
                 case ValueMetric::INCREASING:
-                    if (value >= base.value()) {
-                        diff = value - base.value();
+                    if (value >= base) {
+                        diff = value - base;
                     } else if (mUseAbsoluteValueOnReset) {
                         diff = value;
                     } else {
@@ -458,8 +480,8 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                     }
                     break;
                 case ValueMetric::DECREASING:
-                    if (base.value() >= value) {
-                        diff = base.value() - value;
+                    if (base >= value) {
+                        diff = base - value;
                     } else if (mUseAbsoluteValueOnReset) {
                         diff = value;
                     } else {
@@ -472,7 +494,7 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                     }
                     break;
                 case ValueMetric::ANY:
-                    diff = value - base.value();
+                    diff = value - base;
                     break;
                 default:
                     break;
@@ -481,8 +503,9 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
             value = diff;
         }
 
+        const ValueMetric::AggregationType aggType = getAggregationTypeLocked(i);
         if (interval.hasValue()) {
-            switch (getAggregationTypeLocked(i)) {
+            switch (aggType) {
                 case ValueMetric::SUM:
                     // for AVG, we add up and take average when flushing the bucket
                 case ValueMetric::AVG:
@@ -494,9 +517,15 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                 case ValueMetric::MAX:
                     interval.aggregate = max(value, interval.aggregate);
                     break;
+                case ValueMetric::HISTOGRAM:
+                    addValueToHistogram(value, i, interval.aggregate.getValue<HistogramValue>());
+                    break;
                 default:
                     break;
             }
+        } else if (aggType == ValueMetric::HISTOGRAM) {
+            interval.aggregate = ZERO_HIST_VALUE;
+            addValueToHistogram(value, i, interval.aggregate.getValue<HistogramValue>());
         } else {
             interval.aggregate = value;
         }
@@ -507,7 +536,7 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
     // to MULTIPLE_BUCKETS_SKIPPED.
     if (useAnomalyDetection && !multipleBucketsSkipped(calcBucketsForwardCount(eventTimeNs))) {
         // TODO: propgate proper values down stream when anomaly support doubles
-        long wholeBucketVal = intervals[0].aggregate.long_value;
+        long wholeBucketVal = intervals[0].aggregate.getValueOrDefault<int64_t>(0);
         auto prev = mCurrentFullBucket.find(eventKey);
         if (prev != mCurrentFullBucket.end()) {
             wholeBucketVal += prev->second;
@@ -520,9 +549,9 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
     return seenNewData;
 }
 
-PastBucket<Value> NumericValueMetricProducer::buildPartialBucket(int64_t bucketEndTimeNs,
-                                                                 vector<Interval>& intervals) {
-    PastBucket<Value> bucket;
+PastBucket<NumericValue> NumericValueMetricProducer::buildPartialBucket(
+        int64_t bucketEndTimeNs, vector<Interval>& intervals) {
+    PastBucket<NumericValue> bucket;
     bucket.mBucketStartNs = mCurrentBucketStartTimeNs;
     bucket.mBucketEndNs = bucketEndTimeNs;
 
@@ -589,7 +618,8 @@ void NumericValueMetricProducer::appendToFullBucket(const bool isFullBucketReach
                 // TODO: fix this when anomaly can accept double values
                 auto& interval = currentBucket.intervals[0];
                 if (interval.hasValue()) {
-                    mCurrentFullBucket[metricDimensionKey] += interval.aggregate.long_value;
+                    mCurrentFullBucket[metricDimensionKey] +=
+                            interval.aggregate.getValueOrDefault<int64_t>(0);
                 }
             }
             for (const auto& [metricDimensionKey, value] : mCurrentFullBucket) {
@@ -608,9 +638,9 @@ void NumericValueMetricProducer::appendToFullBucket(const bool isFullBucketReach
                         // TODO: fix this when anomaly can accept double values
                         auto& interval = currentBucket.intervals[0];
                         if (interval.hasValue()) {
-                            tracker->addPastBucket(metricDimensionKey,
-                                                   interval.aggregate.long_value,
-                                                   mCurrentBucketNum);
+                            const int64_t longVal =
+                                    interval.aggregate.getValueOrDefault<int64_t>(0);
+                            tracker->addPastBucket(metricDimensionKey, longVal, mCurrentBucketNum);
                         }
                     }
                 }
@@ -623,15 +653,21 @@ void NumericValueMetricProducer::appendToFullBucket(const bool isFullBucketReach
                 // TODO: fix this when anomaly can accept double values
                 auto& interval = currentBucket.intervals[0];
                 if (interval.hasValue()) {
-                    mCurrentFullBucket[metricDimensionKey] += interval.aggregate.long_value;
+                    mCurrentFullBucket[metricDimensionKey] +=
+                            interval.aggregate.getValueOrDefault<int64_t>(0);
                 }
             }
         }
     }
 }
 
+const optional<const BinStarts>& NumericValueMetricProducer::getBinStarts(
+        int valueFieldIndex) const {
+    return mBinStartsList.size() == 1 ? mBinStartsList[0] : mBinStartsList[valueFieldIndex];
+}
+
 // Estimate for the size of NumericValues.
-size_t NumericValueMetricProducer::getAggregatedValueSize(const Value& value) const {
+size_t NumericValueMetricProducer::getAggregatedValueSize(const NumericValue& value) const {
     size_t valueSize = 0;
     // Index
     valueSize += sizeof(int32_t);
@@ -667,10 +703,8 @@ bool NumericValueMetricProducer::valuePassesThreshold(const Interval& interval) 
         return true;
     }
 
-    Value finalValue = getFinalValue(interval);
+    double doubleValue = toDouble(getFinalValue(interval));
 
-    double doubleValue =
-            finalValue.type == LONG ? (double)finalValue.long_value : finalValue.double_value;
     switch (mUploadThreshold->value_comparison_case()) {
         case UploadThreshold::kLtInt:
             return doubleValue < (double)mUploadThreshold->lt_int();
@@ -690,13 +724,15 @@ bool NumericValueMetricProducer::valuePassesThreshold(const Interval& interval) 
     }
 }
 
-Value NumericValueMetricProducer::getFinalValue(const Interval& interval) const {
+NumericValue NumericValueMetricProducer::getFinalValue(const Interval& interval) const {
+    if (interval.aggregate.is<HistogramValue>()) {
+        return interval.aggregate.getValue<HistogramValue>().getCompactedHistogramValue();
+    }
     if (getAggregationTypeLocked(interval.aggIndex) != ValueMetric::AVG) {
         return interval.aggregate;
     } else {
-        double sum = interval.aggregate.type == LONG ? (double)interval.aggregate.long_value
-                                                     : interval.aggregate.double_value;
-        return Value((double)sum / interval.sampleSize);
+        double sum = toDouble(interval.aggregate);
+        return NumericValue(sum / interval.sampleSize);
     }
 }
 
@@ -707,6 +743,29 @@ NumericValueMetricProducer::DumpProtoFields NumericValueMetricProducer::getDumpP
             FIELD_ID_END_BUCKET_ELAPSED_MILLIS,
             FIELD_ID_CONDITION_TRUE_NS,
             FIELD_ID_CONDITION_CORRECTION_NS};
+}
+
+MetricProducer::DataCorruptionSeverity NumericValueMetricProducer::determineCorruptionSeverity(
+        int32_t atomId, DataCorruptedReason /*reason*/, LostAtomType atomType) const {
+    switch (atomType) {
+        case LostAtomType::kWhat:
+            return mUseDiff ? DataCorruptionSeverity::kUnrecoverable
+                            : DataCorruptionSeverity::kResetOnDump;
+        case LostAtomType::kCondition:
+        case LostAtomType::kState:
+            return DataCorruptionSeverity::kUnrecoverable;
+    };
+    return DataCorruptionSeverity::kNone;
+};
+
+void NumericValueMetricProducer::addValueToHistogram(const NumericValue& value, int valueFieldIndex,
+                                                     HistogramValue& histValue) {
+    const optional<const BinStarts>& binStarts = getBinStarts(valueFieldIndex);
+    if (binStarts == nullopt) {
+        ALOGE("Missing bin configuration!");
+        return;
+    }
+    histValue.addValue(static_cast<float>(toDouble(value)), *binStarts);
 }
 
 }  // namespace statsd
