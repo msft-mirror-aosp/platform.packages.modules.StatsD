@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+#include <aidl/android/os/BnPullAtomCallback.h>
+#include <aidl/android/os/IPullAtomCallback.h>
+#include <aidl/android/os/IPullAtomResultReceiver.h>
+#include <aidl/android/util/StatsEventParcel.h>
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -29,6 +33,7 @@
 
 #ifdef __ANDROID__
 
+using aidl::android::util::StatsEventParcel;
 using namespace std;
 using namespace testing;
 
@@ -39,13 +44,17 @@ namespace {
 
 class ValueMetricHistogramE2eTest : public Test {
 protected:
-    void createProcessor(const StatsdConfig& config) {
-        processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
+    void createProcessor(const StatsdConfig& config,
+                         const shared_ptr<IPullAtomCallback>& puller = nullptr,
+                         int32_t pullAtomId = 0) {
+        processor = CreateStatsLogProcessor(baseTimeNs, bucketStartTimeNs, config, cfgKey, puller,
+                                            pullAtomId);
     }
-    optional<ConfigMetricsReportList> getReports() {
+
+    optional<ConfigMetricsReportList> getReports(int64_t dumpTimeNs) {
         ConfigMetricsReportList reports;
         vector<uint8_t> buffer;
-        processor->onDumpReport(cfgKey, bucketStartTimeNs + bucketSizeNs,
+        processor->onDumpReport(cfgKey, dumpTimeNs,
                                 /*include_current_bucket*/ false, true, ADB_DUMP, FAST, &buffer);
         if (reports.ParseFromArray(&buffer[0], buffer.size())) {
             backfillDimensionPath(&reports);
@@ -54,6 +63,10 @@ protected:
             return reports;
         }
         return nullopt;
+    }
+
+    optional<ConfigMetricsReportList> getReports() {
+        return getReports(bucketStartTimeNs + bucketSizeNs);
     }
 
     void logEvents(const vector<shared_ptr<LogEvent>>& events) {
@@ -79,8 +92,9 @@ protected:
         ASSERT_THAT(bucket.values(valueIndex).histogram().count(), ElementsAreArray(binCounts));
     }
 
-    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
     const uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
+    const uint64_t baseTimeNs = getElapsedRealtimeNs();
+    const uint64_t bucketStartTimeNs = baseTimeNs + bucketSizeNs;  // 0:10
     ConfigKey cfgKey;
     sp<StatsLogProcessor> processor;
 };
@@ -432,7 +446,438 @@ TEST_F(ValueMetricHistogramE2eTest, TestDimensionConditionAndMultipleAggregation
     }
 }
 
+// Test fixture which uses a ValueMetric on a pushed atom with a statsd-aggregated histogram as well
+// as a client-aggregated histogram.
+class ValueMetricHistogramE2eTestClientAggregatedPushedHistogram
+    : public ValueMetricHistogramE2eTest {
+protected:
+    void SetUp() override {
+        StatsdConfig config;
+        *config.add_atom_matcher() = CreateSimpleAtomMatcher("matcher", /* atomId */ 1);
+        *config.add_value_metric() =
+                createValueMetric("ValueMetric", config.atom_matcher(0), /* valueFields */ {2, 3},
+                                  {ValueMetric::HISTOGRAM, ValueMetric::HISTOGRAM},
+                                  /* condition */ nullopt, /* states */ {});
+        config.mutable_value_metric(0)->mutable_value_field()->mutable_child(1)->set_position(ALL);
+        *config.mutable_value_metric(0)->mutable_dimensions_in_what() =
+                CreateRepeatedDimensions(/* atomId */ 1, {1 /* uid */}, {Position::FIRST});
+
+        // Bin starts: [UNDERFLOW, -10, -6, -2, 2, 6, 10]
+        *config.mutable_value_metric(0)->add_histogram_bin_configs() =
+                createGeneratedBinConfig(/* id */ 1, /* min */ -10, /* max */ 10, /* count */ 5,
+                                         HistogramBinConfig::GeneratedBins::LINEAR);
+
+        config.mutable_value_metric(0)->add_histogram_bin_configs()->set_id(2);
+        config.mutable_value_metric(0)
+                ->mutable_histogram_bin_configs(1)
+                ->mutable_client_aggregated_bins();
+
+        createProcessor(config);
+
+        StatsdStats::getInstance().reset();
+    }
+
+public:
+    void doTestMultipleEvents() __INTRODUCED_IN(__ANDROID_API_T__);
+    void doTestBadHistograms() __INTRODUCED_IN(__ANDROID_API_T__);
+};
+
+TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPushedHistogram, TestMultipleEvents,
+               __ANDROID_API_T__) {
+    logEvents({makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 10, /* uids */ {1},
+                                       /* value1 */ 0, /* value2 */ {0, 0, 1, 1}),
+               makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 20, /* uids */ {1},
+                                       /* value1 */ 12, /* value2 */ {0, 2, 0, 1}),
+               makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 30, /* uids */ {2},
+                                       /* value1 */ -1, /* value2 */ {1, 0, 0, 0}),
+               makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 40, /* uids */ {1},
+                                       /* value1 */ 5, /* value2 */ {0, 0, 0, 0}),
+               makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 50, /* uids */ {2},
+                                       /* value1 */ 2, /* value2 */ {0, 2, 0, 1}),
+               makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 60, /* uids */ {2},
+                                       /* value1 */ 9, /* value2 */ {10, 5, 2, 2})});
+
+    optional<ConfigMetricsReportList> reports = getReports();
+    ASSERT_NE(reports, nullopt);
+
+    ASSERT_EQ(reports->reports_size(), 1);
+    ConfigMetricsReport report = reports->reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+    StatsLogReport metricReport = report.metrics(0);
+    ASSERT_TRUE(metricReport.has_value_metrics());
+    ASSERT_EQ(metricReport.value_metrics().skipped_size(), 0);
+    ASSERT_EQ(metricReport.value_metrics().data_size(), 2);
+
+    // Dimension 1
+    {
+        ValueMetricData data = metricReport.value_metrics().data(0);
+        ASSERT_EQ(data.bucket_info_size(), 1);
+        ValueBucketInfo bucket = data.bucket_info(0);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(0).histogram().count(), ElementsAreArray({-3, 1, 1, 0, 1}));
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({0, 2, 1, 2}));
+    }
+
+    // Dimension 2
+    {
+        ValueMetricData data = metricReport.value_metrics().data(1);
+        ASSERT_EQ(data.bucket_info_size(), 1);
+        ValueBucketInfo bucket = data.bucket_info(0);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(0).histogram().count(), ElementsAreArray({-3, 1, 1, 1, 0}));
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({11, 7, 2, 3}));
+    }
+}
+
+TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPushedHistogram, TestBadHistograms,
+               __ANDROID_API_T__) {
+    logEvents(
+            {// Histogram has negative bin count.
+             makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 10, /* uids */ {1},
+                                     /* value1 */ 0, /* value2 */ {0, 0, -1, 1}),
+
+             // Good histogram, recorded in interval.
+             makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 20, /* uids */ {1},
+                                     /* value1 */ 12, /* value2 */ {0, 2, 0, 1}),
+
+             // Histogram has more bins than what's already aggregated. Aggregation is not updated.
+             makeRepeatedUidLogEvent(/* atomId */ 1, bucketStartTimeNs + 30, /* uids */ {1},
+                                     /* value1 */ -1, /* value2 */ {1, 0, 0, 0, 0})});
+
+    optional<ConfigMetricsReportList> reports = getReports();
+    ASSERT_NE(reports, nullopt);
+
+    ASSERT_EQ(reports->reports_size(), 1);
+    ConfigMetricsReport report = reports->reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+    StatsLogReport metricReport = report.metrics(0);
+    ASSERT_TRUE(metricReport.has_value_metrics());
+    EXPECT_EQ(metricReport.value_metrics().skipped_size(), 0);
+    ASSERT_EQ(metricReport.value_metrics().data_size(), 1);
+    ValueMetricData data = metricReport.value_metrics().data(0);
+    ASSERT_EQ(data.bucket_info_size(), 1);
+    ValueBucketInfo bucket = data.bucket_info(0);
+    ASSERT_EQ(bucket.values_size(), 2);
+    ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+    EXPECT_THAT(bucket.values(0).histogram().count(), ElementsAreArray({-3, 2, -2, 1}));
+    ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+    EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({0, 2, 0, 1}));
+
+    StatsdStatsReport statsdStatsReport = getStatsdStatsReport();
+    ASSERT_EQ(statsdStatsReport.atom_metric_stats_size(), 1);
+    EXPECT_EQ(statsdStatsReport.atom_metric_stats(0).bad_value_type(), 2);
+}
+
+class Puller : public BnPullAtomCallback {
+public:
+    int curPullNum = 0;
+
+    // Mapping of uid to histograms for each pull
+    const map<int, vector<vector<int>>> histMap;
+
+    Puller(const map<int, vector<vector<int>>>& histMap) : histMap(histMap) {
+    }
+
+    Status onPullAtom(int atomId,
+                      const shared_ptr<IPullAtomResultReceiver>& resultReceiver) override {
+        if (__builtin_available(android __ANDROID_API_T__, *)) {
+            vector<StatsEventParcel> parcels;
+            for (auto const& [uid, histograms] : histMap) {
+                const vector<int>& histogram = histograms[curPullNum];
+                AStatsEvent* statsEvent = AStatsEvent_obtain();
+                AStatsEvent_setAtomId(statsEvent, atomId);
+                AStatsEvent_writeInt32(statsEvent, uid);
+                AStatsEvent_writeInt32(statsEvent, curPullNum);
+                AStatsEvent_writeInt32Array(statsEvent, histogram.data(), histogram.size());
+                AStatsEvent_build(statsEvent);
+                size_t size;
+                uint8_t* buffer = AStatsEvent_getBuffer(statsEvent, &size);
+
+                StatsEventParcel p;
+                // vector.assign() creates a copy, but this is inevitable unless
+                // stats_event.h/c uses a vector as opposed to a buffer.
+                p.buffer.assign(buffer, buffer + size);
+                parcels.push_back(std::move(p));
+                AStatsEvent_release(statsEvent);
+            }
+            curPullNum++;
+            resultReceiver->pullFinished(atomId, /*success=*/true, parcels);
+        }
+        return Status::ok();
+    }
+};
+
 }  // anonymous namespace
+
+// Test fixture which uses a ValueMetric on a pulled atom with a client-aggregated histogram.
+class ValueMetricHistogramE2eTestClientAggregatedPulledHistogram
+    : public ValueMetricHistogramE2eTest {
+protected:
+    const int atomId = 10'000;
+    StatsdConfig config;
+
+    void SetUp() override {
+        *config.add_atom_matcher() = CreateSimpleAtomMatcher("matcher", atomId);
+
+        *config.add_value_metric() =
+                createValueMetric("ValueMetric", config.atom_matcher(0), /* valueFields */ {2, 3},
+                                  {ValueMetric::SUM, ValueMetric::HISTOGRAM},
+                                  nullopt /* condition */, /* states */ {});
+
+        config.mutable_value_metric(0)->mutable_value_field()->mutable_child(1)->set_position(ALL);
+        *config.mutable_value_metric(0)->mutable_dimensions_in_what() =
+                CreateDimensions(atomId, {1 /* uid */});
+
+        config.mutable_value_metric(0)->add_histogram_bin_configs()->set_id(1);
+        config.mutable_value_metric(0)
+                ->mutable_histogram_bin_configs(0)
+                ->mutable_client_aggregated_bins();
+
+        config.mutable_value_metric(0)->set_skip_zero_diff_output(false);
+
+        config.add_default_pull_packages("AID_ROOT");
+
+        StatsdStats::getInstance().reset();
+    }
+
+    void createProcessorWithHistData(const map<int, vector<vector<int>>>& histData) {
+        createProcessor(config, SharedRefBase::make<Puller>(histData), atomId);
+    }
+
+public:
+    void doTestPulledAtom() __INTRODUCED_IN(__ANDROID_API_T__);
+    void doTestBadHistograms() __INTRODUCED_IN(__ANDROID_API_T__);
+    void doTestZeroDefaultBase() __INTRODUCED_IN(__ANDROID_API_T__);
+};
+
+TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPulledHistogram, TestPulledAtom,
+               __ANDROID_API_T__) {
+    map<int, vector<vector<int>>> histData;
+    histData[1].push_back({0, 0, 0, 0});
+    histData[1].push_back({1, 0, 2, 0});
+    histData[1].push_back({1, 1, 3, 5});
+    histData[1].push_back({1, 1, 3, 5});
+    histData[1].push_back({3, 1, 3, 5});
+    histData[2].push_back({0, 1, 0, 0});
+    histData[2].push_back({1, 3, 0, 2});
+    histData[2].push_back({1, 3, 0, 2});
+    histData[2].push_back({2, 9, 3, 5});
+    histData[2].push_back({3, 9, 3, 5});
+    createProcessorWithHistData(histData);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 2 + 1);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 3 + 2);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 4 + 3);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 5 + 4);
+
+    optional<ConfigMetricsReportList> reports = getReports(baseTimeNs + bucketSizeNs * 6 + 100);
+    ASSERT_NE(reports, nullopt);
+
+    ASSERT_NE(reports, nullopt);
+    ASSERT_EQ(reports->reports_size(), 1);
+    ConfigMetricsReport report = reports->reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+
+    StatsLogReport metricReport = report.metrics(0);
+    ASSERT_TRUE(metricReport.has_value_metrics());
+    EXPECT_EQ(metricReport.value_metrics().skipped_size(), 0);
+    ASSERT_EQ(metricReport.value_metrics().data_size(), 2);
+    StatsLogReport::ValueMetricDataWrapper valueMetrics;
+    sortMetricDataByDimensionsValue(metricReport.value_metrics(), &valueMetrics);
+
+    // Dimension uid = 1
+    {
+        ValueMetricData data = valueMetrics.data(0);
+        ASSERT_EQ(data.bucket_info_size(), 4);
+
+        ValueBucketInfo bucket = data.bucket_info(0);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+        EXPECT_EQ(bucket.values(0).value_long(), 1);
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({1, 0, 2, 0}));
+
+        bucket = data.bucket_info(1);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+        EXPECT_EQ(bucket.values(0).value_long(), 1);
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({0, 1, 1, 5}));
+
+        bucket = data.bucket_info(2);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+        EXPECT_EQ(bucket.values(0).value_long(), 1);
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({-4}));
+
+        bucket = data.bucket_info(3);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+        EXPECT_EQ(bucket.values(0).value_long(), 1);
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({2, -3}));
+    }
+
+    // Dimension uid = 2
+    {
+        ValueMetricData data = valueMetrics.data(1);
+        ASSERT_EQ(data.bucket_info_size(), 4);
+
+        ValueBucketInfo bucket = data.bucket_info(0);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+        EXPECT_EQ(bucket.values(0).value_long(), 1);
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({1, 2, 0, 2}));
+
+        bucket = data.bucket_info(1);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+        EXPECT_EQ(bucket.values(0).value_long(), 1);
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({-4}));
+
+        bucket = data.bucket_info(2);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+        EXPECT_EQ(bucket.values(0).value_long(), 1);
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({1, 6, 3, 3}));
+
+        bucket = data.bucket_info(3);
+        ASSERT_EQ(bucket.values_size(), 2);
+        ASSERT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+        EXPECT_EQ(bucket.values(0).value_long(), 1);
+        ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+        EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({1, -3}));
+    }
+}
+
+TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPulledHistogram, TestBadHistograms,
+               __ANDROID_API_T__) {
+    map<int, vector<vector<int>>> histData;
+    histData[1].push_back({0, 0, 0, 0});  // base updated.
+
+    histData[1].push_back({1, 0, 2});  // base updated, no aggregate recorded due to
+                                       // ERROR_BINS_MISMATCH
+
+    histData[1].push_back({1, -1, 3});  // base is reset, no aggregate recorded due to
+                                        // negative bin count
+
+    histData[1].push_back({1, 2, 3});  // base updated, no aggregate recorded
+
+    histData[1].push_back({3, 1, 4});  // base updated, no aggregate recorded because 2nd bin
+                                       // decreased
+
+    createProcessorWithHistData(histData);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 2 + 1);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 3 + 2);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 4 + 3);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 5 + 4);
+
+    optional<ConfigMetricsReportList> reports = getReports(baseTimeNs + bucketSizeNs * 6 + 100);
+
+    ASSERT_NE(reports, nullopt);
+    ASSERT_EQ(reports->reports_size(), 1);
+    ConfigMetricsReport report = reports->reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+
+    StatsLogReport metricReport = report.metrics(0);
+    ASSERT_TRUE(metricReport.has_value_metrics());
+    EXPECT_EQ(metricReport.value_metrics().skipped_size(), 0);
+
+    EXPECT_EQ(metricReport.value_metrics().data_size(), 1);
+    ValueMetricData data = metricReport.value_metrics().data(0);
+    EXPECT_EQ(data.bucket_info_size(), 4);
+
+    ValueBucketInfo bucket = data.bucket_info(0);
+    ASSERT_EQ(bucket.values_size(), 1);
+    EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+
+    bucket = data.bucket_info(1);
+    ASSERT_EQ(bucket.values_size(), 1);
+    EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+
+    bucket = data.bucket_info(2);
+    ASSERT_EQ(bucket.values_size(), 1);
+    EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+
+    bucket = data.bucket_info(3);
+    ASSERT_EQ(bucket.values_size(), 1);
+    EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+
+    StatsdStatsReport statsdStatsReport = getStatsdStatsReport();
+    ASSERT_EQ(statsdStatsReport.atom_metric_stats_size(), 1);
+    EXPECT_EQ(statsdStatsReport.atom_metric_stats(0).bad_value_type(), 3);
+}
+
+TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPulledHistogram, TestZeroDefaultBase,
+               __ANDROID_API_T__) {
+    config.mutable_value_metric(0)->set_use_zero_default_base(true);
+
+    map<int, vector<vector<int>>> histData;
+    histData[1].push_back({-1, 0, 2});  // base not updated
+    histData[1].push_back({1, 0, 2});   // base updated, aggregate also recorded.
+    histData[1].push_back({2, 0, 2});   // base updated, aggregate also recorded.
+
+    createProcessorWithHistData(histData);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 2 + 1);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 3 + 1);
+
+    optional<ConfigMetricsReportList> reports = getReports(baseTimeNs + bucketSizeNs * 4 + 100);
+
+    ASSERT_NE(reports, nullopt);
+    ASSERT_EQ(reports->reports_size(), 1);
+    ConfigMetricsReport report = reports->reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+
+    StatsLogReport metricReport = report.metrics(0);
+    ASSERT_TRUE(metricReport.has_value_metrics());
+    EXPECT_EQ(metricReport.value_metrics().skipped_size(), 0);
+
+    EXPECT_EQ(metricReport.value_metrics().data_size(), 1);
+    ValueMetricData data = metricReport.value_metrics().data(0);
+    EXPECT_EQ(data.bucket_info_size(), 2);
+
+    ValueBucketInfo bucket = data.bucket_info(0);
+    ASSERT_EQ(bucket.values_size(), 2);
+    EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+    EXPECT_EQ(bucket.values(0).value_long(), 1);
+    ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+    EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({1, 0, 2}));
+
+    bucket = data.bucket_info(1);
+    ASSERT_EQ(bucket.values_size(), 2);
+    EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+    EXPECT_EQ(bucket.values(0).value_long(), 1);
+    ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+    EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({1, -2}));
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android
