@@ -172,9 +172,8 @@ void EventMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
 
 void EventMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                              const bool include_current_partial_bucket,
-                                             const bool erase_data,
-                                             const DumpLatency dumpLatency,
-                                             std::set<string> *str_set,
+                                             const bool erase_data, const DumpLatency dumpLatency,
+                                             std::set<string>* str_set, std::set<int32_t>& usedUids,
                                              ProtoOutputStream* protoOutput) {
     protoOutput->write(FIELD_TYPE_INT64 | FIELD_ID_ID, (long long)mMetricId);
     protoOutput->write(FIELD_TYPE_BOOL | FIELD_ID_IS_ACTIVE, isActiveLocked());
@@ -196,7 +195,8 @@ void EventMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
 
         uint64_t atomToken = protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_ATOM);
         writeFieldValueTreeToStream(atomDimensionKey.getAtomTag(),
-                                    atomDimensionKey.getAtomFieldValues().getValues(), protoOutput);
+                                    atomDimensionKey.getAtomFieldValues().getValues(), usedUids,
+                                    protoOutput);
         protoOutput->end(atomToken);
         for (int64_t timestampNs : elapsedTimestampsNs) {
             protoOutput->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED | FIELD_ID_ATOM_TIMESTAMPS,
