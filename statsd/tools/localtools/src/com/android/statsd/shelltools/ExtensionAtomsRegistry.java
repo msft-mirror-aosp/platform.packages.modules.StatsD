@@ -19,6 +19,7 @@ import com.android.internal.os.ExperimentIdsProto;
 import com.android.internal.os.UidDataProto;
 import com.android.os.ActiveConfigProto;
 import com.android.os.ShellConfig;
+import com.android.os.accessibility.AccessibilityExtensionAtoms;
 import com.android.os.adpf.AdpfExtensionAtoms;
 import com.android.os.adservices.AdservicesExtensionAtoms;
 import com.android.os.art.ArtExtensionAtoms;
@@ -26,6 +27,7 @@ import com.android.os.art.BackgroundDexoptExtensionAtoms;
 import com.android.os.art.OdrefreshExtensionAtoms;
 import com.android.os.automotive.caruilib.AutomotiveCaruilibAtoms;
 import com.android.os.bluetooth.BluetoothExtensionAtoms;
+import com.android.os.broadcasts.BroadcastsExtensionAtoms;
 import com.android.os.devicelogs.DeviceLogsAtoms;
 import com.android.os.dnd.DndAtoms;
 import com.android.os.dnd.DndExtensionAtoms;
@@ -67,6 +69,7 @@ import com.android.os.credentials.CredentialsExtensionAtoms;
 import com.android.os.sdksandbox.SdksandboxExtensionAtoms;
 import com.android.os.apex.ApexExtensionAtoms;
 import com.android.os.photopicker.PhotopickerExtensionAtoms;
+import com.android.os.uprobestats.UprobestatsExtensionAtoms;
 
 import com.google.protobuf.ExtensionRegistry;
 
@@ -148,6 +151,8 @@ public class ExtensionAtomsRegistry {
         OdrefreshExtensionAtoms.registerAllExtensions(extensionRegistry);
         AdpfExtensionAtoms.registerAllExtensions(extensionRegistry);
         PhotopickerExtensionAtoms.registerAllExtensions(extensionRegistry);
-
+        UprobestatsExtensionAtoms.registerAllExtensions(extensionRegistry);
+        AccessibilityExtensionAtoms.registerAllExtensions(extensionRegistry);
+        BroadcastsExtensionAtoms.registerAllExtensions(extensionRegistry);
     }
 }
