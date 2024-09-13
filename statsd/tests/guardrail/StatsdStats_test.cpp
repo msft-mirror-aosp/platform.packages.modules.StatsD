@@ -1216,6 +1216,43 @@ TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap, TestGetAtomDimensi
             (std::pair<size_t, size_t>(StatsdStats::kDimensionKeySizeSoftLimit, defaultHardLimit)));
 }
 
+CounterStats buildCounterStats(CounterType counter, int32_t count) {
+    CounterStats msg;
+    msg.set_counter_type(counter);
+    msg.set_count(count);
+    return msg;
+}
+
+TEST(StatsdStatsTest, TestErrorStatsReport) {
+    StatsdStats stats;
+    stats.noteIllegalState(COUNTER_TYPE_UNKNOWN);
+    stats.noteIllegalState(COUNTER_TYPE_UNKNOWN);
+    stats.noteIllegalState(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED);
+    stats.noteIllegalState(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED);
+    auto report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    EXPECT_EQ(stats.mErrorStats.size(), 2);
+
+    EXPECT_TRUE(report.has_error_stats());
+
+    vector<CounterStats> expectedCounterStats{
+            buildCounterStats(COUNTER_TYPE_UNKNOWN, 2),
+            buildCounterStats(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED, 2)};
+    EXPECT_THAT(report.error_stats().counters(),
+                UnorderedPointwise(EqCounterStats(), expectedCounterStats));
+}
+
+TEST(StatsdStatsTest, TestErrorStatsReportReset) {
+    StatsdStats stats;
+    stats.noteIllegalState(COUNTER_TYPE_UNKNOWN);
+    stats.noteIllegalState(COUNTER_TYPE_UNKNOWN);
+    stats.noteIllegalState(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED);
+    stats.noteIllegalState(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED);
+    auto report = getStatsdStatsReport(stats, /* reset stats */ true);
+
+    EXPECT_TRUE(stats.mErrorStats.empty());
+}
+
 }  // namespace statsd
 }  // namespace os
 }  // namespace android

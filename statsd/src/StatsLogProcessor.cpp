@@ -1526,13 +1526,18 @@ LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
 }
 
 void StatsLogProcessor::updateLogEventFilterLocked() const {
-    VLOG("StatsLogProcessor: Updating allAtomIds");
+    VLOG("StatsLogProcessor: Updating allAtomIds at %lld", (long long)getElapsedRealtimeNs());
     LogEventFilter::AtomIdSet allAtomIds = getDefaultAtomIdSet();
     for (const auto& metricsManager : mMetricsManagers) {
         metricsManager.second->addAllAtomIds(allAtomIds);
     }
     StateManager::getInstance().addAllAtomIds(allAtomIds);
     VLOG("StatsLogProcessor: Updating allAtomIds done. Total atoms %d", (int)allAtomIds.size());
+#ifdef STATSD_DEBUG
+    for (auto atomId : allAtomIds) {
+        VLOG("Atom in use %d", atomId);
+    }
+#endif  // STATSD_DEBUG
     mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
 }
 

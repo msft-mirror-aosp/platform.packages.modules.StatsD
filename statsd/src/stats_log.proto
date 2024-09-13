@@ -463,6 +463,11 @@ message StatsdStatsReport {
       repeated int64 condition_id = 8;
     }
 
+    message CounterStats {
+      optional CounterType counter_type = 1;
+      optional int32 count = 2;
+    }
+
     message MatcherStats {
         optional int64 id = 1;
         optional int32 matched_times = 2;
@@ -744,6 +749,12 @@ message StatsdStatsReport {
     }
 
     optional SocketReadStats socket_read_stats = 26;
+
+    message ErrorStats {
+        repeated CounterStats counters = 1;
+    }
+
+    optional ErrorStats error_stats = 27;
 }
 
 message AlertTriggerDetails {

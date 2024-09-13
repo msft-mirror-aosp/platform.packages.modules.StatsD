@@ -654,6 +654,11 @@ public:
      */
     void noteAtomError(int atomTag, bool pull = false);
 
+    /**
+     * Increases counter associated with a CounterType.
+     */
+    void noteIllegalState(CounterType error);
+
     /** Report query of restricted metric succeed **/
     void noteQueryRestrictedMetricSucceed(const int64_t configId, const string& configPackage,
                                           const std::optional<int32_t> configUid,
@@ -879,6 +884,9 @@ private:
 
     // Maps PullAtomId to its stats. The size is capped by the puller atom counts.
     std::map<int, PulledAtomStats> mPulledAtomStats;
+
+    // Tracks counter associated with CounterType to represent errors. Max capacity == CounterType
+    std::unordered_map<CounterType, int32_t> mErrorStats;
 
     // Stores the number of times a pushed atom was logged erroneously. The
     // corresponding counts for pulled atoms are stored in PulledAtomStats.
@@ -1112,6 +1120,8 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
     FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
     FRIEND_TEST(StatsdStatsTest, TestSocketBatchReadStats);
+    FRIEND_TEST(StatsdStatsTest, TestErrorStatsReport);
+    FRIEND_TEST(StatsdStatsTest, TestErrorStatsReportReset);
 };
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,

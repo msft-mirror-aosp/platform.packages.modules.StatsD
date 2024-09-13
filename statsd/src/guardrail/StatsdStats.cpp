@@ -64,6 +64,7 @@ const int FIELD_ID_SUBSCRIPTION_STATS = 23;
 const int FIELD_ID_SOCKET_LOSS_STATS = 24;
 const int FIELD_ID_QUEUE_STATS = 25;
 const int FIELD_ID_SOCKET_READ_STATS = 26;
+const int FIELD_ID_ERROR_STATS = 27;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -217,6 +218,13 @@ const int FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS = 6;
 // Large batch socket read atom stats
 const int FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS_ATOM_ID = 1;
 const int FIELD_ID_LARGE_BATCH_SOCKET_READ_ATOM_STATS_COUNT = 2;
+
+// ErrorStats
+const int FIELD_ID_ERROR_STATS_COUNTERS = 1;
+
+// CounterStats counters
+const int FIELD_ID_COUNTER_STATS_COUNTER_TYPE = 1;
+const int FIELD_ID_COUNTER_STATS_COUNT = 2;
 
 const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySizeLimitMap = {
         {util::BINDER_CALLS, {6000, 10000}},
@@ -878,6 +886,11 @@ void StatsdStats::noteAtomError(int atomTag, bool pull) {
     }
 }
 
+void StatsdStats::noteIllegalState(CounterType counter) {
+    lock_guard<std::mutex> lock(mLock);
+    mErrorStats[counter]++;
+}
+
 bool StatsdStats::hasHitDimensionGuardrail(int64_t metricId) const {
     lock_guard<std::mutex> lock(mLock);
     auto atomMetricStatsIter = mAtomMetricStats.find(metricId);
@@ -1185,6 +1198,8 @@ void StatsdStats::resetInternalLocked() {
             ++it;
         }
     }
+
+    mErrorStats.clear();
 }
 
 string buildTimeString(int64_t timeSec) {
@@ -1617,11 +1632,38 @@ void StatsdStats::dumpStats(int out) const {
             }
         }
     }
+    dprintf(out, "********ErrorStats***********\n");
+    for (const auto& [errorType, count] : mErrorStats) {
+        // TODO(b/343464656): add enum toString helper API
+        dprintf(out, "IllegalState type %d: count=%d\n", errorType, count);
+    }
+    dprintf(out, "\n");
     dprintf(out, "********Statsd Stats Id***********\n");
     dprintf(out, "Statsd Stats Id %d\n", mStatsdStatsId);
     dprintf(out, "********Shard Offset Provider stats***********\n");
     dprintf(out, "Shard Offset: %u\n", ShardOffsetProvider::getInstance().getShardOffset());
     dprintf(out, "\n");
+}
+
+void addErrorStatsToProto(const std::unordered_map<CounterType, int32_t>& stats,
+                          ProtoOutputStream* proto) {
+    if (stats.empty()) {
+        return;
+    }
+
+    uint64_t token = proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_ERROR_STATS);
+
+    for (auto& [type, count] : stats) {
+        uint64_t tmpToken = proto->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
+                                         FIELD_ID_ERROR_STATS_COUNTERS);
+
+        proto->write(FIELD_TYPE_INT32 | FIELD_ID_COUNTER_STATS_COUNTER_TYPE, type);
+        proto->write(FIELD_TYPE_INT32 | FIELD_ID_COUNTER_STATS_COUNT, count);
+
+        proto->end(tmpToken);
+    }
+
+    proto->end(token);
 }
 
 void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* proto) {
@@ -2099,6 +2141,8 @@ void StatsdStats::dumpStats(vector<uint8_t>* output, bool reset) {
         proto.end(largeBatchStatsToken);
     }
     proto.end(socketReadStatsToken);
+
+    addErrorStatsToProto(mErrorStats, &proto);
 
     output->clear();
     proto.serializeToVector(output);
