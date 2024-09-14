@@ -70,6 +70,16 @@ shared_ptr<LogEvent> makeLogEvent(int32_t atomId, int64_t timestampNs, int32_t v
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
     return logEvent;
 }
+
+StatsLogReport onDumpReport(GaugeMetricProducer& producer, int64_t dumpTimeNs,
+                            DumpLatency latency = FAST) {
+    ProtoOutputStream output;
+    set<int32_t> usedUids;
+    producer.onDumpReport(dumpTimeNs, true /*include current partial bucket*/, true /*erase data*/,
+                          latency, nullptr, usedUids, &output);
+    return outputStreamToProto(&output);
+}
+
 }  // anonymous namespace
 
 // Setup for parameterized tests.
@@ -912,12 +922,7 @@ TEST(GaugeMetricProducerTest_BucketDrop, TestBucketDropWhenBucketTooSmall) {
     gaugeProducer.onMatchedLogEvent(1 /*log matcher index*/, triggerEvent);
 
     // Check dump report.
-    ProtoOutputStream output;
-    std::set<string> strSet;
-    gaugeProducer.onDumpReport(bucketStartTimeNs + 9000000, true /* include recent buckets */, true,
-                               FAST /* dump_latency */, &strSet, &output);
-
-    StatsLogReport report = outputStreamToProto(&output);
+    StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 9000000);
     EXPECT_TRUE(report.has_gauge_metrics());
     ASSERT_EQ(0, report.gauge_metrics().data_size());
     ASSERT_EQ(1, report.gauge_metrics().skipped_size());
@@ -993,13 +998,8 @@ TEST(GaugeMetricProducerTest, TestPullDimensionalSampling) {
     gaugeProducer.onMatchedLogEvent(1 /*log matcher index*/, triggerEvent);
 
     // Check dump report.
-    ProtoOutputStream output;
-    std::set<string> strSet;
     int64_t dumpReportTimeNs = bucketStartTimeNs + 10000000000;
-    gaugeProducer.onDumpReport(dumpReportTimeNs, true /* include current buckets */, true,
-                               NO_TIME_CONSTRAINTS /* dumpLatency */, &strSet, &output);
-
-    StatsLogReport report = outputStreamToProto(&output);
+    StatsLogReport report = onDumpReport(gaugeProducer, dumpReportTimeNs, NO_TIME_CONSTRAINTS);
     backfillDimensionPath(&report);
     backfillStartEndTimestamp(&report);
     backfillAggregatedAtoms(&report);
@@ -1048,11 +1048,7 @@ TEST(GaugeMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
                                         MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        gaugeProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 50);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
@@ -1060,11 +1056,7 @@ TEST(GaugeMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
                                         MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        gaugeProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 150);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW));
     }
@@ -1075,11 +1067,7 @@ TEST(GaugeMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
                                         MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        gaugeProducer.onDumpReport(bucketStartTimeNs + 250, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 250);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
     }
@@ -1111,11 +1099,7 @@ TEST(GaugeMetricProducerTest, TestCorruptedDataReason_TriggerLoss) {
                                         MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        gaugeProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 50);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
@@ -1123,11 +1107,7 @@ TEST(GaugeMetricProducerTest, TestCorruptedDataReason_TriggerLoss) {
                                         MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        gaugeProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 150);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW));
     }
@@ -1138,11 +1118,7 @@ TEST(GaugeMetricProducerTest, TestCorruptedDataReason_TriggerLoss) {
                                         MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        gaugeProducer.onDumpReport(bucketStartTimeNs + 250, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 250);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
     }
@@ -1174,11 +1150,7 @@ TEST(GaugeMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
                                         MetricProducer::LostAtomType::kCondition);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        gaugeProducer.onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 50);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
@@ -1186,11 +1158,7 @@ TEST(GaugeMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
                                         MetricProducer::LostAtomType::kCondition);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        gaugeProducer.onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
-                                   true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(gaugeProducer, bucketStartTimeNs + 150);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
     }

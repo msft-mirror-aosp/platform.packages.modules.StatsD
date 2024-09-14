@@ -75,7 +75,7 @@ public:
                 (const int64_t dumpTimeNs, const int64_t wallClockNs,
                  const bool include_current_partial_bucket, const bool erase_data,
                  const DumpLatency dumpLatency, std::set<string>* str_set,
-                 android::util::ProtoOutputStream* protoOutput),
+                 std::set<int32_t>& usedUids, android::util::ProtoOutputStream* protoOutput),
                 (override));
 };
 
@@ -215,7 +215,7 @@ public:
                 (const int64_t dumpTimeNs, const int64_t wallClockNs,
                  const bool include_current_partial_bucket, const bool erase_data,
                  const DumpLatency dumpLatency, std::set<string>* str_set,
-                 android::util::ProtoOutputStream* protoOutput),
+                 std::set<int32_t>& usedUids, android::util::ProtoOutputStream* protoOutput),
                 (override));
     MOCK_METHOD(size_t, byteSize, (), (override));
     MOCK_METHOD(void, flushRestrictedData, (), (override));

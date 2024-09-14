@@ -54,6 +54,14 @@ void makeLogEvent(LogEvent* logEvent, int64_t timestampNs, int atomId) {
     parseStatsEventToLogEvent(statsEvent, logEvent);
 }
 
+StatsLogReport onDumpReport(DurationMetricProducer& producer, int64_t dumpTimeNs) {
+    ProtoOutputStream output;
+    set<int32_t> usedUids;
+    producer.onDumpReport(dumpTimeNs, true /*include current partial bucket*/, true /*erase data*/,
+                          FAST, nullptr, usedUids, &output);
+    return outputStreamToProto(&output);
+}
+
 }  // namespace
 
 // Setup for parameterized tests.
@@ -647,12 +655,7 @@ TEST(DurationMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
                                            MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        durationProducer.onDumpReport(bucketStartTimeNs + 50,
-                                      true /*include current partial bucket*/, true /*erase data*/,
-                                      FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(durationProducer, bucketStartTimeNs + 50);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
@@ -660,12 +663,7 @@ TEST(DurationMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
                                            MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        durationProducer.onDumpReport(bucketStartTimeNs + 150,
-                                      true /*include current partial bucket*/, true /*erase data*/,
-                                      FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(durationProducer, bucketStartTimeNs + 150);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
     }
@@ -693,12 +691,7 @@ TEST(DurationMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
                                            MetricProducer::LostAtomType::kCondition);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        durationProducer.onDumpReport(bucketStartTimeNs + 50,
-                                      true /*include current partial bucket*/, true /*erase data*/,
-                                      FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(durationProducer, bucketStartTimeNs + 50);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
@@ -706,12 +699,7 @@ TEST(DurationMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
                                            MetricProducer::LostAtomType::kCondition);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        durationProducer.onDumpReport(bucketStartTimeNs + 150,
-                                      true /*include current partial bucket*/, true /*erase data*/,
-                                      FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(durationProducer, bucketStartTimeNs + 150);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
     }
@@ -738,24 +726,14 @@ TEST(DurationMetricProducerTest, TestCorruptedDataReason_StateLoss) {
     durationProducer.onStateEventLost(stateAtomId, DATA_CORRUPTED_SOCKET_LOSS);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        durationProducer.onDumpReport(bucketStartTimeNs + 50,
-                                      true /*include current partial bucket*/, true /*erase data*/,
-                                      FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(durationProducer, bucketStartTimeNs + 50);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
     // validation that data corruption signal remains accurate after another dump
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        durationProducer.onDumpReport(bucketStartTimeNs + 150,
-                                      true /*include current partial bucket*/, true /*erase data*/,
-                                      FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(durationProducer, bucketStartTimeNs + 150);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 }

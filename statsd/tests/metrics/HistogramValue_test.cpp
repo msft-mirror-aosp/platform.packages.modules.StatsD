@@ -42,6 +42,18 @@ TEST(HistogramValueTest, TestGetCompactedBinCountsSize) {
     EXPECT_EQ(getCompactedBinCountsSize({0, 0, 1, 0, 0}), 3);
 }
 
+TEST(HistogramValueTest, TestErrorBinsMismatch) {
+    EXPECT_EQ(HistogramValue({1, 1, 1}) + HistogramValue({2, 2, 3, 4}),
+              HistogramValue::ERROR_BINS_MISMATCH);
+    EXPECT_EQ(HistogramValue({3, 4, 5}) - HistogramValue({1, 2, 3, 4}),
+              HistogramValue::ERROR_BINS_MISMATCH);
+}
+
+TEST(HistogramValueTest, TestErrorBinCountTooHigh) {
+    EXPECT_EQ(HistogramValue({3, 4, 5}) - HistogramValue({4, 2, 3}),
+              HistogramValue::ERROR_BIN_COUNT_TOO_HIGH);
+}
+
 }  // anonymous namespace
 
 }  // namespace statsd

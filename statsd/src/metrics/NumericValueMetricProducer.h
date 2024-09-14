@@ -168,8 +168,6 @@ private:
     DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
                                                        LostAtomType atomType) const override;
 
-    void addValueToHistogram(const NumericValue& value, int aggIndex, HistogramValue& histValue);
-
     const bool mUseAbsoluteValueOnReset;
 
     const std::vector<ValueMetric::AggregationType> mAggregationTypes;

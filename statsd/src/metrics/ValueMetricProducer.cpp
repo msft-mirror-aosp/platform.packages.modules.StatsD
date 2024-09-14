@@ -326,7 +326,8 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::clearPastBucketsLocked(
 template <typename AggregatedValue, typename DimExtras>
 void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
         const int64_t dumpTimeNs, const bool includeCurrentPartialBucket, const bool eraseData,
-        const DumpLatency dumpLatency, set<string>* strSet, ProtoOutputStream* protoOutput) {
+        const DumpLatency dumpLatency, set<string>* strSet, set<int32_t>& usedUids,
+        ProtoOutputStream* protoOutput) {
     VLOG("metric %lld dump report now...", (long long)mMetricId);
 
     // Pulled metrics need to pull before flushing, which is why they do not call flushIfNeeded.
@@ -418,11 +419,13 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onDumpReportLocked(
         if (mShouldUseNestedDimensions) {
             uint64_t dimensionToken =
                     protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_IN_WHAT);
-            writeDimensionToProto(metricDimensionKey.getDimensionKeyInWhat(), strSet, protoOutput);
+            writeDimensionToProto(metricDimensionKey.getDimensionKeyInWhat(), strSet, usedUids,
+                                  protoOutput);
             protoOutput->end(dimensionToken);
         } else {
             writeDimensionLeafNodesToProto(metricDimensionKey.getDimensionKeyInWhat(),
-                                           FIELD_ID_DIMENSION_LEAF_IN_WHAT, strSet, protoOutput);
+                                           FIELD_ID_DIMENSION_LEAF_IN_WHAT, strSet, usedUids,
+                                           protoOutput);
         }
 
         // Then fill slice_by_state.

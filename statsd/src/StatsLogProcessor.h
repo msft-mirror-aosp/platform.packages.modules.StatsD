@@ -379,6 +379,8 @@ private:
 
     friend class GuardedDataCorruptionTestTestStateLostPropagation;
     friend class StatsLogProcessorTestRestricted;
+    friend class ValueMetricHistogramE2eTestClientAggregatedPulledHistogram;
+
     FRIEND_TEST(StatsLogProcessorTest, TestOutOfOrderLogs);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitByteSize);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitBroadcast);

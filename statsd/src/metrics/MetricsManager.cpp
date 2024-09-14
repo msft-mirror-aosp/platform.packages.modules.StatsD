@@ -85,7 +85,11 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
                           config.whitelisted_atom_ids().end()),
       mShouldPersistHistory(config.persist_locally()),
       mUseV2SoftMemoryCalculation(config.statsd_config_options().use_v2_soft_memory_limit()),
-      mOmitSystemUidsInUidMap(config.statsd_config_options().omit_system_uids_in_uidmap()) {
+      mOmitSystemUidsInUidMap(config.statsd_config_options().omit_system_uids_in_uidmap()),
+      mOmitUnusedUidsInUidMap(config.statsd_config_options().omit_unused_uids_in_uidmap()),
+      mAllowlistedUidMapPackages(
+              set<string>(config.statsd_config_options().uidmap_package_allowlist().begin(),
+                          config.statsd_config_options().uidmap_package_allowlist().end())) {
     if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
         mInvalidConfigReason =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
@@ -200,6 +204,10 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mPackageCertificateHashSizeBytes = config.package_certificate_hash_size_bytes();
     mUseV2SoftMemoryCalculation = config.statsd_config_options().use_v2_soft_memory_limit();
     mOmitSystemUidsInUidMap = config.statsd_config_options().omit_system_uids_in_uidmap();
+    mOmitUnusedUidsInUidMap = config.statsd_config_options().omit_unused_uids_in_uidmap();
+    mAllowlistedUidMapPackages =
+            set<string>(config.statsd_config_options().uidmap_package_allowlist().begin(),
+                        config.statsd_config_options().uidmap_package_allowlist().end());
 
     // Store the sub-configs used.
     mAnnotations.clear();
@@ -479,7 +487,7 @@ void MetricsManager::dropData(const int64_t dropTimeNs) {
 void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t wallClockNs,
                                   const bool include_current_partial_bucket, const bool erase_data,
                                   const DumpLatency dumpLatency, std::set<string>* str_set,
-                                  ProtoOutputStream* protoOutput) {
+                                  std::set<int32_t>& usedUids, ProtoOutputStream* protoOutput) {
     if (hasRestrictedMetricsDelegate()) {
         // TODO(b/268150038): report error to statsdstats
         VLOG("Unexpected call to onDumpReport in restricted metricsmanager.");
@@ -496,10 +504,10 @@ void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t w
                                                 FIELD_ID_METRICS);
             if (mHashStringsInReport) {
                 producer->onDumpReport(dumpTimeStampNs, include_current_partial_bucket, erase_data,
-                                       dumpLatency, str_set, protoOutput);
+                                       dumpLatency, str_set, usedUids, protoOutput);
             } else {
                 producer->onDumpReport(dumpTimeStampNs, include_current_partial_bucket, erase_data,
-                                       dumpLatency, nullptr, protoOutput);
+                                       dumpLatency, nullptr, usedUids, protoOutput);
             }
             protoOutput->end(token);
         } else {

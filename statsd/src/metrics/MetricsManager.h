@@ -91,6 +91,16 @@ public:
 
     void dumpStates(int out, bool verbose);
 
+    // Does not set the used uids.
+    inline UidMapOptions getUidMapOptions() const {
+        return {.includeVersionStrings = mVersionStringsInReport,
+                .includeInstaller = mInstallerInReport,
+                .truncatedCertificateHashSize = mPackageCertificateHashSizeBytes,
+                .omitSystemUids = mOmitSystemUidsInUidMap,
+                .omitUnusedUids = mOmitUnusedUidsInUidMap,
+                .allowlistedPackages = mAllowlistedUidMapPackages};
+    }
+
     inline bool isInTtl(const int64_t timestampNs) const {
         return mTtlNs <= 0 || timestampNs < mTtlEndNs;
     };
@@ -98,18 +108,6 @@ public:
     inline bool hashStringInReport() const {
         return mHashStringsInReport;
     };
-
-    inline bool versionStringsInReport() const {
-        return mVersionStringsInReport;
-    };
-
-    inline bool installerInReport() const {
-        return mInstallerInReport;
-    };
-
-    inline uint8_t packageCertificateHashSizeBytes() const {
-        return mPackageCertificateHashSizeBytes;
-    }
 
     void refreshTtl(const int64_t currentTimestampNs) {
         if (mTtlNs > 0) {
@@ -136,6 +134,7 @@ public:
     virtual void onDumpReport(const int64_t dumpTimeNs, int64_t wallClockNs,
                               const bool include_current_partial_bucket, const bool erase_data,
                               const DumpLatency dumpLatency, std::set<string>* str_set,
+                              std::set<int32_t>& usedUids,
                               android::util::ProtoOutputStream* protoOutput);
 
     // Computes the total byte size of all metrics managed by a single config source.
@@ -191,10 +190,6 @@ public:
 
     inline size_t getTriggerGetDataBytes() const {
         return mTriggerGetDataBytes;
-    }
-
-    inline bool omitSystemUidsInUidMap() const {
-        return mOmitSystemUidsInUidMap;
     }
 
 private:
@@ -257,6 +252,8 @@ private:
     bool mUseV2SoftMemoryCalculation;
 
     bool mOmitSystemUidsInUidMap;
+    bool mOmitUnusedUidsInUidMap;
+    set<string> mAllowlistedUidMapPackages;
 
     // All event tags that are interesting to config metrics matchers.
     std::unordered_map<int, std::vector<int>> mTagIdsToMatchersMap;
