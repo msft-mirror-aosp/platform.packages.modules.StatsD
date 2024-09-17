@@ -32,6 +32,17 @@ size_t getCompactedBinCountsSize(const std::vector<int>& binCounts);
 // Encapsulates histogram bin counts. This class is not thread-safe.
 class HistogramValue {
 public:
+    // Default constructor
+    constexpr HistogramValue() noexcept = default;
+
+    // Copy constructor for pre-aggregated bin counts.
+    constexpr HistogramValue(const std::vector<int>& binCounts) : mBinCounts(binCounts) {
+    }
+
+    // Move constructor for pre-aggregated bin counts.
+    constexpr HistogramValue(std::vector<int>&& binCounts) : mBinCounts(std::move(binCounts)) {
+    }
+
     std::string toString() const;
 
     bool isEmpty() const;
@@ -51,6 +62,8 @@ public:
     //  * n <= -2 represents -n consecutive bins with count of 0
     // Called on bucket flushes from NumericValueMetricProducer
     HistogramValue getCompactedHistogramValue() const;
+
+    bool isValid() const;
 
     HistogramValue& operator+=(const HistogramValue& rhs);
 
@@ -77,8 +90,13 @@ public:
 
     friend bool operator>=(const HistogramValue& lhs, const HistogramValue& rhs);
 
+    // Error states encountered during binary operations.
+    static const HistogramValue ERROR_BINS_MISMATCH;
+    static const HistogramValue ERROR_BIN_COUNT_TOO_HIGH;
+
 private:
     std::vector<int> mBinCounts;
+    bool mCompacted = false;
 };
 
 }  // namespace statsd
