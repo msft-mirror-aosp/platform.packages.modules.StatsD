@@ -778,7 +778,11 @@ TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPulledHistogram, TestB
 
     histData[1].push_back({1, 2, 3});  // base updated, no aggregate recorded
 
-    histData[1].push_back({3, 1, 4});  // base updated, no aggregate recorded because 2nd bin
+    histData[1].push_back({2, 6, 3});  // base updated, aggregate updated
+
+    histData[1].push_back({3, 9, 4});  // base updated, aggregate updated
+
+    histData[1].push_back({4, 8, 5});  // base updated, no aggregate recorded because 2nd bin
                                        // decreased
 
     createProcessorWithHistData(histData);
@@ -795,7 +799,13 @@ TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPulledHistogram, TestB
     processor->mPullerManager->ForceClearPullerCache();
     processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 5 + 4);
 
-    optional<ConfigMetricsReportList> reports = getReports(baseTimeNs + bucketSizeNs * 6 + 100);
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 6 + 5);
+
+    processor->mPullerManager->ForceClearPullerCache();
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 7 + 6);
+
+    optional<ConfigMetricsReportList> reports = getReports(baseTimeNs + bucketSizeNs * 8 + 100);
 
     ASSERT_NE(reports, nullopt);
     ASSERT_EQ(reports->reports_size(), 1);
@@ -808,7 +818,7 @@ TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPulledHistogram, TestB
 
     EXPECT_EQ(metricReport.value_metrics().data_size(), 1);
     ValueMetricData data = metricReport.value_metrics().data(0);
-    EXPECT_EQ(data.bucket_info_size(), 4);
+    EXPECT_EQ(data.bucket_info_size(), 6);
 
     ValueBucketInfo bucket = data.bucket_info(0);
     ASSERT_EQ(bucket.values_size(), 1);
@@ -823,6 +833,18 @@ TEST_F_GUARDED(ValueMetricHistogramE2eTestClientAggregatedPulledHistogram, TestB
     EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
 
     bucket = data.bucket_info(3);
+    ASSERT_EQ(bucket.values_size(), 2);
+    EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+    ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+    EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({1, 4, 0}));
+
+    bucket = data.bucket_info(4);
+    ASSERT_EQ(bucket.values_size(), 2);
+    EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
+    ASSERT_THAT(bucket.values(1), Property(&ValueBucketInfo::Value::has_histogram, IsTrue()));
+    EXPECT_THAT(bucket.values(1).histogram().count(), ElementsAreArray({1, 3, 1}));
+
+    bucket = data.bucket_info(5);
     ASSERT_EQ(bucket.values_size(), 1);
     EXPECT_THAT(bucket.values(0), Property(&ValueBucketInfo::Value::has_value_long, IsTrue()));
 
