@@ -64,7 +64,6 @@ const int FIELD_ID_CONDITION_CORRECTION_NS = 11;
 
 const NumericValue ZERO_LONG((int64_t)0);
 const NumericValue ZERO_DOUBLE((double)0);
-const NumericValue ZERO_HIST_VALUE(std::move(HistogramValue()));
 
 double toDouble(const NumericValue& value) {
     return value.is<int64_t>() ? value.getValue<int64_t>() : value.getValueOrDefault<double>(0);
@@ -486,7 +485,7 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                     } else if (value.is<double>()) {
                         base = ZERO_DOUBLE;
                     } else if (value.is<HistogramValue>()) {
-                        base = ZERO_HIST_VALUE;
+                        base = HistogramValue();
                     }
                 } else {
                     // no base. just update base and return.
@@ -595,7 +594,7 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
             }
         } else if (aggType == ValueMetric::HISTOGRAM && !value.is<HistogramValue>()) {
             // statsd-aggregated histogram: add raw value to histogram.
-            interval.aggregate = ZERO_HIST_VALUE;
+            interval.aggregate = HistogramValue();
             addValueToHistogram(value, getBinStarts(i),
                                 interval.aggregate.getValue<HistogramValue>());
         } else {
