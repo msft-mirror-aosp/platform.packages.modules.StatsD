@@ -224,7 +224,7 @@ void CountMetricProducer::clearPastBucketsLocked(const int64_t dumpTimeNs) {
 void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
                                              const bool include_current_partial_bucket,
                                              const bool erase_data, const DumpLatency dumpLatency,
-                                             std::set<string>* str_set,
+                                             std::set<string>* str_set, std::set<int32_t>& usedUids,
                                              ProtoOutputStream* protoOutput) {
     if (include_current_partial_bucket) {
         flushLocked(dumpTimeNs);
@@ -280,11 +280,13 @@ void CountMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
         if (mShouldUseNestedDimensions) {
             uint64_t dimensionToken = protoOutput->start(
                     FIELD_TYPE_MESSAGE | FIELD_ID_DIMENSION_IN_WHAT);
-            writeDimensionToProto(dimensionKey.getDimensionKeyInWhat(), str_set, protoOutput);
+            writeDimensionToProto(dimensionKey.getDimensionKeyInWhat(), str_set, usedUids,
+                                  protoOutput);
             protoOutput->end(dimensionToken);
         } else {
             writeDimensionLeafNodesToProto(dimensionKey.getDimensionKeyInWhat(),
-                                           FIELD_ID_DIMENSION_LEAF_IN_WHAT, str_set, protoOutput);
+                                           FIELD_ID_DIMENSION_LEAF_IN_WHAT, str_set, usedUids,
+                                           protoOutput);
         }
         // Then fill slice_by_state.
         for (auto state : dimensionKey.getStateValuesKey().getValues()) {

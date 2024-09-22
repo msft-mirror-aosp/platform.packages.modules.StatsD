@@ -97,6 +97,15 @@ static void assertPastBucketsSingleKey(
     }
 }
 
+StatsLogReport onDumpReport(sp<KllMetricProducer>& producer, int64_t dumpTimeNs,
+                            bool includeCurrentBucket) {
+    ProtoOutputStream output;
+    set<int32_t> usedUids;
+    producer->onDumpReport(dumpTimeNs, includeCurrentBucket, true /*erase data*/, FAST, nullptr,
+                           usedUids, &output);
+    return outputStreamToProto(&output);
+}
+
 }  // anonymous namespace
 
 class KllMetricProducerTestHelper {
@@ -312,13 +321,9 @@ TEST(KllMetricProducerTest_BucketDrop, TestInvalidBucketWhenConditionUnknown) {
     kllProducer->onConditionChanged(true, bucketStartTimeNs + 50);
 
     // Check dump report.
-    ProtoOutputStream output;
-    std::set<string> strSet;
     int64_t dumpReportTimeNs = bucketStartTimeNs + 10000;
-    kllProducer->onDumpReport(dumpReportTimeNs, true /* include recent buckets */, true,
-                              NO_TIME_CONSTRAINTS /* dumpLatency */, &strSet, &output);
-
-    StatsLogReport report = outputStreamToProto(&output);
+    StatsLogReport report =
+            onDumpReport(kllProducer, dumpReportTimeNs, true /* include current bucket */);
     EXPECT_TRUE(report.has_kll_metrics());
     ASSERT_EQ(0, report.kll_metrics().data_size());
     ASSERT_EQ(1, report.kll_metrics().skipped_size());
@@ -350,13 +355,9 @@ TEST(KllMetricProducerTest_BucketDrop, TestBucketDropWhenBucketTooSmall) {
     kllProducer->onMatchedLogEvent(1 /*log matcher index*/, event1);
 
     // Check dump report.
-    ProtoOutputStream output;
-    std::set<string> strSet;
     int64_t dumpReportTimeNs = bucketStartTimeNs + 9000000;
-    kllProducer->onDumpReport(dumpReportTimeNs, true /* include recent buckets */, true,
-                              NO_TIME_CONSTRAINTS /* dumpLatency */, &strSet, &output);
-
-    StatsLogReport report = outputStreamToProto(&output);
+    StatsLogReport report =
+            onDumpReport(kllProducer, dumpReportTimeNs, true /* include current bucket */);
     EXPECT_TRUE(report.has_kll_metrics());
     ASSERT_EQ(0, report.kll_metrics().data_size());
     ASSERT_EQ(1, report.kll_metrics().skipped_size());
@@ -382,13 +383,9 @@ TEST(KllMetricProducerTest_BucketDrop, TestBucketDropWhenDataUnavailable) {
             metric, ConditionState::kFalse);
 
     // Check dump report.
-    ProtoOutputStream output;
-    std::set<string> strSet;
     int64_t dumpReportTimeNs = bucketStartTimeNs + 10000000000;  // 10 seconds
-    kllProducer->onDumpReport(dumpReportTimeNs, true /* include current bucket */, true,
-                              NO_TIME_CONSTRAINTS /* dumpLatency */, &strSet, &output);
-
-    StatsLogReport report = outputStreamToProto(&output);
+    StatsLogReport report =
+            onDumpReport(kllProducer, dumpReportTimeNs, true /* include current bucket */);
     EXPECT_TRUE(report.has_kll_metrics());
     ASSERT_EQ(0, report.kll_metrics().data_size());
     ASSERT_EQ(1, report.kll_metrics().skipped_size());
@@ -418,13 +415,9 @@ TEST(KllMetricProducerTest, TestForcedBucketSplitWhenConditionUnknownSkipsBucket
     kllProducer->notifyAppUpgrade(appUpdateTimeNs);
 
     // Check dump report.
-    ProtoOutputStream output;
-    std::set<string> strSet;
     int64_t dumpReportTimeNs = bucketStartTimeNs + 10000000000;  // 10 seconds
-    kllProducer->onDumpReport(dumpReportTimeNs, false /* include current buckets */, true,
-                              NO_TIME_CONSTRAINTS /* dumpLatency */, &strSet, &output);
-
-    StatsLogReport report = outputStreamToProto(&output);
+    StatsLogReport report =
+            onDumpReport(kllProducer, dumpReportTimeNs, false /* include current bucket */);
     EXPECT_TRUE(report.has_kll_metrics());
     ASSERT_EQ(0, report.kll_metrics().data_size());
     ASSERT_EQ(1, report.kll_metrics().skipped_size());
@@ -470,11 +463,8 @@ TEST(KllMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
                                        MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        kllProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
-                                  true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(kllProducer, bucketStartTimeNs + 50,
+                                             true /* include current bucket */);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
@@ -482,11 +472,8 @@ TEST(KllMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
                                        MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        kllProducer->onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
-                                  true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(kllProducer, bucketStartTimeNs + 150,
+                                             true /* include current bucket */);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW));
     }
@@ -497,11 +484,8 @@ TEST(KllMetricProducerTest, TestCorruptedDataReason_WhatLoss) {
                                        MetricProducer::LostAtomType::kWhat);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        kllProducer->onDumpReport(bucketStartTimeNs + 250, true /*include current partial bucket*/,
-                                  true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(kllProducer, bucketStartTimeNs + 250,
+                                             true /* include current bucket */);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
     }
@@ -519,11 +503,8 @@ TEST(KllMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
                                        MetricProducer::LostAtomType::kCondition);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        kllProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
-                                  true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(kllProducer, bucketStartTimeNs + 50,
+                                             true /* include current bucket */);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
@@ -531,11 +512,8 @@ TEST(KllMetricProducerTest, TestCorruptedDataReason_ConditionLoss) {
                                        MetricProducer::LostAtomType::kCondition);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        kllProducer->onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
-                                  true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(kllProducer, bucketStartTimeNs + 150,
+                                             true /* include current bucket */);
         EXPECT_THAT(report.data_corrupted_reason(),
                     ElementsAre(DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW, DATA_CORRUPTED_SOCKET_LOSS));
     }
@@ -552,22 +530,16 @@ TEST(KllMetricProducerTest, TestCorruptedDataReason_StateLoss) {
     kllProducer->onStateEventLost(stateAtomId, DATA_CORRUPTED_SOCKET_LOSS);
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        kllProducer->onDumpReport(bucketStartTimeNs + 50, true /*include current partial bucket*/,
-                                  true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(kllProducer, bucketStartTimeNs + 50,
+                                             true /* include current bucket */);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 
     // validation that data corruption signal remains accurate after another dump
     {
         // Check dump report content.
-        ProtoOutputStream output;
-        kllProducer->onDumpReport(bucketStartTimeNs + 150, true /*include current partial bucket*/,
-                                  true /*erase data*/, FAST, nullptr, &output);
-
-        StatsLogReport report = outputStreamToProto(&output);
+        StatsLogReport report = onDumpReport(kllProducer, bucketStartTimeNs + 150,
+                                             true /* include current bucket */);
         EXPECT_THAT(report.data_corrupted_reason(), ElementsAre(DATA_CORRUPTED_SOCKET_LOSS));
     }
 }
