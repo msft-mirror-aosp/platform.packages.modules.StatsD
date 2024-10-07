@@ -83,9 +83,10 @@ StatsdConfig buildGoodEventConfig() {
 
 ConfigMetricsReport getMetricsReport(MetricsManager& metricsManager, int64_t reportRequestTs) {
     ProtoOutputStream output;
+    set<int32_t> usedUids;
     metricsManager.onDumpReport(reportRequestTs, reportRequestTs,
                                 /*include_current_partial_bucket*/ true, /*erase_data*/ true,
-                                /*dumpLatency*/ NO_TIME_CONSTRAINTS, nullptr, &output);
+                                /*dumpLatency*/ NO_TIME_CONSTRAINTS, nullptr, usedUids, &output);
 
     ConfigMetricsReport metricsReport;
     outputStreamToProto(&output, &metricsReport);
