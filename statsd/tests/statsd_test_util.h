@@ -417,6 +417,9 @@ std::shared_ptr<LogEvent> CreateNoValuesLogEvent(int atomId, int64_t eventTimeNs
 
 void CreateNoValuesLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs);
 
+AStatsEvent* makeAttributionStatsEvent(int atomId, int64_t eventTimeNs, const vector<int>& uids,
+                                       const vector<string>& tags, int data1, int data2);
+
 AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1, int data2);
 
 AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1,

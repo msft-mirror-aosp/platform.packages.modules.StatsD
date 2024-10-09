@@ -865,6 +865,19 @@ AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int dat
     return statsEvent;
 }
 
+AStatsEvent* makeAttributionStatsEvent(int atomId, int64_t eventTimeNs, const vector<int>& uids,
+                                       const vector<string>& tags, int data1, int data2) {
+    AStatsEvent* statsEvent = AStatsEvent_obtain();
+    AStatsEvent_setAtomId(statsEvent, atomId);
+    AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
+
+    writeAttribution(statsEvent, uids, tags);
+    AStatsEvent_writeInt32(statsEvent, data1);
+    AStatsEvent_writeInt32(statsEvent, data2);
+
+    return statsEvent;
+}
+
 shared_ptr<LogEvent> makeUidLogEvent(int atomId, int64_t eventTimeNs, int uid, int data1,
                                      int data2) {
     AStatsEvent* statsEvent = makeUidStatsEvent(atomId, eventTimeNs, uid, data1, data2);
@@ -946,13 +959,8 @@ shared_ptr<LogEvent> makeRepeatedUidLogEvent(int atomId, int64_t eventTimeNs,
 shared_ptr<LogEvent> makeAttributionLogEvent(int atomId, int64_t eventTimeNs,
                                              const vector<int>& uids, const vector<string>& tags,
                                              int data1, int data2) {
-    AStatsEvent* statsEvent = AStatsEvent_obtain();
-    AStatsEvent_setAtomId(statsEvent, atomId);
-    AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
-
-    writeAttribution(statsEvent, uids, tags);
-    AStatsEvent_writeInt32(statsEvent, data1);
-    AStatsEvent_writeInt32(statsEvent, data2);
+    AStatsEvent* statsEvent =
+            makeAttributionStatsEvent(atomId, eventTimeNs, uids, tags, data1, data2);
 
     shared_ptr<LogEvent> logEvent = std::make_shared<LogEvent>(/*uid=*/0, /*pid=*/0);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
@@ -1480,6 +1488,7 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const in
                                               const int32_t atomTag, const sp<UidMap> uidMap,
                                               const shared_ptr<LogEventFilter>& logEventFilter) {
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    StatsPuller::SetUidMap(uidMap);
     if (puller != nullptr) {
         pullerManager->RegisterPullAtomCallback(/*uid=*/0, atomTag, NS_PER_SEC, NS_PER_SEC * 10, {},
                                                 puller);
