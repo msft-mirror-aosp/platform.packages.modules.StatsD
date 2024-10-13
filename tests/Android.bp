@@ -19,7 +19,6 @@ package {
 
 java_test_host {
     name: "CtsStatsdHostTestCases",
-    team: "trendy_team_android_telemetry_infra",
 
     srcs: [
         "src/**/*.java",
