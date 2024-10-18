@@ -768,8 +768,8 @@ bool parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent) {
     return result;
 }
 
-void CreateTwoValueLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs, int32_t value1,
-                            int32_t value2) {
+AStatsEvent* makeTwoValueStatsEvent(int atomId, int64_t eventTimeNs, int32_t value1,
+                                    int32_t value2) {
     AStatsEvent* statsEvent = AStatsEvent_obtain();
     AStatsEvent_setAtomId(statsEvent, atomId);
     AStatsEvent_overwriteTimestamp(statsEvent, eventTimeNs);
@@ -777,6 +777,12 @@ void CreateTwoValueLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs,
     AStatsEvent_writeInt32(statsEvent, value1);
     AStatsEvent_writeInt32(statsEvent, value2);
 
+    return statsEvent;
+}
+
+void CreateTwoValueLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs, int32_t value1,
+                            int32_t value2) {
+    AStatsEvent* statsEvent = makeTwoValueStatsEvent(atomId, eventTimeNs, value1, value2);
     parseStatsEventToLogEvent(statsEvent, logEvent);
 }
 

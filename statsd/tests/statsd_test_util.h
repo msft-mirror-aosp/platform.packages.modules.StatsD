@@ -392,6 +392,9 @@ void writeAttribution(AStatsEvent* statsEvent, const vector<int>& attributionUid
 // Builds statsEvent to get buffer that is parsed into logEvent then releases statsEvent.
 bool parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent);
 
+AStatsEvent* makeTwoValueStatsEvent(int atomId, int64_t eventTimeNs, int32_t value1,
+                                    int32_t value2);
+
 shared_ptr<LogEvent> CreateTwoValueLogEvent(int atomId, int64_t eventTimeNs, int32_t value1,
                                             int32_t value2);
 
