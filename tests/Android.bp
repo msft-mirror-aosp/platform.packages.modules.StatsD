@@ -48,6 +48,8 @@ java_test_host {
     ],
     data: [
         "**/*.pbtxt",
+    ],
+    device_common_data: [
         ":CtsStatsdApp",
         ":StatsdAtomStormApp",
     ],

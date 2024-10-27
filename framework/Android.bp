@@ -94,6 +94,7 @@ java_sdk_library {
         "//packages/modules/StatsD/framework/test:__subpackages__",
         "//packages/modules/StatsD/tests/utils:__pkg__",
         "//packages/modules/StatsD/service:__subpackages__",
+        "//frameworks/base/ravenwood",
     ],
 
     apex_available: [
@@ -101,6 +102,14 @@ java_sdk_library {
         "test_com.android.os.statsd",
     ],
     min_sdk_version: "30",
+}
+
+filegroup {
+    name: "framework-statsd-ravenwood-policies",
+    srcs: [
+        "framework-statsd-ravenwood-policies.txt",
+    ],
+    visibility: ["//frameworks/base/ravenwood"],
 }
 
 // JNI library for StatsLog.write
