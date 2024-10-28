@@ -154,7 +154,7 @@ cc_defaults {
         "libbinder_ndk",
         "libincident",
         "liblog",
-        "libstatssocket",
+        "libstatssocket#impl",
     ],
     header_libs: [
         "libgtest_prod_headers",
@@ -484,7 +484,6 @@ cc_test {
     ],
 
     min_sdk_version: "30",
-    test_for: ["com.android.os.statsd"],
 }
 
 //#############################
@@ -522,7 +521,6 @@ cc_benchmark {
         "libstats_test_utils",
     ],
 
-    test_for: ["com.android.os.statsd"],
 }
 
 // ====  java proto device library (for test only)  ==============================
@@ -625,7 +623,6 @@ cc_fuzz {
         "fuzzers/statsd_service_fuzzer.cpp",
     ],
     shared_libs: [
-        "libstatssocket",
         "libvndksupport",
     ],
     cflags: [
@@ -654,9 +651,6 @@ cc_fuzz {
     ],
     srcs: [
         "fuzzers/statsd_socket_data_fuzzer.cpp",
-    ],
-    shared_libs: [
-        "libstatssocket",
     ],
     cflags: [
         "-Wall",
