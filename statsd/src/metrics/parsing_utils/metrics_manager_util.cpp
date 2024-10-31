@@ -361,6 +361,22 @@ optional<InvalidConfigReason> handleMetricWithDimensionalSampling(
     return nullopt;
 }
 
+template <typename T>
+optional<InvalidConfigReason> setUidFieldsIfNecessary(const T& metric,
+                                                      sp<MetricProducer> metricProducer) {
+    if (metric.has_uid_fields()) {
+        if (HasPositionANY(metric.uid_fields())) {
+            ALOGE("Metric %lld has position ANY in uid fields", (long long)metric.id());
+            return InvalidConfigReason(INVALID_CONFIG_REASON_UID_FIELDS_WITH_POSITION_ANY,
+                                       metric.id());
+        }
+        std::vector<Matcher> uidFields;
+        translateFieldMatcher(metric.uid_fields(), &uidFields);
+        metricProducer->setUidFields(uidFields);
+    }
+    return nullopt;
+}
+
 // Validates a metricActivation and populates state.
 // EventActivationMap and EventDeactivationMap are supplied to a MetricProducer
 //      to provide the producer with state about its activators and deactivators.
@@ -616,6 +632,10 @@ optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
+    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
+    if (invalidConfigReason.has_value()) {
+        return nullopt;
+    }
     return metricProducer;
 }
 
@@ -802,6 +822,11 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
+    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
+    if (invalidConfigReason.has_value()) {
+        return nullopt;
+    }
+
     return metricProducer;
 }
 
@@ -872,15 +897,61 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
+    sp<MetricProducer> metricProducer;
     if (config.has_restricted_metrics_delegate_package_name()) {
-        return {new RestrictedEventMetricProducer(
+        metricProducer = new RestrictedEventMetricProducer(
                 key, metric, conditionIndex, initialConditionCache, wizard, metricHash, timeBaseNs,
-                configMetadataProvider, eventActivationMap, eventDeactivationMap)};
+                configMetadataProvider, eventActivationMap, eventDeactivationMap);
+    } else {
+        metricProducer = new EventMetricProducer(
+                key, metric, conditionIndex, initialConditionCache, wizard, metricHash, timeBaseNs,
+                configMetadataProvider, eventActivationMap, eventDeactivationMap);
     }
-    return {new EventMetricProducer(key, metric, conditionIndex, initialConditionCache, wizard,
-                                    metricHash, timeBaseNs, configMetadataProvider,
-                                    eventActivationMap, eventDeactivationMap)};
+
+    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
+    if (invalidConfigReason.has_value()) {
+        return nullopt;
+    }
+
+    return metricProducer;
 }
+
+namespace {  // anonymous namespace
+bool hasClientAggregatedBins(const ValueMetric& metric, int binConfigIndex) {
+    return metric.histogram_bin_configs_size() > binConfigIndex &&
+           metric.histogram_bin_configs(binConfigIndex).has_client_aggregated_bins();
+}
+
+optional<InvalidConfigReason> validatePositionAllInValueFields(
+        const ValueMetric& metric, int binConfigIndex, ValueMetric::AggregationType aggType,
+        vector<Matcher>::iterator matchersStartIt, const vector<Matcher>::iterator& matchersEndIt) {
+    if (aggType == ValueMetric::HISTOGRAM && hasClientAggregatedBins(metric, binConfigIndex)) {
+        while (matchersStartIt != matchersEndIt) {
+            if (!matchersStartIt->hasAllPositionMatcher()) {
+                ALOGE("value_field requires position ALL for client-aggregated histograms. "
+                      "ValueMetric \"%lld\"",
+                      (long long)metric.id());
+                return InvalidConfigReason(
+                        INVALID_CONFIG_REASON_VALUE_METRIC_HIST_CLIENT_AGGREGATED_NO_POSITION_ALL,
+                        metric.id());
+            }
+            matchersStartIt++;
+        }
+        return nullopt;
+    }
+    while (matchersStartIt != matchersEndIt) {
+        if (matchersStartIt->hasAllPositionMatcher()) {
+            ALOGE("value_field with position ALL is only supported for client-aggregated "
+                  "histograms. ValueMetric \"%lld\"",
+                  (long long)metric.id());
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL, metric.id());
+        }
+        matchersStartIt++;
+    }
+    return nullopt;
+}
+}  // anonymous namespace
 
 optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
@@ -913,13 +984,6 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
                 INVALID_CONFIG_REASON_VALUE_METRIC_MISSING_VALUE_FIELD, metric.id());
         return nullopt;
     }
-    if (HasPositionALL(metric.value_field())) {
-        ALOGE("value field with position ALL is not supported. ValueMetric \"%lld\"",
-              (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL, metric.id());
-        return nullopt;
-    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.value_field(), &fieldMatchers);
     if (fieldMatchers.size() < 1) {
@@ -945,15 +1009,28 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             return nullopt;
         }
         for (int i = 0; i < metric.aggregation_types_size(); i++) {
-            aggregationTypes.push_back(metric.aggregation_types(i));
-            if (aggregationTypes.back() == ValueMetric::HISTOGRAM) {
+            const ValueMetric::AggregationType aggType = metric.aggregation_types(i);
+            aggregationTypes.push_back(aggType);
+            if (aggType == ValueMetric::HISTOGRAM) {
                 histogramCount++;
+            }
+            invalidConfigReason = validatePositionAllInValueFields(
+                    metric, histogramCount - 1, aggType, fieldMatchers.begin() + i,
+                    fieldMatchers.begin() + i + 1);
+            if (invalidConfigReason != nullopt) {
+                return nullopt;
             }
         }
     } else {  // aggregation_type() is set or default is used.
-        aggregationTypes.push_back(metric.aggregation_type());
-        if (aggregationTypes.back() == ValueMetric::HISTOGRAM) {
-            histogramCount++;
+        const ValueMetric::AggregationType aggType = metric.aggregation_type();
+        aggregationTypes.push_back(aggType);
+        if (aggType == ValueMetric::HISTOGRAM) {
+            histogramCount = 1;
+        }
+        invalidConfigReason = validatePositionAllInValueFields(
+                metric, 0, aggType, fieldMatchers.begin(), fieldMatchers.end());
+        if (invalidConfigReason != nullopt) {
+            return nullopt;
         }
     }
 
@@ -969,6 +1046,13 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
     if (aggregationTypes.front() == ValueMetric::HISTOGRAM && metric.has_threshold()) {
         invalidConfigReason = InvalidConfigReason(
                 INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD, metric.id());
+        return nullopt;
+    }
+
+    if (histogramCount > 0 && metric.has_value_direction() &&
+        metric.value_direction() != ValueMetric::INCREASING) {
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION, metric.id());
         return nullopt;
     }
 
@@ -1093,6 +1177,11 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             return nullopt;
         }
         metricProducer->setSamplingInfo(samplingInfo);
+    }
+
+    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
+    if (invalidConfigReason.has_value()) {
+        return nullopt;
     }
 
     return metricProducer;
@@ -1253,6 +1342,11 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             return nullopt;
         }
         metricProducer->setSamplingInfo(samplingInfo);
+    }
+
+    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
+    if (invalidConfigReason.has_value()) {
+        return nullopt;
     }
 
     return metricProducer;
@@ -1426,6 +1520,11 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
             return nullopt;
         }
         metricProducer->setSamplingInfo(samplingInfo);
+    }
+
+    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
+    if (invalidConfigReason.has_value()) {
+        return nullopt;
     }
 
     return metricProducer;
