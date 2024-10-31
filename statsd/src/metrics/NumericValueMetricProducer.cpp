@@ -64,7 +64,6 @@ const int FIELD_ID_CONDITION_CORRECTION_NS = 11;
 
 const NumericValue ZERO_LONG((int64_t)0);
 const NumericValue ZERO_DOUBLE((double)0);
-const NumericValue ZERO_HIST_VALUE(std::move(HistogramValue()));
 
 double toDouble(const NumericValue& value) {
     return value.is<int64_t>() ? value.getValue<int64_t>() : value.getValueOrDefault<double>(0);
@@ -391,7 +390,22 @@ bool NumericValueMetricProducer::hitFullBucketGuardRailLocked(const MetricDimens
 }
 
 namespace {
-NumericValue getDoubleOrLong(const LogEvent& event, const Matcher& matcher) {
+NumericValue getAggregationInputValue(const LogEvent& event, const Matcher& matcher) {
+    if (matcher.hasAllPositionMatcher()) {  // client-aggregated histogram
+        vector<int> binCounts;
+        for (const FieldValue& value : event.getValues()) {
+            if (!value.mField.matches(matcher)) {
+                continue;
+            }
+            if (value.mValue.getType() == INT) {
+                binCounts.push_back(value.mValue.int_value);
+            } else {
+                return NumericValue{};
+            }
+        }
+        return NumericValue(HistogramValue(binCounts));
+    }
+
     for (const FieldValue& value : event.getValues()) {
         if (!value.mField.matches(matcher)) {
             continue;
@@ -411,6 +425,16 @@ NumericValue getDoubleOrLong(const LogEvent& event, const Matcher& matcher) {
     }
     return NumericValue{};
 }
+
+void addValueToHistogram(const NumericValue& value, const optional<const BinStarts>& binStarts,
+                         HistogramValue& histValue) {
+    if (binStarts == nullopt) {
+        ALOGE("Missing bin configuration!");
+        return;
+    }
+    histValue.addValue(static_cast<float>(toDouble(value)), *binStarts);
+}
+
 }  // anonymous namespace
 
 bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
@@ -435,13 +459,22 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
         Interval& interval = intervals[i];
         interval.aggIndex = i;
         NumericValue& base = bases[i];
-        NumericValue value = getDoubleOrLong(event, matcher);
+        NumericValue value = getAggregationInputValue(event, matcher);
         if (!value.hasValue()) {
             VLOG("Failed to get value %zu from event %s", i, event.ToString().c_str());
             StatsdStats::getInstance().noteBadValueType(mMetricId);
             return seenNewData;
         }
-        seenNewData = true;
+
+        if (value.is<HistogramValue>() && !value.getValue<HistogramValue>().isValid()) {
+            ALOGE("Invalid histogram at %zu from event %s", i, event.ToString().c_str());
+            StatsdStats::getInstance().noteBadValueType(mMetricId);
+            if (mUseDiff) {
+                base.reset();
+            }
+            continue;
+        }
+
         if (mUseDiff) {
             if (!base.hasValue()) {
                 if (mHasGlobalBase && mUseZeroDefaultBase) {
@@ -451,6 +484,8 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                         base = ZERO_LONG;
                     } else if (value.is<double>()) {
                         base = ZERO_DOUBLE;
+                    } else if (value.is<HistogramValue>()) {
+                        base = HistogramValue();
                     }
                 } else {
                     // no base. just update base and return.
@@ -459,47 +494,67 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                     // If we're missing a base, do not use anomaly detection on incomplete data
                     useAnomalyDetection = false;
 
+                    seenNewData = true;
                     // Continue (instead of return) here in order to set base value for other bases
                     continue;
                 }
             }
             NumericValue diff{};
-            switch (mValueDirection) {
-                case ValueMetric::INCREASING:
-                    if (value >= base) {
+            if (value.is<HistogramValue>()) {
+                diff = value - base;
+                seenNewData = true;
+                base = value;
+                if (diff == HistogramValue::ERROR_BINS_MISMATCH) {
+                    ALOGE("Value %zu from event %s does not have enough bins", i,
+                          event.ToString().c_str());
+                    StatsdStats::getInstance().noteBadValueType(mMetricId);
+                    continue;
+                }
+                if (diff == HistogramValue::ERROR_BIN_COUNT_TOO_HIGH) {
+                    ALOGE("Value %zu from event %s has decreasing bin count", i,
+                          event.ToString().c_str());
+                    StatsdStats::getInstance().noteBadValueType(mMetricId);
+                    continue;
+                }
+            } else {
+                seenNewData = true;
+                switch (mValueDirection) {
+                    case ValueMetric::INCREASING:
+                        if (value >= base) {
+                            diff = value - base;
+                        } else if (mUseAbsoluteValueOnReset) {
+                            diff = value;
+                        } else {
+                            VLOG("Unexpected decreasing value");
+                            StatsdStats::getInstance().notePullDataError(mPullAtomId);
+                            base = value;
+                            // If we've got bad data, do not use anomaly detection
+                            useAnomalyDetection = false;
+                            continue;
+                        }
+                        break;
+                    case ValueMetric::DECREASING:
+                        if (base >= value) {
+                            diff = base - value;
+                        } else if (mUseAbsoluteValueOnReset) {
+                            diff = value;
+                        } else {
+                            VLOG("Unexpected increasing value");
+                            StatsdStats::getInstance().notePullDataError(mPullAtomId);
+                            base = value;
+                            // If we've got bad data, do not use anomaly detection
+                            useAnomalyDetection = false;
+                            continue;
+                        }
+                        break;
+                    case ValueMetric::ANY:
                         diff = value - base;
-                    } else if (mUseAbsoluteValueOnReset) {
-                        diff = value;
-                    } else {
-                        VLOG("Unexpected decreasing value");
-                        StatsdStats::getInstance().notePullDataError(mPullAtomId);
-                        base = value;
-                        // If we've got bad data, do not use anomaly detection
-                        useAnomalyDetection = false;
-                        continue;
-                    }
-                    break;
-                case ValueMetric::DECREASING:
-                    if (base >= value) {
-                        diff = base - value;
-                    } else if (mUseAbsoluteValueOnReset) {
-                        diff = value;
-                    } else {
-                        VLOG("Unexpected increasing value");
-                        StatsdStats::getInstance().notePullDataError(mPullAtomId);
-                        base = value;
-                        // If we've got bad data, do not use anomaly detection
-                        useAnomalyDetection = false;
-                        continue;
-                    }
-                    break;
-                case ValueMetric::ANY:
-                    diff = value - base;
-                    break;
-                default:
-                    break;
+                        break;
+                    default:
+                        break;
+                }
+                base = value;
             }
-            base = value;
             value = diff;
         }
 
@@ -518,17 +573,34 @@ bool NumericValueMetricProducer::aggregateFields(const int64_t eventTimeNs,
                     interval.aggregate = max(value, interval.aggregate);
                     break;
                 case ValueMetric::HISTOGRAM:
-                    addValueToHistogram(value, i, interval.aggregate.getValue<HistogramValue>());
+                    if (value.is<HistogramValue>()) {
+                        // client-aggregated histogram: add the corresponding bin counts.
+                        NumericValue sum = interval.aggregate + value;
+                        if (sum == HistogramValue::ERROR_BINS_MISMATCH) {
+                            ALOGE("Value %zu from event %s has too many bins", i,
+                                  event.ToString().c_str());
+                            StatsdStats::getInstance().noteBadValueType(mMetricId);
+                            continue;
+                        }
+                        interval.aggregate = sum;
+                    } else {
+                        // statsd-aggregated histogram: add the raw value to histogram.
+                        addValueToHistogram(value, getBinStarts(i),
+                                            interval.aggregate.getValue<HistogramValue>());
+                    }
                     break;
                 default:
                     break;
             }
-        } else if (aggType == ValueMetric::HISTOGRAM) {
-            interval.aggregate = ZERO_HIST_VALUE;
-            addValueToHistogram(value, i, interval.aggregate.getValue<HistogramValue>());
+        } else if (aggType == ValueMetric::HISTOGRAM && !value.is<HistogramValue>()) {
+            // statsd-aggregated histogram: add raw value to histogram.
+            interval.aggregate = HistogramValue();
+            addValueToHistogram(value, getBinStarts(i),
+                                interval.aggregate.getValue<HistogramValue>());
         } else {
             interval.aggregate = value;
         }
+        seenNewData = true;
         interval.sampleSize += 1;
     }
 
@@ -757,16 +829,6 @@ MetricProducer::DataCorruptionSeverity NumericValueMetricProducer::determineCorr
     };
     return DataCorruptionSeverity::kNone;
 };
-
-void NumericValueMetricProducer::addValueToHistogram(const NumericValue& value, int valueFieldIndex,
-                                                     HistogramValue& histValue) {
-    const optional<const BinStarts>& binStarts = getBinStarts(valueFieldIndex);
-    if (binStarts == nullopt) {
-        ALOGE("Missing bin configuration!");
-        return;
-    }
-    histValue.addValue(static_cast<float>(toDouble(value)), *binStarts);
-}
 
 }  // namespace statsd
 }  // namespace os

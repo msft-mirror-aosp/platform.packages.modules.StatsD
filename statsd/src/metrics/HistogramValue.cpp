@@ -40,6 +40,9 @@ namespace {
 constexpr int FIELD_ID_COUNT = 1;
 }  // anonymous namespace
 
+const HistogramValue HistogramValue::ERROR_BINS_MISMATCH = HistogramValue({-1});
+const HistogramValue HistogramValue::ERROR_BIN_COUNT_TOO_HIGH = HistogramValue({-2});
+
 string HistogramValue::toString() const {
     std::stringstream result("{");
     std::copy(mBinCounts.begin(), mBinCounts.end(), std::ostream_iterator<int>(result, ", "));
@@ -98,11 +101,24 @@ HistogramValue HistogramValue::getCompactedHistogramValue() const {
         result.mBinCounts.push_back(0);
     }
 
+    result.mCompacted = true;
     return result;
 }
 
+bool HistogramValue::isValid() const {
+    return mCompacted ||
+           std::all_of(mBinCounts.begin(), mBinCounts.end(), [](int count) { return count >= 0; });
+}
+
 HistogramValue& HistogramValue::operator+=(const HistogramValue& rhs) {
-    // TODO(b/352222583): implement this for client-aggregated histograms.
+    if (mBinCounts.size() < rhs.mBinCounts.size()) {
+        ALOGE("HistogramValue::operator+=() arg has too many bins");
+        *this = ERROR_BINS_MISMATCH;
+        return *this;
+    }
+    for (size_t i = 0; i < rhs.mBinCounts.size(); i++) {
+        mBinCounts[i] += rhs.mBinCounts[i];
+    }
     return *this;
 }
 
@@ -112,7 +128,19 @@ HistogramValue operator+(HistogramValue lhs, const HistogramValue& rhs) {
 }
 
 HistogramValue& HistogramValue::operator-=(const HistogramValue& rhs) {
-    // TODO(b/352222583): implement this for client-aggregated histograms.
+    if (mBinCounts.size() < rhs.mBinCounts.size()) {
+        ALOGE("HistogramValue::operator-=() arg has too many bins");
+        *this = ERROR_BINS_MISMATCH;
+        return *this;
+    }
+    for (size_t i = 0; i < rhs.mBinCounts.size(); i++) {
+        if (mBinCounts[i] < rhs.mBinCounts[i]) {
+            ALOGE("HistogramValue::operator-=() arg has a bin count that is too high");
+            *this = ERROR_BIN_COUNT_TOO_HIGH;
+            return *this;
+        }
+        mBinCounts[i] -= rhs.mBinCounts[i];
+    }
     return *this;
 }
 
