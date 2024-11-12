@@ -510,6 +510,7 @@ cc_benchmark {
         "benchmark/loss_info_container_benchmark.cpp",
         "benchmark/string_transform_benchmark.cpp",
         "benchmark/value_metric_benchmark.cpp",
+        "benchmark/tex_metric_benchmark.cpp",
     ],
 
     cflags: [
