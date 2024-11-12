@@ -856,6 +856,10 @@ public final class StatsEvent {
         private boolean mOverflow = false;
         private int mMaxSize = MAX_PULL_PAYLOAD_SIZE;
 
+        // The initial size of the buffer 512 bytes. The buffer will be expanded
+        // if needed up to mMaxSize.
+        private static final int INITIAL_BUFFER_SIZE = 512;
+
         @NonNull
         private static Buffer obtain() {
             Buffer buffer = sPool.getAndSet(null);
@@ -868,8 +872,14 @@ public final class StatsEvent {
         }
 
         private Buffer() {
-            final ByteBuffer tempBuffer = ByteBuffer.allocateDirect(MAX_PUSH_PAYLOAD_SIZE);
-            mBytes = tempBuffer.hasArray() ? tempBuffer.array() : new byte [MAX_PUSH_PAYLOAD_SIZE];
+            // b/366165284, b/192105193 - the allocateDirect() reduces the churn
+            // of passing a byte[] from Java to native. However, it's only
+            // useful for pushed atoms. In the case of pulled atom, the
+            // allocateDirect doesn't help anything as the data is later copied
+            // to a new array in build(). In addition, when the buffer is to be expanded, it
+            // also allocates a new array.
+            final ByteBuffer tempBuffer = ByteBuffer.allocateDirect(INITIAL_BUFFER_SIZE);
+            mBytes = tempBuffer.hasArray() ? tempBuffer.array() : new byte [INITIAL_BUFFER_SIZE];
         }
 
         @NonNull
