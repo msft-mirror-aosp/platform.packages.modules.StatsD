@@ -119,7 +119,7 @@ cc_library_shared {
     header_libs: ["libnativehelper_header_only"],
     shared_libs: [
         "liblog",  // Has a stable abi - should not be copied into apex.
-        "libstatssocket",
+        "libstatssocket#impl",
     ],
     stl: "libc++_static",
     cflags: [
