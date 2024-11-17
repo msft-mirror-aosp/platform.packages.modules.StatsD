@@ -128,7 +128,7 @@ cc_test {
     ],
     shared_libs: [
         "libutils",
-        "libstatssocket",
+        "libstatssocket#impl",
     ],
     header_libs: [
         "libstatssocket_test_headers",
@@ -151,7 +151,6 @@ cc_test {
     },
     require_root: true,
     min_sdk_version: "30",
-    test_for: ["com.android.os.statsd"],
 }
 
 genrule {
