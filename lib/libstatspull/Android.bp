@@ -57,6 +57,7 @@ cc_library_shared {
         },
     },
     // enumerate stable entry points for APEX use
+    version_script: "libstatspull.map.txt",
     stubs: {
         symbol_file: "libstatspull.map.txt",
         versions: [
