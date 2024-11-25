@@ -32,9 +32,11 @@ cc_defaults {
         "stats_socket_loss_reporter.cpp",
         "utils.cpp",
     ],
+    local_include_dirs: [
+        "include",
+    ],
     generated_sources: ["stats_statsdsocketlog.cpp"],
     generated_headers: ["stats_statsdsocketlog.h"],
-    export_include_dirs: ["include"],
     header_libs: [
         "libcutils_headers",
         "liblog_headers",
@@ -60,6 +62,7 @@ cc_library_shared {
     ],
     host_supported: true,
     stl: "libc++_static",
+    export_include_dirs: ["include"],
 
     // enumerate stable entry points for APEX use
     stubs: {
@@ -72,7 +75,6 @@ cc_library_shared {
         "com.android.os.statsd",
         "test_com.android.os.statsd",
     ],
-    min_sdk_version: "30",
 }
 
 cc_library_headers {
@@ -90,7 +92,6 @@ filegroup {
     srcs: ["libstatssocket_test_default.map"],
 }
 
-
 cc_library_headers {
     name: "libstatssocket_test_headers",
     export_include_dirs: ["tests/include"],
@@ -99,14 +100,13 @@ cc_library_headers {
 
 cc_test {
     name: "libstatssocket_test",
+    defaults: ["libstatssocket_defaults"],
     srcs: [
         "tests/stats_event_test.cpp",
         "tests/stats_writer_test.cpp",
         "tests/stats_buffer_writer_queue_test.cpp",
         "tests/stats_socketlog_test.cpp",
     ],
-    generated_sources: ["stats_statsdsocketlog.cpp"],
-    generated_headers: ["stats_statsdsocketlog.h"],
     cflags: [
         "-Wall",
         "-Werror",
@@ -128,7 +128,6 @@ cc_test {
     ],
     shared_libs: [
         "libutils",
-        "libstatssocket#impl",
     ],
     header_libs: [
         "libstatssocket_test_headers",
@@ -150,7 +149,6 @@ cc_test {
         },
     },
     require_root: true,
-    min_sdk_version: "30",
 }
 
 genrule {
@@ -185,9 +183,6 @@ cc_fuzz {
     ],
     srcs: [
         "fuzzers/stats_event_fuzzer.cpp",
-    ],
-    local_include_dirs: [
-        "include",
     ],
     host_supported: true,
     cflags: [
