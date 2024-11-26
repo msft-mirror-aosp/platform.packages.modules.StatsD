@@ -37,7 +37,7 @@ cc_defaults {
     shared_libs: [
         "libbinder_ndk",
         "liblog",
-        "libstatssocket",
+        "libstatssocket#impl",
     ],
     static_libs: [
         "libutils",
@@ -57,6 +57,7 @@ cc_library_shared {
         },
     },
     // enumerate stable entry points for APEX use
+    version_script: "libstatspull.map.txt",
     stubs: {
         symbol_file: "libstatspull.map.txt",
         versions: [
@@ -154,5 +155,4 @@ cc_test {
     ],
     require_root: true,
     min_sdk_version: "30",
-    test_for: ["com.android.os.statsd"],
 }
