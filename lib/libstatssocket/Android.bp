@@ -64,8 +64,8 @@ cc_library_shared {
     host_supported: true,
     stl: "libc++_static",
     export_include_dirs: ["include"],
-
     // enumerate stable entry points for APEX use
+    version_script: "libstatssocket.map.txt",
     stubs: {
         symbol_file: "libstatssocket.map.txt",
         versions: [
