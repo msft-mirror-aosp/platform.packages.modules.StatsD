@@ -14,6 +14,5 @@ flag {
     namespace: "statsd"
     description: "Enables iouring implementation of the statsd"
     bug: "380509817"
-    is_fixed_read_only: true
 }
 
