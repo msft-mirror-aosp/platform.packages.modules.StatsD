@@ -119,6 +119,7 @@ cc_defaults {
         "src/statscompanion_util.cpp",
         "src/statsd_config.proto",
         "src/statsd_metadata.proto",
+        "src/guardrail/LoggingRate.cpp",
         "src/guardrail/stats_log_enums.proto",
         "src/StatsLogProcessor.cpp",
         "src/StatsService.cpp",
@@ -298,6 +299,7 @@ cc_defaults {
         "-Wno-unused-variable",
     ],
     static_libs: [
+        "libflagtest",
         "libgmock",
         "libstatslog_statsdtest",
     ],

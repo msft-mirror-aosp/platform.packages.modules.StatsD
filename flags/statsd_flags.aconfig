@@ -17,3 +17,10 @@ flag {
     is_fixed_read_only: true
 }
 
+flag {
+    name: "enable_logging_rate_stats_collection"
+    namespace: "statsd"
+    description: "Enables atoms logging rate distribution per atom id collection"
+    bug: "382574781"
+    is_fixed_read_only: true
+}
