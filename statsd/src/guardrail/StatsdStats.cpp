@@ -19,6 +19,7 @@
 #include "StatsdStats.h"
 
 #include <android/util/ProtoOutputStream.h>
+#include <com_android_os_statsd_flags.h>
 
 #include "../stats_log_util.h"
 #include "shell/ShellSubscriber.h"
@@ -29,6 +30,8 @@
 namespace android {
 namespace os {
 namespace statsd {
+
+namespace flags = com::android::os::statsd::flags;
 
 using android::util::FIELD_COUNT_REPEATED;
 using android::util::FIELD_TYPE_BOOL;
@@ -65,6 +68,7 @@ const int FIELD_ID_SOCKET_LOSS_STATS = 24;
 const int FIELD_ID_QUEUE_STATS = 25;
 const int FIELD_ID_SOCKET_READ_STATS = 26;
 const int FIELD_ID_ERROR_STATS = 27;
+const int FIELD_ID_PEAK_LOGGING_RATES = 28;
 
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CALLING_UID = 1;
 const int FIELD_ID_RESTRICTED_METRIC_QUERY_STATS_CONFIG_ID = 2;
@@ -81,6 +85,7 @@ const int FIELD_ID_ATOM_STATS_COUNT = 2;
 const int FIELD_ID_ATOM_STATS_ERROR_COUNT = 3;
 const int FIELD_ID_ATOM_STATS_DROPS_COUNT = 4;
 const int FIELD_ID_ATOM_STATS_SKIP_COUNT = 5;
+const int FIELD_ID_ATOM_STATS_PEAK_RATE = 6;
 
 const int FIELD_ID_ANOMALY_ALARMS_REGISTERED = 1;
 const int FIELD_ID_PERIODIC_ALARMS_REGISTERED = 1;
@@ -232,8 +237,13 @@ const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySiz
         {util::CPU_TIME_PER_UID_FREQ, {6000, 10000}},
 };
 
+constexpr int64_t kLogFrequencyWindowNs = 100 * 1'000'000;  // 100ms
+constexpr size_t kTopNPeakRatesToReport = 50;
+
 StatsdStats::StatsdStats()
-    : mStatsdStatsId(rand()), mSocketBatchReadHistogram(kNumBinsInSocketBatchReadHistogram) {
+    : mStatsdStatsId(rand()),
+      mLoggingRateStats(kMaxPushedAtomId + kMaxNonPlatformPushedAtoms, kLogFrequencyWindowNs),
+      mSocketBatchReadHistogram(kNumBinsInSocketBatchReadHistogram) {
     mPushedAtomStats.resize(kMaxPushedAtomId + 1);
     mStartTimeSec = getWallClockSec();
 }
@@ -753,25 +763,30 @@ void StatsdStats::notePullExceedMaxDelay(int pullAtomId) {
     mPulledAtomStats[pullAtomId].pullExceedMaxDelay++;
 }
 
-void StatsdStats::noteAtomLogged(int atomId, int32_t /*timeSec*/, bool isSkipped) {
+void StatsdStats::noteAtomLogged(int atomId, int64_t eventTimestampNs, bool isSkipped) {
     lock_guard<std::mutex> lock(mLock);
 
-    noteAtomLoggedLocked(atomId, isSkipped);
+    noteAtomLoggedLocked(atomId, eventTimestampNs, isSkipped);
 }
 
-void StatsdStats::noteAtomLoggedLocked(int atomId, bool isSkipped) {
+void StatsdStats::noteAtomLoggedLocked(int atomId, int64_t eventTimestampNs, bool isSkipped) {
     if (atomId >= 0 && atomId <= kMaxPushedAtomId) {
         mPushedAtomStats[atomId].logCount++;
         mPushedAtomStats[atomId].skipCount += isSkipped;
     } else {
         if (atomId < 0) {
             android_errorWriteLog(0x534e4554, "187957589");
+            return;
         }
         if (mNonPlatformPushedAtomStats.size() < kMaxNonPlatformPushedAtoms ||
             mNonPlatformPushedAtomStats.find(atomId) != mNonPlatformPushedAtomStats.end()) {
             mNonPlatformPushedAtomStats[atomId].logCount++;
             mNonPlatformPushedAtomStats[atomId].skipCount += isSkipped;
         }
+    }
+
+    if (flags::enable_logging_rate_stats_collection()) {
+        mLoggingRateStats.noteLogEvent(atomId, eventTimestampNs);
     }
 }
 
@@ -1200,6 +1215,7 @@ void StatsdStats::resetInternalLocked() {
     }
 
     mErrorStats.clear();
+    mLoggingRateStats.reset();
 }
 
 string buildTimeString(int64_t timeSec) {
@@ -1226,6 +1242,10 @@ int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
     } else {
         return 0;
     }
+}
+
+int StatsdStats::getLoggingRateLocked(int atomId) const {
+    return mLoggingRateStats.getMaxRate(atomId);
 }
 
 bool StatsdStats::hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const {
@@ -1444,15 +1464,20 @@ void StatsdStats::dumpStats(int out) const {
     for (size_t i = 2; i < atomCounts; i++) {
         if (mPushedAtomStats[i].logCount > 0) {
             dprintf(out,
-                    "Atom %zu->(total count)%d, (error count)%d, (drop count)%d, (skip count)%d\n",
-                    i, mPushedAtomStats[i].logCount, getPushedAtomErrorsLocked((int)i),
-                    getPushedAtomDropsLocked((int)i), mPushedAtomStats[i].skipCount);
+                    "Atom %d->(total count)%d, (error count)%d, (drop count)%d, (skip count)%d "
+                    "(peak rate)%d \n",
+                    (int)i, mPushedAtomStats[i].logCount, getPushedAtomErrorsLocked((int)i),
+                    getPushedAtomDropsLocked((int)i), mPushedAtomStats[i].skipCount,
+                    getLoggingRateLocked((int)i));
         }
     }
     for (const auto& pair : mNonPlatformPushedAtomStats) {
-        dprintf(out, "Atom %d->(total count)%d, (error count)%d, (drop count)%d, (skip count)%d\n",
+        dprintf(out,
+                "Atom %d->(total count)%d, (error count)%d, (drop count)%d, (skip count)%d "
+                "(peak rate)%d \n",
                 pair.first, pair.second.logCount, getPushedAtomErrorsLocked(pair.first),
-                getPushedAtomDropsLocked((int)pair.first), pair.second.skipCount);
+                getPushedAtomDropsLocked(pair.first), pair.second.skipCount,
+                getLoggingRateLocked(pair.first));
     }
 
     dprintf(out, "********Pulled Atom stats***********\n");
@@ -1890,6 +1915,12 @@ void StatsdStats::dumpStats(vector<uint8_t>* output, bool reset) {
         addConfigStatsToProto(*(pair.second), &proto);
     }
 
+    std::unordered_map<int32_t, int32_t> atomsLoggingPeakRates;
+    if (flags::enable_logging_rate_stats_collection()) {
+        auto result = mLoggingRateStats.getMaxRates(kTopNPeakRatesToReport);
+        atomsLoggingPeakRates = std::unordered_map<int32_t, int32_t>(result.begin(), result.end());
+    }
+
     const size_t atomCounts = mPushedAtomStats.size();
     for (size_t i = 2; i < atomCounts; i++) {
         if (mPushedAtomStats[i].logCount > 0) {
@@ -1905,6 +1936,13 @@ void StatsdStats::dumpStats(vector<uint8_t>* output, bool reset) {
                                      &proto);
             writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_SKIP_COUNT,
                                      mPushedAtomStats[i].skipCount, &proto);
+            if (flags::enable_logging_rate_stats_collection()) {
+                auto peakRateIt = atomsLoggingPeakRates.find((int32_t)i);
+                if (peakRateIt != atomsLoggingPeakRates.end()) {
+                    writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_PEAK_RATE,
+                                             peakRateIt->second, &proto);
+                }
+            }
             proto.end(token);
         }
     }
@@ -1921,6 +1959,13 @@ void StatsdStats::dumpStats(vector<uint8_t>* output, bool reset) {
         writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_DROPS_COUNT, drops, &proto);
         writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_SKIP_COUNT,
                                  pair.second.skipCount, &proto);
+        if (flags::enable_logging_rate_stats_collection()) {
+            auto peakRateIt = atomsLoggingPeakRates.find(pair.first);
+            if (peakRateIt != atomsLoggingPeakRates.end()) {
+                writeNonZeroStatToStream(FIELD_TYPE_INT32 | FIELD_ID_ATOM_STATS_PEAK_RATE,
+                                         peakRateIt->second, &proto);
+            }
+        }
         proto.end(token);
     }
 
