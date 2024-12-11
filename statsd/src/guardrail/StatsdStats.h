@@ -630,8 +630,10 @@ public:
     void noteBucketUnknownCondition(int64_t metricId);
 
     /* Reports one event id has been dropped due to queue overflow, and the oldest event timestamp
-     * in the queue */
-    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId, bool isSkipped);
+     * in the queue. There is an expectation that noteAtomLogged() is called for the same
+     * atomId
+     */
+    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId);
 
     /* Notes queue max size seen so far and associated timestamp */
     void noteEventQueueSize(int32_t size, int64_t eventTimestampNs);

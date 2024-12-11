@@ -408,8 +408,7 @@ void StatsdStats::noteDataDropped(const ConfigKey& key, const size_t totalBytes)
     noteDataDropped(key, totalBytes, getWallClockSec());
 }
 
-void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId,
-                                         bool isSkipped) {
+void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId) {
     lock_guard<std::mutex> lock(mLock);
 
     mOverflowCount++;
@@ -424,7 +423,6 @@ void StatsdStats::noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t
         mMinQueueHistoryNs = history;
     }
 
-    noteAtomLoggedLocked(atomId, isSkipped);
     noteAtomDroppedLocked(atomId);
 }
 
