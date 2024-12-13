@@ -126,8 +126,8 @@ StatsdStats::StatsdStats() {
 }
 
 StatsdStats& StatsdStats::getInstance() {
-    static StatsdStats statsInstance;
-    return statsInstance;
+    static StatsdStats* statsInstance = new StatsdStats();
+    return *statsInstance;
 }
 
 void StatsdStats::addToIceBoxLocked(shared_ptr<ConfigStats>& stats) {
