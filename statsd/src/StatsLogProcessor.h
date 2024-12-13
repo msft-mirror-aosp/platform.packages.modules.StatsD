@@ -489,6 +489,8 @@ private:
     FRIEND_TEST(DurationMetricE2eTest, TestUploadThreshold);
     FRIEND_TEST(DurationMetricE2eTest, TestConditionOnRepeatedEnumField);
 
+    FRIEND_TEST(EventMetricE2eTest, TestSlicedState);
+
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
     FRIEND_TEST(ValueMetricE2eTest, TestPulledEvents);
     FRIEND_TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm);
