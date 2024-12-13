@@ -240,7 +240,11 @@ message EventMetric {
 
   optional int64 condition = 3;
 
+  repeated int64 slice_by_state = 7;
+
   repeated MetricConditionLink links = 4;
+
+  repeated MetricStateLink state_link = 8;
 
   optional int32 sampling_percentage = 5 [default = 100];
 
