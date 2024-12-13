@@ -337,7 +337,8 @@ FieldMatcher CreateAttributionUidAndOtherDimensions(const int atomId,
                                                     const std::vector<Position>& positions,
                                                     const std::vector<int>& fields);
 
-EventMetric createEventMetric(const string& name, int64_t what, const optional<int64_t>& condition);
+EventMetric createEventMetric(const string& name, int64_t what, const optional<int64_t>& condition,
+                              const vector<int64_t>& states = {});
 
 CountMetric createCountMetric(const string& name, int64_t what, const optional<int64_t>& condition,
                               const vector<int64_t>& states);
