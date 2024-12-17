@@ -229,10 +229,7 @@ cc_library_static {
     generated_sources: ["statslog_statsd.cpp"],
     generated_headers: ["statslog_statsd.h"],
     export_generated_headers: ["statslog_statsd.h"],
-    apex_available: [
-        "com.android.os.statsd",
-        "test_com.android.os.statsd",
-    ],
+    apex_available: ["com.android.os.statsd"],
     min_sdk_version: "30",
     shared_libs: [
         "libstatssocket",
