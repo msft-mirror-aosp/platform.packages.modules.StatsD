@@ -78,10 +78,7 @@ cc_library_shared {
             "30",
         ],
     },
-    apex_available: [
-        "com.android.os.statsd",
-        "test_com.android.os.statsd",
-    ],
+    apex_available: ["com.android.os.statsd"],
 }
 
 cc_library_headers {
