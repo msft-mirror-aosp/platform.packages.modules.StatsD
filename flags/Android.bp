@@ -25,7 +25,10 @@ aconfig_declarations {
     name: "statsd_aconfig_flags",
     container: "com.android.os.statsd",
     package: "com.android.os.statsd.flags",
-    srcs: ["libstatspull_flags.aconfig"],
+    srcs: [
+        "libstatspull_flags.aconfig",
+        "statsd_flags.aconfig",
+    ],
 }
 
 cc_aconfig_library {
