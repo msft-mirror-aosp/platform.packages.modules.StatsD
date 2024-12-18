@@ -337,7 +337,8 @@ FieldMatcher CreateAttributionUidAndOtherDimensions(const int atomId,
                                                     const std::vector<Position>& positions,
                                                     const std::vector<int>& fields);
 
-EventMetric createEventMetric(const string& name, int64_t what, const optional<int64_t>& condition);
+EventMetric createEventMetric(const string& name, int64_t what, const optional<int64_t>& condition,
+                              const vector<int64_t>& states = {});
 
 CountMetric createCountMetric(const string& name, int64_t what, const optional<int64_t>& condition,
                               const vector<int64_t>& states);
@@ -392,6 +393,9 @@ void writeAttribution(AStatsEvent* statsEvent, const vector<int>& attributionUid
 // Builds statsEvent to get buffer that is parsed into logEvent then releases statsEvent.
 bool parseStatsEventToLogEvent(AStatsEvent* statsEvent, LogEvent* logEvent);
 
+AStatsEvent* makeTwoValueStatsEvent(int atomId, int64_t eventTimeNs, int32_t value1,
+                                    int32_t value2);
+
 shared_ptr<LogEvent> CreateTwoValueLogEvent(int atomId, int64_t eventTimeNs, int32_t value1,
                                             int32_t value2);
 
@@ -416,6 +420,9 @@ void CreateRepeatedValueLogEvent(LogEvent* logEvent, int atomId, int64_t eventTi
 std::shared_ptr<LogEvent> CreateNoValuesLogEvent(int atomId, int64_t eventTimeNs);
 
 void CreateNoValuesLogEvent(LogEvent* logEvent, int atomId, int64_t eventTimeNs);
+
+AStatsEvent* makeAttributionStatsEvent(int atomId, int64_t eventTimeNs, const vector<int>& uids,
+                                       const vector<string>& tags, int data1, int data2);
 
 AStatsEvent* makeUidStatsEvent(int atomId, int64_t eventTimeNs, int uid, int data1, int data2);
 

@@ -249,10 +249,11 @@ public:
     // This method clears all the past buckets.
     void onDumpReport(const int64_t dumpTimeNs, const bool include_current_partial_bucket,
                       const bool erase_data, const DumpLatency dumpLatency,
-                      std::set<string>* str_set, android::util::ProtoOutputStream* protoOutput) {
+                      std::set<string>* str_set, std::set<int32_t>& usedUids,
+                      android::util::ProtoOutputStream* protoOutput) {
         std::lock_guard<std::mutex> lock(mMutex);
         onDumpReportLocked(dumpTimeNs, include_current_partial_bucket, erase_data, dumpLatency,
-                           str_set, protoOutput);
+                           str_set, usedUids, protoOutput);
     }
 
     virtual optional<InvalidConfigReason> onConfigUpdatedLocked(
@@ -389,6 +390,12 @@ public:
         mSampledWhatFields.swap(samplingInfo.sampledWhatFields);
         mShardCount = samplingInfo.shardCount;
     }
+
+    void setUidFields(std::vector<Matcher> uidFields) {
+        std::lock_guard<std::mutex> lock(mMutex);
+        mUidFields.swap(uidFields);
+    }
+
     // End: getters/setters
 protected:
     /**
@@ -450,7 +457,7 @@ protected:
     virtual void onDumpReportLocked(const int64_t dumpTimeNs,
                                     const bool include_current_partial_bucket,
                                     const bool erase_data, const DumpLatency dumpLatency,
-                                    std::set<string>* str_set,
+                                    std::set<string>* str_set, std::set<int32_t>& usedUids,
                                     android::util::ProtoOutputStream* protoOutput) = 0;
     virtual void clearPastBucketsLocked(const int64_t dumpTimeNs) = 0;
     virtual void prepareFirstBucketLocked(){};
@@ -601,6 +608,10 @@ protected:
 
     int mShardCount;
 
+    // For tracking uid fields in a metric. Only needed if the field is not annotated in the atom
+    // and omit_unused_uids_in_uidmap = true.
+    std::vector<Matcher> mUidFields;
+
     sp<ConfigMetadataProvider> getConfigMetadataProvider() const;
 
     wp<ConfigMetadataProvider> mConfigMetadataProvider;
@@ -648,6 +659,8 @@ protected:
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset);
     FRIEND_TEST(DurationMetricE2eTest, TestUploadThreshold);
 
+    FRIEND_TEST(EventMetricE2eTest, TestSlicedState);
+
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetric);
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithOneDeactivation);
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithTwoDeactivations);
@@ -668,6 +681,7 @@ protected:
 
     FRIEND_TEST(MetricsManagerUtilTest, TestInitialConditions);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
+    FRIEND_TEST(MetricsManagerUtilTest, TestUidFields);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateMetricActivations);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateCountMetrics);

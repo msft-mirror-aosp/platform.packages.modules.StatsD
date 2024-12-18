@@ -379,6 +379,8 @@ private:
 
     friend class GuardedDataCorruptionTestTestStateLostPropagation;
     friend class StatsLogProcessorTestRestricted;
+    friend class ValueMetricHistogramE2eTestClientAggregatedPulledHistogram;
+
     FRIEND_TEST(StatsLogProcessorTest, TestOutOfOrderLogs);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitByteSize);
     FRIEND_TEST(StatsLogProcessorTest, TestRateLimitBroadcast);
@@ -486,6 +488,8 @@ private:
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset);
     FRIEND_TEST(DurationMetricE2eTest, TestUploadThreshold);
     FRIEND_TEST(DurationMetricE2eTest, TestConditionOnRepeatedEnumField);
+
+    FRIEND_TEST(EventMetricE2eTest, TestSlicedState);
 
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
     FRIEND_TEST(ValueMetricE2eTest, TestPulledEvents);
