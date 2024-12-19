@@ -739,9 +739,13 @@ TEST(StatsdStatsTest, TestAtomDroppedStats) {
 
     const int numDropped = 10;
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, false);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, /*isSkipped*/ false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, /*isSkipped*/ false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
     }
+
+    ASSERT_EQ(2, stats.mPushedAtomDropsStats.size());
 
     StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ true);
 
@@ -789,8 +793,10 @@ TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats) {
 
     const int numDropped = 10;
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, false);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, /*isSkipped*/ false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, /*isSkipped*/ false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
     }
 
     StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
@@ -857,8 +863,10 @@ TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats) {
 
     const int numDropped = 10;
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, true);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, true);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, /*isSkipped*/ true);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, /*isSkipped*/ true);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
     }
 
     StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
