@@ -407,17 +407,15 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event) {
 }
 
 void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
-    std::lock_guard<std::mutex> lock(mMetricsMutex);
-
-    // Tell StatsdStats about new event
     const int64_t eventElapsedTimeNs = event->GetElapsedTimestampNs();
     const int atomId = event->GetTagId();
-    StatsdStats::getInstance().noteAtomLogged(atomId, eventElapsedTimeNs / NS_PER_SEC,
-                                              event->isParsedHeaderOnly());
+
     if (!event->isValid()) {
         StatsdStats::getInstance().noteAtomError(atomId);
         return;
     }
+
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
 
     // Hard-coded logic to update train info on disk and fill in any information
     // this log event may be missing.
