@@ -630,8 +630,10 @@ public:
     void noteBucketUnknownCondition(int64_t metricId);
 
     /* Reports one event id has been dropped due to queue overflow, and the oldest event timestamp
-     * in the queue */
-    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId, bool isSkipped);
+     * in the queue. There is an expectation that noteAtomLogged() is called for the same
+     * atomId
+     */
+    void noteEventQueueOverflow(int64_t oldestEventTimestampNs, int32_t atomId);
 
     /* Notes queue max size seen so far and associated timestamp */
     void noteEventQueueSize(int32_t size, int64_t eventTimestampNs);
@@ -651,6 +653,11 @@ public:
      * noteAtomLogged.
      */
     void noteAtomError(int atomTag, bool pull = false);
+
+    /**
+     * Increases counter associated with a CounterType.
+     */
+    void noteIllegalState(CounterType error);
 
     /** Report query of restricted metric succeed **/
     void noteQueryRestrictedMetricSucceed(const int64_t configId, const string& configPackage,
@@ -877,6 +884,9 @@ private:
 
     // Maps PullAtomId to its stats. The size is capped by the puller atom counts.
     std::map<int, PulledAtomStats> mPulledAtomStats;
+
+    // Tracks counter associated with CounterType to represent errors. Max capacity == CounterType
+    std::unordered_map<CounterType, int32_t> mErrorStats;
 
     // Stores the number of times a pushed atom was logged erroneously. The
     // corresponding counts for pulled atoms are stored in PulledAtomStats.
@@ -1110,6 +1120,8 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestTimestampThreshold);
     FRIEND_TEST(StatsdStatsTest, TestValidConfigAdd);
     FRIEND_TEST(StatsdStatsTest, TestSocketBatchReadStats);
+    FRIEND_TEST(StatsdStatsTest, TestErrorStatsReport);
+    FRIEND_TEST(StatsdStatsTest, TestErrorStatsReportReset);
 };
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,

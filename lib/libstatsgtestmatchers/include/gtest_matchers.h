@@ -21,6 +21,7 @@
 
 #include "frameworks/proto_logging/stats/atoms.pb.h"
 #include "frameworks/proto_logging/stats/attribution_node.pb.h"
+#include "packages/modules/StatsD/statsd/src/guardrail/stats_log_enums.pb.h"
 #include "packages/modules/StatsD/statsd/src/shell/shell_data.pb.h"
 #include "packages/modules/StatsD/statsd/src/stats_log.pb.h"
 
@@ -239,6 +240,17 @@ EQ_MATCHER(ShellData,
 TYPE_PRINTER(ShellData,
         REPEATED_PROPERTY_PRINT(atom)
         REPEATED_PROPERTY_PRINT(elapsed_timestamp_nanos)
+);
+
+using CounterStats = StatsdStatsReport_CounterStats;
+
+EQ_MATCHER(CounterStats,
+        PROPERTY_EQ(CounterStats, counter_type),
+        PROPERTY_EQ(CounterStats, count)
+);
+TYPE_PRINTER(CounterStats,
+        PROPERTY_PRINT(counter_type)
+        PROPERTY_PRINT(count)
 );
 
 // clang-format on

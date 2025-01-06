@@ -537,12 +537,15 @@ FieldMatcher CreateAttributionUidAndOtherDimensions(const int atomId,
 }
 
 EventMetric createEventMetric(const string& name, const int64_t what,
-                              const optional<int64_t>& condition) {
+                              const optional<int64_t>& condition, const vector<int64_t>& states) {
     EventMetric metric;
     metric.set_id(StringToId(name));
     metric.set_what(what);
     if (condition) {
         metric.set_condition(condition.value());
+    }
+    for (const int64_t state : states) {
+        metric.add_slice_by_state(state);
     }
     return metric;
 }
@@ -1589,13 +1592,13 @@ sp<NumericValueMetricProducer> createNumericValueMetricProducer(
 }
 
 LogEventFilter::AtomIdSet CreateAtomIdSetDefault() {
-    LogEventFilter::AtomIdSet resultList(std::move(StatsLogProcessor::getDefaultAtomIdSet()));
+    LogEventFilter::AtomIdSet resultList(StatsLogProcessor::getDefaultAtomIdSet());
     StateManager::getInstance().addAllAtomIds(resultList);
     return resultList;
 }
 
 LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config) {
-    LogEventFilter::AtomIdSet resultList(std::move(StatsLogProcessor::getDefaultAtomIdSet()));
+    LogEventFilter::AtomIdSet resultList(StatsLogProcessor::getDefaultAtomIdSet());
 
     // Parse the config for atom ids. A combination atom matcher is a combination of (in the end)
     // simple atom matchers. So by adding all the atoms from the simple atom matchers
@@ -2150,6 +2153,17 @@ void backfillAggregatedAtomsInEventMetric(StatsLogReport::EventMetricDataWrapper
             *(data.mutable_atom()) = atomInfo->atom();
             data.set_elapsed_timestamp_nanos(atomInfo->elapsed_timestamp_nanos(j));
             metricData.push_back(data);
+        }
+        for (int j = 0; j < atomInfo->state_info_size(); j++) {
+            for (auto timestampNs : atomInfo->state_info(j).elapsed_timestamp_nanos()) {
+                EventMetricData data;
+                *(data.mutable_atom()) = atomInfo->atom();
+                for (auto state : atomInfo->state_info(j).slice_by_state()) {
+                    *(data.add_slice_by_state()) = state;
+                }
+                data.set_elapsed_timestamp_nanos(timestampNs);
+                metricData.push_back(data);
+            }
         }
     }
 

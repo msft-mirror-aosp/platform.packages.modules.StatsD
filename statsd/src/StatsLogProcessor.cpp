@@ -91,6 +91,18 @@ constexpr const char* kPermissionUsage = "android.permission.PACKAGE_USAGE_STATS
 // Cool down period for writing data to disk to avoid overwriting files.
 #define WRITE_DATA_COOL_DOWN_SEC 15
 
+namespace {
+
+const char* getOnLogEventCallName(int32_t tagId) {
+    static std::string name;
+    // to avoid new string allocation on each call
+    name.reserve(30);
+    name = "OnLogEvent-" + std::to_string(tagId);
+    return name.c_str();
+}
+
+}  // namespace
+
 StatsLogProcessor::StatsLogProcessor(
         const sp<UidMap>& uidMap, const sp<StatsPullerManager>& pullerManager,
         const sp<AlarmMonitor>& anomalyAlarmMonitor, const sp<AlarmMonitor>& periodicAlarmMonitor,
@@ -390,22 +402,20 @@ void StatsLogProcessor::resetConfigsLocked(const int64_t timestampNs) {
 }
 
 void StatsLogProcessor::OnLogEvent(LogEvent* event) {
-    ATRACE_CALL();
+    ATRACE_NAME(getOnLogEventCallName(event->GetTagId()));
     OnLogEvent(event, getElapsedRealtimeNs());
 }
 
 void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
-    std::lock_guard<std::mutex> lock(mMetricsMutex);
-
-    // Tell StatsdStats about new event
     const int64_t eventElapsedTimeNs = event->GetElapsedTimestampNs();
     const int atomId = event->GetTagId();
-    StatsdStats::getInstance().noteAtomLogged(atomId, eventElapsedTimeNs / NS_PER_SEC,
-                                              event->isParsedHeaderOnly());
+
     if (!event->isValid()) {
         StatsdStats::getInstance().noteAtomError(atomId);
         return;
     }
+
+    std::lock_guard<std::mutex> lock(mMetricsMutex);
 
     // Hard-coded logic to update train info on disk and fill in any information
     // this log event may be missing.
@@ -1516,13 +1526,18 @@ LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
 }
 
 void StatsLogProcessor::updateLogEventFilterLocked() const {
-    VLOG("StatsLogProcessor: Updating allAtomIds");
+    VLOG("StatsLogProcessor: Updating allAtomIds at %lld", (long long)getElapsedRealtimeNs());
     LogEventFilter::AtomIdSet allAtomIds = getDefaultAtomIdSet();
     for (const auto& metricsManager : mMetricsManagers) {
         metricsManager.second->addAllAtomIds(allAtomIds);
     }
     StateManager::getInstance().addAllAtomIds(allAtomIds);
     VLOG("StatsLogProcessor: Updating allAtomIds done. Total atoms %d", (int)allAtomIds.size());
+#ifdef STATSD_DEBUG
+    for (auto atomId : allAtomIds) {
+        VLOG("Atom in use %d", atomId);
+    }
+#endif  // STATSD_DEBUG
     mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
 }
 

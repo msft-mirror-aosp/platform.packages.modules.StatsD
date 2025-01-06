@@ -739,9 +739,13 @@ TEST(StatsdStatsTest, TestAtomDroppedStats) {
 
     const int numDropped = 10;
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, false);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, /*isSkipped*/ false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, /*isSkipped*/ false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
     }
+
+    ASSERT_EQ(2, stats.mPushedAtomDropsStats.size());
 
     StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ true);
 
@@ -789,8 +793,10 @@ TEST(StatsdStatsTest, TestAtomLoggedAndDroppedStats) {
 
     const int numDropped = 10;
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, false);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, false);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, /*isSkipped*/ false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, /*isSkipped*/ false);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
     }
 
     StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
@@ -857,8 +863,10 @@ TEST(StatsdStatsTest, TestAtomLoggedAndDroppedAndSkippedStats) {
 
     const int numDropped = 10;
     for (int i = 0; i < numDropped; i++) {
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag, true);
-        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag, true);
+        stats.noteAtomLogged(pushAtomTag, /*timeSec*/ 0, /*isSkipped*/ true);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, pushAtomTag);
+        stats.noteAtomLogged(nonPlatformPushAtomTag, /*timeSec*/ 0, /*isSkipped*/ true);
+        stats.noteEventQueueOverflow(/*oldestEventTimestampNs*/ 0, nonPlatformPushAtomTag);
     }
 
     StatsdStatsReport report = getStatsdStatsReport(stats, /* reset stats */ false);
@@ -1206,6 +1214,43 @@ TEST_P(StatsdStatsTest_GetAtomDimensionKeySizeLimit_NotInMap, TestGetAtomDimensi
     EXPECT_EQ(
             StatsdStats::getAtomDimensionKeySizeLimits(atomId, defaultHardLimit),
             (std::pair<size_t, size_t>(StatsdStats::kDimensionKeySizeSoftLimit, defaultHardLimit)));
+}
+
+CounterStats buildCounterStats(CounterType counter, int32_t count) {
+    CounterStats msg;
+    msg.set_counter_type(counter);
+    msg.set_count(count);
+    return msg;
+}
+
+TEST(StatsdStatsTest, TestErrorStatsReport) {
+    StatsdStats stats;
+    stats.noteIllegalState(COUNTER_TYPE_UNKNOWN);
+    stats.noteIllegalState(COUNTER_TYPE_UNKNOWN);
+    stats.noteIllegalState(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED);
+    stats.noteIllegalState(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED);
+    auto report = getStatsdStatsReport(stats, /* reset stats */ false);
+
+    EXPECT_EQ(stats.mErrorStats.size(), 2);
+
+    EXPECT_TRUE(report.has_error_stats());
+
+    vector<CounterStats> expectedCounterStats{
+            buildCounterStats(COUNTER_TYPE_UNKNOWN, 2),
+            buildCounterStats(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED, 2)};
+    EXPECT_THAT(report.error_stats().counters(),
+                UnorderedPointwise(EqCounterStats(), expectedCounterStats));
+}
+
+TEST(StatsdStatsTest, TestErrorStatsReportReset) {
+    StatsdStats stats;
+    stats.noteIllegalState(COUNTER_TYPE_UNKNOWN);
+    stats.noteIllegalState(COUNTER_TYPE_UNKNOWN);
+    stats.noteIllegalState(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED);
+    stats.noteIllegalState(COUNTER_TYPE_ERROR_ATOM_FILTER_SKIPPED);
+    auto report = getStatsdStatsReport(stats, /* reset stats */ true);
+
+    EXPECT_TRUE(stats.mErrorStats.empty());
 }
 
 }  // namespace statsd
