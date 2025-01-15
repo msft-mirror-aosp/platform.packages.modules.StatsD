@@ -1248,6 +1248,10 @@ Status StatsService::addConfiguration(int64_t key, const vector <uint8_t>& confi
 }
 
 bool StatsService::addConfigurationChecked(int uid, int64_t key, const vector<uint8_t>& config) {
+    const bool pastFilterState = mLogEventFilter->getFilteringEnabled();
+    // disabling filter to avoid skipping potentially interesting atoms required by
+    // the new or updated configuration
+    mLogEventFilter->setFilteringEnabled(false);
     ConfigKey configKey(uid, key);
     StatsdConfig cfg;
     if (config.size() > 0) {  // If the config is empty, skip parsing.
@@ -1256,6 +1260,7 @@ bool StatsService::addConfigurationChecked(int uid, int64_t key, const vector<ui
         }
     }
     mConfigManager->UpdateConfig(configKey, cfg);
+    mLogEventFilter->setFilteringEnabled(pastFilterState);
     return true;
 }
 
