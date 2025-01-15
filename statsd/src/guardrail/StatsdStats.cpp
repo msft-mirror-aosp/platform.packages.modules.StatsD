@@ -1124,7 +1124,7 @@ void StatsdStats::resetInternalLocked() {
     mSystemServerRestartSec.clear();
     mLogLossStats.clear();
     mOverflowCount = 0;
-    mMinQueueHistoryNs = kInt64Max;
+    mMinQueueHistoryNs = std::numeric_limits<int64_t>::max();
     mMaxQueueHistoryNs = 0;
     mEventQueueMaxSizeObserved = 0;
     mEventQueueMaxSizeObservedElapsedNanos = 0;

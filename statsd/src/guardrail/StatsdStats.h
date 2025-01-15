@@ -19,6 +19,7 @@
 #include <log/log_time.h>
 #include <src/guardrail/stats_log_enums.pb.h>
 
+#include <limits>
 #include <list>
 #include <mutex>
 #include <string>
@@ -305,8 +306,6 @@ public:
 
     // Max accepted atom id.
     static const int32_t kMaxAtomTag = 200000;
-
-    static const int64_t kInt64Max = 0x7fffffffffffffffLL;
 
     static const int32_t kMaxLoggedBucketDropEvents = 10;
 
@@ -956,7 +955,7 @@ private:
 
     // Min of {(now - oldestEventTimestamp) when overflow happens}.
     // This number is helpful to understand how FAST the events floods to statsd.
-    int64_t mMinQueueHistoryNs = kInt64Max;
+    int64_t mMinQueueHistoryNs = std::numeric_limits<int64_t>::max();
 
     // Total number of events that are lost due to queue overflow.
     int32_t mOverflowCount = 0;
