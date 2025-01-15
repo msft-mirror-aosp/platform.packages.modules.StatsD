@@ -1,11 +1,11 @@
 /*
- * Copyright (C) 2024 The Android Open Source Project
+ * Copyright (C) 2024, The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,14 +14,6 @@
  * limitations under the License.
  */
 
-#pragma once
+#include <android/binder_auto_utils.h>
 
-#define ATRACE_TAG ATRACE_TAG_APP
-
-#include <utils/Trace.h>
-
-// Use the local value to turn on/off atrace logs.
-// The advantage is that in production compiler can remove the logging code if the local
-// STATSD_DEBUG/VERBOSE is false.
-#define ATRACE_CALL_DEBUG(...) \
-    if (STATSD_DEBUG) ATRACE_CALL(__VA_ARGS__);
+ndk::SpAIBinder getStatsdBinder();
