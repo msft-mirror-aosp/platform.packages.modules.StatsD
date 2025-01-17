@@ -515,6 +515,8 @@ cc_benchmark {
         "-Wno-varargs",
     ],
 
+    test_config: "benchmark/AndroidTest.xml",
+
     static_libs: [
         "libgtest",
         "libstats_test_utils",
