@@ -50,7 +50,7 @@ StatsSocketListener::StatsSocketListener(const std::shared_ptr<LogEventQueue>& q
 }
 
 bool StatsSocketListener::onDataAvailable(SocketClient* cli) {
-    ATRACE_CALL();
+    ATRACE_CALL_DEBUG();
     static bool name_set;
     if (!name_set) {
         prctl(PR_SET_NAME, "statsd.writer");
@@ -125,7 +125,7 @@ tuple<int32_t, int64_t> StatsSocketListener::processSocketMessage(const char* bu
                                                                   uint32_t pid,
                                                                   LogEventQueue& queue,
                                                                   const LogEventFilter& filter) {
-    ATRACE_CALL();
+    ATRACE_CALL_DEBUG();
     static const uint32_t kStatsEventTag = 1937006964;
 
     if (len <= (ssize_t)(sizeof(android_log_header_t)) + sizeof(uint32_t)) {
@@ -179,7 +179,7 @@ tuple<int32_t, int64_t> StatsSocketListener::processStatsEventBuffer(const uint8
                                                                      uint32_t uid, uint32_t pid,
                                                                      LogEventQueue& queue,
                                                                      const LogEventFilter& filter) {
-    ATRACE_CALL();
+    ATRACE_CALL_DEBUG();
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
 
     if (filter.getFilteringEnabled()) {

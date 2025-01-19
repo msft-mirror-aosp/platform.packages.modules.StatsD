@@ -28,6 +28,7 @@ cc_defaults {
         "stats_subscription.cpp",
         "stats_provider.cpp",
         "stats_pull_atom_callback.cpp",
+        "utils.cpp",
     ],
     cflags: [
         "-Wall",
