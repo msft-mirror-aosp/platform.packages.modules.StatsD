@@ -167,6 +167,7 @@ message ValueBucketInfo {
           Histogram histogram = 5;
       }
       optional int32 sample_size = 4;
+      reserved 6;
   }
 
   repeated Value values = 9;
