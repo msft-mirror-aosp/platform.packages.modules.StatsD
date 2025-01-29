@@ -907,6 +907,7 @@ void MetricsManager::loadMetadata(const metadata::StatsMetadata& metadata,
         const auto& it = mMetricProducerMap.find(metricId);
         if (it == mMetricProducerMap.end()) {
             ALOGE("No metricProducer found for metricId %lld", (long long)metricId);
+            continue;
         }
         mAllMetricProducers[it->second]->loadMetricMetadataFromProto(metricMetadata);
     }
