@@ -75,11 +75,6 @@ int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
     constexpr int kQueueOverflowErrorCode = 1;
     constexpr int kLoggingRateLimitExceededErrorCode = 2;
 
-    if (flags::logging_rate_limit_enabled() && !can_log_atom(atomId)) {
-        note_log_drop(kLoggingRateLimitExceededErrorCode, atomId);
-        return 0;
-    }
-
     if (should_write_via_queue(atomId)) {
         const bool ret =
                 write_buffer_to_statsd_queue(static_cast<const uint8_t*>(buffer), size, atomId);
@@ -89,6 +84,12 @@ int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
         }
         return ret;
     }
+
+    if (flags::logging_rate_limit_enabled() && !can_log_atom(atomId)) {
+        note_log_drop(kLoggingRateLimitExceededErrorCode, atomId);
+        return 0;
+    }
+
     return write_buffer_to_statsd_impl(buffer, size, atomId, /*doNoteDrop*/ true);
 }
 
