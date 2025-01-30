@@ -31,16 +31,15 @@ java_test_host {
         "mts-statsd",
         "mcts-statsd",
     ],
-
     libs: [
         "compatibility-host-util",
         "cts-tradefed",
         "host-libprotobuf-java-full",
-        "platformprotos",
         "tradefed",
         "truth-prebuilt",
     ],
     static_libs: [
+        "platformprotos",
         "core_cts_test_resources",
         "perfetto_config-full",
     ],
