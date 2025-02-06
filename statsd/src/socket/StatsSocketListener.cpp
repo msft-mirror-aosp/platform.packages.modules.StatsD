@@ -195,6 +195,9 @@ tuple<int32_t, int64_t> StatsSocketListener::processStatsEventBuffer(const uint8
     const bool isAtomSkipped = logEvent->isParsedHeaderOnly();
     const int64_t atomTimestamp = logEvent->GetElapsedTimestampNs();
 
+    // Tell StatsdStats about new event
+    StatsdStats::getInstance().noteAtomLogged(atomId, atomTimestamp, isAtomSkipped);
+
     if (atomId == util::STATS_SOCKET_LOSS_REPORTED) {
         if (isAtomSkipped) {
             ALOGW("Atom STATS_SOCKET_LOSS_REPORTED should not be skipped");
@@ -214,7 +217,7 @@ tuple<int32_t, int64_t> StatsSocketListener::processStatsEventBuffer(const uint8
     if (success) {
         StatsdStats::getInstance().noteEventQueueSize(queueSize, atomTimestamp);
     } else {
-        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId, isAtomSkipped);
+        StatsdStats::getInstance().noteEventQueueOverflow(oldestTimestamp, atomId);
     }
     return {atomId, atomTimestamp};
 }
