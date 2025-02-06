@@ -19,12 +19,14 @@
 #include <log/log_time.h>
 #include <src/guardrail/stats_log_enums.pb.h>
 
+#include <limits>
 #include <list>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "LoggingRate.h"
 #include "config/ConfigKey.h"
 #include "logd/logevent_util.h"
 
@@ -286,13 +288,13 @@ public:
 
     // Maximum atom id value that we consider a platform pushed atom.
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
-    static const int kMaxPushedAtomId = 1500;
+    static const int32_t kMaxPushedAtomId = 1500;
 
     // Atom id that is the start of the pulled atoms.
-    static const int kPullAtomStartTag = 10000;
+    static const int32_t kPullAtomStartTag = 10000;
 
     // Atom id that is the start of vendor atoms.
-    static const int kVendorAtomStartTag = 100000;
+    static const int32_t kVendorAtomStartTag = 100000;
 
     // Vendor pulled atom start id.
     static const int32_t kVendorPulledAtomStartTag = 150000;
@@ -306,14 +308,14 @@ public:
     // Max accepted atom id.
     static const int32_t kMaxAtomTag = 200000;
 
-    static const int64_t kInt64Max = 0x7fffffffffffffffLL;
-
     static const int32_t kMaxLoggedBucketDropEvents = 10;
 
     static const int32_t kNumBinsInSocketBatchReadHistogram = 30;
     static const int32_t kLargeBatchReadThreshold = 1000;
     static const int32_t kMaxLargeBatchReadSize = 20;
     static const int32_t kMaxLargeBatchReadAtomThreshold = 50;
+
+    static const int32_t kMaxLoggingRateStatsToReport = 50;
 
     /**
      * Report a new config has been received and report the static stats about the config.
@@ -459,7 +461,7 @@ public:
     /**
      * Report an atom event has been logged.
      */
-    void noteAtomLogged(int atomId, int32_t timeSec, bool isSkipped);
+    void noteAtomLogged(int atomId, int64_t eventTimestampNs, bool isSkipped);
 
     /**
      * Report that statsd modified the anomaly alarm registered with StatsCompanionService.
@@ -956,7 +958,7 @@ private:
 
     // Min of {(now - oldestEventTimestamp) when overflow happens}.
     // This number is helpful to understand how FAST the events floods to statsd.
-    int64_t mMinQueueHistoryNs = kInt64Max;
+    int64_t mMinQueueHistoryNs = std::numeric_limits<int64_t>::max();
 
     // Total number of events that are lost due to queue overflow.
     int32_t mOverflowCount = 0;
@@ -969,6 +971,8 @@ private:
 
     // Timestamps when we detect log loss, and the number of logs lost.
     std::list<LogLossStats> mLogLossStats;
+
+    LoggingRate mLoggingRateStats;
 
     std::list<int32_t> mSystemServerRestartSec;
 
@@ -1053,7 +1057,7 @@ private:
 
     void resetInternalLocked();
 
-    void noteAtomLoggedLocked(int atomId, bool isSkipped);
+    void noteAtomLoggedLocked(int atomId, int64_t eventTimestampNs, bool isSkipped);
 
     void noteAtomDroppedLocked(int atomId);
 
@@ -1073,6 +1077,8 @@ private:
     int getPushedAtomErrorsLocked(int atomId) const;
 
     int getPushedAtomDropsLocked(int atomId) const;
+
+    int getLoggingRateLocked(int atomId) const;
 
     bool hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const;
 
@@ -1122,6 +1128,9 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestSocketBatchReadStats);
     FRIEND_TEST(StatsdStatsTest, TestErrorStatsReport);
     FRIEND_TEST(StatsdStatsTest, TestErrorStatsReportReset);
+    FRIEND_TEST(StatsdStatsTest, TestLoggingRateReport);
+    FRIEND_TEST(StatsdStatsTest, TestLoggingRateReportOnlyTopN);
+    FRIEND_TEST(StatsdStatsTest, TestLoggingRateReportReset);
 };
 
 InvalidConfigReason createInvalidConfigReasonWithMatcher(const InvalidConfigReasonEnum reason,

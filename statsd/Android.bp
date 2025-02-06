@@ -119,6 +119,7 @@ cc_defaults {
         "src/statscompanion_util.cpp",
         "src/statsd_config.proto",
         "src/statsd_metadata.proto",
+        "src/guardrail/LoggingRate.cpp",
         "src/guardrail/stats_log_enums.proto",
         "src/StatsLogProcessor.cpp",
         "src/StatsService.cpp",
@@ -298,6 +299,7 @@ cc_defaults {
         "-Wno-unused-variable",
     ],
     static_libs: [
+        "libflagtest",
         "libgmock",
         "libstatslog_statsdtest",
     ],
@@ -514,6 +516,8 @@ cc_benchmark {
         // Bug: http://b/29823425 Disable -Wvarargs for Clang update to r271374
         "-Wno-varargs",
     ],
+
+    test_config: "benchmark/AndroidTest.xml",
 
     static_libs: [
         "libgtest",
