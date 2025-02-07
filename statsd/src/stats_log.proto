@@ -542,6 +542,7 @@ message StatsdStatsReport {
         optional int32 error_count = 3;
         optional int32 dropped_count = 4;
         optional int32 skip_count = 5;
+        optional int32 peak_rate = 6;
     }
 
     repeated AtomStats atom_stats = 7;
