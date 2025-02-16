@@ -255,6 +255,25 @@ TYPE_PRINTER(CounterStats,
         PROPERTY_PRINT(count)
 );
 
+using AtomStats = StatsdStatsReport_AtomStats;
+
+EQ_MATCHER(AtomStats,
+        PROPERTY_EQ(AtomStats, tag),
+        PROPERTY_EQ(AtomStats, count),
+        PROPERTY_EQ(AtomStats, error_count),
+        PROPERTY_EQ(AtomStats, dropped_count),
+        PROPERTY_EQ(AtomStats, skip_count),
+        PROPERTY_EQ(AtomStats, peak_rate)
+);
+TYPE_PRINTER(AtomStats,
+        PROPERTY_PRINT(tag)
+        PROPERTY_PRINT(count)
+        PROPERTY_PRINT(error_count)
+        PROPERTY_PRINT(dropped_count)
+        PROPERTY_PRINT(skip_count)
+        PROPERTY_PRINT(peak_rate)
+);
+
 // clang-format on
 
 }  // namespace statsd
