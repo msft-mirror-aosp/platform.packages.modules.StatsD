@@ -350,7 +350,8 @@ DurationMetric createDurationMetric(const string& name, int64_t what,
 GaugeMetric createGaugeMetric(const string& name, int64_t what,
                               const GaugeMetric::SamplingType samplingType,
                               const optional<int64_t>& condition,
-                              const optional<int64_t>& triggerEvent);
+                              const optional<int64_t>& triggerEvent,
+                              const vector<int64_t>& states = {});
 
 ValueMetric createValueMetric(const string& name, const AtomMatcher& what, int valueField,
                               const optional<int64_t>& condition, const vector<int64_t>& states);
@@ -703,6 +704,14 @@ bool backfillDimensionPath(const DimensionsValue& path,
 void sortReportsByElapsedTime(ConfigMetricsReportList* configReportList);
 
 class FakeSubsystemSleepCallback : public BnPullAtomCallback {
+public:
+    // Track the number of pulls.
+    int pullNum = 1;
+    Status onPullAtom(int atomTag,
+                      const shared_ptr<IPullAtomResultReceiver>& resultReceiver) override;
+};
+
+class FakeCpuTimeCallback : public BnPullAtomCallback {
 public:
     // Track the number of pulls.
     int pullNum = 1;

@@ -70,6 +70,8 @@ public:
             const std::unordered_map<int, std::shared_ptr<Activation>>& eventActivationMap = {},
             const std::unordered_map<int, std::vector<std::shared_ptr<Activation>>>&
                     eventDeactivationMap = {},
+            const std::vector<int>& slicedStateAtoms = {},
+            const std::unordered_map<int, std::unordered_map<int, int64_t>>& stateGroupMap = {},
             const size_t dimensionSoftLimit = StatsdStats::kDimensionKeySizeSoftLimit,
             const size_t dimensionHardLimit = StatsdStats::kDimensionKeySizeHardLimit);
 
@@ -107,6 +109,10 @@ public:
     MetricType getMetricType() const override {
         return METRIC_TYPE_GAUGE;
     }
+
+    void onStateChanged(const int64_t eventTimeNs, const int32_t atomId,
+                        const HashableDimensionKey& primaryKey, const FieldValue& oldState,
+                        const FieldValue& newState) override;
 
 protected:
     void onMatchedLogEventInternalLocked(
@@ -181,6 +187,7 @@ private:
     sp<EventMatcherWizard> mEventMatcherWizard;
 
     sp<StatsPullerManager> mPullerManager;
+
     // tagId for pulled data. -1 if this is not pulled
     const int mPullTagId;
 
