@@ -47,4 +47,5 @@ java_test_host {
         "**/*.pbtxt",
         ":CtsStatsdApp",
     ],
+    jarjar_rules: "jarjar-rules.txt",
 }
