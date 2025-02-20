@@ -166,7 +166,7 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
             [this](const ConfigKey& key) {
                 shared_ptr<IPendingIntentRef> receiver = mConfigManager->GetConfigReceiver(key);
                 if (receiver == nullptr) {
-                    VLOG("Could not find a broadcast receiver for %s", key.ToString().c_str());
+                    ALOGE("Could not find a broadcast receiver for %s", key.ToString().c_str());
                     return false;
                 }
                 Status status = receiver->sendDataBroadcast(mProcessor->getLastReportTimeNs(key));
@@ -177,26 +177,26 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
                     status.getStatus() == STATUS_DEAD_OBJECT) {
                     mConfigManager->RemoveConfigReceiver(key, receiver);
                 }
-                VLOG("Failed to send a broadcast for receiver %s", key.ToString().c_str());
+                ALOGE("Failed to send a broadcast for receiver %s", key.ToString().c_str());
                 return false;
             },
             [this](const int& uid, const vector<int64_t>& activeConfigs) {
                 shared_ptr<IPendingIntentRef> receiver =
                     mConfigManager->GetActiveConfigsChangedReceiver(uid);
                 if (receiver == nullptr) {
-                    VLOG("Could not find receiver for uid %d", uid);
+                    ALOGE("Could not find receiver for uid %d", uid);
                     return false;
                 }
                 Status status = receiver->sendActiveConfigsChangedBroadcast(activeConfigs);
                 if (status.isOk()) {
-                    VLOG("StatsService::active configs broadcast succeeded for uid %d" , uid);
+                    ALOGI("StatsService::active configs broadcast succeeded for uid %d" , uid);
                     return true;
                 }
                 if (status.getExceptionCode() == EX_TRANSACTION_FAILED &&
                     status.getStatus() == STATUS_DEAD_OBJECT) {
                     mConfigManager->RemoveActiveConfigsChangedReceiver(uid, receiver);
                 }
-                VLOG("StatsService::active configs broadcast failed for uid %d", uid);
+                ALOGE("StatsService::active configs broadcast failed for uid %d", uid);
                 return false;
             },
             [this](const ConfigKey& key, const string& delegatePackage,
