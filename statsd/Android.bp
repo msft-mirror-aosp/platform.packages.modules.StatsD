@@ -151,6 +151,7 @@ cc_defaults {
         "statsd-aidl-ndk",
         "statsd_flags_c_lib",
         "libsqlite_static_noicu",
+        "libaconfig_storage_read_api_cc",
     ],
     shared_libs: [
         "libbinder_ndk",
