@@ -54,4 +54,5 @@ java_test_host {
         ":CtsStatsdApp",
         ":StatsdAtomStormApp",
     ],
+    jarjar_rules: "jarjar-rules.txt",
 }

@@ -66,6 +66,7 @@ const int FIELD_ID_DROP_TIME = 2;
 const int FIELD_ID_DIMENSION_IN_WHAT = 1;
 const int FIELD_ID_BUCKET_INFO = 3;
 const int FIELD_ID_DIMENSION_LEAF_IN_WHAT = 4;
+const int FIELD_ID_SLICE_BY_STATE = 6;
 // for GaugeBucketInfo
 const int FIELD_ID_BUCKET_NUM = 6;
 const int FIELD_ID_START_BUCKET_ELAPSED_MILLIS = 7;
@@ -74,6 +75,7 @@ const int FIELD_ID_AGGREGATED_ATOM = 9;
 // for AggregatedAtomInfo
 const int FIELD_ID_ATOM_VALUE = 1;
 const int FIELD_ID_ATOM_TIMESTAMPS = 2;
+const int FIELD_ID_AGGREGATED_STATE = 3;
 
 GaugeMetricProducer::GaugeMetricProducer(
         const ConfigKey& key, const GaugeMetric& metric, const int conditionIndex,
@@ -85,11 +87,12 @@ GaugeMetricProducer::GaugeMetricProducer(
         const wp<ConfigMetadataProvider> configMetadataProvider,
         const unordered_map<int, shared_ptr<Activation>>& eventActivationMap,
         const unordered_map<int, vector<shared_ptr<Activation>>>& eventDeactivationMap,
+        const vector<int>& slicedStateAtoms,
+        const unordered_map<int, unordered_map<int, int64_t>>& stateGroupMap,
         const size_t dimensionSoftLimit, const size_t dimensionHardLimit)
     : MetricProducer(metric.id(), key, timeBaseNs, conditionIndex, initialConditionCache, wizard,
-                     protoHash, eventActivationMap, eventDeactivationMap, /*slicedStateAtoms=*/{},
-                     /*stateGroupMap=*/{}, getAppUpgradeBucketSplit(metric),
-                     configMetadataProvider),
+                     protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
+                     stateGroupMap, getAppUpgradeBucketSplit(metric), configMetadataProvider),
       mWhatMatcherIndex(whatMatcherIndex),
       mEventMatcherWizard(matcherWizard),
       mPullerManager(pullerManager),
@@ -136,6 +139,15 @@ GaugeMetricProducer::GaugeMetricProducer(
         }
         mConditionSliced = true;
     }
+
+    for (const auto& stateLink : metric.state_link()) {
+        Metric2State ms;
+        ms.stateAtomId = stateLink.state_atom_id();
+        translateFieldMatcher(stateLink.fields_in_what(), &ms.metricFields);
+        translateFieldMatcher(stateLink.fields_in_state(), &ms.stateFields);
+        mMetric2StateLinks.push_back(ms);
+    }
+
     mShouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     flushIfNeededLocked(startTimeNs);
@@ -222,6 +234,14 @@ optional<InvalidConfigReason> GaugeMetricProducer::onConfigUpdatedLocked(
         pullAndMatchEventsLocked(mCurrentBucketStartTimeNs);
     }
     return nullopt;
+}
+
+void GaugeMetricProducer::onStateChanged(const int64_t eventTimeNs, const int32_t atomId,
+                                         const HashableDimensionKey& primaryKey,
+                                         const FieldValue& oldState, const FieldValue& newState) {
+    VLOG("GaugeMetric %lld onStateChanged time %lld, State%d, key %s, %d -> %d",
+         (long long)mMetricId, (long long)eventTimeNs, atomId, primaryKey.toString().c_str(),
+         oldState.mValue.int_value, newState.mValue.int_value);
 }
 
 void GaugeMetricProducer::dumpStatesLocked(int out, bool verbose) const {
@@ -335,6 +355,14 @@ void GaugeMetricProducer::onDumpReportLocked(const int64_t dumpTimeNs,
             writeDimensionLeafNodesToProto(dimensionKey.getDimensionKeyInWhat(),
                                            FIELD_ID_DIMENSION_LEAF_IN_WHAT, mUidFields, str_set,
                                            usedUids, protoOutput);
+        }
+
+        // Then fill slice_by_state.
+        for (auto state : dimensionKey.getStateValuesKey().getValues()) {
+            uint64_t stateToken = protoOutput->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
+                                                     FIELD_ID_SLICE_BY_STATE);
+            writeStateToProto(state, protoOutput);
+            protoOutput->end(stateToken);
         }
 
         // Then fill bucket_info (GaugeBucketInfo).
@@ -560,7 +588,7 @@ bool GaugeMetricProducer::hitGuardRailLocked(const MetricDimensionKey& newKey) {
 void GaugeMetricProducer::onMatchedLogEventInternalLocked(
         const size_t matcherIndex, const MetricDimensionKey& eventKey,
         const ConditionKey& conditionKey, bool condition, const LogEvent& event,
-        const map<int, HashableDimensionKey>& /*statePrimaryKeys*/) {
+        const map<int, HashableDimensionKey>& statePrimaryKeys) {
     if (condition == false) {
         return;
     }
