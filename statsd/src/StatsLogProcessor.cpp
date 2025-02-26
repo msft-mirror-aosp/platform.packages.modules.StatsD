@@ -503,7 +503,7 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         }
         // The activation state of this config changed.
         if (isPrevActive != isCurActive) {
-            VLOG("Active status changed for uid  %d", uid);
+            ALOGI("Active status changed for uid  %d", uid);
             uidsWithActiveConfigsChanged.insert(uid);
             StatsdStats::getInstance().noteActiveStatusChanged(pair.first, isCurActive);
         }
@@ -518,20 +518,20 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
             if (elapsedRealtimeNs - lastBroadcastTime->second <
                 StatsdStats::kMinActivationBroadcastPeriodNs) {
                 StatsdStats::getInstance().noteActivationBroadcastGuardrailHit(uid);
-                VLOG("StatsD would've sent an activation broadcast but the rate limit stopped us.");
+                ALOGI("StatsD would've sent an activation broadcast but the guardrail stopped us.");
                 return;
             }
         }
         auto activeConfigs = activeConfigsPerUid.find(uid);
         if (activeConfigs != activeConfigsPerUid.end()) {
             if (mSendActivationBroadcast(uid, activeConfigs->second)) {
-                VLOG("StatsD sent activation notice for uid %d", uid);
+                ALOGI("StatsD sent activation notice for uid %d", uid);
                 mLastActivationBroadcastTimes[uid] = elapsedRealtimeNs;
             }
         } else {
             std::vector<int64_t> emptyActiveConfigs;
             if (mSendActivationBroadcast(uid, emptyActiveConfigs)) {
-                VLOG("StatsD sent EMPTY activation notice for uid %d", uid);
+                ALOGI("StatsD sent EMPTY activation notice for uid %d", uid);
                 mLastActivationBroadcastTimes[uid] = elapsedRealtimeNs;
             }
         }
