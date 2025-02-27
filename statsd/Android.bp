@@ -504,13 +504,14 @@ cc_benchmark {
         "benchmark/hello_world_benchmark.cpp",
         "benchmark/log_event_benchmark.cpp",
         "benchmark/log_event_filter_benchmark.cpp",
+        "benchmark/loss_info_container_benchmark.cpp",
         "benchmark/main.cpp",
         "benchmark/on_log_event_benchmark.cpp",
         "benchmark/stats_write_benchmark.cpp",
-        "benchmark/loss_info_container_benchmark.cpp",
         "benchmark/string_transform_benchmark.cpp",
-        "benchmark/value_metric_benchmark.cpp",
         "benchmark/tex_metric_benchmark.cpp",
+        "benchmark/utils.cpp",
+        "benchmark/value_metric_benchmark.cpp",
     ],
 
     cflags: [
