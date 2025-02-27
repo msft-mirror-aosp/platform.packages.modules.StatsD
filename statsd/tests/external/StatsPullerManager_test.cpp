@@ -107,7 +107,7 @@ public:
 class FakeAllowAllAtomsUidProvider : public PullUidProvider {
 public:
     vector<int32_t> getPullAtomUids(int atomId) override {
-        return {uid1};
+        return {uid1, uid2};
     }
 };
 class MockPullAtomCallback : public FakePullAtomCallback {
