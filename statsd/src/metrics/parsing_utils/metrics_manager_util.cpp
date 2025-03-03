@@ -1382,6 +1382,8 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         const unordered_map<int64_t, int>& conditionTrackerMap,
         const vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const sp<EventMatcherWizard>& matcherWizard,
+        const std::unordered_map<int64_t, int>& stateAtomIdMap,
+        const std::unordered_map<int64_t, std::unordered_map<int, int64_t>>& allStateGroupMaps,
         const unordered_map<int64_t, int>& metricToActivationMap,
         unordered_map<int, vector<int>>& trackerToMetricMap,
         unordered_map<int, vector<int>>& conditionToMetricMap,
@@ -1470,6 +1472,22 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         }
     }
 
+    std::vector<int> slicedStateAtoms;
+    std::unordered_map<int, std::unordered_map<int, int64_t>> stateGroupMap;
+    if (metric.slice_by_state_size() > 0) {
+        invalidConfigReason =
+                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
+        if (invalidConfigReason.has_value()) {
+            return nullopt;
+        }
+    } else if (metric.state_link_size() > 0) {
+        ALOGE("GaugeMetric has a MetricStateLink but doesn't have a sliced state");
+        invalidConfigReason =
+                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
+        return nullopt;
+    }
+
     if (pullTagId != -1 && metric.sampling_percentage() != 100) {
         invalidConfigReason = InvalidConfigReason(
                 INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING, metric.id());
@@ -1528,7 +1546,7 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
             key, metric, conditionIndex, initialConditionCache, wizard, metricHash, trackerIndex,
             matcherWizard, pullTagId, triggerAtomId, atomTagId, timeBaseNs, currentTimeNs,
             pullerManager, configMetadataProvider, eventActivationMap, eventDeactivationMap,
-            dimensionSoftLimit, dimensionHardLimit);
+            slicedStateAtoms, stateGroupMap, dimensionSoftLimit, dimensionHardLimit);
 
     SamplingInfo samplingInfo;
     std::vector<Matcher> dimensionsInWhat;
@@ -1871,8 +1889,8 @@ optional<InvalidConfigReason> initMetrics(
         optional<sp<MetricProducer>> producer = createGaugeMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
-                conditionTrackerMap, initialConditionCache, wizard, matcherWizard,
-                metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+                conditionTrackerMap, initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
+                allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
                 metricsWithActivation, invalidConfigReason, configMetadataProvider);
         if (!producer) {

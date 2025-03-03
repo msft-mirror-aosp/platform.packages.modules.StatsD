@@ -969,9 +969,10 @@ optional<InvalidConfigReason> updateMetrics(
                         key, config, timeBaseNs, currentTimeNs, pullerManager, metric, metricIndex,
                         allAtomMatchingTrackers, newAtomMatchingTrackerMap, allConditionTrackers,
                         conditionTrackerMap, initialConditionCache, wizard, matcherWizard,
-                        metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
-                        activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                        metricsWithActivation, invalidConfigReason, configMetadataProvider);
+                        stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                        invalidConfigReason, configMetadataProvider);
                 break;
             }
             default: {

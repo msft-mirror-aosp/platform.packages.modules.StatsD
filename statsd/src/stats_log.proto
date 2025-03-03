@@ -253,7 +253,6 @@ message GaugeBucketInfo {
 message GaugeMetricData {
   optional DimensionsValue dimensions_in_what = 1;
 
-  // Currently unsupported
   repeated StateValue slice_by_state = 6;
 
   repeated GaugeBucketInfo bucket_info = 3;

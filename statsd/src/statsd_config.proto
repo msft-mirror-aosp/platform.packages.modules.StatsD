@@ -338,6 +338,8 @@ message GaugeMetric {
 
   optional int64 condition = 4;
 
+  repeated int64 slice_by_state = 20;
+
   optional FieldMatcher dimensions_in_what = 5;
 
   optional FieldMatcher dimensions_in_condition = 8 [deprecated = true];
@@ -345,6 +347,8 @@ message GaugeMetric {
   optional TimeUnit bucket = 6;
 
   repeated MetricConditionLink links = 7;
+
+  repeated MetricStateLink state_link = 21;
 
   enum SamplingType {
     RANDOM_ONE_SAMPLE = 1;

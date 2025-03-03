@@ -491,6 +491,11 @@ private:
 
     FRIEND_TEST(EventMetricE2eTest, TestSlicedState);
 
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestSliceByStates);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithTriggerAndCondition);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithMapAndTrigger);
+    FRIEND_TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithPrimaryFieldsAndTrigger);
+
     FRIEND_TEST(ValueMetricE2eTest, TestInitialConditionChanges);
     FRIEND_TEST(ValueMetricE2eTest, TestPulledEvents);
     FRIEND_TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm);

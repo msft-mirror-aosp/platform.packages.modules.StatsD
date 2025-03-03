@@ -1091,6 +1091,9 @@ private:
     FRIEND_TEST(LogEventQueue_test, TestQueueMaxSize);
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessage);
     FRIEND_TEST(StatsLogProcessorTest, InvalidConfigRemoved);
+    FRIEND_TEST(StatsPullerManagerTest, TestOnAlarmFiredNoPullerForUidNotesPullerNotFound);
+    FRIEND_TEST(StatsPullerManagerTest, TestOnAlarmFiredNoUidProviderUpdatesNextPullTime);
+    FRIEND_TEST(StatsPullerManagerTest, TestOnAlarmFiredUidsNotRegisteredInPullAtomCallback);
     FRIEND_TEST(StatsdStatsTest, TestActivationBroadcastGuardrailHit);
     FRIEND_TEST(StatsdStatsTest, TestAnomalyMonitor);
     FRIEND_TEST(StatsdStatsTest, TestAtomDroppedStats);
