@@ -869,6 +869,91 @@ TEST_F(EventMetricE2eTest, TestMultipleSlicedStates) {
     EXPECT_EQ(android::app::PROCESS_STATE_IMPORTANT_FOREGROUND, data.slice_by_state(1).value());
 }
 
+TEST_F(EventMetricE2eTest, TestEventMetricFieldsFilter) {
+    StatsdConfig config;
+
+    AtomMatcher testAtomReportedAtomMatcher =
+            CreateSimpleAtomMatcher("TestAtomReportedMatcher", util::TEST_ATOM_REPORTED);
+    *config.add_atom_matcher() = testAtomReportedAtomMatcher;
+
+    EventMetric metric =
+            createEventMetric("EventTestAtomReported", testAtomReportedAtomMatcher.id(), nullopt);
+    metric.mutable_fields_filter()->mutable_fields()->set_field(util::TEST_ATOM_REPORTED);
+    metric.mutable_fields_filter()->mutable_fields()->add_child()->set_field(2);  // int_field
+    *config.add_event_metric() = metric;
+
+    ConfigKey key(123, 987);
+    uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key);
+
+    // Initialize log events before update.
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    vector<int> enumArrayNoMatch = {TestAtomReported::OFF, TestAtomReported::ON};
+    vector<int> enumArrayMatch = {TestAtomReported::ON, TestAtomReported::OFF};
+
+    events.push_back(CreateTestAtomReportedEventWithPrimitives(
+            bucketStartTimeNs + 10 * NS_PER_SEC, 1 /* intField */, 1l /* longField */,
+            1.0f /* floatField */, "string_field1", false /* boolField */,
+            TestAtomReported::OFF /* enumField */));
+    events.push_back(CreateTestAtomReportedEventWithPrimitives(
+            bucketStartTimeNs + 20 * NS_PER_SEC, 2 /* intField */, 2l /* longField */,
+            2.0f /* floatField */, "string_field2", true /* boolField */,
+            TestAtomReported::ON /* enumField */));
+    events.push_back(CreateTestAtomReportedEventWithPrimitives(
+            bucketStartTimeNs + 30 * NS_PER_SEC, 3 /* intField */, 3l /* longField */,
+            3.0f /* floatField */, "string_field3", false /* boolField */,
+            TestAtomReported::ON /* enumField */));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    uint64_t dumpTimeNs = bucketStartTimeNs + 100 * NS_PER_SEC;
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(key, dumpTimeNs, true, true, ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
+    ASSERT_EQ(reports.reports_size(), 1);
+
+    ConfigMetricsReport report = reports.reports(0);
+    ASSERT_EQ(report.metrics_size(), 1);
+    StatsLogReport testAtomEventMetricReport = report.metrics(0);
+    EXPECT_EQ(testAtomEventMetricReport.metric_id(), metric.id());
+    EXPECT_TRUE(testAtomEventMetricReport.has_event_metrics());
+    ASSERT_EQ(testAtomEventMetricReport.event_metrics().data_size(), 3);
+
+    TestAtomReported atom =
+            testAtomEventMetricReport.event_metrics().data(0).atom().test_atom_reported();
+    EXPECT_EQ(atom.int_field(), 1);
+    EXPECT_FALSE(atom.has_long_field());
+    EXPECT_FALSE(atom.has_float_field());
+    EXPECT_FALSE(atom.has_string_field());
+    EXPECT_FALSE(atom.has_boolean_field());
+    EXPECT_FALSE(atom.has_state());
+
+    atom = testAtomEventMetricReport.event_metrics().data(1).atom().test_atom_reported();
+    EXPECT_EQ(atom.int_field(), 2);
+    EXPECT_FALSE(atom.has_long_field());
+    EXPECT_FALSE(atom.has_float_field());
+    EXPECT_FALSE(atom.has_string_field());
+    EXPECT_FALSE(atom.has_boolean_field());
+    EXPECT_FALSE(atom.has_state());
+
+    atom = testAtomEventMetricReport.event_metrics().data(2).atom().test_atom_reported();
+    EXPECT_EQ(atom.int_field(), 3);
+    EXPECT_FALSE(atom.has_long_field());
+    EXPECT_FALSE(atom.has_float_field());
+    EXPECT_FALSE(atom.has_string_field());
+    EXPECT_FALSE(atom.has_boolean_field());
+    EXPECT_FALSE(atom.has_state());
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif

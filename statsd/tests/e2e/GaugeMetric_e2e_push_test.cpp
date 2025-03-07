@@ -46,7 +46,6 @@ StatsdConfig CreateStatsdConfigForPushedEvent(const GaugeMetric::SamplingType sa
     gaugeMetric->set_id(123456);
     gaugeMetric->set_what(atomMatcher.id());
     gaugeMetric->set_condition(isInBackgroundPredicate.id());
-    gaugeMetric->mutable_gauge_fields_filter()->set_include_all(false);
     gaugeMetric->set_sampling_type(sampling_type);
     auto fieldMatcher = gaugeMetric->mutable_gauge_fields_filter()->mutable_fields();
     fieldMatcher->set_field(util::APP_START_OCCURRED);
