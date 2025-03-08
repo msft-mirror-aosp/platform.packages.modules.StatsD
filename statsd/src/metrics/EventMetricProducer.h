@@ -99,6 +99,8 @@ private:
     DataCorruptionSeverity determineCorruptionSeverity(int32_t atomId, DataCorruptedReason reason,
                                                        LostAtomType atomType) const override;
 
+    std::vector<FieldValue> getEventFields(const LogEvent& event) const;
+
     // Maps the field/value pairs of an atom to a list of timestamps used to deduplicate atoms.
     // Used when event metric DOES NOT use slice_by_state. Empty otherwise.
     std::unordered_map<AtomDimensionKey, std::vector<int64_t>> mAggregatedAtoms;
@@ -111,6 +113,9 @@ private:
             mAggAtomsAndStates;
 
     const int mSamplingPercentage;
+
+    // Allowlist of fields to report. Empty means all are reported.
+    const std::vector<Matcher> mFieldMatchers;
 };
 
 }  // namespace statsd

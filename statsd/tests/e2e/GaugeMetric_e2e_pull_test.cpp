@@ -53,7 +53,6 @@ StatsdConfig CreateStatsdConfig(const GaugeMetric::SamplingType sampling_type,
         gaugeMetric->set_condition(screenIsOffPredicate.id());
     }
     gaugeMetric->set_sampling_type(sampling_type);
-    gaugeMetric->mutable_gauge_fields_filter()->set_include_all(true);
     *gaugeMetric->mutable_dimensions_in_what() =
             CreateDimensions(ATOM_TAG, {1 /* subsystem name */});
     gaugeMetric->set_bucket(FIVE_MINUTES);
@@ -1722,7 +1721,6 @@ TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithPrimaryFieldsAndTrigger) {
     gaugeMetric->set_id(metricId);
     gaugeMetric->set_what(cpuTimePerUidMatcher.id());
     gaugeMetric->set_sampling_type(GaugeMetric::FIRST_N_SAMPLES);
-    gaugeMetric->mutable_gauge_fields_filter()->set_include_all(true);
     *gaugeMetric->mutable_dimensions_in_what() =
             CreateDimensions(util::CPU_TIME_PER_UID, {1 /* uid */});
     gaugeMetric->set_bucket(FIVE_MINUTES);
