@@ -101,6 +101,7 @@ GaugeMetricProducer::GaugeMetricProducer(
       mAtomId(atomId),
       mIsPulled(pullTagId != -1),
       mMinBucketSizeNs(metric.min_bucket_size_nanos()),
+      mFieldMatchers(translateFieldsFilter(metric.gauge_fields_filter())),
       mSamplingType(metric.sampling_type()),
       mMaxPullDelayNs(metric.max_pull_delay_sec() > 0 ? metric.max_pull_delay_sec() * NS_PER_SEC
                                                       : StatsdStats::kPullMaxDelayNs),
@@ -119,10 +120,6 @@ GaugeMetricProducer::GaugeMetricProducer(
         bucketSizeMills = TimeUnitToBucketSizeInMillis(ONE_HOUR);
     }
     mBucketSizeNs = bucketSizeMills * 1000000;
-
-    if (!metric.gauge_fields_filter().include_all()) {
-        translateFieldMatcher(metric.gauge_fields_filter().fields(), &mFieldMatchers);
-    }
 
     if (metric.has_dimensions_in_what()) {
         translateFieldMatcher(metric.dimensions_in_what(), &mDimensionsInWhat);
@@ -519,7 +516,7 @@ std::shared_ptr<vector<FieldValue>> GaugeMetricProducer::getGaugeFields(const Lo
     std::shared_ptr<vector<FieldValue>> gaugeFields;
     if (mFieldMatchers.size() > 0) {
         gaugeFields = std::make_shared<vector<FieldValue>>();
-        filterGaugeValues(mFieldMatchers, event.getValues(), gaugeFields.get());
+        filterValues(mFieldMatchers, event.getValues(), gaugeFields.get());
     } else {
         gaugeFields = std::make_shared<vector<FieldValue>>(event.getValues());
     }

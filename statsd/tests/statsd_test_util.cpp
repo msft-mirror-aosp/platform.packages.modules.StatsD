@@ -600,7 +600,6 @@ GaugeMetric createGaugeMetric(const string& name, const int64_t what,
     for (const int64_t state : states) {
         metric.add_slice_by_state(state);
     }
-    metric.mutable_gauge_fields_filter()->set_include_all(true);
     return metric;
 }
 

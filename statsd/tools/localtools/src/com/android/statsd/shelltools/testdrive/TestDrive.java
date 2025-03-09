@@ -107,6 +107,7 @@ public class TestDrive {
             "com.google.android.hardware.biometrics.face",
             "com.google.android.photopicker",
             "AID_MMD",
+            "com.google.android.desktop.identity.login",
     };
     private static final String[] DEFAULT_PULL_SOURCES = {
             "AID_KEYSTORE", "AID_RADIO", "AID_SYSTEM",

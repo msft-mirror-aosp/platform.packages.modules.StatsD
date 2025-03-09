@@ -592,6 +592,18 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricValidSamplingPercentage) {
     EXPECT_EQ(initConfig(config), nullopt);
 }
 
+TEST_F(MetricsManagerUtilTest, TestEventMetricIncorrectFieldFilter) {
+    StatsdConfig config;
+    int64_t metricId = 1;
+    EventMetric* metric = config.add_event_metric();
+    metric->set_id(metricId);
+    metric->set_what(1);
+    metric->mutable_fields_filter()->mutable_fields();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
+}
+
 TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidSamplingPercentage) {
     StatsdConfig config;
     GaugeMetric* metric = config.add_gauge_metric();
@@ -1129,10 +1141,10 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricIncorrectFieldFilter) {
     GaugeMetric* metric = config.add_gauge_metric();
     metric->set_id(metricId);
     metric->set_what(1);
+    metric->mutable_gauge_fields_filter()->mutable_fields();
 
     EXPECT_EQ(initConfig(config),
-              InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_INCORRECT_FIELD_FILTER,
-                                  metricId));
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
 }
 
 TEST_F(MetricsManagerUtilTest, TestGaugeMetricTriggerNoPullAtom) {
@@ -1141,7 +1153,6 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricTriggerNoPullAtom) {
     GaugeMetric* metric = config.add_gauge_metric();
     metric->set_id(metricId);
     metric->set_what(StringToId("ScreenTurnedOn"));
-    metric->mutable_gauge_fields_filter()->set_include_all(true);
     metric->set_trigger_event(1);
 
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
@@ -1160,7 +1171,6 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricTriggerNoFirstNSamples) {
     *config.add_atom_matcher() =
             CreateSimpleAtomMatcher(/*name=*/"Matcher", /*atomId=*/util::SUBSYSTEM_SLEEP_STATE);
 
-    metric->mutable_gauge_fields_filter()->set_include_all(true);
     metric->set_trigger_event(StringToId("Matcher"));
 
     EXPECT_EQ(initConfig(config),

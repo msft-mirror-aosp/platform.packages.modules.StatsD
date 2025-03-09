@@ -117,7 +117,7 @@ struct ConfigStats {
     std::list<DumpReportStats> dump_report_stats;
 
     // Stores how many times a matcher have been matched. The map size is capped by kMaxConfigCount.
-    std::map<const int64_t, int> matcher_stats;
+    std::unordered_map<int64_t, int> matcher_stats;
 
     // Stores the number of output tuple of condition trackers when it's bigger than
     // kDimensionKeySizeSoftLimit. When you see the number is kDimensionKeySizeHardLimit +1,
@@ -888,7 +888,7 @@ private:
     std::map<int, PulledAtomStats> mPulledAtomStats;
 
     // Tracks counter associated with CounterType to represent errors. Max capacity == CounterType
-    std::unordered_map<CounterType, int32_t> mErrorStats;
+    std::map<CounterType, int32_t> mErrorStats;
 
     // Stores the number of times a pushed atom was logged erroneously. The
     // corresponding counts for pulled atoms are stored in PulledAtomStats.

@@ -250,6 +250,8 @@ message EventMetric {
 
   optional FieldMatcher uid_fields = 6;
 
+  optional FieldFilter fields_filter = 9;
+
   reserved 100;
   reserved 101;
 }

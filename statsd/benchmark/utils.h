@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,30 +13,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma once
 
-#include <gtest/gtest_prod.h>
-#include <sysutils/SocketListener.h>
-#include <utils/RefBase.h>
+#include <stdint.h>
 
-#include "LogEventFilter.h"
-#include "logd/LogEventQueue.h"
-#include "BaseStatsSocketListener.h"
+#include <vector>
 
 namespace android {
 namespace os {
 namespace statsd {
 
-class StatsSocketListener : public SocketListener, public virtual BaseStatsSocketListener {
-public:
-    explicit StatsSocketListener(const std::shared_ptr<LogEventQueue>& queue,
-                                 const std::shared_ptr<LogEventFilter>& logEventFilter);
+std::vector<int> generateRandomIds(int count, int maxRange);
 
-    virtual ~StatsSocketListener() = default;
-
-protected:
-    bool onDataAvailable(SocketClient* cli) override;
-};
+std::vector<int64_t> generateRandomHashIds(int count);
 
 }  // namespace statsd
 }  // namespace os

@@ -217,7 +217,7 @@ private:
     void updateCurrentSlicedBucketForAnomaly();
 
     // Allowlist of fields to report. Empty means all are reported.
-    std::vector<Matcher> mFieldMatchers;
+    const std::vector<Matcher> mFieldMatchers;
 
     GaugeMetric::SamplingType mSamplingType;
 
