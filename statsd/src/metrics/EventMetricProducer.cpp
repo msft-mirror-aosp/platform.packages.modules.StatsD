@@ -292,7 +292,8 @@ void EventMetricProducer::onMatchedLogEventInternalLocked(
     }
 
     const int64_t elapsedTimeNs = truncateTimestampIfNecessary(event);
-    AtomDimensionKey key(event.GetTagId(), HashableDimensionKey(getEventFields(event)));
+    AtomDimensionKey key(event.GetTagId(),
+                         HashableDimensionKey(filterValues(mFieldMatchers, event.getValues())));
     // TODO(b/383929503): Optimize slice_by_state performance
     if (!mAggregatedAtoms.contains(key) && !mAggAtomsAndStates.contains(key)) {
         sp<ConfigMetadataProvider> provider = getConfigMetadataProvider();
@@ -340,15 +341,6 @@ MetricProducer::DataCorruptionSeverity EventMetricProducer::determineCorruptionS
     };
     return DataCorruptionSeverity::kNone;
 };
-
-vector<FieldValue> EventMetricProducer::getEventFields(const LogEvent& event) const {
-    if (mFieldMatchers.empty()) {
-        return event.getValues();
-    }
-    vector<FieldValue> eventValues;
-    filterValues(mFieldMatchers, event.getValues(), &eventValues);
-    return eventValues;
-}
 
 }  // namespace statsd
 }  // namespace os
