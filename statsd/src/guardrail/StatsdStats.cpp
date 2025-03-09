@@ -1670,8 +1670,7 @@ void StatsdStats::dumpStats(int out) const {
     dprintf(out, "\n");
 }
 
-void addErrorStatsToProto(const std::unordered_map<CounterType, int32_t>& stats,
-                          ProtoOutputStream* proto) {
+void addErrorStatsToProto(const std::map<CounterType, int32_t>& stats, ProtoOutputStream* proto) {
     if (stats.empty()) {
         return;
     }
