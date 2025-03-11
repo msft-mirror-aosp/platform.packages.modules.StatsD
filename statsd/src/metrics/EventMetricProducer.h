@@ -112,8 +112,10 @@ private:
 
     const int mSamplingPercentage;
 
-    // Allowlist of fields to report. Empty means all are reported.
+    // Allowlist/denylist of fields to report. Empty means all are reported.
+    // If mOmitFields == true, this is a denylist, otherwise it's an allowlist.
     const std::vector<Matcher> mFieldMatchers;
+    const bool mOmitFields;
 };
 
 }  // namespace statsd
