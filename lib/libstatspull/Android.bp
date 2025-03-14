@@ -77,6 +77,11 @@ cc_library_shared {
 cc_library_headers {
     name: "libstatspull_headers",
     export_include_dirs: ["include"],
+    apex_available: [
+        "com.android.uprobestats",
+        "//apex_available:platform",
+    ],
+    min_sdk_version: "30",
 }
 
 filegroup {
