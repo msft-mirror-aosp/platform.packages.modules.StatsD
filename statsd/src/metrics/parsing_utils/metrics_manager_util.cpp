@@ -853,6 +853,15 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
                 InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
         return nullopt;
     }
+
+    if (metric.has_fields_filter() && metric.fields_filter().has_fields() &&
+        !hasLeafNode(metric.fields_filter().fields())) {
+        ALOGW("Incorrect field filter setting in EventMetric %lld", (long long)metric.id());
+        invalidConfigReason = InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
+        return nullopt;
+    }
+
     int trackerIndex;
     invalidConfigReason = handleMetricWithAtomMatchingTrackers(
             metric.what(), metric.id(), metricIndex, false, allAtomMatchingTrackers,
@@ -1398,20 +1407,11 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
-    if ((!metric.gauge_fields_filter().has_include_all() ||
-         (metric.gauge_fields_filter().include_all() == false)) &&
+    if (metric.has_gauge_fields_filter() && metric.gauge_fields_filter().has_fields() &&
         !hasLeafNode(metric.gauge_fields_filter().fields())) {
         ALOGW("Incorrect field filter setting in GaugeMetric %lld", (long long)metric.id());
         invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_GAUGE_METRIC_INCORRECT_FIELD_FILTER, metric.id());
-        return nullopt;
-    }
-    if ((metric.gauge_fields_filter().has_include_all() &&
-         metric.gauge_fields_filter().include_all() == true) &&
-        hasLeafNode(metric.gauge_fields_filter().fields())) {
-        ALOGW("Incorrect field filter setting in GaugeMetric %lld", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_GAUGE_METRIC_INCORRECT_FIELD_FILTER, metric.id());
+                INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
         return nullopt;
     }
 

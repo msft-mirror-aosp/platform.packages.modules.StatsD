@@ -96,7 +96,6 @@ TEST(GaugeMetricProducerTest, TestFirstBucket) {
     GaugeMetric metric;
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
-    metric.mutable_gauge_fields_filter()->set_include_all(false);
     auto gaugeFieldMatcher = metric.mutable_gauge_fields_filter()->mutable_fields();
     gaugeFieldMatcher->set_field(tagId);
     gaugeFieldMatcher->add_child()->set_field(1);
@@ -127,7 +126,6 @@ TEST(GaugeMetricProducerTest, TestPulledEventsNoCondition) {
     GaugeMetric metric;
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
-    metric.mutable_gauge_fields_filter()->set_include_all(false);
     metric.set_max_pull_delay_sec(INT_MAX);
     auto gaugeFieldMatcher = metric.mutable_gauge_fields_filter()->mutable_fields();
     gaugeFieldMatcher->set_field(tagId);
@@ -227,7 +225,6 @@ TEST_P(GaugeMetricProducerTest_PartialBucket, TestPushedEvents) {
     GaugeMetric metric;
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
-    metric.mutable_gauge_fields_filter()->set_include_all(true);
     metric.set_split_bucket_for_app_upgrade(true);
 
     Alert alert;
@@ -519,7 +516,6 @@ TEST(GaugeMetricProducerTest, TestPulledEventsWithSlicedCondition) {
     GaugeMetric metric;
     metric.set_id(1111111);
     metric.set_bucket(ONE_MINUTE);
-    metric.mutable_gauge_fields_filter()->set_include_all(true);
     metric.set_condition(StringToId("APP_DIED"));
     metric.set_max_pull_delay_sec(INT_MAX);
     auto dim = metric.mutable_dimensions_in_what();
@@ -674,7 +670,6 @@ TEST(GaugeMetricProducerTest, TestPullOnTrigger) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     metric.set_sampling_type(GaugeMetric::FIRST_N_SAMPLES);
-    metric.mutable_gauge_fields_filter()->set_include_all(false);
     metric.set_max_pull_delay_sec(INT_MAX);
     auto gaugeFieldMatcher = metric.mutable_gauge_fields_filter()->mutable_fields();
     gaugeFieldMatcher->set_field(tagId);
@@ -799,7 +794,6 @@ TEST(GaugeMetricProducerTest, TestRemoveDimensionInOutput) {
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
     metric.set_sampling_type(GaugeMetric::FIRST_N_SAMPLES);
-    metric.mutable_gauge_fields_filter()->set_include_all(true);
     metric.set_max_pull_delay_sec(INT_MAX);
     auto dimensionMatcher = metric.mutable_dimensions_in_what();
     // use field 1 as dimension.
