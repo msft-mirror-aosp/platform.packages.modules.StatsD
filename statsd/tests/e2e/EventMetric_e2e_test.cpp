@@ -890,9 +890,6 @@ TEST_F(EventMetricE2eTest, TestEventMetricFieldsFilter) {
     // Initialize log events before update.
     std::vector<std::unique_ptr<LogEvent>> events;
 
-    vector<int> enumArrayNoMatch = {TestAtomReported::OFF, TestAtomReported::ON};
-    vector<int> enumArrayMatch = {TestAtomReported::ON, TestAtomReported::OFF};
-
     events.push_back(CreateTestAtomReportedEventWithPrimitives(
             bucketStartTimeNs + 10 * NS_PER_SEC, 1 /* intField */, 1l /* longField */,
             1.0f /* floatField */, "string_field1", false /* boolField */,

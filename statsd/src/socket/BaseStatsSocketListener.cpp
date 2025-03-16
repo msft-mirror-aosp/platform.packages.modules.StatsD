@@ -104,7 +104,7 @@ tuple<int32_t, int64_t> BaseStatsSocketListener::processStatsEventBuffer(const u
                                                                      uint32_t uid, uint32_t pid,
                                                                      LogEventQueue& queue,
                                                                      const LogEventFilter& filter) {
-    ATRACE_CALL();
+    ATRACE_CALL_DEBUG();
     std::unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid, pid);
 
     if (filter.getFilteringEnabled()) {
@@ -119,6 +119,9 @@ tuple<int32_t, int64_t> BaseStatsSocketListener::processStatsEventBuffer(const u
     const int32_t atomId = logEvent->GetTagId();
     const bool isAtomSkipped = logEvent->isParsedHeaderOnly();
     const int64_t atomTimestamp = logEvent->GetElapsedTimestampNs();
+
+    // Tell StatsdStats about new event
+    StatsdStats::getInstance().noteAtomLogged(atomId, atomTimestamp, isAtomSkipped);
 
     if (atomId == util::STATS_SOCKET_LOSS_REPORTED) {
         if (isAtomSkipped) {
