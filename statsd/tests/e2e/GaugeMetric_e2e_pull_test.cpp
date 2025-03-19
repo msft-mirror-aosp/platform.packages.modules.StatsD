@@ -1893,6 +1893,49 @@ TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithPrimaryFieldsAndTrigger) {
                              {(int64_t)(configAddedTimeNs + bucketSizeNs + 220)});
 }
 
+TEST(GaugeMetricE2ePulledTest, TestFieldFilterOmit) {
+    auto config = CreateStatsdConfig(GaugeMetric::RANDOM_ONE_SAMPLE, /* useCondition */ false);
+    config.mutable_gauge_metric(0)->mutable_gauge_fields_filter()->mutable_omit_fields()->set_field(
+            ATOM_TAG);
+    config.mutable_gauge_metric(0)
+            ->mutable_gauge_fields_filter()
+            ->mutable_omit_fields()
+            ->add_child()
+            ->set_field(2);  // subsystem_subname
+    int64_t baseTimeNs = getElapsedRealtimeNs();
+    int64_t configAddedTimeNs = 10 * 60 * NS_PER_SEC + baseTimeNs;
+    int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.gauge_metric(0).bucket()) * 1000000;
+
+    ConfigKey cfgKey;
+    auto processor =
+            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
+                                    SharedRefBase::make<FakeSubsystemSleepCallback>(), ATOM_TAG);
+
+    processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 2 + 1);
+
+    ConfigMetricsReportList reports;
+    vector<uint8_t> buffer;
+    processor->onDumpReport(cfgKey, configAddedTimeNs + 3 * bucketSizeNs + 10, false, true,
+                            ADB_DUMP, FAST, &buffer);
+    EXPECT_TRUE(buffer.size() > 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    StatsLogReport::GaugeMetricDataWrapper gaugeMetrics;
+    sortMetricDataByDimensionsValue(reports.reports(0).metrics(0).gauge_metrics(), &gaugeMetrics);
+    ASSERT_GT((int)gaugeMetrics.data_size(), 1);
+
+    auto data = gaugeMetrics.data(0);
+    ASSERT_EQ(data.bucket_info_size(), 1);
+    ASSERT_EQ(data.bucket_info(0).atom_size(), 1);
+    EXPECT_FALSE(data.bucket_info(0).atom(0).subsystem_sleep_state().has_subname());
+    EXPECT_EQ(data.bucket_info(0).atom(0).subsystem_sleep_state().count(), 1);
+    EXPECT_GT(data.bucket_info(0).atom(0).subsystem_sleep_state().time_millis(), 0);
+}
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif

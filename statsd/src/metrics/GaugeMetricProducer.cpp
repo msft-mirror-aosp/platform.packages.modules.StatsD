@@ -102,6 +102,7 @@ GaugeMetricProducer::GaugeMetricProducer(
       mIsPulled(pullTagId != -1),
       mMinBucketSizeNs(metric.min_bucket_size_nanos()),
       mFieldMatchers(translateFieldsFilter(metric.gauge_fields_filter())),
+      mOmitFields(metric.gauge_fields_filter().has_omit_fields()),
       mSamplingType(metric.sampling_type()),
       mMaxPullDelayNs(metric.max_pull_delay_sec() > 0 ? metric.max_pull_delay_sec() * NS_PER_SEC
                                                       : StatsdStats::kPullMaxDelayNs),
@@ -513,7 +514,7 @@ void GaugeMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
 }
 
 vector<FieldValue> GaugeMetricProducer::getGaugeFields(const LogEvent& event) {
-    vector<FieldValue> gaugeFields = filterValues(mFieldMatchers, event.getValues());
+    vector<FieldValue> gaugeFields = filterValues(mFieldMatchers, event.getValues(), mOmitFields);
 
     // Trim all dimension fields from output. Dimensions will appear in output report and will
     // benefit from dictionary encoding. For large pulled atoms, this can give the benefit of

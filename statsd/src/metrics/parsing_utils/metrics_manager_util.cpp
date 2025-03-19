@@ -854,12 +854,15 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
-    if (metric.has_fields_filter() && metric.fields_filter().has_fields() &&
-        !hasLeafNode(metric.fields_filter().fields())) {
-        ALOGW("Incorrect field filter setting in EventMetric %lld", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
-        return nullopt;
+    if (metric.has_fields_filter()) {
+        const FieldFilter& filter = metric.fields_filter();
+        if ((filter.has_fields() && !hasLeafNode(filter.fields())) ||
+            (filter.has_omit_fields() && !hasLeafNode(filter.omit_fields()))) {
+            ALOGW("Incorrect field filter setting in EventMetric %lld", (long long)metric.id());
+            invalidConfigReason = InvalidConfigReason(
+                    INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
+            return nullopt;
+        }
     }
 
     int trackerIndex;
@@ -1407,12 +1410,15 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         return nullopt;
     }
 
-    if (metric.has_gauge_fields_filter() && metric.gauge_fields_filter().has_fields() &&
-        !hasLeafNode(metric.gauge_fields_filter().fields())) {
-        ALOGW("Incorrect field filter setting in GaugeMetric %lld", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
-        return nullopt;
+    if (metric.has_gauge_fields_filter()) {
+        const FieldFilter& filter = metric.gauge_fields_filter();
+        if ((filter.has_fields() && !hasLeafNode(filter.fields())) ||
+            (filter.has_omit_fields() && !hasLeafNode(filter.omit_fields()))) {
+            ALOGW("Incorrect field filter setting in GaugeMetric %lld", (long long)metric.id());
+            invalidConfigReason = InvalidConfigReason(
+                    INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
+            return nullopt;
+        }
     }
 
     int trackerIndex;

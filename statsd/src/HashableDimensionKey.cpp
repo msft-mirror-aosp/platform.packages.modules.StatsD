@@ -228,7 +228,7 @@ bool filterPrimaryKey(const std::vector<FieldValue>& values, HashableDimensionKe
 }
 
 vector<FieldValue> filterValues(const std::vector<Matcher>& matcherFields,
-                                const std::vector<FieldValue>& values) {
+                                const std::vector<FieldValue>& values, bool omitMatches) {
     if (matcherFields.empty()) {
         return values;
     }
@@ -236,7 +236,7 @@ vector<FieldValue> filterValues(const std::vector<Matcher>& matcherFields,
     vector<FieldValue> output;
     for (const auto& field : matcherFields) {
         for (const auto& value : values) {
-            if (value.mField.matches(field)) {
+            if (value.mField.matches(field) ^ omitMatches) {
                 output.push_back(value);
             }
         }
