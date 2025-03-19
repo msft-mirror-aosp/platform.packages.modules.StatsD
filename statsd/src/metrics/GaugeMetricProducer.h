@@ -34,10 +34,10 @@ namespace os {
 namespace statsd {
 
 struct GaugeAtom {
-    GaugeAtom(const std::shared_ptr<vector<FieldValue>>& fields, int64_t elapsedTimeNs)
+    GaugeAtom(std::vector<FieldValue> fields, int64_t elapsedTimeNs)
         : mFields(fields), mElapsedTimestampNs(elapsedTimeNs) {
     }
-    std::shared_ptr<vector<FieldValue>> mFields;
+    std::vector<FieldValue> mFields;
     int64_t mElapsedTimestampNs;
 };
 
@@ -224,7 +224,7 @@ private:
     const int64_t mMaxPullDelayNs;
 
     // apply an allowlist on the original input
-    std::shared_ptr<vector<FieldValue>> getGaugeFields(const LogEvent& event);
+    std::vector<FieldValue> getGaugeFields(const LogEvent& event);
 
     // Util function to check whether the specified dimension hits the guardrail.
     bool hitGuardRailLocked(const MetricDimensionKey& newKey);
