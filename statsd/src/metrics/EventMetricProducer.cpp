@@ -76,7 +76,8 @@ EventMetricProducer::EventMetricProducer(
                      protoHash, eventActivationMap, eventDeactivationMap, slicedStateAtoms,
                      stateGroupMap, /*splitBucketForAppUpgrade=*/nullopt, configMetadataProvider),
       mSamplingPercentage(metric.sampling_percentage()),
-      mFieldMatchers(translateFieldsFilter(metric.fields_filter())) {
+      mFieldMatchers(translateFieldsFilter(metric.fields_filter())),
+      mOmitFields(metric.fields_filter().has_omit_fields()) {
     if (metric.links().size() > 0) {
         for (const auto& link : metric.links()) {
             Metric2Condition mc;
@@ -292,7 +293,9 @@ void EventMetricProducer::onMatchedLogEventInternalLocked(
     }
 
     const int64_t elapsedTimeNs = truncateTimestampIfNecessary(event);
-    AtomDimensionKey key(event.GetTagId(), HashableDimensionKey(getEventFields(event)));
+    AtomDimensionKey key(
+            event.GetTagId(),
+            HashableDimensionKey(filterValues(mFieldMatchers, event.getValues(), mOmitFields)));
     // TODO(b/383929503): Optimize slice_by_state performance
     if (!mAggregatedAtoms.contains(key) && !mAggAtomsAndStates.contains(key)) {
         sp<ConfigMetadataProvider> provider = getConfigMetadataProvider();
@@ -340,15 +343,6 @@ MetricProducer::DataCorruptionSeverity EventMetricProducer::determineCorruptionS
     };
     return DataCorruptionSeverity::kNone;
 };
-
-vector<FieldValue> EventMetricProducer::getEventFields(const LogEvent& event) const {
-    if (mFieldMatchers.empty()) {
-        return event.getValues();
-    }
-    vector<FieldValue> eventValues;
-    filterValues(mFieldMatchers, event.getValues(), &eventValues);
-    return eventValues;
-}
 
 }  // namespace statsd
 }  // namespace os

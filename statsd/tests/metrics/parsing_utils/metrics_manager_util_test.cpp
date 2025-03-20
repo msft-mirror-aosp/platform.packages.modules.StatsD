@@ -604,6 +604,18 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricIncorrectFieldFilter) {
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
 }
 
+TEST_F(MetricsManagerUtilTest, TestEventMetricIncorrectFieldFilterOmitNoLeafValues) {
+    StatsdConfig config;
+    int64_t metricId = 1;
+    EventMetric* metric = config.add_event_metric();
+    metric->set_id(metricId);
+    metric->set_what(1);
+    metric->mutable_fields_filter()->mutable_omit_fields();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
+}
+
 TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidSamplingPercentage) {
     StatsdConfig config;
     GaugeMetric* metric = config.add_gauge_metric();
@@ -1135,13 +1147,25 @@ TEST_F(MetricsManagerUtilTest, TestKllMetricHasIncorrectKllField) {
                                   metricId));
 }
 
-TEST_F(MetricsManagerUtilTest, TestGaugeMetricIncorrectFieldFilter) {
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricIncorrectFieldFilterNoLeafValues) {
     StatsdConfig config;
     int64_t metricId = 1;
     GaugeMetric* metric = config.add_gauge_metric();
     metric->set_id(metricId);
     metric->set_what(1);
     metric->mutable_gauge_fields_filter()->mutable_fields();
+
+    EXPECT_EQ(initConfig(config),
+              InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
+}
+
+TEST_F(MetricsManagerUtilTest, TestGaugeMetricIncorrectFieldFilterOmitNoLeafValues) {
+    StatsdConfig config;
+    int64_t metricId = 1;
+    GaugeMetric* metric = config.add_gauge_metric();
+    metric->set_id(metricId);
+    metric->set_what(1);
+    metric->mutable_gauge_fields_filter()->mutable_omit_fields();
 
     EXPECT_EQ(initConfig(config),
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
