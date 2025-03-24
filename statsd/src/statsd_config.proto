@@ -213,7 +213,11 @@ message MetricStateLink {
 
 message FieldFilter {
   optional bool include_all = 1 [default = false];
-  optional FieldMatcher fields = 2;
+
+  oneof field_matcher {
+      FieldMatcher fields = 2;
+      FieldMatcher omit_fields = 3;
+  }
 }
 
 message UploadThreshold {

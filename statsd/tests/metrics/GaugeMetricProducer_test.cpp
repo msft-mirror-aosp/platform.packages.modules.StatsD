@@ -163,7 +163,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsNoCondition) {
 
     gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket2StartTimeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
-    auto it = gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields->begin();
+    auto it = gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields.begin();
     EXPECT_EQ(INT, it->mValue.getType());
     EXPECT_EQ(10, it->mValue.int_value);
     it++;
@@ -181,7 +181,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsNoCondition) {
     allData.push_back(makeLogEvent(tagId, bucket3StartTimeNs + 10, 24, "some value", 25));
     gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS, bucket3StartTimeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
-    it = gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields->begin();
+    it = gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields.begin();
     EXPECT_EQ(INT, it->mValue.getType());
     EXPECT_EQ(24, it->mValue.int_value);
     it++;
@@ -349,7 +349,7 @@ TEST_P(GaugeMetricProducerTest_PartialBucket, TestPulled) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(1, gaugeProducer.mCurrentSlicedBucket->begin()
                          ->second.front()
-                         .mFields->begin()
+                         .mFields.begin()
                          ->mValue.int_value);
 
     switch (GetParam()) {
@@ -370,7 +370,7 @@ TEST_P(GaugeMetricProducerTest_PartialBucket, TestPulled) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(2, gaugeProducer.mCurrentSlicedBucket->begin()
                          ->second.front()
-                         .mFields->begin()
+                         .mFields.begin()
                          ->mValue.int_value);
 
     allData.clear();
@@ -381,7 +381,7 @@ TEST_P(GaugeMetricProducerTest_PartialBucket, TestPulled) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(3, gaugeProducer.mCurrentSlicedBucket->begin()
                          ->second.front()
-                         .mFields->begin()
+                         .mFields.begin()
                          ->mValue.int_value);
 }
 
@@ -420,7 +420,7 @@ TEST(GaugeMetricProducerTest, TestPulledWithAppUpgradeDisabled) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(1, gaugeProducer.mCurrentSlicedBucket->begin()
                          ->second.front()
-                         .mFields->begin()
+                         .mFields.begin()
                          ->mValue.int_value);
 
     gaugeProducer.notifyAppUpgrade(partialBucketSplitTimeNs);
@@ -430,7 +430,7 @@ TEST(GaugeMetricProducerTest, TestPulledWithAppUpgradeDisabled) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(1, gaugeProducer.mCurrentSlicedBucket->begin()
                          ->second.front()
-                         .mFields->begin()
+                         .mFields.begin()
                          ->mValue.int_value);
 }
 
@@ -474,7 +474,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(100, gaugeProducer.mCurrentSlicedBucket->begin()
                            ->second.front()
-                           .mFields->begin()
+                           .mFields.begin()
                            ->mValue.int_value);
     ASSERT_EQ(0UL, gaugeProducer.mPastBuckets.size());
 
@@ -486,7 +486,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsWithCondition) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(110, gaugeProducer.mCurrentSlicedBucket->begin()
                            ->second.front()
-                           .mFields->begin()
+                           .mFields.begin()
                            ->mValue.int_value);
     ASSERT_EQ(1UL, gaugeProducer.mPastBuckets.size());
 
@@ -624,7 +624,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(13L, gaugeProducer.mCurrentSlicedBucket->begin()
                            ->second.front()
-                           .mFields->begin()
+                           .mFields.begin()
                            ->mValue.int_value);
     EXPECT_EQ(anomalyTracker->getRefractoryPeriodEndsSec(DEFAULT_METRIC_DIMENSION_KEY), 0U);
 
@@ -638,7 +638,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(15L, gaugeProducer.mCurrentSlicedBucket->begin()
                            ->second.front()
-                           .mFields->begin()
+                           .mFields.begin()
                            ->mValue.int_value);
     EXPECT_EQ(anomalyTracker->getRefractoryPeriodEndsSec(DEFAULT_METRIC_DIMENSION_KEY),
               std::ceil(1.0 * event2->GetElapsedTimestampNs() / NS_PER_SEC) + refPeriodSec);
@@ -651,7 +651,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection) {
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
     EXPECT_EQ(26L, gaugeProducer.mCurrentSlicedBucket->begin()
                            ->second.front()
-                           .mFields->begin()
+                           .mFields.begin()
                            ->mValue.int_value);
     EXPECT_EQ(anomalyTracker->getRefractoryPeriodEndsSec(DEFAULT_METRIC_DIMENSION_KEY),
               std::ceil(1.0 * event2->GetElapsedTimestampNs() / NS_PER_SEC + refPeriodSec));
@@ -662,7 +662,7 @@ TEST(GaugeMetricProducerTest, TestPulledEventsAnomalyDetection) {
     gaugeProducer.onDataPulled(allData, PullResult::PULL_RESULT_SUCCESS,
                                bucketStartTimeNs + 3 * bucketSizeNs);
     ASSERT_EQ(1UL, gaugeProducer.mCurrentSlicedBucket->size());
-    EXPECT_TRUE(gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields->empty());
+    EXPECT_TRUE(gaugeProducer.mCurrentSlicedBucket->begin()->second.front().mFields.empty());
 }
 
 TEST(GaugeMetricProducerTest, TestPullOnTrigger) {

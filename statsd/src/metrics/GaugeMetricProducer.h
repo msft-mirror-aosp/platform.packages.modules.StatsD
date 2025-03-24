@@ -34,10 +34,10 @@ namespace os {
 namespace statsd {
 
 struct GaugeAtom {
-    GaugeAtom(const std::shared_ptr<vector<FieldValue>>& fields, int64_t elapsedTimeNs)
+    GaugeAtom(std::vector<FieldValue> fields, int64_t elapsedTimeNs)
         : mFields(fields), mElapsedTimestampNs(elapsedTimeNs) {
     }
-    std::shared_ptr<vector<FieldValue>> mFields;
+    std::vector<FieldValue> mFields;
     int64_t mElapsedTimestampNs;
 };
 
@@ -216,15 +216,17 @@ private:
     // for each slice with the latest value.
     void updateCurrentSlicedBucketForAnomaly();
 
-    // Allowlist of fields to report. Empty means all are reported.
+    // Allowlist/denylist of fields to report. Empty means all are reported.
+    // If mOmitFields == true, this is a denylist, otherwise it's an allowlist.
     const std::vector<Matcher> mFieldMatchers;
+    const bool mOmitFields;
 
     GaugeMetric::SamplingType mSamplingType;
 
     const int64_t mMaxPullDelayNs;
 
     // apply an allowlist on the original input
-    std::shared_ptr<vector<FieldValue>> getGaugeFields(const LogEvent& event);
+    std::vector<FieldValue> getGaugeFields(const LogEvent& event);
 
     // Util function to check whether the specified dimension hits the guardrail.
     bool hitGuardRailLocked(const MetricDimensionKey& newKey);

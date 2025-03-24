@@ -688,12 +688,14 @@ std::string toHexString(const string& bytes) {
 }
 
 vector<Matcher> translateFieldsFilter(const FieldFilter& fieldFilter) {
-    if (!fieldFilter.has_fields()) {
+    if (!fieldFilter.has_fields() && !fieldFilter.has_omit_fields()) {
         return {};
     }
 
     vector<Matcher> fieldMatchers;
-    translateFieldMatcher(fieldFilter.fields(), &fieldMatchers);
+    translateFieldMatcher(
+            fieldFilter.has_fields() ? fieldFilter.fields() : fieldFilter.omit_fields(),
+            &fieldMatchers);
     return fieldMatchers;
 }
 

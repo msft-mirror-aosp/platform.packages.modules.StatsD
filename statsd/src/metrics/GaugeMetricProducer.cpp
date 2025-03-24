@@ -102,6 +102,7 @@ GaugeMetricProducer::GaugeMetricProducer(
       mIsPulled(pullTagId != -1),
       mMinBucketSizeNs(metric.min_bucket_size_nanos()),
       mFieldMatchers(translateFieldsFilter(metric.gauge_fields_filter())),
+      mOmitFields(metric.gauge_fields_filter().has_omit_fields()),
       mSamplingType(metric.sampling_type()),
       mMaxPullDelayNs(metric.max_pull_delay_sec() > 0 ? metric.max_pull_delay_sec() * NS_PER_SEC
                                                       : StatsdStats::kPullMaxDelayNs),
@@ -512,21 +513,16 @@ void GaugeMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
     }  // else: Push mode. No need to proactively pull the gauge data.
 }
 
-std::shared_ptr<vector<FieldValue>> GaugeMetricProducer::getGaugeFields(const LogEvent& event) {
-    std::shared_ptr<vector<FieldValue>> gaugeFields;
-    if (mFieldMatchers.size() > 0) {
-        gaugeFields = std::make_shared<vector<FieldValue>>();
-        filterValues(mFieldMatchers, event.getValues(), gaugeFields.get());
-    } else {
-        gaugeFields = std::make_shared<vector<FieldValue>>(event.getValues());
-    }
+vector<FieldValue> GaugeMetricProducer::getGaugeFields(const LogEvent& event) {
+    vector<FieldValue> gaugeFields = filterValues(mFieldMatchers, event.getValues(), mOmitFields);
+
     // Trim all dimension fields from output. Dimensions will appear in output report and will
     // benefit from dictionary encoding. For large pulled atoms, this can give the benefit of
     // optional repeated field.
     for (const auto& field : mDimensionsInWhat) {
-        for (auto it = gaugeFields->begin(); it != gaugeFields->end();) {
+        for (auto it = gaugeFields.begin(); it != gaugeFields.end();) {
             if (it->mField.matches(field)) {
-                it = gaugeFields->erase(it);
+                it = gaugeFields.erase(it);
             } else {
                 it++;
             }
@@ -630,8 +626,8 @@ void GaugeMetricProducer::onMatchedLogEventInternalLocked(
     // Anomaly detection on gauge metric only works when there is one numeric
     // field specified.
     if (mAnomalyTrackers.size() > 0) {
-        if (gaugeAtom.mFields->size() == 1) {
-            const Value& value = gaugeAtom.mFields->begin()->mValue;
+        if (gaugeAtom.mFields.size() == 1) {
+            const Value& value = gaugeAtom.mFields.begin()->mValue;
             long gaugeVal = 0;
             if (value.getType() == INT) {
                 gaugeVal = (long)value.int_value;
@@ -651,7 +647,7 @@ void GaugeMetricProducer::updateCurrentSlicedBucketForAnomaly() {
         if (slice.second.empty()) {
             continue;
         }
-        const Value& value = slice.second.front().mFields->front().mValue;
+        const Value& value = slice.second.front().mFields.front().mValue;
         long gaugeVal = 0;
         if (value.getType() == INT) {
             gaugeVal = (long)value.int_value;
@@ -710,7 +706,7 @@ void GaugeMetricProducer::flushCurrentBucketLocked(const int64_t eventTimeNs,
         for (const auto& slice : *mCurrentSlicedBucket) {
             info.mAggregatedAtoms.clear();
             for (const GaugeAtom& atom : slice.second) {
-                AtomDimensionKey key(mAtomId, HashableDimensionKey(*atom.mFields));
+                AtomDimensionKey key(mAtomId, HashableDimensionKey(atom.mFields));
                 vector<int64_t>& elapsedTimestampsNs = info.mAggregatedAtoms[key];
                 elapsedTimestampsNs.push_back(atom.mElapsedTimestampNs);
             }
