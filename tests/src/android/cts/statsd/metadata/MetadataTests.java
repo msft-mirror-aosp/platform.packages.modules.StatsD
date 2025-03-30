@@ -160,7 +160,7 @@ public class MetadataTests extends MetadataTestCase {
 
     /** Tests that SystemServer logged atoms in case of loss event has error code 1. */
     public void testSystemServerLossErrorCode() throws Exception {
-        if (!sdkLevelAtLeast(34, "V")) {
+        if (!sdkLevelAtLeast(35, "V")) {
             return;
         }
 
@@ -232,7 +232,7 @@ public class MetadataTests extends MetadataTestCase {
 
     /** Test libstatssocket logging queue atom id distribution collection */
     public void testAtomIdLossDistributionCollection() throws Exception {
-        if (!sdkLevelAtLeast(34, "V")) {
+        if (!sdkLevelAtLeast(35, "V")) {
             return;
         }
 
