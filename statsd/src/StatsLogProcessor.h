@@ -476,6 +476,7 @@ private:
     FRIEND_TEST(CountMetricE2eTest, TestRepeatedFieldsAndEmptyArrays);
 
     FRIEND_TEST(DurationMetricE2eTest, TestOneBucket);
+    FRIEND_TEST(DurationMetricE2eTest, TestOneBucketDifferentAtomsForPredicate);
     FRIEND_TEST(DurationMetricE2eTest, TestTwoBuckets);
     FRIEND_TEST(DurationMetricE2eTest, TestWithActivation);
     FRIEND_TEST(DurationMetricE2eTest, TestWithCondition);
