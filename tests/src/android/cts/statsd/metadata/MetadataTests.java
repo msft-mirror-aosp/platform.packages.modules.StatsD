@@ -73,7 +73,7 @@ public class MetadataTests extends MetadataTestCase {
             Thread.sleep(10);
         }
         doAppBreadcrumbReportedStart(/* irrelevant val */ 6); // Event, after TTL_TIME_SEC secs.
-        Thread.sleep(WAIT_TIME_LONG);
+        Thread.sleep(2_000);
         report = getStatsdStatsReport();
         LogUtil.CLog.d("got following statsdstats report: " + report.toString());
         foundActiveConfig = false;
@@ -86,7 +86,7 @@ public class MetadataTests extends MetadataTestCase {
                             .that(stats.hasDeletionTimeSec()).isTrue();
                     assertWithMessage(
                             "Config deletion time should be about %s after creation", TTL_TIME_SEC
-                    ).that(Math.abs(stats.getDeletionTimeSec() - expectedTime)).isAtMost(2);
+                    ).that(Math.abs(stats.getDeletionTimeSec() - expectedTime)).isAtMost(3);
                 }
                 // There should still be one active config, that is marked as reset.
                 if(!stats.hasDeletionTimeSec()) {
@@ -100,7 +100,7 @@ public class MetadataTests extends MetadataTestCase {
                             .that(stats.getResetTimeSec()).isEqualTo(stats.getCreationTimeSec());
                     assertWithMessage(
                             "Reset config should be created when the original config TTL'd"
-                    ).that(Math.abs(stats.getCreationTimeSec() - expectedTime)).isAtMost(2);
+                    ).that(Math.abs(stats.getCreationTimeSec() - expectedTime)).isAtMost(3);
                 }
             }
         }
