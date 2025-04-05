@@ -295,7 +295,10 @@ void EventMetricProducer::onMatchedLogEventInternalLocked(
     const int64_t elapsedTimeNs = truncateTimestampIfNecessary(event);
     AtomDimensionKey key(
             event.GetTagId(),
-            HashableDimensionKey(filterValues(mFieldMatchers, event.getValues(), mOmitFields)));
+            HashableDimensionKey(
+                    mFieldMatchers.empty()
+                            ? event.getValues()
+                            : filterValues(mFieldMatchers, event.getValues(), mOmitFields)));
     // TODO(b/383929503): Optimize slice_by_state performance
     if (!mAggregatedAtoms.contains(key) && !mAggAtomsAndStates.contains(key)) {
         sp<ConfigMetadataProvider> provider = getConfigMetadataProvider();

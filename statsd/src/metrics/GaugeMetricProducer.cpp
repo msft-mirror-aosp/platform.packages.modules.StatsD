@@ -514,7 +514,9 @@ void GaugeMetricProducer::onSlicedConditionMayChangeLocked(bool overallCondition
 }
 
 vector<FieldValue> GaugeMetricProducer::getGaugeFields(const LogEvent& event) {
-    vector<FieldValue> gaugeFields = filterValues(mFieldMatchers, event.getValues(), mOmitFields);
+    vector<FieldValue> gaugeFields =
+            mFieldMatchers.empty() ? event.getValues()
+                                   : filterValues(mFieldMatchers, event.getValues(), mOmitFields);
 
     // Trim all dimension fields from output. Dimensions will appear in output report and will
     // benefit from dictionary encoding. For large pulled atoms, this can give the benefit of
@@ -621,7 +623,9 @@ void GaugeMetricProducer::onMatchedLogEventInternalLocked(
     }
 
     const int64_t truncatedElapsedTimestampNs = truncateTimestampIfNecessary(event);
-    GaugeAtom gaugeAtom(getGaugeFields(event), truncatedElapsedTimestampNs);
+    GaugeAtom gaugeAtom(mFieldMatchers.empty() && mDimensionsInWhat.empty() ? event.getValues()
+                                                                            : getGaugeFields(event),
+                        truncatedElapsedTimestampNs);
     (*mCurrentSlicedBucket)[eventKey].push_back(gaugeAtom);
     // Anomaly detection on gauge metric only works when there is one numeric
     // field specified.
