@@ -715,5 +715,5 @@ message StatsdConfig {
   optional StatsdConfigOptions statsd_config_options = 30;
 
   // Do not use.
-  reserved 1000, 1001;
+  reserved 1000, 1001, 1002;
 }
