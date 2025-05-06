@@ -507,6 +507,9 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
+    FRIEND_TEST(ValueMetricE2eTest, TestDimensionGuardrailHitWithZeroDefaultBase);
+    FRIEND_TEST(ValueMetricE2eTest,
+                TestDimensionGuardrailHitWithZeroDefaultBaseAndConditionAndState);
 
     FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
 

@@ -488,6 +488,8 @@ message ValueMetric {
 
   optional FieldMatcher uid_fields = 27;
 
+  optional bool drop_bucket_on_max_dimensions_exceeded = 28 [default = false];
+
   reserved 100;
   reserved 101;
 }

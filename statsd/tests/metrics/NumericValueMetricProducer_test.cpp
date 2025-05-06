@@ -2220,6 +2220,7 @@ TEST(NumericValueMetricProducerTest_BucketDrop, TestInvalidBucketWhenGuardRailHi
     metric.mutable_dimensions_in_what()->set_field(tagId);
     metric.mutable_dimensions_in_what()->add_child()->set_field(1);
     metric.set_condition(StringToId("SCREEN_ON"));
+    metric.set_drop_bucket_on_max_dimensions_exceeded(true);
 
     sp<MockStatsPullerManager> pullerManager = new StrictMock<MockStatsPullerManager>();
     EXPECT_CALL(*pullerManager, Pull(tagId, kConfigKey, bucketStartTimeNs + 2, _))
