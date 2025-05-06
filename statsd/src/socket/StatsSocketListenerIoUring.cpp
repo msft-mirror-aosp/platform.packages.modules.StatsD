@@ -55,8 +55,8 @@ StatsSocketListenerIoUring::StatsSocketListenerIoUring(
 int StatsSocketListenerIoUring::startListener() {
     VLOG("IoUring Socket Listener starting");
     if (this->getLogSocket() <= 0) {
-        return -1;
         ALOGE("IoUring Socket Listener: Missing socket");
+        return -1;
     }
 
     mThread = std::thread(&StatsSocketListenerIoUring::threadFunction, this);
