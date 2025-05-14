@@ -20,7 +20,7 @@ flag {
 }
 
 flag {
-    name: "enable_iouring"
+    name: "use_iouring"
     namespace: "statsd"
     description: "Enables iouring implementation of the statsd"
     bug: "380509817"

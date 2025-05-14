@@ -107,7 +107,7 @@ int main(int /*argc*/, char** /*argv*/) {
     // Start reading events from the socket as early as possible.
     // Processing from the queue is delayed until StatsService::startup to allow
     // config initialization to occur before we start processing atoms.
-    if (flags::enable_iouring() && IOUringSocketHandler::IsIouringSupported()) {
+    if (flags::use_iouring() && IOUringSocketHandler::IsIouringSupported()) {
         gSocketListener = new StatsSocketListenerIoUring(eventQueue, logEventFilter);
     } else {
         gSocketListener = new StatsSocketListener(eventQueue, logEventFilter);
