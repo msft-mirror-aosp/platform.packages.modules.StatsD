@@ -587,6 +587,13 @@ void writeAtomMetricStatsToStream(const std::pair<int64_t, StatsdStats::AtomMetr
 
 void writeDataCorruptedReasons(ProtoOutputStream& proto, int fieldIdDataCorruptedReason,
                                bool hasQueueOverflow, bool hasSocketLoss) {
+    writeDataCorruptedReasons(proto, fieldIdDataCorruptedReason, hasQueueOverflow, hasSocketLoss,
+                              /*hasSystemServerRestart=*/false);
+}
+
+void writeDataCorruptedReasons(ProtoOutputStream& proto, int fieldIdDataCorruptedReason,
+                               bool hasQueueOverflow, bool hasSocketLoss,
+                               bool hasSystemServerRestart) {
     if (hasQueueOverflow) {
         proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | fieldIdDataCorruptedReason,
                     DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
@@ -594,6 +601,10 @@ void writeDataCorruptedReasons(ProtoOutputStream& proto, int fieldIdDataCorrupte
     if (hasSocketLoss) {
         proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | fieldIdDataCorruptedReason,
                     DATA_CORRUPTED_SOCKET_LOSS);
+    }
+    if (hasSystemServerRestart) {
+        proto.write(FIELD_TYPE_INT32 | FIELD_COUNT_REPEATED | fieldIdDataCorruptedReason,
+                    DATA_CORRUPTED_SYSTEM_SERVER_CRASH);
     }
 }
 

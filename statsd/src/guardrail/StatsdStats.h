@@ -543,6 +543,11 @@ public:
     void noteSystemServerRestart(int32_t timeSec);
 
     /**
+     * Records whether a system server restart has occurred.
+     */
+    bool hasSystemServerRestart();
+
+    /**
      * Records statsd skipped an event.
      */
     void noteLogLost(int32_t wallClockTimeSec, int32_t count, int32_t lastError,

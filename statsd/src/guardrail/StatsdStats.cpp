@@ -821,6 +821,10 @@ void StatsdStats::noteSystemServerRestart(int32_t timeSec) {
     mSystemServerRestartSec.push_back(timeSec);
 }
 
+bool StatsdStats::hasSystemServerRestart() {
+    return mSystemServerRestartSec.size() > 0;
+}
+
 void StatsdStats::notePullFailed(int atomId) {
     lock_guard<std::mutex> lock(mLock);
     mPulledAtomStats[atomId].pullFailed++;

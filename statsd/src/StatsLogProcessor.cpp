@@ -827,7 +827,8 @@ void StatsLogProcessor::onConfigMetricsReportLocked(
     // Data corrupted reason
     writeDataCorruptedReasons(tempProto, FIELD_ID_DATA_CORRUPTED_REASON,
                               StatsdStats::getInstance().hasEventQueueOverflow(),
-                              StatsdStats::getInstance().hasSocketLoss());
+                              StatsdStats::getInstance().hasSocketLoss(),
+                              StatsdStats::getInstance().hasSystemServerRestart());
 
     // Estimated memory bytes
     tempProto.write(FIELD_TYPE_INT64 | FIELD_ID_ESTIMATED_DATA_BYTES, totalSize);

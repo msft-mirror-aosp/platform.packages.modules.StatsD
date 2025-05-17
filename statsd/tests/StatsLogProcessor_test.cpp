@@ -2152,15 +2152,17 @@ TEST(StatsLogProcessorTest, TestDataCorruptedEnum) {
     StatsdStats::getInstance().noteEventQueueOverflow(/*oldestEventTimestampNs=*/0, /*atomId=*/100);
     StatsdStats::getInstance().noteLogLost(/*wallClockTimeSec=*/0, /*count=*/1, /*lastError=*/0,
                                            /*lastTag=*/0, /*uid=*/0, /*pid=*/0);
+    StatsdStats::getInstance().noteSystemServerRestart(/*timeSec=*/1);
     vector<uint8_t> bytes;
     ConfigMetricsReportList output;
     processor->onDumpReport(cfgKey, 3, true, true, ADB_DUMP, FAST, &bytes);
 
     output.ParseFromArray(bytes.data(), bytes.size());
     ASSERT_EQ(output.reports_size(), 1);
-    ASSERT_EQ(output.reports(0).data_corrupted_reason().size(), 2);
+    ASSERT_EQ(output.reports(0).data_corrupted_reason().size(), 3);
     EXPECT_EQ(output.reports(0).data_corrupted_reason(0), DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
     EXPECT_EQ(output.reports(0).data_corrupted_reason(1), DATA_CORRUPTED_SOCKET_LOSS);
+    EXPECT_EQ(output.reports(0).data_corrupted_reason(2), DATA_CORRUPTED_SYSTEM_SERVER_CRASH);
 }
 
 class StatsLogProcessorTestRestricted : public Test {
