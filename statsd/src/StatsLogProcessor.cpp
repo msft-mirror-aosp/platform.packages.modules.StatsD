@@ -169,8 +169,8 @@ void StatsLogProcessor::mapIsolatedUidToHostUidIfNecessaryLocked(LogEvent* event
         for (size_t i = indexRange.first; i <= indexRange.second; i++) {
             FieldValue& fieldValue = fieldValues->at(i);
             if (isAttributionUidField(fieldValue)) {
-                const int hostUid = mUidMap->getHostUidOrSelf(fieldValue.mValue.int_value);
-                fieldValue.mValue.setInt(hostUid);
+                const int hostUid = mUidMap->getHostUidOrSelf(fieldValue.mValue.get<int32_t>());
+                fieldValue.mValue.set(hostUid);
             }
         }
     } else {

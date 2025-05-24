@@ -167,7 +167,7 @@ TEST(StatsPullerManagerTest, TestPullChoosesCorrectUid) {
     ASSERT_EQ(data.size(), 1);
     EXPECT_EQ(data[0]->GetTagId(), pullTagId1);
     ASSERT_EQ(data[0]->getValues().size(), 1);
-    EXPECT_EQ(data[0]->getValues()[0].mValue.int_value, uid1);
+    EXPECT_EQ(data[0]->getValues()[0].mValue.get<int32_t>(), uid1);
 }
 
 TEST(StatsPullerManagerTest, TestPullInvalidConfigKey) {
@@ -188,7 +188,7 @@ TEST(StatsPullerManagerTest, TestPullConfigKeyGood) {
     EXPECT_TRUE(pullerManager->Pull(pullTagId1, configKey, /*timestamp =*/1, &data));
     EXPECT_EQ(data[0]->GetTagId(), pullTagId1);
     ASSERT_EQ(data[0]->getValues().size(), 1);
-    EXPECT_EQ(data[0]->getValues()[0].mValue.int_value, uid2);
+    EXPECT_EQ(data[0]->getValues()[0].mValue.get<int32_t>(), uid2);
 }
 
 TEST(StatsPullerManagerTest, TestPullConfigKeyNoPullerWithUid) {

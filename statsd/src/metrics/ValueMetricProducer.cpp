@@ -259,7 +259,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onStateChanged(
     std::lock_guard<std::mutex> lock(mMutex);
     VLOG("ValueMetricProducer %lld onStateChanged time %lld, State %d, key %s, %d -> %d",
          (long long)mMetricId, (long long)eventTimeNs, atomId, primaryKey.toString().c_str(),
-         oldState.mValue.int_value, newState.mValue.int_value);
+         oldState.mValue.get<int32_t>(), newState.mValue.get<int32_t>());
 
     FieldValue oldStateCopy = oldState;
     FieldValue newStateCopy = newState;

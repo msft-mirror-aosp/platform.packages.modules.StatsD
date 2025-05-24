@@ -419,7 +419,7 @@ NumericValue getAggregationInputValue(const LogEvent& event, const Matcher& matc
                 continue;
             }
             if (value.mValue.getType() == INT) {
-                binCounts.push_back(value.mValue.int_value);
+                binCounts.push_back(value.mValue.get<int32_t>());
             } else {
                 return NumericValue{};
             }
@@ -431,15 +431,15 @@ NumericValue getAggregationInputValue(const LogEvent& event, const Matcher& matc
         if (!value.mField.matches(matcher)) {
             continue;
         }
-        switch (value.mValue.type) {
+        switch (value.mValue.getType()) {
             case INT:
-                return NumericValue((int64_t)value.mValue.int_value);
+                return NumericValue((int64_t)value.mValue.get<int32_t>());
             case LONG:
-                return NumericValue((int64_t)value.mValue.long_value);
+                return NumericValue((int64_t)value.mValue.get<int64_t>());
             case FLOAT:
-                return NumericValue((double)value.mValue.float_value);
+                return NumericValue((double)value.mValue.get<float>());
             case DOUBLE:
-                return NumericValue((double)value.mValue.double_value);
+                return NumericValue((double)value.mValue.get<double>());
             default:
                 return NumericValue{};
         }
