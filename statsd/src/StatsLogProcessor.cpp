@@ -230,8 +230,14 @@ void StatsLogProcessor::onBinaryPushStateChangedEventLocked(LogEvent* event) {
     trainInfo.experimentIds = {trainExperimentIds.experiment_id().begin(),
                                trainExperimentIds.experiment_id().end()};
 
+    VLOG("trainInfo.experimentIds before update %s",
+         InstallTrainInfo::experimentIdsToString(trainInfo.experimentIds).c_str());
+
     // Update the train info on disk and get any data the logevent is missing.
     getAndUpdateTrainInfoOnDisk(is_rollback, &trainInfo);
+
+    VLOG("trainInfo.experimentIds after update %s",
+         InstallTrainInfo::experimentIdsToString(trainInfo.experimentIds).c_str());
 
     std::vector<uint8_t> trainExperimentIdProto;
     writeExperimentIdsToProto(trainInfo.experimentIds, &trainExperimentIdProto);

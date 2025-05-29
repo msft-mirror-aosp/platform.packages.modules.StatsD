@@ -53,6 +53,17 @@ uint8_t getNumAnnotations(uint8_t typeInfo) {
 
 }  // namespace
 
+std::string InstallTrainInfo::experimentIdsToString(const std::vector<int64_t>& experimentIds) {
+    std::string str;
+    for (size_t i = 0; i < experimentIds.size(); i++) {
+        str += std::to_string(experimentIds[i]);
+        if (i != experimentIds.size() - 1) {
+            str += ",";
+        }
+    }
+    return str;
+}
+
 LogEvent::LogEvent(int32_t uid, int32_t pid)
     : mLogdTimestampNs(getWallClockNs()), mLogUid(uid), mLogPid(pid) {
 }
