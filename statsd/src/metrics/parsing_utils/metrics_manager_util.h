@@ -81,6 +81,13 @@ std::optional<InvalidConfigReason> handleMetricWithConditions(
         const std::vector<sp<ConditionTracker>>& allConditionTrackers, int& conditionIndex,
         std::unordered_map<int, std::vector<int>>& conditionToMetricMap);
 
+// Validates a metricActivation.
+std::optional<InvalidConfigReason> checkMetricActivationOnConfigUpdate(
+        const StatsdConfig& config, const int64_t metricId,
+        const std::unordered_map<int64_t, int>& metricToActivationMap,
+        const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+        const std::unordered_map<int, std::shared_ptr<Activation>>& oldEventActivationMap);
+
 // Validates a metricActivation and populates state.
 // Fills the new event activation/deactivation maps, preserving the existing activations.
 // Returns nullopt if successful and InvalidConfigReason if not.
@@ -117,9 +124,18 @@ std::optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
         std::optional<InvalidConfigReason>& invalidConfigReason,
         const wp<ConfigMetadataProvider> configMetadataProvider);
 
+// Determines whether the duration metric from the config is valid.
+std::optional<InvalidConfigReason> isNewDurationMetricValid(
+        const StatsdConfig& config, const DurationMetric& metric,
+        const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const std::unordered_map<int64_t, int>& conditionTrackerMap,
+        const std::unordered_map<int64_t, int>& stateAtomIdMap,
+        const std::unordered_map<int64_t, int>& metricToActivationMap);
+
 // Creates a DurationMetricProducer and updates the vectors/maps used by MetricsManager with
-// the appropriate indices. Returns an sp to the producer, or nullopt if there was an error.
-std::optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
+// the appropriate indices. Returns an sp to the producer.
+sp<MetricProducer> createDurationMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, int64_t timeBaseNs,
         const int64_t currentTimeNs, const DurationMetric& metric, int metricIndex,
         const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
@@ -135,7 +151,6 @@ std::optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
         std::unordered_map<int, std::vector<int>>& activationAtomTrackerToMetricMap,
         std::unordered_map<int, std::vector<int>>& deactivationAtomTrackerToMetricMap,
         std::vector<int>& metricsWithActivation,
-        std::optional<InvalidConfigReason>& invalidConfigReason,
         const wp<ConfigMetadataProvider> configMetadataProvider);
 
 // Creates an EventMetricProducer and updates the vectors/maps used by MetricsManager with

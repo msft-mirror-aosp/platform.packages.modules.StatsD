@@ -32,6 +32,7 @@ using std::map;
 using std::nullopt;
 using std::optional;
 using std::set;
+using std::shared_ptr;
 using std::string;
 using std::unordered_map;
 using std::unordered_set;
@@ -760,6 +761,26 @@ optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
     return nullopt;
 }
 
+optional<InvalidConfigReason> checkMetricUpdate(
+        const StatsdConfig& config, const int64_t metricId,
+        const unordered_map<int64_t, int>& oldMetricProducerMap,
+        const vector<sp<MetricProducer>>& oldMetricProducers,
+        const unordered_map<int64_t, int>& metricToActivationMap,
+        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap) {
+    const auto& oldMetricProducerIt = oldMetricProducerMap.find(metricId);
+    if (oldMetricProducerIt == oldMetricProducerMap.end()) {
+        ALOGE("Could not find Metric %lld in the previous config, but expected it "
+              "to be there",
+              (long long)metricId);
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_NOT_IN_PREV_CONFIG, metricId);
+    }
+    const int oldIndex = oldMetricProducerIt->second;
+    sp<MetricProducer> producer = oldMetricProducers[oldIndex];
+    return checkMetricActivationOnConfigUpdate(config, metricId, metricToActivationMap,
+                                               oldAtomMatchingTrackerMap,
+                                               producer->getEventActivationMap());
+}
+
 // Called when a metric is preserved during a config update. Finds the metric in oldMetricProducers
 // and calls onConfigUpdated to update all indices.
 optional<sp<MetricProducer>> updateMetric(
@@ -906,17 +927,31 @@ optional<InvalidConfigReason> updateMetrics(
     for (int i = 0; i < config.duration_metric_size(); i++, metricIndex++) {
         const DurationMetric& metric = config.duration_metric(i);
         newMetricProducerMap[metric.id()] = metricIndex;
-        optional<sp<MetricProducer>> producer;
+        sp<MetricProducer> producer;
+        invalidConfigReason = isNewDurationMetricValid(
+                config, metric, allAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         switch (metricUpdateStatus[metricIndex]) {
             case UPDATE_PRESERVE: {
-                producer = updateMetric(
-                        config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
-                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
-                        allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
-                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                invalidConfigReason = checkMetricUpdate(config, metric.id(), oldMetricProducerMap,
+                                                        oldMetricProducers, metricToActivationMap,
+                                                        oldAtomMatchingTrackerMap);
+                if (invalidConfigReason.has_value()) {
+                    return invalidConfigReason;
+                }
+                producer =
+                        updateMetric(config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
+                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
+                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
+                                     wizard, oldMetricProducerMap, oldMetricProducers,
+                                     metricToActivationMap, trackerToMetricMap,
+                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
+                                     deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                                     invalidConfigReason)
+                                .value();
                 break;
             }
             case UPDATE_REPLACE:
@@ -930,7 +965,7 @@ optional<InvalidConfigReason> updateMetrics(
                         allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
                         conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason, configMetadataProvider);
+                        configMetadataProvider);
                 break;
             }
             default: {
@@ -940,10 +975,7 @@ optional<InvalidConfigReason> updateMetrics(
                                            metric.id());
             }
         }
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        newMetricProducers.push_back(producer.value());
+        newMetricProducers.push_back(producer);
     }
     for (int i = 0; i < config.event_metric_size(); i++, metricIndex++) {
         const EventMetric& metric = config.event_metric(i);

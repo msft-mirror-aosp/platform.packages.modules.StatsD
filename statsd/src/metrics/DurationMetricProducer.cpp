@@ -122,13 +122,6 @@ DurationMetricProducer::DurationMetricProducer(
         ALOGE("Position ANY in dimension_in_what not supported.");
     }
 
-    // Dimensions in what must be subset of internal dimensions
-    if (!subsetDimensions(mDimensionsInWhat, mInternalDimensions)) {
-        ALOGE("Dimensions in what must be a subset of the internal dimensions");
-        // TODO: Add invalidConfigReason
-        mValid = false;
-    }
-
     mShouldUseNestedDimensions = ShouldUseNestedDimensions(metric.dimensions_in_what());
 
     if (metric.links().size() > 0) {
@@ -137,11 +130,6 @@ DurationMetricProducer::DurationMetricProducer(
             mc.conditionId = link.condition();
             translateFieldMatcher(link.fields_in_what(), &mc.metricFields);
             translateFieldMatcher(link.fields_in_condition(), &mc.conditionFields);
-            if (!subsetDimensions(mc.metricFields, mInternalDimensions)) {
-                ALOGE(("Condition links must be a subset of the internal dimensions"));
-                // TODO: Add invalidConfigReason
-                mValid = false;
-            }
             mMetric2ConditionLinks.push_back(mc);
         }
         mConditionSliced = true;
@@ -153,11 +141,6 @@ DurationMetricProducer::DurationMetricProducer(
         ms.stateAtomId = stateLink.state_atom_id();
         translateFieldMatcher(stateLink.fields_in_what(), &ms.metricFields);
         translateFieldMatcher(stateLink.fields_in_state(), &ms.stateFields);
-        if (!subsetDimensions(ms.metricFields, mInternalDimensions)) {
-            ALOGE(("State links must be a subset of the dimensions in what  internal dimensions"));
-            // TODO: Add invalidConfigReason
-            mValid = false;
-        }
         mMetric2StateLinks.push_back(ms);
     }
 
@@ -197,69 +180,41 @@ optional<InvalidConfigReason> DurationMetricProducer::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+    MetricProducer::onConfigUpdatedLocked(
             config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
             newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
             wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
             activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
             metricsWithActivation);
-    if (invalidConfigReason.has_value()) {
-        return invalidConfigReason;
-    }
 
     const DurationMetric& metric = config.duration_metric(configIndex);
     const auto& what_it = conditionTrackerMap.find(metric.what());
-    if (what_it == conditionTrackerMap.end()) {
-        ALOGE("DurationMetric's \"what\" is not present in the config");
-        return createInvalidConfigReasonWithPredicate(
-                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND, mMetricId, metric.what());
-    }
-
     const Predicate& durationWhat = config.predicate(what_it->second);
-    if (durationWhat.contents_case() != Predicate::ContentsCase::kSimplePredicate) {
-        ALOGE("DurationMetric's \"what\" must be a simple condition");
-        return createInvalidConfigReasonWithPredicate(
-                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE, mMetricId, metric.what());
-    }
-
     const SimplePredicate& simplePredicate = durationWhat.simple_predicate();
 
     // Update indices: mStartIndex, mStopIndex, mStopAllIndex, mConditionIndex and MetricsManager
     // maps.
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+    handleMetricWithAtomMatchingTrackers(
             simplePredicate.start(), mMetricId, metricIndex, metric.has_dimensions_in_what(),
             allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap, mStartIndex);
-    if (invalidConfigReason.has_value()) {
-        ALOGE("Duration metrics must specify a valid start event matcher");
-        return invalidConfigReason;
-    }
 
     if (simplePredicate.has_stop()) {
-        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+        handleMetricWithAtomMatchingTrackers(
                 simplePredicate.stop(), mMetricId, metricIndex, metric.has_dimensions_in_what(),
                 allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap, mStopIndex);
-        if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
-        }
     }
 
     if (simplePredicate.has_stop_all()) {
-        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-                simplePredicate.stop_all(), mMetricId, metricIndex, metric.has_dimensions_in_what(),
-                allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap,
-                mStopAllIndex);
-        if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
-        }
+        handleMetricWithAtomMatchingTrackers(simplePredicate.stop_all(), mMetricId, metricIndex,
+                                             metric.has_dimensions_in_what(),
+                                             allAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                                             trackerToMetricMap, mStopAllIndex);
     }
 
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), mMetricId, metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
-        }
+        handleMetricWithConditions(metric.condition(), mMetricId, metricIndex, conditionTrackerMap,
+                                   metric.links(), allConditionTrackers, mConditionTrackerIndex,
+                                   conditionToMetricMap);
     }
 
     for (const auto& it : mCurrentSlicedDurationTrackerMap) {
