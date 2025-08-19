@@ -1512,7 +1512,68 @@ sp<MetricProducer> createNumericValueMetricProducerAndUpdateMetadata(
     return metricProducer;
 }
 
-optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
+optional<InvalidConfigReason> isNewKllMetricValid(
+        const StatsdConfig& config, const KllMetric& metric,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    if (!metric.has_kll_field()) {
+        ALOGE("cannot find \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_MISSING_KLL_FIELD, metric.id());
+    }
+    if (HasPositionALL(metric.kll_field())) {
+        ALOGE("kll field with position ALL is not supported. KllMetric \"%lld\"",
+              (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_KLL_FIELD_HAS_POSITION_ALL,
+                                   metric.id());
+    }
+    std::vector<Matcher> fieldMatchers;
+    translateFieldMatcher(metric.kll_field(), &fieldMatchers);
+    if (fieldMatchers.empty()) {
+        ALOGE("incorrect \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_HAS_INCORRECT_KLL_FIELD,
+                                   metric.id());
+    }
+
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            metric.what(), metric.id(), true, allAtomMatchingTrackers, atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    // Check that all metric state links are a subset of dimensions_in_what fields.
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    for (const auto& stateLink : metric.state_link()) {
+        invalidConfigReason =
+                checkMetricWithStateLink(metric.id(), stateLink.fields_in_what(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            ALOGW("KllMetric's MetricStateLinks must be a subset of the dimensions in what");
+            return nullopt;
+        }
+    }
+
+    if (metric.has_dimensional_sampling_info()) {
+        invalidConfigReason = checkMetricWithDimensionalSampling(
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    return nullopt;
+}
+
+sp<MetricProducer> createKllMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const KllMetric& metric, const int metricIndex,
@@ -1529,104 +1590,39 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find metric id or \"what\" in KllMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
-    if (!metric.has_kll_field()) {
-        ALOGE("cannot find \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_KLL_METRIC_MISSING_KLL_FIELD, metric.id());
-        return nullopt;
-    }
-    if (HasPositionALL(metric.kll_field())) {
-        ALOGE("kll field with position ALL is not supported. KllMetric \"%lld\"",
-              (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_KLL_METRIC_KLL_FIELD_HAS_POSITION_ALL, metric.id());
-        return nullopt;
-    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.kll_field(), &fieldMatchers);
-    if (fieldMatchers.empty()) {
-        ALOGE("incorrect \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_KLL_METRIC_HAS_INCORRECT_KLL_FIELD, metric.id());
-        return nullopt;
-    }
 
     int trackerIndex;
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), metric.id(), metricIndex,
-            /*enforceOneAtom=*/true, allAtomMatchingTrackers, atomMatchingTrackerMap,
-            trackerToMetricMap, trackerIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), metric.id(), metricIndex,
+                                         /*enforceOneAtom=*/true, allAtomMatchingTrackers,
+                                         atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.links_size() > 0) {
-        ALOGE("metrics has a MetricConditionLink but doesn't have a condition");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-        return nullopt;
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     unordered_map<int, unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.state_link_size() > 0) {
-        ALOGE("KllMetric has a MetricStateLink but doesn't have a sliced state");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-        return nullopt;
-    }
-
-    // Check that all metric state links are a subset of dimensions_in_what fields.
-    std::vector<Matcher> dimensionsInWhat;
-    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
-    for (const auto& stateLink : metric.state_link()) {
-        invalidConfigReason = handleMetricWithStateLink(metric.id(), stateLink.fields_in_what(),
-                                                        dimensionsInWhat);
-        if (invalidConfigReason.has_value()) {
-            ALOGW("KllMetric's MetricStateLinks must be a subset of the dimensions in what");
-            return nullopt;
-        }
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
 
     uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
 
     const TimeUnit bucketSizeTimeUnit =
             metric.bucket() == TIME_UNIT_UNSPECIFIED ? ONE_HOUR : metric.bucket();
@@ -1659,21 +1655,16 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit},
             configMetadataProvider);
 
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithDimensionalSampling(
-                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithDimensionalSampling(metric.id(), metric.dimensional_sampling_info(),
+                                            dimensionsInWhat, samplingInfo);
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
-
+    setUidFieldsIfNecessary(metric, metricProducer);
     return metricProducer;
 }
 
@@ -2237,18 +2228,21 @@ optional<InvalidConfigReason> initMetrics(
     for (int i = 0; i < config.kll_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const KllMetric& metric = config.kll_metric(i);
+        invalidConfigReason =
+                isNewKllMetricValid(config, metric, allAtomMatchingTrackers, atomMatchingTrackerMap,
+                                    conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-        optional<sp<MetricProducer>> producer = createKllMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createKllMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
                 conditionTrackerMap, initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
                 allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
 
     // Gauge metrics.
