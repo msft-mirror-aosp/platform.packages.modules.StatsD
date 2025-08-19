@@ -1044,17 +1044,31 @@ optional<InvalidConfigReason> updateMetrics(
     for (int i = 0; i < config.value_metric_size(); i++, metricIndex++) {
         const ValueMetric& metric = config.value_metric(i);
         newMetricProducerMap[metric.id()] = metricIndex;
-        optional<sp<MetricProducer>> producer;
+        sp<MetricProducer> producer;
+        invalidConfigReason = isNewNumericValueMetricValid(
+                config, metric, allAtomMatchingTrackers, newAtomMatchingTrackerMap,
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         switch (metricUpdateStatus[metricIndex]) {
             case UPDATE_PRESERVE: {
-                producer = updateMetric(
-                        config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
-                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
-                        allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
-                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                invalidConfigReason = checkMetricUpdate(config, metric.id(), oldMetricProducerMap,
+                                                        oldMetricProducers, metricToActivationMap,
+                                                        oldAtomMatchingTrackerMap);
+                if (invalidConfigReason.has_value()) {
+                    return invalidConfigReason;
+                }
+                producer =
+                        updateMetric(config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
+                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
+                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
+                                     wizard, oldMetricProducerMap, oldMetricProducers,
+                                     metricToActivationMap, trackerToMetricMap,
+                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
+                                     deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                                     invalidConfigReason)
+                                .value();
                 break;
             }
             case UPDATE_REPLACE:
@@ -1068,7 +1082,7 @@ optional<InvalidConfigReason> updateMetrics(
                         stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
                         trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason, configMetadataProvider);
+                        configMetadataProvider);
                 break;
             }
             default: {
@@ -1078,10 +1092,7 @@ optional<InvalidConfigReason> updateMetrics(
                                            metric.id());
             }
         }
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        newMetricProducers.push_back(producer.value());
+        newMetricProducers.push_back(producer);
     }
 
     for (int i = 0; i < config.gauge_metric_size(); i++, metricIndex++) {

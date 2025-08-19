@@ -1279,7 +1279,126 @@ optional<InvalidConfigReason> validatePositionAllInValueFields(
 }
 }  // anonymous namespace
 
-optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
+optional<InvalidConfigReason> isNewNumericValueMetricValid(
+        const StatsdConfig& config, const ValueMetric& metric,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+    if (!metric.has_value_field()) {
+        ALOGE("cannot find \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_MISSING_VALUE_FIELD,
+                                   metric.id());
+    }
+    std::vector<Matcher> fieldMatchers;
+    translateFieldMatcher(metric.value_field(), &fieldMatchers);
+    if (fieldMatchers.size() < 1) {
+        ALOGE("incorrect \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HAS_INCORRECT_VALUE_FIELD,
+                                   metric.id());
+    }
+
+    std::vector<ValueMetric::AggregationType> aggregationTypes;
+    int histogramCount = 0;
+    if (!metric.aggregation_types().empty()) {
+        if (metric.has_aggregation_type()) {
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
+                    metric.id());
+        }
+        if (metric.aggregation_types_size() != (int)fieldMatchers.size()) {
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                    metric.id());
+        }
+        for (int i = 0; i < metric.aggregation_types_size(); i++) {
+            const ValueMetric::AggregationType aggType = metric.aggregation_types(i);
+            aggregationTypes.push_back(aggType);
+            if (aggType == ValueMetric::HISTOGRAM) {
+                histogramCount++;
+            }
+            invalidConfigReason = validatePositionAllInValueFields(
+                    metric, histogramCount - 1, aggType, fieldMatchers.begin() + i,
+                    fieldMatchers.begin() + i + 1);
+            if (invalidConfigReason != nullopt) {
+                return invalidConfigReason;
+            }
+        }
+    } else {  // aggregation_type() is set or default is used.
+        const ValueMetric::AggregationType aggType = metric.aggregation_type();
+        aggregationTypes.push_back(aggType);
+        if (aggType == ValueMetric::HISTOGRAM) {
+            histogramCount = 1;
+        }
+        invalidConfigReason = validatePositionAllInValueFields(
+                metric, 0, aggType, fieldMatchers.begin(), fieldMatchers.end());
+        if (invalidConfigReason != nullopt) {
+            return invalidConfigReason;
+        }
+    }
+
+    if (metric.histogram_bin_configs_size() != histogramCount) {
+        ALOGE("%d histogram aggregations specified but there are %d histogram_bin_configs",
+              histogramCount, metric.histogram_bin_configs_size());
+        return InvalidConfigReason(
+                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
+                metric.id());
+    }
+
+    if (aggregationTypes.front() == ValueMetric::HISTOGRAM && metric.has_threshold()) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                   metric.id());
+    }
+
+    if (histogramCount > 0 && metric.has_value_direction() &&
+        metric.value_direction() != ValueMetric::INCREASING) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION,
+                                   metric.id());
+    }
+
+    ParseHistogramBinConfigsResult parseBinConfigsResult =
+            parseHistogramBinConfigs(metric, aggregationTypes);
+    if (std::holds_alternative<InvalidConfigReason>(parseBinConfigsResult)) {
+        return std::get<InvalidConfigReason>(parseBinConfigsResult);
+    }
+
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            metric.what(), metric.id(), true, allAtomMatchingTrackers, atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    // Check that all metric state links are a subset of dimensions_in_what fields.
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    for (const auto& stateLink : metric.state_link()) {
+        invalidConfigReason =
+                checkMetricWithStateLink(metric.id(), stateLink.fields_in_what(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            ALOGW("ValueMetric's MetricStateLinks must be a subset of the dimensions in what");
+            return invalidConfigReason;
+        }
+    }
+
+    if (metric.has_dimensional_sampling_info()) {
+        invalidConfigReason = checkMetricWithDimensionalSampling(
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    return nullopt;
+}
+
+sp<MetricProducer> createNumericValueMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const ValueMetric& metric, const int metricIndex,
@@ -1296,107 +1415,27 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find metric id or \"what\" in ValueMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
-    if (!metric.has_value_field()) {
-        ALOGE("cannot find \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_MISSING_VALUE_FIELD, metric.id());
-        return nullopt;
-    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.value_field(), &fieldMatchers);
-    if (fieldMatchers.size() < 1) {
-        ALOGE("incorrect \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_HAS_INCORRECT_VALUE_FIELD, metric.id());
-        return nullopt;
-    }
 
     std::vector<ValueMetric::AggregationType> aggregationTypes;
-    int histogramCount = 0;
     if (!metric.aggregation_types().empty()) {
-        if (metric.has_aggregation_type()) {
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
-                    metric.id());
-            return nullopt;
-        }
-        if (metric.aggregation_types_size() != (int)fieldMatchers.size()) {
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
-                    metric.id());
-            return nullopt;
-        }
         for (int i = 0; i < metric.aggregation_types_size(); i++) {
-            const ValueMetric::AggregationType aggType = metric.aggregation_types(i);
-            aggregationTypes.push_back(aggType);
-            if (aggType == ValueMetric::HISTOGRAM) {
-                histogramCount++;
-            }
-            invalidConfigReason = validatePositionAllInValueFields(
-                    metric, histogramCount - 1, aggType, fieldMatchers.begin() + i,
-                    fieldMatchers.begin() + i + 1);
-            if (invalidConfigReason != nullopt) {
-                return nullopt;
-            }
+            aggregationTypes.push_back(metric.aggregation_types(i));
         }
     } else {  // aggregation_type() is set or default is used.
-        const ValueMetric::AggregationType aggType = metric.aggregation_type();
-        aggregationTypes.push_back(aggType);
-        if (aggType == ValueMetric::HISTOGRAM) {
-            histogramCount = 1;
-        }
-        invalidConfigReason = validatePositionAllInValueFields(
-                metric, 0, aggType, fieldMatchers.begin(), fieldMatchers.end());
-        if (invalidConfigReason != nullopt) {
-            return nullopt;
-        }
-    }
-
-    if (metric.histogram_bin_configs_size() != histogramCount) {
-        ALOGE("%d histogram aggregations specified but there are %d histogram_bin_configs",
-              histogramCount, metric.histogram_bin_configs_size());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
-                metric.id());
-        return nullopt;
-    }
-
-    if (aggregationTypes.front() == ValueMetric::HISTOGRAM && metric.has_threshold()) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD, metric.id());
-        return nullopt;
-    }
-
-    if (histogramCount > 0 && metric.has_value_direction() &&
-        metric.value_direction() != ValueMetric::INCREASING) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION, metric.id());
-        return nullopt;
+        aggregationTypes.push_back(metric.aggregation_type());
     }
 
     ParseHistogramBinConfigsResult parseBinConfigsResult =
             parseHistogramBinConfigs(metric, aggregationTypes);
-    if (std::holds_alternative<InvalidConfigReason>(parseBinConfigsResult)) {
-        invalidConfigReason = std::get<InvalidConfigReason>(parseBinConfigsResult);
-        return nullopt;
-    }
 
     int trackerIndex;
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), metric.id(), metricIndex,
-            /*enforceOneAtom=*/true, allAtomMatchingTrackers, atomMatchingTrackerMap,
-            trackerToMetricMap, trackerIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), metric.id(), metricIndex,
+                                         /*enforceOneAtom=*/true, allAtomMatchingTrackers,
+                                         atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
 
     const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     int atomTagId = *(atomMatcher->getAtomIds().begin());
@@ -1404,63 +1443,27 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.links_size() > 0) {
-        ALOGE("metrics has a MetricConditionLink but doesn't have a condition");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-        return nullopt;
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     unordered_map<int, unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.state_link_size() > 0) {
-        ALOGE("ValueMetric has a MetricStateLink but doesn't have a sliced state");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-        return nullopt;
-    }
-
-    // Check that all metric state links are a subset of dimensions_in_what fields.
-    std::vector<Matcher> dimensionsInWhat;
-    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
-    for (const auto& stateLink : metric.state_link()) {
-        invalidConfigReason = handleMetricWithStateLink(metric.id(), stateLink.fields_in_what(),
-                                                        dimensionsInWhat);
-        if (invalidConfigReason.has_value()) {
-            ALOGW("ValueMetric's MetricStateLinks must be a subset of the dimensions in what");
-            return nullopt;
-        }
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
 
     uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
 
     const TimeUnit bucketSizeTimeUnit =
             metric.bucket() == TIME_UNIT_UNSPECIFIED ? ONE_HOUR : metric.bucket();
@@ -1495,20 +1498,16 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit},
             configMetadataProvider);
 
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithDimensionalSampling(
-                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithDimensionalSampling(metric.id(), metric.dimensional_sampling_info(),
+                                            dimensionsInWhat, samplingInfo);
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    setUidFieldsIfNecessary(metric, metricProducer);
 
     return metricProducer;
 }
@@ -2217,18 +2216,21 @@ optional<InvalidConfigReason> initMetrics(
     for (int i = 0; i < config.value_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const ValueMetric& metric = config.value_metric(i);
+        invalidConfigReason = isNewNumericValueMetricValid(
+                config, metric, allAtomMatchingTrackers, atomMatchingTrackerMap,
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-        optional<sp<MetricProducer>> producer = createNumericValueMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createNumericValueMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
                 conditionTrackerMap, initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
                 allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
 
     // build KllMetricProducer
