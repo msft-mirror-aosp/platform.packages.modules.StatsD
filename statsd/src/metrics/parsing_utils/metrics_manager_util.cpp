@@ -1668,7 +1668,103 @@ sp<MetricProducer> createKllMetricProducerAndUpdateMetadata(
     return metricProducer;
 }
 
-optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
+optional<InvalidConfigReason> isNewGaugeMetricValid(
+        const StatsdConfig& config, const GaugeMetric& metric,
+        const sp<StatsPullerManager>& pullerManager,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    if (metric.has_gauge_fields_filter()) {
+        const FieldFilter& filter = metric.gauge_fields_filter();
+        if ((filter.has_fields() && !hasLeafNode(filter.fields())) ||
+            (filter.has_omit_fields() && !hasLeafNode(filter.omit_fields()))) {
+            ALOGW("Incorrect field filter setting in GaugeMetric %lld", (long long)metric.id());
+            return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER,
+                                       metric.id());
+        }
+    }
+
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            metric.what(), metric.id(), true, allAtomMatchingTrackers, atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    const int trackerIndex = atomMatchingTrackerMap.at(metric.what());
+    const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
+    int atomTagId = *(atomMatcher->getAtomIds().begin());
+    int pullTagId = pullerManager->PullerForMatcherExists(atomTagId) ? atomTagId : -1;
+
+    if (metric.has_trigger_event()) {
+        if (pullTagId == -1) {
+            ALOGW("Pull atom not specified for trigger");
+            return InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_PULL_ATOM,
+                                       metric.id());
+        }
+        // trigger_event should be used with FIRST_N_SAMPLES
+        if (metric.sampling_type() != GaugeMetric::FIRST_N_SAMPLES) {
+            ALOGW("Gauge Metric with trigger event must have sampling type FIRST_N_SAMPLES");
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_FIRST_N_SAMPLES, metric.id());
+        }
+        invalidConfigReason =
+                checkMetricAtomMatchingTrackers(metric.trigger_event(), metric.id(), true,
+                                                allAtomMatchingTrackers, atomMatchingTrackerMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    if (pullTagId != -1 && metric.sampling_percentage() != 100) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING,
+                                   metric.id());
+    }
+
+    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                   metric.id());
+    }
+
+    if (metric.pull_probability() < 1 || metric.pull_probability() > 100) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                   metric.id());
+    }
+
+    if (metric.pull_probability() != 100) {
+        if (pullTagId == -1) {
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY, metric.id());
+        }
+        if (metric.sampling_type() == GaugeMetric::RANDOM_ONE_SAMPLE) {
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
+                    metric.id());
+        }
+    }
+
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    if (metric.has_dimensional_sampling_info()) {
+        invalidConfigReason = checkMetricWithDimensionalSampling(
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    return invalidConfigReason;
+}
+
+sp<MetricProducer> createGaugeMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const GaugeMetric& metric, const int metricIndex,
@@ -1685,33 +1781,12 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find metric id or \"what\" in GaugeMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
-
-    if (metric.has_gauge_fields_filter()) {
-        const FieldFilter& filter = metric.gauge_fields_filter();
-        if ((filter.has_fields() && !hasLeafNode(filter.fields())) ||
-            (filter.has_omit_fields() && !hasLeafNode(filter.omit_fields()))) {
-            ALOGW("Incorrect field filter setting in GaugeMetric %lld", (long long)metric.id());
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
-            return nullopt;
-        }
-    }
-
     int trackerIndex;
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), metric.id(), metricIndex, true, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), metric.id(), metricIndex, true,
+                                         allAtomMatchingTrackers, atomMatchingTrackerMap,
+                                         trackerToMetricMap, trackerIndex);
 
     const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     int atomTagId = *(atomMatcher->getAtomIds().begin());
@@ -1720,26 +1795,10 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     int triggerTrackerIndex;
     int triggerAtomId = -1;
     if (metric.has_trigger_event()) {
-        if (pullTagId == -1) {
-            ALOGW("Pull atom not specified for trigger");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_PULL_ATOM, metric.id());
-            return nullopt;
-        }
-        // trigger_event should be used with FIRST_N_SAMPLES
-        if (metric.sampling_type() != GaugeMetric::FIRST_N_SAMPLES) {
-            ALOGW("Gauge Metric with trigger event must have sampling type FIRST_N_SAMPLES");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_FIRST_N_SAMPLES, metric.id());
-            return nullopt;
-        }
-        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-                metric.trigger_event(), metric.id(), metricIndex,
-                /*enforceOneAtom=*/true, allAtomMatchingTrackers, atomMatchingTrackerMap,
-                trackerToMetricMap, triggerTrackerIndex);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithAtomMatchingTrackers(metric.trigger_event(), metric.id(), metricIndex,
+                                             /*enforceOneAtom=*/true, allAtomMatchingTrackers,
+                                             atomMatchingTrackerMap, trackerToMetricMap,
+                                             triggerTrackerIndex);
         const sp<AtomMatchingTracker>& triggerAtomMatcher =
                 allAtomMatchingTrackers.at(triggerTrackerIndex);
         triggerAtomId = *(triggerAtomMatcher->getAtomIds().begin());
@@ -1747,85 +1806,27 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else {
-        if (metric.links_size() > 0) {
-            ALOGW("metrics has a MetricConditionLink but doesn't have a condition");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-            return nullopt;
-        }
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     std::unordered_map<int, std::unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.state_link_size() > 0) {
-        ALOGE("GaugeMetric has a MetricStateLink but doesn't have a sliced state");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-        return nullopt;
-    }
-
-    if (pullTagId != -1 && metric.sampling_percentage() != 100) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING, metric.id());
-        return nullopt;
-    }
-
-    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE, metric.id());
-        return nullopt;
-    }
-
-    if (metric.pull_probability() < 1 || metric.pull_probability() > 100) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY, metric.id());
-        return nullopt;
-    }
-
-    if (metric.pull_probability() != 100) {
-        if (pullTagId == -1) {
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY, metric.id());
-            return nullopt;
-        }
-        if (metric.sampling_type() == GaugeMetric::RANDOM_ONE_SAMPLE) {
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
-                    metric.id());
-            return nullopt;
-        }
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
 
     uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
             StatsdStats::getAtomDimensionKeySizeLimits(
@@ -1842,18 +1843,12 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     std::vector<Matcher> dimensionsInWhat;
     translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithDimensionalSampling(
-                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithDimensionalSampling(metric.id(), metric.dimensional_sampling_info(),
+                                            dimensionsInWhat, samplingInfo);
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    setUidFieldsIfNecessary(metric, metricProducer);
 
     return metricProducer;
 }
@@ -2249,18 +2244,21 @@ optional<InvalidConfigReason> initMetrics(
     for (int i = 0; i < config.gauge_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const GaugeMetric& metric = config.gauge_metric(i);
+        invalidConfigReason = isNewGaugeMetricValid(
+                config, metric, pullerManager, allAtomMatchingTrackers, atomMatchingTrackerMap,
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-        optional<sp<MetricProducer>> producer = createGaugeMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createGaugeMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
                 conditionTrackerMap, initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
                 allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
     for (int i = 0; i < config.no_report_metric_size(); ++i) {
         const auto no_report_metric = config.no_report_metric(i);

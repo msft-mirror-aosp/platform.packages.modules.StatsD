@@ -219,9 +219,18 @@ sp<MetricProducer> createNumericValueMetricProducerAndUpdateMetadata(
         std::vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider);
 
+std::optional<InvalidConfigReason> isNewGaugeMetricValid(
+        const StatsdConfig& config, const GaugeMetric& metric,
+        const sp<StatsPullerManager>& pullerManager,
+        const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const std::unordered_map<int64_t, int>& conditionTrackerMap,
+        const std::unordered_map<int64_t, int>& stateAtomIdMap,
+        const std::unordered_map<int64_t, int>& metricToActivationMap);
+
 // Creates a GaugeMetricProducer and updates the vectors/maps used by MetricsManager with
-// the appropriate indices. Returns an sp to the producer, or nullopt if there was an error.
-std::optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
+// the appropriate indices.
+sp<MetricProducer> createGaugeMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const GaugeMetric& metric, int metricIndex,
@@ -239,7 +248,6 @@ std::optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         std::unordered_map<int, std::vector<int>>& activationAtomTrackerToMetricMap,
         std::unordered_map<int, std::vector<int>>& deactivationAtomTrackerToMetricMap,
         std::vector<int>& metricsWithActivation,
-        std::optional<InvalidConfigReason>& invalidConfigReason,
         const wp<ConfigMetadataProvider> configMetadataProvider);
 
 std::optional<InvalidConfigReason> isNewKllMetricValid(
