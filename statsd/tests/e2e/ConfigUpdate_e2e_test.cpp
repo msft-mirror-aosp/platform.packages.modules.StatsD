@@ -1402,7 +1402,7 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     *newConfig.add_predicate() = unpluggedPredicate;
     *newConfig.add_predicate() = screenOnPredicate;
 
-    *config.add_state() = screenState;
+    *newConfig.add_state() = screenState;
 
     valueChange.set_condition(screenOnPredicate.id());
     *newConfig.add_value_metric() = valueChange;
