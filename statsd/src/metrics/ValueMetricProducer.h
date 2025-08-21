@@ -217,7 +217,7 @@ protected:
     // causes the bucket to be invalidated will not notify StatsdStats.
     void skipCurrentBucket(const int64_t dropTimeNs, const BucketDropReason reason);
 
-    std::optional<InvalidConfigReason> onConfigUpdatedLocked(
+    void onConfigUpdatedLocked(
             const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,

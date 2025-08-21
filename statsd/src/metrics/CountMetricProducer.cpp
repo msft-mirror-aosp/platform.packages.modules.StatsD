@@ -140,7 +140,7 @@ CountMetricProducer::~CountMetricProducer() {
     VLOG("~CountMetricProducer() called");
 }
 
-optional<InvalidConfigReason> CountMetricProducer::onConfigUpdatedLocked(
+void CountMetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -164,17 +164,13 @@ optional<InvalidConfigReason> CountMetricProducer::onConfigUpdatedLocked(
     const CountMetric& metric = config.count_metric(configIndex);
     int trackerIndex;
     // Update appropriate indices, specifically mConditionIndex and MetricsManager maps.
-    handleMetricWithAtomMatchingTrackers(metric.what(), mMetricId, metricIndex, false,
-                                         allAtomMatchingTrackers, newAtomMatchingTrackerMap,
+    handleMetricWithAtomMatchingTrackers(metric.what(), metricIndex, newAtomMatchingTrackerMap,
                                          trackerToMetricMap, trackerIndex);
 
     if (metric.has_condition()) {
-        handleMetricWithConditions(metric.condition(), mMetricId, metricIndex, conditionTrackerMap,
-                                   metric.links(), allConditionTrackers, mConditionTrackerIndex,
-                                   conditionToMetricMap);
+        handleMetricWithConditions(metric.condition(), metricIndex, conditionTrackerMap,
+                                   mConditionTrackerIndex, conditionToMetricMap);
     }
-
-    return nullopt;
 }
 
 void CountMetricProducer::onStateChanged(const int64_t eventTimeNs, const int32_t atomId,

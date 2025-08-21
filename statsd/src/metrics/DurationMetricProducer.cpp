@@ -166,7 +166,7 @@ DurationMetricProducer::~DurationMetricProducer() {
     VLOG("~DurationMetric() called");
 }
 
-optional<InvalidConfigReason> DurationMetricProducer::onConfigUpdatedLocked(
+void DurationMetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -194,34 +194,30 @@ optional<InvalidConfigReason> DurationMetricProducer::onConfigUpdatedLocked(
 
     // Update indices: mStartIndex, mStopIndex, mStopAllIndex, mConditionIndex and MetricsManager
     // maps.
-    handleMetricWithAtomMatchingTrackers(
-            simplePredicate.start(), mMetricId, metricIndex, metric.has_dimensions_in_what(),
-            allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap, mStartIndex);
+    handleMetricWithAtomMatchingTrackers(simplePredicate.start(), metricIndex,
+                                         newAtomMatchingTrackerMap, trackerToMetricMap,
+                                         mStartIndex);
 
     if (simplePredicate.has_stop()) {
-        handleMetricWithAtomMatchingTrackers(
-                simplePredicate.stop(), mMetricId, metricIndex, metric.has_dimensions_in_what(),
-                allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap, mStopIndex);
+        handleMetricWithAtomMatchingTrackers(simplePredicate.stop(), metricIndex,
+                                             newAtomMatchingTrackerMap, trackerToMetricMap,
+                                             mStopIndex);
     }
 
     if (simplePredicate.has_stop_all()) {
-        handleMetricWithAtomMatchingTrackers(simplePredicate.stop_all(), mMetricId, metricIndex,
-                                             metric.has_dimensions_in_what(),
-                                             allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                                             trackerToMetricMap, mStopAllIndex);
+        handleMetricWithAtomMatchingTrackers(simplePredicate.stop_all(), metricIndex,
+                                             newAtomMatchingTrackerMap, trackerToMetricMap,
+                                             mStopAllIndex);
     }
 
     if (metric.has_condition()) {
-        handleMetricWithConditions(metric.condition(), mMetricId, metricIndex, conditionTrackerMap,
-                                   metric.links(), allConditionTrackers, mConditionTrackerIndex,
-                                   conditionToMetricMap);
+        handleMetricWithConditions(metric.condition(), metricIndex, conditionTrackerMap,
+                                   mConditionTrackerIndex, conditionToMetricMap);
     }
 
     for (const auto& it : mCurrentSlicedDurationTrackerMap) {
         it.second->onConfigUpdated(wizard, mConditionTrackerIndex);
     }
-
-    return nullopt;
 }
 
 void DurationMetricProducer::initTrueDimensions(const int whatIndex, const int64_t startTimeNs) {

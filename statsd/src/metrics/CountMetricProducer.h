@@ -101,7 +101,7 @@ private:
     size_t computeBucketSizeLocked(const bool isFullBucket, const MetricDimensionKey& dimKey,
                                    const bool isFirstBucket) const override;
 
-    std::optional<InvalidConfigReason> onConfigUpdatedLocked(
+    void onConfigUpdatedLocked(
             const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,

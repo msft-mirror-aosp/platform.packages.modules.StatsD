@@ -63,23 +63,17 @@ std::optional<InvalidConfigReason> getMetricProtoHash(
         const StatsdConfig& config, const google::protobuf::MessageLite& metric, int64_t id,
         const std::unordered_map<int64_t, int>& metricToActivationMap, uint64_t& metricHash);
 
-// 1. Validates matcher existence
-// 2. Enforces matchers with dimensions and those used for trigger_event are about one atom
-// 3. Gets matcher index and updates tracker to metric map
-std::optional<InvalidConfigReason> handleMetricWithAtomMatchingTrackers(
-        const int64_t matcherId, int64_t metricId, int metricIndex, const bool enforceOneAtom,
-        const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+// Gets matcher index and updates tracker to metric map
+void handleMetricWithAtomMatchingTrackers(
+        const int64_t matcherId, int metricIndex,
         const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
         std::unordered_map<int, std::vector<int>>& trackerToMetricMap, int& logTrackerIndex);
 
-// 1. Validates condition existence, including those in links
-// 2. Gets condition index and updates condition to metric map
-std::optional<InvalidConfigReason> handleMetricWithConditions(
-        const int64_t condition, int64_t metricId, int metricIndex,
-        const std::unordered_map<int64_t, int>& conditionTrackerMap,
-        const ::google::protobuf::RepeatedPtrField<MetricConditionLink>& links,
-        const std::vector<sp<ConditionTracker>>& allConditionTrackers, int& conditionIndex,
-        std::unordered_map<int, std::vector<int>>& conditionToMetricMap);
+// Gets condition index and updates condition to metric map
+void handleMetricWithConditions(const int64_t condition, int metricIndex,
+                                const std::unordered_map<int64_t, int>& conditionTrackerMap,
+                                int& conditionIndex,
+                                std::unordered_map<int, std::vector<int>>& conditionToMetricMap);
 
 // Validates a metricActivation.
 std::optional<InvalidConfigReason> checkMetricActivationOnConfigUpdate(
@@ -88,10 +82,8 @@ std::optional<InvalidConfigReason> checkMetricActivationOnConfigUpdate(
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
         const std::unordered_map<int, std::shared_ptr<Activation>>& oldEventActivationMap);
 
-// Validates a metricActivation and populates state.
 // Fills the new event activation/deactivation maps, preserving the existing activations.
-// Returns nullopt if successful and InvalidConfigReason if not.
-std::optional<InvalidConfigReason> handleMetricActivationOnConfigUpdate(
+void handleMetricActivationOnConfigUpdate(
         const StatsdConfig& config, int64_t metricId, int metricIndex,
         const std::unordered_map<int64_t, int>& metricToActivationMap,
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -117,9 +109,7 @@ std::optional<InvalidConfigReason> isNewCountMetricValid(
 sp<MetricProducer> createCountMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, int64_t timeBaseNs,
         const int64_t currentTimeNs, const CountMetric& metric, int metricIndex,
-        const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-        std::vector<sp<ConditionTracker>>& allConditionTrackers,
         const std::unordered_map<int64_t, int>& conditionTrackerMap,
         const std::vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const std::unordered_map<int64_t, int>& stateAtomIdMap,
@@ -146,9 +136,7 @@ std::optional<InvalidConfigReason> isNewDurationMetricValid(
 sp<MetricProducer> createDurationMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, int64_t timeBaseNs,
         const int64_t currentTimeNs, const DurationMetric& metric, int metricIndex,
-        const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-        std::vector<sp<ConditionTracker>>& allConditionTrackers,
         const std::unordered_map<int64_t, int>& conditionTrackerMap,
         const std::vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const std::unordered_map<int64_t, int>& stateAtomIdMap,
@@ -174,9 +162,7 @@ std::optional<InvalidConfigReason> isNewEventMetricValid(
 sp<MetricProducer> createEventMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, int64_t timeBaseNs,
         const EventMetric& metric, int metricIndex,
-        const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-        std::vector<sp<ConditionTracker>>& allConditionTrackers,
         const std::unordered_map<int64_t, int>& conditionTrackerMap,
         const std::vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const std::unordered_map<int64_t, int>& stateAtomIdMap,
@@ -205,7 +191,6 @@ sp<MetricProducer> createNumericValueMetricProducerAndUpdateMetadata(
         const ValueMetric& metric, int metricIndex,
         const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-        std::vector<sp<ConditionTracker>>& allConditionTrackers,
         const std::unordered_map<int64_t, int>& conditionTrackerMap,
         const std::vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const sp<EventMatcherWizard>& matcherWizard,
@@ -236,7 +221,6 @@ sp<MetricProducer> createGaugeMetricProducerAndUpdateMetadata(
         const GaugeMetric& metric, int metricIndex,
         const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-        std::vector<sp<ConditionTracker>>& allConditionTrackers,
         const std::unordered_map<int64_t, int>& conditionTrackerMap,
         const std::vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const sp<EventMatcherWizard>& matcherWizard,
@@ -266,7 +250,6 @@ sp<MetricProducer> createKllMetricProducerAndUpdateMetadata(
         const KllMetric& metric, int metricIndex,
         const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-        std::vector<sp<ConditionTracker>>& allConditionTrackers,
         const std::unordered_map<int64_t, int>& conditionTrackerMap,
         const std::vector<ConditionState>& initialConditionCache, const sp<ConditionWizard>& wizard,
         const sp<EventMatcherWizard>& matcherWizard,

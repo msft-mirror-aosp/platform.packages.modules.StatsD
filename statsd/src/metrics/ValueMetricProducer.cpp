@@ -183,8 +183,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::notifyAppUpgradeInternalLo
 }
 
 template <typename AggregatedValue, typename DimExtras>
-optional<InvalidConfigReason>
-ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
+void ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -206,20 +205,16 @@ ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
             metricsWithActivation);
     // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
     const int64_t atomMatcherId = getWhatAtomMatcherIdForMetric(config, configIndex);
-    handleMetricWithAtomMatchingTrackers(atomMatcherId, mMetricId, metricIndex,
-                                         /*enforceOneAtom=*/false, allAtomMatchingTrackers,
-                                         newAtomMatchingTrackerMap, trackerToMetricMap,
-                                         mWhatMatcherIndex);
+    handleMetricWithAtomMatchingTrackers(atomMatcherId, metricIndex, newAtomMatchingTrackerMap,
+                                         trackerToMetricMap, mWhatMatcherIndex);
     const optional<int64_t>& conditionIdOpt = getConditionIdForMetric(config, configIndex);
     const ConditionLinks& conditionLinks = getConditionLinksForMetric(config, configIndex);
     if (conditionIdOpt.has_value()) {
-        handleMetricWithConditions(conditionIdOpt.value(), mMetricId, metricIndex,
-                                   conditionTrackerMap, conditionLinks, allConditionTrackers,
+        handleMetricWithConditions(conditionIdOpt.value(), metricIndex, conditionTrackerMap,
                                    mConditionTrackerIndex, conditionToMetricMap);
     }
     sp<EventMatcherWizard> tmpEventWizard = mEventMatcherWizard;
     mEventMatcherWizard = matcherWizard;
-    return nullopt;
 }
 
 template <typename AggregatedValue, typename DimExtras>
