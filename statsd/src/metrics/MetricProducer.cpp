@@ -97,6 +97,7 @@ void MetricProducer::onConfigUpdatedLocked(
         const vector<sp<ConditionTracker>>& allConditionTrackers,
         const unordered_map<int64_t, int>& conditionTrackerMap, const sp<ConditionWizard>& wizard,
         const unordered_map<int64_t, int>& metricToActivationMap,
+        const unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
         unordered_map<int, vector<int>>& trackerToMetricMap,
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,

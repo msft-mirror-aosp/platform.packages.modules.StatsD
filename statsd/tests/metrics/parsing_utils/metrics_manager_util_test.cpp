@@ -328,6 +328,77 @@ StatsdConfig buildConfigWithDifferentPredicates() {
     return config;
 }
 
+void initConfigAndDependencies(
+        StatsdConfig& config, unordered_map<int64_t, int>& newMetricProducerMap,
+        vector<sp<MetricProducer>>& newMetricProducers,
+        unordered_map<int, vector<int>>& conditionToMetricMap,
+        unordered_map<int, vector<int>>& trackerToMetricMap,
+        unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
+        unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
+        vector<int>& metricsWithActivation,
+        unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities) {
+    unordered_map<int, vector<int>> tagIds;
+    unordered_map<int64_t, int> newAtomMatchingTrackerMap;
+    vector<sp<AtomMatchingTracker>> newAtomMatchingTrackers;
+    sp<UidMap> uidMap = new UidMap();
+    int oldInvalidEntityCount = 0;
+    bool isValid = initAtomMatchingTrackers(config, uidMap, newAtomMatchingTrackerMap,
+                                            newAtomMatchingTrackers, tagIds, invalidEntities);
+    int newInvalidEntityCount = invalidEntities.size();
+    if (newInvalidEntityCount == oldInvalidEntityCount) {
+        EXPECT_TRUE(isValid);
+    } else {
+        EXPECT_FALSE(isValid);
+    }
+
+    const ConfigKey key(123, 456);
+    unordered_map<int64_t, int> newConditionTrackerMap;
+    vector<sp<ConditionTracker>> newConditionTrackers;
+    unordered_map<int, vector<int>> trackerToConditionMap;
+    unordered_map<int64_t, ConditionProtoAndTracker> allConditionsMap;
+    vector<ConditionState> conditionCache;
+    oldInvalidEntityCount = newInvalidEntityCount;
+    isValid = initConditions(key, config, newAtomMatchingTrackerMap, newConditionTrackerMap,
+                             newConditionTrackers, trackerToConditionMap, conditionCache,
+                             allConditionsMap, invalidEntities);
+    newInvalidEntityCount = invalidEntities.size();
+    if (newInvalidEntityCount == oldInvalidEntityCount) {
+        EXPECT_TRUE(isValid);
+    } else {
+        EXPECT_FALSE(isValid);
+    }
+
+    unordered_map<int64_t, int> stateAtomIdMap;
+    unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
+    map<int64_t, uint64_t> stateProtoHashes;
+    oldInvalidEntityCount = newInvalidEntityCount;
+    isValid = initStates(config, stateAtomIdMap, allStateGroupMaps, stateProtoHashes,
+                         invalidEntities);
+    newInvalidEntityCount = invalidEntities.size();
+    if (newInvalidEntityCount == oldInvalidEntityCount) {
+        EXPECT_TRUE(isValid);
+    } else {
+        EXPECT_FALSE(isValid);
+    }
+
+    set<int64_t> noReportMetricIds;
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    oldInvalidEntityCount = newInvalidEntityCount;
+    isValid = initMetrics(
+            key, config, /*timeBaseNs=*/123, /*currentTimeNs=*/12345, new StatsPullerManager(),
+            newAtomMatchingTrackerMap, newConditionTrackerMap, newAtomMatchingTrackers,
+            stateAtomIdMap, allStateGroupMaps, allConditionsMap, newConditionTrackers,
+            conditionCache, newMetricProducers, conditionToMetricMap, trackerToMetricMap,
+            newMetricProducerMap, noReportMetricIds, activationAtomTrackerToMetricMap,
+            deactivationAtomTrackerToMetricMap, metricsWithActivation, provider, invalidEntities);
+    newInvalidEntityCount = invalidEntities.size();
+    if (newInvalidEntityCount == oldInvalidEntityCount) {
+        EXPECT_TRUE(isValid);
+    } else {
+        EXPECT_FALSE(isValid);
+    }
+}
+
 using MetricsManagerUtilTest = InitConfigTest;
 
 struct DimLimitTestCase {
@@ -2899,10 +2970,11 @@ TEST_F(MetricsManagerUtilTest, TestInitConditionsNoCycle) {
     vector<sp<ConditionTracker>> newConditionTrackers;
     unordered_map<int, vector<int>> trackerToConditionMap;
     vector<ConditionState> conditionCache;
+    unordered_map<int64_t, ConditionProtoAndTracker> allConditionsMap;
     unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
     EXPECT_TRUE(initConditions(key, config, newAtomMatchingTrackerMap, newConditionTrackerMap,
                                newConditionTrackers, trackerToConditionMap, conditionCache,
-                               invalidEntities));
+                               allConditionsMap, invalidEntities));
 
     EXPECT_EQ(newConditionTrackerMap.size(), 5);
     EXPECT_EQ(newConditionTrackerMap.at(predicate1.id()), 0);
@@ -2947,10 +3019,11 @@ TEST_F(MetricsManagerUtilTest, TestInitConditionsChildNotValid) {
     vector<sp<ConditionTracker>> newConditionTrackers;
     unordered_map<int, vector<int>> trackerToConditionMap;
     vector<ConditionState> conditionCache;
+    unordered_map<int64_t, ConditionProtoAndTracker> allConditionsMap;
     unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
     EXPECT_FALSE(initConditions(key, config, newAtomMatchingTrackerMap, newConditionTrackerMap,
                                 newConditionTrackers, trackerToConditionMap, conditionCache,
-                                invalidEntities));
+                                allConditionsMap, invalidEntities));
 
     EXPECT_EQ(invalidEntities.size(), 2);
     InvalidConfigReason reason =
@@ -2990,6 +3063,7 @@ TEST_F(MetricsManagerUtilTest, TestInitConditionDependentMatcherNotValid) {
     vector<sp<ConditionTracker>> newConditionTrackers;
     unordered_map<int, vector<int>> trackerToConditionMap;
     vector<ConditionState> conditionCache;
+    unordered_map<int64_t, ConditionProtoAndTracker> allConditionsMap;
     unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
 
     invalidEntities[InvalidEntityKey{matcher2Id, INVALID_ENTITY_TYPE_MATCHER}] =
@@ -2998,7 +3072,7 @@ TEST_F(MetricsManagerUtilTest, TestInitConditionDependentMatcherNotValid) {
 
     EXPECT_FALSE(initConditions(key, config, newAtomMatchingTrackerMap, newConditionTrackerMap,
                                 newConditionTrackers, trackerToConditionMap, conditionCache,
-                                invalidEntities));
+                                allConditionsMap, invalidEntities));
 
     EXPECT_EQ(invalidEntities.size(), 2);
     InvalidConfigReason reason =
@@ -3009,6 +3083,949 @@ TEST_F(MetricsManagerUtilTest, TestInitConditionDependentMatcherNotValid) {
 
     EXPECT_EQ(trackerToConditionMap.size(), 0);
     EXPECT_EQ(newConditionTrackerMap.size(), 0);
+}
+
+TEST_F(MetricsManagerUtilTest, TestInitCountMetricsHasInvalidMetrics) {
+    StatsdConfig config;
+
+    // Add atom matchers/predicates/states. These are mostly needed for initStatsdConfig.
+    AtomMatcher matcher1 = CreateScreenTurnedOnAtomMatcher();
+    int64_t matcher1Id = matcher1.id();
+    int matcher1Index = 0;
+    *config.add_atom_matcher() = matcher1;
+
+    AtomMatcher matcher2 = CreateScreenTurnedOffAtomMatcher();
+    int64_t matcher2Id = matcher2.id();
+    int matcher2Index = 1;
+    *config.add_atom_matcher() = matcher2;
+
+    AtomMatcher matcher3 = CreateStartScheduledJobAtomMatcher();
+    int64_t matcher3Id = matcher3.id();
+    int matcher3Index = 2;
+    *config.add_atom_matcher() = matcher3;
+
+    Predicate predicate1 = CreateScreenIsOnPredicate();
+    int64_t predicate1Id = predicate1.id();
+    int predicate1Index = 0;
+    *config.add_predicate() = predicate1;
+
+    State state1 = CreateScreenStateWithOnOffMap(0x123, 0x321);
+    int64_t state1Id = state1.id();
+    *config.add_state() = state1;
+
+    // Add a few count metrics.
+    CountMetric count1 = createCountMetric("COUNT1", matcher1Id, predicate1Id, {state1Id});
+    int64_t count1Id = count1.id();
+    int count1Index = 0;
+    *config.add_count_metric() = count1;
+
+    // Will be invalid due to unknown predicate
+    CountMetric count2 = createCountMetric("COUNT2", matcher2Id, /*predicateId=*/-1, {});
+    int64_t count2Id = count2.id();
+    *config.add_count_metric() = count2;
+
+    CountMetric count3 = createCountMetric("COUNT3", matcher3Id, nullopt, {});
+    int64_t count3Id = count3.id();
+    int count3Index = 1;
+    *config.add_count_metric() = count3;
+
+    // Output data structures to validate.
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+
+    initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
+                              conditionToMetricMap, trackerToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation, invalidEntities);
+
+    unordered_map<int64_t, int> expectedMetricProducerMap = {{count1Id, count1Index},
+                                                             {count3Id, count3Index}};
+    EXPECT_THAT(newMetricProducerMap, ContainerEq(expectedMetricProducerMap));
+
+    ASSERT_EQ(newMetricProducers.size(), 2);
+
+    // Verify the conditionToMetricMap.
+    ASSERT_EQ(conditionToMetricMap.size(), 1);
+    const vector<int>& condition1Metrics = conditionToMetricMap[predicate1Index];
+    EXPECT_THAT(condition1Metrics, UnorderedElementsAre(count1Index));
+
+    // Verify the trackerToMetricMap.
+    ASSERT_EQ(trackerToMetricMap.size(), 2);
+    const vector<int>& matcher1Metrics = trackerToMetricMap[matcher1Index];
+    EXPECT_THAT(matcher1Metrics, UnorderedElementsAre(count1Index));
+    const vector<int>& matcher3Metrics = trackerToMetricMap[matcher3Index];
+    EXPECT_THAT(matcher3Metrics, UnorderedElementsAre(count3Index));
+
+    // Verify event activation/deactivation maps.
+    ASSERT_EQ(activationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(deactivationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(metricsWithActivation.size(), 0);
+
+    // Verify tracker indices/ids/conditions/states are correct.
+    EXPECT_EQ(newMetricProducers[count1Index]->getMetricId(), count1Id);
+    EXPECT_EQ(newMetricProducers[count1Index]->mConditionTrackerIndex, predicate1Index);
+    EXPECT_EQ(newMetricProducers[count1Index]->mCondition, ConditionState::kUnknown);
+    EXPECT_THAT(newMetricProducers[count1Index]->getSlicedStateAtoms(),
+                UnorderedElementsAre(util::SCREEN_STATE_CHANGED));
+    EXPECT_EQ(newMetricProducers[count3Index]->getMetricId(), count3Id);
+    EXPECT_EQ(newMetricProducers[count3Index]->mConditionTrackerIndex, -1);
+    EXPECT_EQ(newMetricProducers[count3Index]->mCondition, ConditionState::kTrue);
+    EXPECT_TRUE(newMetricProducers[count3Index]->getSlicedStateAtoms().empty());
+
+    EXPECT_EQ(invalidEntities.size(), 1);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{count2.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_CONDITION_NOT_FOUND);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), count2.id());
+}
+
+TEST_F(MetricsManagerUtilTest, TestInitGaugeMetricsHasInvalidMetrics) {
+    StatsdConfig config;
+
+    // Add atom matchers/predicates/states. These are mostly needed for initStatsdConfig.
+    AtomMatcher matcher1 = CreateScreenTurnedOnAtomMatcher();
+    int64_t matcher1Id = matcher1.id();
+    int matcher1Index = 0;
+    *config.add_atom_matcher() = matcher1;
+
+    AtomMatcher matcher2 = CreateScreenTurnedOffAtomMatcher();
+    int64_t matcher2Id = matcher2.id();
+    int matcher2Index = 1;
+    *config.add_atom_matcher() = matcher2;
+
+    AtomMatcher matcher3 = CreateStartScheduledJobAtomMatcher();
+    int64_t matcher3Id = matcher3.id();
+    int matcher3Index = 2;
+    *config.add_atom_matcher() = matcher3;
+
+    // Will be marked as invalid
+    AtomMatcher matcher4 = CreateTemperatureAtomMatcher();
+    int64_t matcher4Id = matcher4.id();
+    matcher4.clear_simple_atom_matcher();
+    *config.add_atom_matcher() = matcher4;
+
+    AtomMatcher matcher5 = CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+    int64_t matcher5Id = matcher5.id();
+    int matcher5Index = 3;
+    *config.add_atom_matcher() = matcher5;
+
+    Predicate predicate1 = CreateScreenIsOnPredicate();
+    int64_t predicate1Id = predicate1.id();
+    int predicate1Index = 0;
+    *config.add_predicate() = predicate1;
+
+    // Add a few gauge metrics.
+    // Will be invalid due to invalid matcher dependency
+    GaugeMetric gauge1 = createGaugeMetric("GAUGE1", matcher4Id, GaugeMetric::FIRST_N_SAMPLES,
+                                           predicate1Id, matcher1Id);
+    int64_t gauge1Id = gauge1.id();
+    *config.add_gauge_metric() = gauge1;
+
+    GaugeMetric gauge2 =
+            createGaugeMetric("GAUGE2", matcher1Id, GaugeMetric::FIRST_N_SAMPLES, nullopt, nullopt);
+    int64_t gauge2Id = gauge2.id();
+    int gauge2Index = 0;
+    *config.add_gauge_metric() = gauge2;
+
+    // Will be invalid due to missing what.
+    GaugeMetric gauge3 = createGaugeMetric("GAUGE3", /*matcherId=*/-1, GaugeMetric::FIRST_N_SAMPLES,
+                                           nullopt, matcher3Id);
+    int64_t gauge3Id = gauge3.id();
+    *config.add_gauge_metric() = gauge3;
+
+    GaugeMetric gauge4 = createGaugeMetric("GAUGE4", matcher3Id, GaugeMetric::RANDOM_ONE_SAMPLE,
+                                           predicate1Id, nullopt);
+    int gauge4Index = 1;
+    int64_t gauge4Id = gauge4.id();
+    *config.add_gauge_metric() = gauge4;
+
+    GaugeMetric gauge5 =
+            createGaugeMetric("GAUGE5", matcher2Id, GaugeMetric::RANDOM_ONE_SAMPLE, nullopt, {});
+    int64_t gauge5Id = gauge5.id();
+    int gauge5Index = 2;
+    *config.add_gauge_metric() = gauge5;
+
+    // Output data structures to validate.
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+
+    initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
+                              conditionToMetricMap, trackerToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation, invalidEntities);
+
+    unordered_map<int64_t, int> expectedMetricProducerMap = {
+            {gauge2Id, gauge2Index},
+            {gauge4Id, gauge4Index},
+            {gauge5Id, gauge5Index},
+    };
+    EXPECT_THAT(newMetricProducerMap, ContainerEq(expectedMetricProducerMap));
+
+    ASSERT_EQ(newMetricProducers.size(), 3);
+
+    // Verify the conditionToMetricMap.
+    ASSERT_EQ(conditionToMetricMap.size(), 1);
+    const vector<int>& condition1Metrics = conditionToMetricMap[predicate1Index];
+    EXPECT_THAT(condition1Metrics, UnorderedElementsAre(gauge4Index));
+
+    // Verify the trackerToMetricMap.
+    ASSERT_EQ(trackerToMetricMap.size(), 3);
+    const vector<int>& matcher1Metrics = trackerToMetricMap[matcher1Index];
+    EXPECT_THAT(matcher1Metrics, UnorderedElementsAre(gauge2Index));
+    const vector<int>& matcher2Metrics = trackerToMetricMap[matcher2Index];
+    EXPECT_THAT(matcher2Metrics, UnorderedElementsAre(gauge5Index));
+    const vector<int>& matcher3Metrics = trackerToMetricMap[matcher3Index];
+    EXPECT_THAT(matcher3Metrics, UnorderedElementsAre(gauge4Index));
+
+    // Verify event activation/deactivation maps.
+    ASSERT_EQ(activationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(deactivationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(metricsWithActivation.size(), 0);
+
+    // Verify tracker indices/ids/conditions/states are correct.
+    GaugeMetricProducer* gaugeProducer2 =
+            static_cast<GaugeMetricProducer*>(newMetricProducers[gauge2Index].get());
+    EXPECT_EQ(gaugeProducer2->getMetricId(), gauge2Id);
+    EXPECT_EQ(gaugeProducer2->mConditionTrackerIndex, -1);
+    EXPECT_EQ(gaugeProducer2->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(gaugeProducer2->mWhatMatcherIndex, matcher1Index);
+    GaugeMetricProducer* gaugeProducer4 =
+            static_cast<GaugeMetricProducer*>(newMetricProducers[gauge4Index].get());
+    EXPECT_EQ(gaugeProducer4->getMetricId(), gauge4Id);
+    EXPECT_EQ(gaugeProducer4->mConditionTrackerIndex, predicate1Index);
+    EXPECT_EQ(gaugeProducer4->mCondition, ConditionState::kUnknown);
+    EXPECT_EQ(gaugeProducer4->mWhatMatcherIndex, matcher3Index);
+    GaugeMetricProducer* gaugeProducer5 =
+            static_cast<GaugeMetricProducer*>(newMetricProducers[gauge5Index].get());
+    EXPECT_EQ(gaugeProducer5->getMetricId(), gauge5Id);
+    EXPECT_EQ(gaugeProducer5->mConditionTrackerIndex, -1);
+    EXPECT_EQ(gaugeProducer5->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(gaugeProducer5->mWhatMatcherIndex, matcher2Index);
+
+    EXPECT_EQ(invalidEntities.size(), 3);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{gauge3.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_MATCHER_NOT_FOUND);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), gauge3.id());
+    reason = invalidEntities[InvalidEntityKey{gauge1.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_INVALID_MATCHER_DEPENDENCY);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), gauge1.id());
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+    reason = invalidEntities[InvalidEntityKey{matcher4.id(), INVALID_ENTITY_TYPE_MATCHER}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE);
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+}
+
+TEST_F(MetricsManagerUtilTest, TestInitDurationMetricsHasInvalidMetrics) {
+    StatsdConfig config;
+    // Add atom matchers/predicates/states. These are mostly needed for initStatsdConfig.
+    AtomMatcher matcher1 = CreateScreenTurnedOnAtomMatcher();
+    int64_t matcher1Id = matcher1.id();
+    int matcher1Index = 0;
+    *config.add_atom_matcher() = matcher1;
+
+    AtomMatcher matcher2 = CreateScreenTurnedOffAtomMatcher();
+    int64_t matcher2Id = matcher2.id();
+    int matcher2Index = 1;
+    *config.add_atom_matcher() = matcher2;
+
+    AtomMatcher matcher3 = CreateAcquireWakelockAtomMatcher();
+    int64_t matcher3Id = matcher3.id();
+    int matcher3Index = 2;
+    *config.add_atom_matcher() = matcher3;
+
+    // Mark as invalid
+    AtomMatcher matcher4 = CreateReleaseWakelockAtomMatcher();
+    int64_t matcher4Id = matcher4.id();
+    matcher4.clear_simple_atom_matcher();
+    *config.add_atom_matcher() = matcher4;
+
+    AtomMatcher matcher5 = CreateMoveToForegroundAtomMatcher();
+    int64_t matcher5Id = matcher5.id();
+    int matcher5Index = 3;
+    *config.add_atom_matcher() = matcher5;
+
+    AtomMatcher matcher6 = CreateMoveToBackgroundAtomMatcher();
+    int64_t matcher6Id = matcher6.id();
+    int matcher6Index = 4;
+    *config.add_atom_matcher() = matcher6;
+
+    AtomMatcher matcher7 = CreateBatteryStateNoneMatcher();
+    int64_t matcher7Id = matcher7.id();
+    int matcher7Index = 5;
+    *config.add_atom_matcher() = matcher7;
+
+    AtomMatcher matcher8 = CreateBatteryStateUsbMatcher();
+    int64_t matcher8Id = matcher8.id();
+    int matcher8Index = 6;
+    *config.add_atom_matcher() = matcher8;
+
+    Predicate predicate1 = CreateScreenIsOnPredicate();
+    int64_t predicate1Id = predicate1.id();
+    int predicate1Index = 0;
+    *config.add_predicate() = predicate1;
+
+    Predicate predicate2 = CreateScreenIsOffPredicate();
+    int64_t predicate2Id = predicate2.id();
+    int predicate2Index = 1;
+    *config.add_predicate() = predicate2;
+
+    Predicate predicate3 = CreateDeviceUnpluggedPredicate();
+    int64_t predicate3Id = predicate3.id();
+    int predicate3Index = 2;
+    *config.add_predicate() = predicate3;
+
+    Predicate predicate4 = CreateIsInBackgroundPredicate();
+    *predicate4.mutable_simple_predicate()->mutable_dimensions() =
+            CreateDimensions(util::ACTIVITY_FOREGROUND_STATE_CHANGED, {1});
+    int64_t predicate4Id = predicate4.id();
+    int predicate4Index = 3;
+    *config.add_predicate() = predicate4;
+
+    // Invalid due to invalid matcher dependency
+    Predicate predicate5 = CreateHoldingWakelockPredicate();
+    *predicate5.mutable_simple_predicate()->mutable_dimensions() =
+            CreateAttributionUidDimensions(util::WAKELOCK_STATE_CHANGED, {Position::FIRST});
+    predicate5.mutable_simple_predicate()->set_stop_all(matcher7Id);
+    int64_t predicate5Id = predicate5.id();
+    *config.add_predicate() = predicate5;
+
+    State state1 = CreateScreenStateWithOnOffMap(0x123, 0x321);
+    int64_t state1Id = state1.id();
+    *config.add_state() = state1;
+
+    State state2 = CreateScreenState();
+    int64_t state2Id = state2.id();
+    *config.add_state() = state2;
+
+    // Add a few duration metrics.
+    // Will be Invalid due to invalid predicate dependency
+    DurationMetric duration1 =
+            createDurationMetric("DURATION1", predicate5Id, predicate4Id, {state2Id});
+    *duration1.mutable_dimensions_in_what() =
+            CreateAttributionUidDimensions(util::WAKELOCK_STATE_CHANGED, {Position::FIRST});
+    MetricConditionLink* link = duration1.add_links();
+    link->set_condition(predicate4Id);
+    *link->mutable_fields_in_what() =
+            CreateAttributionUidDimensions(util::WAKELOCK_STATE_CHANGED, {Position::FIRST});
+    *link->mutable_fields_in_condition() =
+            CreateDimensions(util::ACTIVITY_FOREGROUND_STATE_CHANGED, {1} /*uid field*/);
+    int64_t duration1Id = duration1.id();
+    *config.add_duration_metric() = duration1;
+
+    DurationMetric duration2 = createDurationMetric("DURATION2", predicate1Id, nullopt, {});
+    int64_t duration2Id = duration2.id();
+    int duration2Index = 0;
+    *config.add_duration_metric() = duration2;
+
+    // Will be invalid due to unknown state
+    DurationMetric duration3 =
+            createDurationMetric("DURATION3", predicate3Id, nullopt, /*stateIds=*/{-1});
+    int64_t duration3Id = duration3.id();
+    *config.add_duration_metric() = duration3;
+
+    DurationMetric duration4 = createDurationMetric("DURATION4", predicate3Id, predicate2Id, {});
+    int64_t duration4Id = duration4.id();
+    int duration4Index = 1;
+    *config.add_duration_metric() = duration4;
+
+    DurationMetric duration5 = createDurationMetric("DURATION5", predicate2Id, nullopt, {});
+    int64_t duration5Id = duration5.id();
+    int duration5Index = 2;
+    *config.add_duration_metric() = duration5;
+
+    // Output data structures to validate.
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+
+    initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
+                              conditionToMetricMap, trackerToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation, invalidEntities);
+
+    unordered_map<int64_t, int> expectedMetricProducerMap = {{duration2Id, duration2Index},
+                                                             {duration4Id, duration4Index},
+                                                             {duration5Id, duration5Index}};
+    EXPECT_THAT(newMetricProducerMap, ContainerEq(expectedMetricProducerMap));
+    // Make sure preserved metrics are the same.
+    ASSERT_EQ(newMetricProducers.size(), 3);
+
+    // Verify the conditionToMetricMap. Note that the "what" is not in this map.
+    ASSERT_EQ(conditionToMetricMap.size(), 1);
+    const vector<int>& condition2Metrics = conditionToMetricMap[predicate2Index];
+    EXPECT_THAT(condition2Metrics, UnorderedElementsAre(duration4Index));
+
+    // Verify the trackerToMetricMap. The start/stop/stopall indices from the "what" should be here.
+    ASSERT_EQ(trackerToMetricMap.size(), 4);
+    const vector<int>& matcher1Metrics = trackerToMetricMap[matcher1Index];
+    EXPECT_THAT(matcher1Metrics, UnorderedElementsAre(duration2Index, duration5Index));
+    const vector<int>& matcher2Metrics = trackerToMetricMap[matcher2Index];
+    EXPECT_THAT(matcher2Metrics, UnorderedElementsAre(duration2Index, duration5Index));
+    const vector<int>& matcher7Metrics = trackerToMetricMap[matcher7Index];
+    EXPECT_THAT(matcher7Metrics, UnorderedElementsAre(duration4Index));
+    const vector<int>& matcher8Metrics = trackerToMetricMap[matcher8Index];
+    EXPECT_THAT(matcher8Metrics, UnorderedElementsAre(duration4Index));
+
+    // Verify event activation/deactivation maps.
+    ASSERT_EQ(activationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(deactivationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(metricsWithActivation.size(), 0);
+
+    // Verify tracker indices/ids/conditions are correct.
+    DurationMetricProducer* durationProducer2 =
+            static_cast<DurationMetricProducer*>(newMetricProducers[duration2Index].get());
+    EXPECT_EQ(durationProducer2->getMetricId(), duration2Id);
+    EXPECT_EQ(durationProducer2->mConditionTrackerIndex, -1);
+    EXPECT_EQ(durationProducer2->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(durationProducer2->mStartIndex, matcher1Index);
+    EXPECT_EQ(durationProducer2->mStopIndex, matcher2Index);
+    EXPECT_EQ(durationProducer2->mStopAllIndex, -1);
+    DurationMetricProducer* durationProducer4 =
+            static_cast<DurationMetricProducer*>(newMetricProducers[duration4Index].get());
+    EXPECT_EQ(durationProducer4->getMetricId(), duration4Id);
+    EXPECT_EQ(durationProducer4->mConditionTrackerIndex, predicate2Index);
+    EXPECT_EQ(durationProducer4->mCondition, ConditionState::kUnknown);
+    EXPECT_EQ(durationProducer4->mStartIndex, matcher7Index);
+    EXPECT_EQ(durationProducer4->mStopIndex, matcher8Index);
+    EXPECT_EQ(durationProducer4->mStopAllIndex, -1);
+    DurationMetricProducer* durationProducer5 =
+            static_cast<DurationMetricProducer*>(newMetricProducers[duration5Index].get());
+    EXPECT_EQ(durationProducer5->getMetricId(), duration5Id);
+    EXPECT_EQ(durationProducer5->mConditionTrackerIndex, -1);
+    EXPECT_EQ(durationProducer5->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(durationProducer5->mStartIndex, matcher2Index);
+    EXPECT_EQ(durationProducer5->mStopIndex, matcher1Index);
+    EXPECT_EQ(durationProducer5->mStopAllIndex, -1);
+
+    EXPECT_EQ(invalidEntities.size(), 4);
+
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{duration3.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_STATE_NOT_FOUND);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), duration3.id());
+    reason = invalidEntities[InvalidEntityKey{duration1.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_INVALID_PREDICATE_DEPENDENCY);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), duration1.id());
+    EXPECT_THAT(reason.conditionIds, UnorderedElementsAre(predicate5Id));
+    reason = invalidEntities[InvalidEntityKey{matcher4.id(), INVALID_ENTITY_TYPE_MATCHER}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE);
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+}
+
+TEST_F(MetricsManagerUtilTest, TestInitEventMetricsHasInvalidMetrics) {
+    StatsdConfig config;
+
+    // Add atom matchers/predicates. These are mostly needed for initStatsdConfig
+    AtomMatcher matcher1 = CreateScreenTurnedOnAtomMatcher();
+    int64_t matcher1Id = matcher1.id();
+    int matcher1Index = 0;
+    *config.add_atom_matcher() = matcher1;
+
+    AtomMatcher matcher2 = CreateScreenTurnedOffAtomMatcher();
+    int64_t matcher2Id = matcher2.id();
+    int matcher2Index = 1;
+    *config.add_atom_matcher() = matcher2;
+
+    AtomMatcher matcher3 = CreateStartScheduledJobAtomMatcher();
+    int64_t matcher3Id = matcher3.id();
+    int matcher3Index = 2;
+    *config.add_atom_matcher() = matcher3;
+
+    // Make matcher 4 invalid
+    AtomMatcher matcher4 = CreateFinishScheduledJobAtomMatcher();
+    int64_t matcher4Id = matcher4.id();
+    matcher4.clear_simple_atom_matcher();
+    *config.add_atom_matcher() = matcher4;
+
+    AtomMatcher matcher5 = CreateBatterySaverModeStartAtomMatcher();
+    int64_t matcher5Id = matcher5.id();
+    int matcher5Index = 3;
+    *config.add_atom_matcher() = matcher5;
+
+    AtomMatcher matcher6 = CreateMoveToBackgroundAtomMatcher();
+    int64_t matcher6Id = matcher6.id();
+    int matcher6Index = 4;
+    *config.add_atom_matcher() = matcher6;
+
+    Predicate predicate1 = CreateScreenIsOnPredicate();
+    int64_t predicate1Id = predicate1.id();
+    int predicate1Index = 0;
+    *config.add_predicate() = predicate1;
+
+    // Invalid because dependent matcher is valid.
+    Predicate predicate2 = CreateScheduledJobPredicate();
+    int64_t predicate2Id = predicate2.id();
+    *config.add_predicate() = predicate2;
+
+    // Add a few event metrics.
+    // Invalid due to dependent condition is invalid.
+    EventMetric event1 = createEventMetric("EVENT1", matcher1Id, predicate2Id);
+    int64_t event1Id = event1.id();
+    *config.add_event_metric() = event1;
+
+    EventMetric event2 = createEventMetric("EVENT2", matcher2Id, predicate1Id);
+    int64_t event2Id = event2.id();
+    int event2Index = 0;
+    *config.add_event_metric() = event2;
+
+    EventMetric event3 = createEventMetric("EVENT3", matcher3Id, nullopt);
+    int64_t event3Id = event3.id();
+    int event3Index = 1;
+    *config.add_event_metric() = event3;
+
+    MetricActivation event3Activation;
+    event3Activation.set_metric_id(event3Id);
+    EventActivation* eventActivation = event3Activation.add_event_activation();
+    eventActivation->set_atom_matcher_id(matcher5Id);
+    eventActivation->set_ttl_seconds(5);
+    *config.add_metric_activation() = event3Activation;
+
+    // Will be invalid due to invalid matcher dependency
+    EventMetric event4 = createEventMetric("EVENT4", matcher4Id, predicate1Id);
+    int64_t event4Id = event4.id();
+    *config.add_event_metric() = event4;
+
+    // Will be invalid due to invalid metric activation
+    EventMetric event6 = createEventMetric("EVENT6", matcher6Id, nullopt);
+    int64_t event6Id = event6.id();
+    *config.add_event_metric() = event6;
+
+    MetricActivation event6Activation;
+    event6Activation.set_metric_id(event6Id);
+    eventActivation = event6Activation.add_event_activation();
+    eventActivation->set_atom_matcher_id(-1);  // set invalid matcher
+    eventActivation->set_ttl_seconds(5);
+    *config.add_metric_activation() = event6Activation;
+
+    // Will be invalid due to multiple metric activation
+    EventMetric event7 = createEventMetric("EVENT7", matcher6Id, nullopt);
+    int64_t event7Id = event7.id();
+    *config.add_event_metric() = event7;
+
+    MetricActivation event7Activation;
+    event7Activation.set_metric_id(event7Id);
+    eventActivation = event7Activation.add_event_activation();
+    eventActivation->set_atom_matcher_id(matcher5Id);
+    eventActivation->set_ttl_seconds(5);
+
+    MetricActivation event7Activation2;
+    event7Activation2.set_metric_id(event7Id);
+    eventActivation = event7Activation2.add_event_activation();
+    eventActivation->set_atom_matcher_id(matcher6Id);
+    eventActivation->set_ttl_seconds(10);
+
+    *config.add_metric_activation() = event7Activation;
+    *config.add_metric_activation() = event7Activation2;
+
+    EventMetric event5 = createEventMetric("EVENT5", matcher5Id, nullopt);
+    int64_t event5Id = event5.id();
+    int event5Index = 2;
+    *config.add_event_metric() = event5;
+
+    // Output data structures to validate.
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+
+    initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
+                              conditionToMetricMap, trackerToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation, invalidEntities);
+
+    unordered_map<int64_t, int> expectedMetricProducerMap = {
+            {event2Id, event2Index},
+            {event3Id, event3Index},
+            {event5Id, event5Index},
+    };
+    EXPECT_THAT(newMetricProducerMap, ContainerEq(expectedMetricProducerMap));
+
+    ASSERT_EQ(newMetricProducers.size(), 3);
+
+    // Verify the conditionToMetricMap.
+    ASSERT_EQ(conditionToMetricMap.size(), 1);
+    const vector<int>& condition1Metrics = conditionToMetricMap[predicate1Index];
+    EXPECT_THAT(condition1Metrics, UnorderedElementsAre(event2Index));
+
+    // Verify the trackerToMetricMap.
+    ASSERT_EQ(trackerToMetricMap.size(), 3);
+    const vector<int>& matcher2Metrics = trackerToMetricMap[matcher2Index];
+    EXPECT_THAT(matcher2Metrics, UnorderedElementsAre(event2Index));
+    const vector<int>& matcher3Metrics = trackerToMetricMap[matcher3Index];
+    EXPECT_THAT(matcher3Metrics, UnorderedElementsAre(event3Index));
+    const vector<int>& matcher5Metrics = trackerToMetricMap[matcher5Index];
+    EXPECT_THAT(matcher5Metrics, UnorderedElementsAre(event5Index));
+
+    // Verify event activation/deactivation maps.
+    ASSERT_EQ(activationAtomTrackerToMetricMap.size(), 1);
+    EXPECT_THAT(activationAtomTrackerToMetricMap[matcher5Index], UnorderedElementsAre(event3Index));
+    ASSERT_EQ(deactivationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(metricsWithActivation.size(), 1);
+    EXPECT_THAT(metricsWithActivation, UnorderedElementsAre(event3Index));
+
+    // Verify tracker indices/ids/conditions are correct.
+    EXPECT_EQ(newMetricProducers[event2Index]->getMetricId(), event2Id);
+    EXPECT_EQ(newMetricProducers[event2Index]->mConditionTrackerIndex, predicate1Index);
+    EXPECT_EQ(newMetricProducers[event2Index]->mCondition, ConditionState::kUnknown);
+    EXPECT_EQ(newMetricProducers[event3Index]->getMetricId(), event3Id);
+    EXPECT_EQ(newMetricProducers[event3Index]->mConditionTrackerIndex, -1);
+    EXPECT_EQ(newMetricProducers[event3Index]->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(newMetricProducers[event5Index]->getMetricId(), event5Id);
+    EXPECT_EQ(newMetricProducers[event5Index]->mConditionTrackerIndex, -1);
+    EXPECT_EQ(newMetricProducers[event5Index]->mCondition, ConditionState::kTrue);
+
+    EXPECT_EQ(invalidEntities.size(), 6);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{event4.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_INVALID_MATCHER_DEPENDENCY);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), event4.id());
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+    reason = invalidEntities[InvalidEntityKey{matcher4.id(), INVALID_ENTITY_TYPE_MATCHER}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE);
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+    reason = invalidEntities[InvalidEntityKey{event1.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_INVALID_PREDICATE_DEPENDENCY);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), event1.id());
+    EXPECT_THAT(reason.conditionIds, UnorderedElementsAre(predicate2Id));
+    reason = invalidEntities[InvalidEntityKey{event6.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_ACTIVATION_MATCHER_NOT_FOUND);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), event6.id());
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(-1));
+    reason = invalidEntities[InvalidEntityKey{event7.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_HAS_MULTIPLE_ACTIVATIONS);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), event7.id());
+    reason = invalidEntities[InvalidEntityKey{predicate2.id(), INVALID_ENTITY_TYPE_PREDICATE}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_CONDITION_INVALID_MATCHER_DEPENDENCY);
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+}
+
+TEST_F(MetricsManagerUtilTest, TestInitValueMetricsHasInvalidMetrics) {
+    StatsdConfig config;
+
+    // Add atom matchers/predicates/states. These are mostly needed for initStatsdConfig.
+    AtomMatcher matcher1 = CreateScreenTurnedOnAtomMatcher();
+    int64_t matcher1Id = matcher1.id();
+    int matcher1Index = 0;
+    *config.add_atom_matcher() = matcher1;
+
+    AtomMatcher matcher2 = CreateScreenTurnedOffAtomMatcher();
+    int64_t matcher2Id = matcher2.id();
+    int matcher2Index = 1;
+    *config.add_atom_matcher() = matcher2;
+
+    AtomMatcher matcher3 = CreateStartScheduledJobAtomMatcher();
+    int64_t matcher3Id = matcher3.id();
+    int matcher3Index = 2;
+    *config.add_atom_matcher() = matcher3;
+
+    // Make matcher 4 invalid
+    AtomMatcher matcher4 = CreateTemperatureAtomMatcher();
+    int64_t matcher4Id = matcher4.id();
+    matcher4.clear_simple_atom_matcher();
+    *config.add_atom_matcher() = matcher4;
+
+    AtomMatcher matcher5 = CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+    int64_t matcher5Id = matcher5.id();
+    int matcher5Index = 3;
+    *config.add_atom_matcher() = matcher5;
+
+    Predicate predicate1 = CreateScreenIsOnPredicate();
+    int64_t predicate1Id = predicate1.id();
+    *config.add_predicate() = predicate1;
+
+    Predicate predicate2 = CreateScreenIsOffPredicate();
+    int64_t predicate2Id = predicate2.id();
+    *config.add_predicate() = predicate2;
+
+    State state1 = CreateScreenStateWithOnOffMap(0x123, 0x321);
+    int64_t state1Id = state1.id();
+    *config.add_state() = state1;
+
+    State state2 = CreateScreenState();
+    int64_t state2Id = state2.id();
+    *config.add_state() = state2;
+
+    // Add a few value metrics.
+    // Note that these will not work as "real" metrics since the value field is always 2.
+    // Invalid due to dependent matcher being invalid
+    ValueMetric value1 = createValueMetric("VALUE1", matcher4, 2, predicate1Id, {state1Id});
+    int64_t value1Id = value1.id();
+    *config.add_value_metric() = value1;
+
+    ValueMetric value2 = createValueMetric("VALUE2", matcher1, 2, nullopt, {});
+    int64_t value2Id = value2.id();
+    int value2Index = 0;
+    *config.add_value_metric() = value2;
+
+    // Invalid due to missing bin configs
+    ValueMetric value3 = createValueMetric("VALUE3", matcher5, 2, predicate2Id, {});
+    int64_t value3Id = value3.id();
+    value3.set_aggregation_type(ValueMetric_AggregationType_HISTOGRAM);
+    *config.add_value_metric() = value3;
+
+    ValueMetric value4 = createValueMetric("VALUE4", matcher3, 2, nullopt, {state2Id});
+    int64_t value4Id = value4.id();
+    int value4Index = 1;
+    *config.add_value_metric() = value4;
+
+    ValueMetric value5 = createValueMetric("VALUE5", matcher2, 2, nullopt, {});
+    int64_t value5Id = value5.id();
+    int value5Index = 2;
+    *config.add_value_metric() = value5;
+
+    // Output data structures to validate.
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+
+    initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
+                              conditionToMetricMap, trackerToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation, invalidEntities);
+
+    unordered_map<int64_t, int> expectedMetricProducerMap = {
+            {value2Id, value2Index},
+            {value4Id, value4Index},
+            {value5Id, value5Index},
+    };
+    EXPECT_THAT(newMetricProducerMap, ContainerEq(expectedMetricProducerMap));
+
+    ASSERT_EQ(newMetricProducers.size(), 3);
+
+    // Verify the conditionToMetricMap.
+    ASSERT_EQ(conditionToMetricMap.size(), 0);
+
+    // Verify the trackerToMetricMap.
+    ASSERT_EQ(trackerToMetricMap.size(), 3);
+    const vector<int>& matcher1Metrics = trackerToMetricMap[matcher1Index];
+    EXPECT_THAT(matcher1Metrics, UnorderedElementsAre(value2Index));
+    const vector<int>& matcher2Metrics = trackerToMetricMap[matcher2Index];
+    EXPECT_THAT(matcher2Metrics, UnorderedElementsAre(value5Index));
+    const vector<int>& matcher3Metrics = trackerToMetricMap[matcher3Index];
+    EXPECT_THAT(matcher3Metrics, UnorderedElementsAre(value4Index));
+
+    // Verify event activation/deactivation maps.
+    ASSERT_EQ(activationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(deactivationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(metricsWithActivation.size(), 0);
+
+    // Verify tracker indices/ids/conditions/states are correct.
+    NumericValueMetricProducer* valueProducer2 =
+            static_cast<NumericValueMetricProducer*>(newMetricProducers[value2Index].get());
+    EXPECT_EQ(valueProducer2->getMetricId(), value2Id);
+    EXPECT_EQ(valueProducer2->mConditionTrackerIndex, -1);
+    EXPECT_EQ(valueProducer2->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(valueProducer2->mWhatMatcherIndex, matcher1Index);
+    NumericValueMetricProducer* valueProducer4 =
+            static_cast<NumericValueMetricProducer*>(newMetricProducers[value4Index].get());
+    EXPECT_EQ(valueProducer4->getMetricId(), value4Id);
+    EXPECT_EQ(valueProducer4->mConditionTrackerIndex, -1);
+    EXPECT_EQ(valueProducer4->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(valueProducer4->mWhatMatcherIndex, matcher3Index);
+    NumericValueMetricProducer* valueProducer5 =
+            static_cast<NumericValueMetricProducer*>(newMetricProducers[value5Index].get());
+    EXPECT_EQ(valueProducer5->getMetricId(), value5Id);
+    EXPECT_EQ(valueProducer5->mConditionTrackerIndex, -1);
+    EXPECT_EQ(valueProducer5->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(valueProducer5->mWhatMatcherIndex, matcher2Index);
+
+    EXPECT_EQ(invalidEntities.size(), 3);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{value1.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_INVALID_MATCHER_DEPENDENCY);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), value1.id());
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+    reason = invalidEntities[InvalidEntityKey{matcher4.id(), INVALID_ENTITY_TYPE_MATCHER}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE);
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+    reason = invalidEntities[InvalidEntityKey{value3.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason,
+              INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), value3.id());
+}
+
+TEST_F(MetricsManagerUtilTest, TestInitKllMetricsHasInvalidMetrics) {
+    StatsdConfig config;
+
+    // Add atom matchers/predicates. These are mostly needed for initStatsdConfig.
+    AtomMatcher matcher1 = CreateScreenTurnedOnAtomMatcher();
+    int64_t matcher1Id = matcher1.id();
+    int matcher1Index = 0;
+    *config.add_atom_matcher() = matcher1;
+
+    AtomMatcher matcher2 = CreateScreenTurnedOffAtomMatcher();
+    int64_t matcher2Id = matcher2.id();
+    int matcher2Index = 1;
+    *config.add_atom_matcher() = matcher2;
+
+    AtomMatcher matcher3 = CreateStartScheduledJobAtomMatcher();
+    int64_t matcher3Id = matcher3.id();
+    int matcher3Index = 2;
+    *config.add_atom_matcher() = matcher3;
+
+    AtomMatcher matcher4 = CreateAppStartOccurredAtomMatcher();
+    int64_t matcher4Id = matcher4.id();
+    matcher4.clear_simple_atom_matcher();
+    *config.add_atom_matcher() = matcher4;
+
+    AtomMatcher matcher5 = CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
+    int64_t matcher5Id = matcher5.id();
+    int matcher5Index = 3;
+    *config.add_atom_matcher() = matcher5;
+
+    Predicate predicate1 = CreateScreenIsOnPredicate();
+    int64_t predicate1Id = predicate1.id();
+    int predicate1Index = 0;
+    *config.add_predicate() = predicate1;
+
+    Predicate predicate2 = CreateScreenIsOffPredicate();
+    int64_t predicate2Id = predicate2.id();
+    int predicate2Index = 1;
+    *config.add_predicate() = predicate2;
+
+    // Add a few kll metrics.
+    // Note that these will not work as "real" metrics since the value field is always 2.
+    // Will be invalid due to invalid matcher dependency
+    KllMetric kll1 = createKllMetric("KLL1", matcher4, /*valueField=*/2, predicate1Id);
+    int64_t kll1Id = kll1.id();
+    *config.add_kll_metric() = kll1;
+
+    // Will be invalid due to missing kll field
+    KllMetric kll2 = createKllMetric("KLL2", matcher1, /*valueField=*/2, nullopt);
+    int64_t kll2Id = kll2.id();
+    kll2.clear_kll_field();
+    *config.add_kll_metric() = kll2;
+
+    KllMetric kll3 = createKllMetric("KLL3", matcher5, /*valueField=*/2, predicate2Id);
+    int64_t kll3Id = kll3.id();
+    int kll3Index = 0;
+    *config.add_kll_metric() = kll3;
+
+    KllMetric kll4 = createKllMetric("KLL", matcher3, /*valueField=*/2, nullopt);
+    int64_t kll4Id = kll4.id();
+    int kll4Index = 1;
+    *config.add_kll_metric() = kll4;
+
+    // Will be deleted.
+    KllMetric kll5 = createKllMetric("KLL5", matcher5, /*valueField=*/2, predicate1Id);
+    int64_t kll5Id = kll5.id();
+    int kll5Index = 2;
+    *config.add_kll_metric() = kll5;
+
+    // Output data structures to validate.
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+
+    initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
+                              conditionToMetricMap, trackerToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation, invalidEntities);
+
+    unordered_map<int64_t, int> expectedMetricProducerMap = {
+            {kll3Id, kll3Index},
+            {kll4Id, kll4Index},
+            {kll5Id, kll5Index},
+    };
+    EXPECT_THAT(newMetricProducerMap, ContainerEq(expectedMetricProducerMap));
+
+    ASSERT_EQ(newMetricProducers.size(), 3);
+
+    // Verify the conditionToMetricMap.
+    ASSERT_EQ(conditionToMetricMap.size(), 2);
+    const vector<int>& condition1Metrics = conditionToMetricMap[predicate1Index];
+    EXPECT_THAT(condition1Metrics, UnorderedElementsAre(kll5Index));
+    const vector<int>& condition2Metrics = conditionToMetricMap[predicate2Index];
+    EXPECT_THAT(condition2Metrics, UnorderedElementsAre(kll3Index));
+
+    // Verify the trackerToMetricMap.
+    ASSERT_EQ(trackerToMetricMap.size(), 2);
+    const vector<int>& matcher3Metrics = trackerToMetricMap[matcher3Index];
+    EXPECT_THAT(matcher3Metrics, UnorderedElementsAre(kll4Index));
+    const vector<int>& matcher5Metrics = trackerToMetricMap[matcher5Index];
+    EXPECT_THAT(matcher5Metrics, UnorderedElementsAre(kll3Index, kll5Index));
+
+    // Verify event activation/deactivation maps.
+    ASSERT_EQ(activationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(deactivationAtomTrackerToMetricMap.size(), 0);
+    ASSERT_EQ(metricsWithActivation.size(), 0);
+
+    // Verify tracker indices/ids/conditions are correct.
+    KllMetricProducer* kllProducer3 =
+            static_cast<KllMetricProducer*>(newMetricProducers[kll3Index].get());
+    EXPECT_EQ(kllProducer3->getMetricId(), kll3Id);
+    EXPECT_EQ(kllProducer3->mConditionTrackerIndex, predicate2Index);
+    EXPECT_EQ(kllProducer3->mCondition, ConditionState::kUnknown);
+    EXPECT_EQ(kllProducer3->mWhatMatcherIndex, matcher5Index);
+    KllMetricProducer* kllProducer4 =
+            static_cast<KllMetricProducer*>(newMetricProducers[kll4Index].get());
+    EXPECT_EQ(kllProducer4->getMetricId(), kll4Id);
+    EXPECT_EQ(kllProducer4->mConditionTrackerIndex, -1);
+    EXPECT_EQ(kllProducer4->mCondition, ConditionState::kTrue);
+    EXPECT_EQ(kllProducer4->mWhatMatcherIndex, matcher3Index);
+    KllMetricProducer* kllProducer5 =
+            static_cast<KllMetricProducer*>(newMetricProducers[kll5Index].get());
+    EXPECT_EQ(kllProducer5->getMetricId(), kll5Id);
+    EXPECT_EQ(kllProducer5->mConditionTrackerIndex, predicate1Index);
+    EXPECT_EQ(kllProducer5->mCondition, ConditionState::kUnknown);
+    EXPECT_EQ(kllProducer5->mWhatMatcherIndex, matcher5Index);
+
+    EXPECT_EQ(invalidEntities.size(), 3);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{kll1.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_INVALID_MATCHER_DEPENDENCY);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), kll1.id());
+    reason = invalidEntities[InvalidEntityKey{matcher4.id(), INVALID_ENTITY_TYPE_MATCHER}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_MATCHER_MALFORMED_CONTENTS_CASE);
+    EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+    reason = invalidEntities[InvalidEntityKey{kll2.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_KLL_METRIC_MISSING_KLL_FIELD);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), kll2.id());
 }
 
 }  // namespace statsd

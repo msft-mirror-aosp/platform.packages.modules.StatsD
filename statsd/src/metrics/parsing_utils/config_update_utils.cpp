@@ -209,7 +209,7 @@ bool updateAtomMatchingTrackers(
             default: {
                 if (invalidEntities.contains({id, INVALID_ENTITY_TYPE_MATCHER})) {
                     // Invalid matchers may not have an update state set.
-                    break;
+                    continue;
                 }
                 allTrackersValid = false;
                 ALOGE("Matcher \"%lld\" update state is unknown. This should never happen",
@@ -396,9 +396,9 @@ bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
                       vector<sp<ConditionTracker>>& newConditionTrackers,
                       unordered_map<int, vector<int>>& trackerToConditionMap,
                       vector<ConditionState>& conditionCache, set<int64_t>& replacedConditions,
+                      unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
                       unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities) {
     bool allConditionsValid = true;
-    unordered_map<int64_t, ConditionProtoAndTracker> allConditionsMap;
     optional<InvalidConfigReason> invalidConfigReason;
 
     for (int i = 0; i < config.predicate_size(); i++) {
@@ -472,7 +472,7 @@ bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
             default: {
                 if (invalidEntities.contains({id, INVALID_ENTITY_TYPE_PREDICATE})) {
                     // Invalid conditions may not have an update state set.
-                    break;
+                    continue;
                 }
                 ALOGE("Condition \"%lld\" update state is unknown. This should never happen",
                       (long long)id);
@@ -581,8 +581,9 @@ bool metricActivationDepsChange(const StatsdConfig& config,
     return false;
 }
 
+// Invalid metrics may not have an update status set.
 optional<InvalidConfigReason> determineMetricUpdateStatus(
-        const StatsdConfig& config, const MessageLite& metric, const int64_t metricId,
+        const StatsdConfig config, const MessageLite& metric, const int64_t metricId,
         const MetricType metricType, const set<int64_t>& matcherDependencies,
         const set<int64_t>& conditionDependencies,
         const ::google::protobuf::RepeatedField<int64_t>& stateDependencies,
@@ -591,11 +592,12 @@ optional<InvalidConfigReason> determineMetricUpdateStatus(
         const vector<sp<MetricProducer>>& oldMetricProducers,
         const unordered_map<int64_t, int>& metricToActivationMap,
         const set<int64_t>& replacedMatchers, const set<int64_t>& replacedConditions,
-        const set<int64_t>& replacedStates, UpdateStatus& updateStatus) {
+        const set<int64_t>& replacedStates, unordered_map<int64_t, UpdateStatus>& updateStatus) {
+    updateStatus[metricId] = UPDATE_UNKNOWN;
     // Check if new metric
     const auto& oldMetricProducerIt = oldMetricProducerMap.find(metricId);
     if (oldMetricProducerIt == oldMetricProducerMap.end()) {
-        updateStatus = UPDATE_NEW;
+        updateStatus[metricId] = UPDATE_NEW;
         return nullopt;
     }
 
@@ -609,7 +611,7 @@ optional<InvalidConfigReason> determineMetricUpdateStatus(
     const sp<MetricProducer>& oldMetricProducer = oldMetricProducers[oldMetricProducerIt->second];
     if (oldMetricProducer->getMetricType() != metricType ||
         oldMetricProducer->getProtoHash() != metricHash) {
-        updateStatus = UPDATE_REPLACE;
+        updateStatus[metricId] = UPDATE_REPLACE;
         return nullopt;
     }
 
@@ -621,48 +623,50 @@ optional<InvalidConfigReason> determineMetricUpdateStatus(
                      replacedMatchers.begin(), replacedMatchers.end(),
                      inserter(intersection, intersection.begin()));
     if (intersection.size() > 0) {
-        updateStatus = UPDATE_REPLACE;
+        updateStatus[metricId] = UPDATE_REPLACE;
         return nullopt;
     }
     set_intersection(conditionDependencies.begin(), conditionDependencies.end(),
                      replacedConditions.begin(), replacedConditions.end(),
                      inserter(intersection, intersection.begin()));
     if (intersection.size() > 0) {
-        updateStatus = UPDATE_REPLACE;
+        updateStatus[metricId] = UPDATE_REPLACE;
         return nullopt;
     }
     set_intersection(stateDependencies.begin(), stateDependencies.end(), replacedStates.begin(),
                      replacedStates.end(), inserter(intersection, intersection.begin()));
     if (intersection.size() > 0) {
-        updateStatus = UPDATE_REPLACE;
+        updateStatus[metricId] = UPDATE_REPLACE;
         return nullopt;
     }
 
     for (const auto& metricConditionLink : conditionLinks) {
         if (replacedConditions.find(metricConditionLink.condition()) != replacedConditions.end()) {
-            updateStatus = UPDATE_REPLACE;
+            updateStatus[metricId] = UPDATE_REPLACE;
             return nullopt;
         }
     }
 
     if (metricActivationDepsChange(config, metricToActivationMap, metricId, replacedMatchers)) {
-        updateStatus = UPDATE_REPLACE;
+        updateStatus[metricId] = UPDATE_REPLACE;
         return nullopt;
     }
 
-    updateStatus = UPDATE_PRESERVE;
+    updateStatus[metricId] = UPDATE_PRESERVE;
     return nullopt;
 }
 
-optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
+bool determineAllMetricUpdateStatuses(
         const StatsdConfig& config, const unordered_map<int64_t, int>& oldMetricProducerMap,
         const vector<sp<MetricProducer>>& oldMetricProducers,
         const unordered_map<int64_t, int>& metricToActivationMap,
         const set<int64_t>& replacedMatchers, const set<int64_t>& replacedConditions,
-        const set<int64_t>& replacedStates, vector<UpdateStatus>& metricUpdateStatus) {
-    int metricIndex = 0;
+        const set<int64_t>& replacedStates,
+        unordered_map<int64_t, UpdateStatus>& metricUpdateStatus,
+        unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities) {
+    bool allMetricsValid = true;
     optional<InvalidConfigReason> invalidConfigReason;
-    for (int i = 0; i < config.count_metric_size(); i++, metricIndex++) {
+    for (int i = 0; i < config.count_metric_size(); i++) {
         const CountMetric& metric = config.count_metric(i);
         set<int64_t> conditionDependencies;
         if (metric.has_condition()) {
@@ -672,12 +676,14 @@ optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
                 config, metric, metric.id(), METRIC_TYPE_COUNT, {metric.what()},
                 conditionDependencies, metric.slice_by_state(), metric.links(),
                 oldMetricProducerMap, oldMetricProducers, metricToActivationMap, replacedMatchers,
-                replacedConditions, replacedStates, metricUpdateStatus[metricIndex]);
+                replacedConditions, replacedStates, metricUpdateStatus);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            allMetricsValid = false;
         }
     }
-    for (int i = 0; i < config.duration_metric_size(); i++, metricIndex++) {
+    for (int i = 0; i < config.duration_metric_size(); i++) {
         const DurationMetric& metric = config.duration_metric(i);
         set<int64_t> conditionDependencies({metric.what()});
         if (metric.has_condition()) {
@@ -687,12 +693,14 @@ optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
                 config, metric, metric.id(), METRIC_TYPE_DURATION, /*matcherDependencies=*/{},
                 conditionDependencies, metric.slice_by_state(), metric.links(),
                 oldMetricProducerMap, oldMetricProducers, metricToActivationMap, replacedMatchers,
-                replacedConditions, replacedStates, metricUpdateStatus[metricIndex]);
+                replacedConditions, replacedStates, metricUpdateStatus);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            allMetricsValid = false;
         }
     }
-    for (int i = 0; i < config.event_metric_size(); i++, metricIndex++) {
+    for (int i = 0; i < config.event_metric_size(); i++) {
         const EventMetric& metric = config.event_metric(i);
         set<int64_t> conditionDependencies;
         if (metric.has_condition()) {
@@ -702,12 +710,14 @@ optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
                 config, metric, metric.id(), METRIC_TYPE_EVENT, {metric.what()},
                 conditionDependencies, ::google::protobuf::RepeatedField<int64_t>(), metric.links(),
                 oldMetricProducerMap, oldMetricProducers, metricToActivationMap, replacedMatchers,
-                replacedConditions, replacedStates, metricUpdateStatus[metricIndex]);
+                replacedConditions, replacedStates, metricUpdateStatus);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            allMetricsValid = false;
         }
     }
-    for (int i = 0; i < config.value_metric_size(); i++, metricIndex++) {
+    for (int i = 0; i < config.value_metric_size(); i++) {
         const ValueMetric& metric = config.value_metric(i);
         set<int64_t> conditionDependencies;
         if (metric.has_condition()) {
@@ -717,12 +727,14 @@ optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
                 config, metric, metric.id(), METRIC_TYPE_VALUE, {metric.what()},
                 conditionDependencies, metric.slice_by_state(), metric.links(),
                 oldMetricProducerMap, oldMetricProducers, metricToActivationMap, replacedMatchers,
-                replacedConditions, replacedStates, metricUpdateStatus[metricIndex]);
+                replacedConditions, replacedStates, metricUpdateStatus);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            allMetricsValid = false;
         }
     }
-    for (int i = 0; i < config.gauge_metric_size(); i++, metricIndex++) {
+    for (int i = 0; i < config.gauge_metric_size(); i++) {
         const GaugeMetric& metric = config.gauge_metric(i);
         set<int64_t> conditionDependencies;
         if (metric.has_condition()) {
@@ -736,13 +748,15 @@ optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
                 config, metric, metric.id(), METRIC_TYPE_GAUGE, matcherDependencies,
                 conditionDependencies, ::google::protobuf::RepeatedField<int64_t>(), metric.links(),
                 oldMetricProducerMap, oldMetricProducers, metricToActivationMap, replacedMatchers,
-                replacedConditions, replacedStates, metricUpdateStatus[metricIndex]);
+                replacedConditions, replacedStates, metricUpdateStatus);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            allMetricsValid = false;
         }
     }
 
-    for (int i = 0; i < config.kll_metric_size(); i++, metricIndex++) {
+    for (int i = 0; i < config.kll_metric_size(); i++) {
         const KllMetric& metric = config.kll_metric(i);
         set<int64_t> conditionDependencies;
         if (metric.has_condition()) {
@@ -752,13 +766,15 @@ optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
                 config, metric, metric.id(), METRIC_TYPE_KLL, {metric.what()},
                 conditionDependencies, metric.slice_by_state(), metric.links(),
                 oldMetricProducerMap, oldMetricProducers, metricToActivationMap, replacedMatchers,
-                replacedConditions, replacedStates, metricUpdateStatus[metricIndex]);
+                replacedConditions, replacedStates, metricUpdateStatus);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            allMetricsValid = false;
         }
     }
 
-    return nullopt;
+    return allMetricsValid;
 }
 
 optional<InvalidConfigReason> checkMetricUpdate(
@@ -783,120 +799,133 @@ optional<InvalidConfigReason> checkMetricUpdate(
 
 // Called when a metric is preserved during a config update. Finds the metric in oldMetricProducers
 // and calls onConfigUpdated to update all indices.
-sp<MetricProducer> updateMetric(const StatsdConfig& config, const int configIndex,
-                                const int metricIndex, const int64_t metricId,
-                                const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-                                const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
-                                const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-                                const sp<EventMatcherWizard>& matcherWizard,
-                                const vector<sp<ConditionTracker>>& allConditionTrackers,
-                                const unordered_map<int64_t, int>& conditionTrackerMap,
-                                const sp<ConditionWizard>& wizard,
-                                const unordered_map<int64_t, int>& oldMetricProducerMap,
-                                const vector<sp<MetricProducer>>& oldMetricProducers,
-                                const unordered_map<int64_t, int>& metricToActivationMap,
-                                unordered_map<int, vector<int>>& trackerToMetricMap,
-                                unordered_map<int, vector<int>>& conditionToMetricMap,
-                                unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
-                                unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-                                vector<int>& metricsWithActivation,
-                                optional<InvalidConfigReason>& invalidConfigReason) {
+sp<MetricProducer> updateMetric(
+        const StatsdConfig& config, const int configIndex, const int metricIndex,
+        const int64_t metricId, const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
+        const sp<EventMatcherWizard>& matcherWizard,
+        const vector<sp<ConditionTracker>>& allConditionTrackers,
+        const unordered_map<int64_t, int>& conditionTrackerMap, const sp<ConditionWizard>& wizard,
+        const unordered_map<int64_t, int>& oldMetricProducerMap,
+        const vector<sp<MetricProducer>>& oldMetricProducers,
+        const unordered_map<int64_t, int>& metricToActivationMap,
+        const unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
+        unordered_map<int, vector<int>>& trackerToMetricMap,
+        unordered_map<int, vector<int>>& conditionToMetricMap,
+        unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
+        unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
+        vector<int>& metricsWithActivation) {
     sp<MetricProducer> producer = oldMetricProducers[oldMetricProducerMap.at(metricId)];
     producer->onConfigUpdated(config, configIndex, metricIndex, allAtomMatchingTrackers,
                               oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
                               allConditionTrackers, conditionTrackerMap, wizard,
-                              metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
-                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                              metricsWithActivation);
+                              metricToActivationMap, allConditionsMap, trackerToMetricMap,
+                              conditionToMetricMap, activationAtomTrackerToMetricMap,
+                              deactivationAtomTrackerToMetricMap, metricsWithActivation);
     return producer;
 }
 
-optional<InvalidConfigReason> updateMetrics(
-        const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
-        const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
-        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
-        const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-        const set<int64_t>& replacedMatchers,
-        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-        const unordered_map<int64_t, int>& conditionTrackerMap,
-        const set<int64_t>& replacedConditions, vector<sp<ConditionTracker>>& allConditionTrackers,
-        const vector<ConditionState>& initialConditionCache,
-        const unordered_map<int64_t, int>& stateAtomIdMap,
-        const unordered_map<int64_t, unordered_map<int, int64_t>>& allStateGroupMaps,
-        const set<int64_t>& replacedStates, const unordered_map<int64_t, int>& oldMetricProducerMap,
-        const vector<sp<MetricProducer>>& oldMetricProducers,
-        const wp<ConfigMetadataProvider> configMetadataProvider,
-        unordered_map<int64_t, int>& newMetricProducerMap,
-        vector<sp<MetricProducer>>& newMetricProducers,
-        unordered_map<int, vector<int>>& conditionToMetricMap,
-        unordered_map<int, vector<int>>& trackerToMetricMap, set<int64_t>& noReportMetricIds,
-        unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
-        unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, set<int64_t>& replacedMetrics) {
+bool updateMetrics(const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
+                   const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
+                   const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+                   const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
+                   const set<int64_t>& replacedMatchers,
+                   const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+                   const unordered_map<int64_t, int>& conditionTrackerMap,
+                   const set<int64_t>& replacedConditions,
+                   vector<sp<ConditionTracker>>& allConditionTrackers,
+                   const vector<ConditionState>& initialConditionCache,
+                   const unordered_map<int64_t, int>& stateAtomIdMap,
+                   const unordered_map<int64_t, unordered_map<int, int64_t>>& allStateGroupMaps,
+                   const set<int64_t>& replacedStates,
+                   const unordered_map<int64_t, int>& oldMetricProducerMap,
+                   const vector<sp<MetricProducer>>& oldMetricProducers,
+                   const wp<ConfigMetadataProvider> configMetadataProvider,
+                   const unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
+                   unordered_map<int64_t, int>& newMetricProducerMap,
+                   vector<sp<MetricProducer>>& newMetricProducers,
+                   unordered_map<int, vector<int>>& conditionToMetricMap,
+                   unordered_map<int, vector<int>>& trackerToMetricMap,
+                   set<int64_t>& noReportMetricIds,
+                   unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
+                   unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
+                   vector<int>& metricsWithActivation, set<int64_t>& replacedMetrics,
+                   unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities) {
     sp<ConditionWizard> wizard = new ConditionWizard(allConditionTrackers);
     sp<EventMatcherWizard> matcherWizard = new EventMatcherWizard(allAtomMatchingTrackers);
     const int allMetricsCount = config.count_metric_size() + config.duration_metric_size() +
                                 config.event_metric_size() + config.gauge_metric_size() +
                                 config.value_metric_size() + config.kll_metric_size();
-    newMetricProducers.reserve(allMetricsCount);
     optional<InvalidConfigReason> invalidConfigReason;
-
     if (config.has_restricted_metrics_delegate_package_name() &&
         allMetricsCount != config.event_metric_size()) {
         ALOGE("Restricted metrics only support event metric");
-        return InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED);
+        invalidEntities[{key.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
+                InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED);
+        return false;
     }
 
-    // Construct map from metric id to metric activation index. The map will be used to determine
-    // the metric activation corresponding to a metric.
+    bool allMetricsValid = true;
+    // Construct map from metric id to the metric activation index. The map will be used
+    // to determine the metric activation corresponding to a metric.
     unordered_map<int64_t, int> metricToActivationMap;
     for (int i = 0; i < config.metric_activation_size(); i++) {
         const MetricActivation& metricActivation = config.metric_activation(i);
         int64_t metricId = metricActivation.metric_id();
         if (metricToActivationMap.find(metricId) != metricToActivationMap.end()) {
             ALOGE("Metric %lld has multiple MetricActivations", (long long)metricId);
-            return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_HAS_MULTIPLE_ACTIVATIONS,
-                                       metricId);
+            allMetricsValid = false;
+            invalidEntities[{metricId, INVALID_ENTITY_TYPE_METRIC}] = InvalidConfigReason(
+                    INVALID_CONFIG_REASON_METRIC_HAS_MULTIPLE_ACTIVATIONS, metricId);
+            continue;
         }
         metricToActivationMap.insert({metricId, i});
     }
 
-    vector<UpdateStatus> metricUpdateStatus(allMetricsCount, UPDATE_UNKNOWN);
-    invalidConfigReason = determineAllMetricUpdateStatuses(
+    unordered_map<int64_t, UpdateStatus> metricUpdateStatus;
+    allMetricsValid &= determineAllMetricUpdateStatuses(
             config, oldMetricProducerMap, oldMetricProducers, metricToActivationMap,
-            replacedMatchers, replacedConditions, replacedStates, metricUpdateStatus);
-    if (invalidConfigReason.has_value()) {
-        return invalidConfigReason;
-    }
+            replacedMatchers, replacedConditions, replacedStates, metricUpdateStatus,
+            invalidEntities);
 
     // Now, perform the update. Must iterate the metric types in the same order
+    // Reserve the maximum amount because invalid metrics are rare
     int metricIndex = 0;
-    for (int i = 0; i < config.count_metric_size(); i++, metricIndex++) {
+    newMetricProducers.reserve(allMetricsCount);
+    const set<int> atomsAllowedFromAnyUid(config.whitelisted_atom_ids().begin(),
+                                          config.whitelisted_atom_ids().end());
+    for (int i = 0; i < config.count_metric_size(); i++) {
         const CountMetric& metric = config.count_metric(i);
-        newMetricProducerMap[metric.id()] = metricIndex;
         sp<MetricProducer> producer;
         invalidConfigReason = isNewCountMetricValid(config, metric, allAtomMatchingTrackers,
                                                     newAtomMatchingTrackerMap, conditionTrackerMap,
-                                                    stateAtomIdMap, metricToActivationMap);
+                                                    stateAtomIdMap, metricToActivationMap,
+                                                    atomsAllowedFromAnyUid, invalidEntities);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            allMetricsValid = false;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            continue;
         }
-        switch (metricUpdateStatus[metricIndex]) {
+        switch (metricUpdateStatus[metric.id()]) {
             case UPDATE_PRESERVE: {
                 invalidConfigReason = checkMetricUpdate(config, metric.id(), oldMetricProducerMap,
                                                         oldMetricProducers, metricToActivationMap,
                                                         oldAtomMatchingTrackerMap);
                 if (invalidConfigReason.has_value()) {
-                    return invalidConfigReason;
+                    allMetricsValid = false;
+                    invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                            invalidConfigReason.value();
+                    continue;
                 }
                 producer = updateMetric(
                         config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
                         oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
                         allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
-                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        oldMetricProducers, metricToActivationMap, allConditionsMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation);
                 break;
             }
             case UPDATE_REPLACE:
@@ -913,40 +942,52 @@ optional<InvalidConfigReason> updateMetrics(
                 break;
             }
             default: {
+                if (invalidEntities.contains({metric.id(), INVALID_ENTITY_TYPE_METRIC})) {
+                    continue;
+                }
+                allMetricsValid = false;
                 ALOGE("Metric \"%lld\" update state is unknown. This should never happen",
                       (long long)metric.id());
-                return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN,
-                                           metric.id());
+                invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] = InvalidConfigReason(
+                        INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN, metric.id());
+                continue;
             }
         }
-        newMetricProducers.push_back(producer);
-    }
-    for (int i = 0; i < config.duration_metric_size(); i++, metricIndex++) {
-        const DurationMetric& metric = config.duration_metric(i);
         newMetricProducerMap[metric.id()] = metricIndex;
+        newMetricProducers.push_back(producer);
+        ++metricIndex;
+    }
+    for (int i = 0; i < config.duration_metric_size(); i++) {
+        const DurationMetric& metric = config.duration_metric(i);
         sp<MetricProducer> producer;
         invalidConfigReason = isNewDurationMetricValid(
                 config, metric, allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap, allConditionsMap,
+                atomsAllowedFromAnyUid, invalidEntities);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            allMetricsValid = false;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            continue;
         }
-        switch (metricUpdateStatus[metricIndex]) {
+        switch (metricUpdateStatus[metric.id()]) {
             case UPDATE_PRESERVE: {
                 invalidConfigReason = checkMetricUpdate(config, metric.id(), oldMetricProducerMap,
                                                         oldMetricProducers, metricToActivationMap,
                                                         oldAtomMatchingTrackerMap);
                 if (invalidConfigReason.has_value()) {
-                    return invalidConfigReason;
+                    allMetricsValid = false;
+                    invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                            invalidConfigReason.value();
+                    continue;
                 }
                 producer = updateMetric(
                         config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
                         oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
                         allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
-                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        oldMetricProducers, metricToActivationMap, allConditionsMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation);
                 break;
             }
             case UPDATE_REPLACE:
@@ -957,46 +998,58 @@ optional<InvalidConfigReason> updateMetrics(
                         key, config, timeBaseNs, currentTimeNs, metric, metricIndex,
                         newAtomMatchingTrackerMap, conditionTrackerMap, initialConditionCache,
                         wizard, stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
-                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        configMetadataProvider);
+                        allConditionsMap, trackerToMetricMap, conditionToMetricMap,
+                        activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                        metricsWithActivation, configMetadataProvider);
                 break;
             }
             default: {
+                if (invalidEntities.contains({metric.id(), INVALID_ENTITY_TYPE_METRIC})) {
+                    continue;
+                }
+                allMetricsValid = false;
                 ALOGE("Metric \"%lld\" update state is unknown. This should never happen",
                       (long long)metric.id());
-                return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN,
-                                           metric.id());
+                invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] = InvalidConfigReason(
+                        INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN, metric.id());
+                continue;
             }
         }
-        newMetricProducers.push_back(producer);
-    }
-    for (int i = 0; i < config.event_metric_size(); i++, metricIndex++) {
-        const EventMetric& metric = config.event_metric(i);
         newMetricProducerMap[metric.id()] = metricIndex;
+        newMetricProducers.push_back(producer);
+        ++metricIndex;
+    }
+    for (int i = 0; i < config.event_metric_size(); i++) {
+        const EventMetric& metric = config.event_metric(i);
         sp<MetricProducer> producer;
         invalidConfigReason = isNewEventMetricValid(config, metric, allAtomMatchingTrackers,
                                                     newAtomMatchingTrackerMap, conditionTrackerMap,
-                                                    stateAtomIdMap, metricToActivationMap);
+                                                    stateAtomIdMap, metricToActivationMap,
+                                                    atomsAllowedFromAnyUid, invalidEntities);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            allMetricsValid = false;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            continue;
         }
-        switch (metricUpdateStatus[metricIndex]) {
+        switch (metricUpdateStatus[metric.id()]) {
             case UPDATE_PRESERVE: {
                 invalidConfigReason = checkMetricUpdate(config, metric.id(), oldMetricProducerMap,
                                                         oldMetricProducers, metricToActivationMap,
                                                         oldAtomMatchingTrackerMap);
                 if (invalidConfigReason.has_value()) {
-                    return invalidConfigReason;
+                    allMetricsValid = false;
+                    invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                            invalidConfigReason.value();
+                    continue;
                 }
                 producer = updateMetric(
                         config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
                         oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
                         allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
-                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        oldMetricProducers, metricToActivationMap, allConditionsMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation);
                 break;
             }
             case UPDATE_REPLACE:
@@ -1004,50 +1057,63 @@ optional<InvalidConfigReason> updateMetrics(
                 [[fallthrough]];  // Intentionally fallthrough to create the new metric producer.
             case UPDATE_NEW: {
                 producer = createEventMetricProducerAndUpdateMetadata(
-                        key, config, timeBaseNs, metric, metricIndex, newAtomMatchingTrackerMap,
-                        conditionTrackerMap, initialConditionCache, wizard, stateAtomIdMap,
-                        allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        key, config, timeBaseNs,
+                        config.has_restricted_metrics_delegate_package_name(), metric, metricIndex,
+                        newAtomMatchingTrackerMap, conditionTrackerMap, initialConditionCache,
+                        wizard, stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
                         configMetadataProvider);
                 break;
             }
             default: {
+                if (invalidEntities.contains({metric.id(), INVALID_ENTITY_TYPE_METRIC})) {
+                    continue;
+                }
+                allMetricsValid = false;
                 ALOGE("Metric \"%lld\" update state is unknown. This should never happen",
                       (long long)metric.id());
-                return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN,
-                                           metric.id());
+                invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] = InvalidConfigReason(
+                        INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN, metric.id());
+                continue;
             }
         }
+        newMetricProducerMap[metric.id()] = metricIndex;
         newMetricProducers.push_back(producer);
+        ++metricIndex;
     }
 
-    for (int i = 0; i < config.value_metric_size(); i++, metricIndex++) {
+    for (int i = 0; i < config.value_metric_size(); i++) {
         const ValueMetric& metric = config.value_metric(i);
-        newMetricProducerMap[metric.id()] = metricIndex;
         sp<MetricProducer> producer;
         invalidConfigReason = isNewNumericValueMetricValid(
                 config, metric, allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap, atomsAllowedFromAnyUid,
+                invalidEntities);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            allMetricsValid = false;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            continue;
         }
-        switch (metricUpdateStatus[metricIndex]) {
+        switch (metricUpdateStatus[metric.id()]) {
             case UPDATE_PRESERVE: {
                 invalidConfigReason = checkMetricUpdate(config, metric.id(), oldMetricProducerMap,
                                                         oldMetricProducers, metricToActivationMap,
                                                         oldAtomMatchingTrackerMap);
                 if (invalidConfigReason.has_value()) {
-                    return invalidConfigReason;
+                    allMetricsValid = false;
+                    invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                            invalidConfigReason.value();
+                    continue;
                 }
                 producer = updateMetric(
                         config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
                         oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
                         allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
-                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        oldMetricProducers, metricToActivationMap, allConditionsMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation);
                 break;
             }
             case UPDATE_REPLACE:
@@ -1065,41 +1131,53 @@ optional<InvalidConfigReason> updateMetrics(
                 break;
             }
             default: {
+                if (invalidEntities.contains({metric.id(), INVALID_ENTITY_TYPE_METRIC})) {
+                    continue;
+                }
+                allMetricsValid = false;
                 ALOGE("Metric \"%lld\" update state is unknown. This should never happen",
                       (long long)metric.id());
-                return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN,
-                                           metric.id());
+                invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] = InvalidConfigReason(
+                        INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN, metric.id());
+                continue;
             }
         }
+        newMetricProducerMap[metric.id()] = metricIndex;
         newMetricProducers.push_back(producer);
+        ++metricIndex;
     }
 
-    for (int i = 0; i < config.gauge_metric_size(); i++, metricIndex++) {
+    for (int i = 0; i < config.gauge_metric_size(); i++) {
         const GaugeMetric& metric = config.gauge_metric(i);
-        newMetricProducerMap[metric.id()] = metricIndex;
         sp<MetricProducer> producer;
         invalidConfigReason = isNewGaugeMetricValid(
                 config, metric, pullerManager, allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap, atomsAllowedFromAnyUid,
+                invalidEntities);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            allMetricsValid = false;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            continue;
         }
-        switch (metricUpdateStatus[metricIndex]) {
+        switch (metricUpdateStatus[metric.id()]) {
             case UPDATE_PRESERVE: {
                 invalidConfigReason = checkMetricUpdate(config, metric.id(), oldMetricProducerMap,
                                                         oldMetricProducers, metricToActivationMap,
                                                         oldAtomMatchingTrackerMap);
                 if (invalidConfigReason.has_value()) {
-                    return invalidConfigReason;
+                    allMetricsValid = false;
+                    invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                            invalidConfigReason.value();
+                    continue;
                 }
                 producer = updateMetric(
                         config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
                         oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
                         allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
-                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        oldMetricProducers, metricToActivationMap, allConditionsMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation);
                 break;
             }
             case UPDATE_REPLACE:
@@ -1117,41 +1195,52 @@ optional<InvalidConfigReason> updateMetrics(
                 break;
             }
             default: {
+                if (invalidEntities.contains({metric.id(), INVALID_ENTITY_TYPE_METRIC})) {
+                    continue;
+                }
+                allMetricsValid = false;
                 ALOGE("Metric \"%lld\" update state is unknown. This should never happen",
                       (long long)metric.id());
-                return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN,
-                                           metric.id());
+                invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] = InvalidConfigReason(
+                        INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN, metric.id());
+                continue;
             }
         }
-        newMetricProducers.push_back(producer);
-    }
-
-    for (int i = 0; i < config.kll_metric_size(); i++, metricIndex++) {
-        const KllMetric& metric = config.kll_metric(i);
         newMetricProducerMap[metric.id()] = metricIndex;
+        newMetricProducers.push_back(producer);
+        ++metricIndex;
+    }
+    for (int i = 0; i < config.kll_metric_size(); i++) {
+        const KllMetric& metric = config.kll_metric(i);
         sp<MetricProducer> producer;
-        invalidConfigReason = isNewKllMetricValid(config, metric, allAtomMatchingTrackers,
-                                                  newAtomMatchingTrackerMap, conditionTrackerMap,
-                                                  stateAtomIdMap, metricToActivationMap);
+        invalidConfigReason =
+                isNewKllMetricValid(config, metric, allAtomMatchingTrackers,
+                                    newAtomMatchingTrackerMap, conditionTrackerMap, stateAtomIdMap,
+                                    metricToActivationMap, atomsAllowedFromAnyUid, invalidEntities);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            allMetricsValid = false;
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                    invalidConfigReason.value();
+            continue;
         }
-        switch (metricUpdateStatus[metricIndex]) {
+        switch (metricUpdateStatus[metric.id()]) {
             case UPDATE_PRESERVE: {
                 invalidConfigReason = checkMetricUpdate(config, metric.id(), oldMetricProducerMap,
                                                         oldMetricProducers, metricToActivationMap,
                                                         oldAtomMatchingTrackerMap);
                 if (invalidConfigReason.has_value()) {
-                    return invalidConfigReason;
+                    allMetricsValid = false;
+                    invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] =
+                            invalidConfigReason.value();
+                    continue;
                 }
                 producer = updateMetric(
                         config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
                         oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
                         allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
-                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
-                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                        invalidConfigReason);
+                        oldMetricProducers, metricToActivationMap, allConditionsMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation);
                 break;
             }
             case UPDATE_REPLACE:
@@ -1170,39 +1259,41 @@ optional<InvalidConfigReason> updateMetrics(
                 break;
             }
             default: {
+                if (invalidEntities.contains({metric.id(), INVALID_ENTITY_TYPE_METRIC})) {
+                    continue;
+                }
+                allMetricsValid = false;
                 ALOGE("Metric \"%lld\" update state is unknown. This should never happen",
                       (long long)metric.id());
-                return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN,
-                                           metric.id());
+                invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}] = InvalidConfigReason(
+                        INVALID_CONFIG_REASON_METRIC_UPDATE_STATUS_UNKNOWN, metric.id());
+                continue;
             }
         }
+        newMetricProducerMap[metric.id()] = metricIndex;
         newMetricProducers.push_back(producer);
+        ++metricIndex;
     }
 
     for (int i = 0; i < config.no_report_metric_size(); ++i) {
         const int64_t noReportMetric = config.no_report_metric(i);
         if (newMetricProducerMap.find(noReportMetric) == newMetricProducerMap.end()) {
             ALOGW("no_report_metric %" PRId64 " not exist", noReportMetric);
-            return InvalidConfigReason(INVALID_CONFIG_REASON_NO_REPORT_METRIC_NOT_FOUND,
-                                       noReportMetric);
+            allMetricsValid = false;
+            invalidEntities[{noReportMetric, INVALID_ENTITY_TYPE_METRIC}] = InvalidConfigReason(
+                    INVALID_CONFIG_REASON_NO_REPORT_METRIC_NOT_FOUND, noReportMetric);
+            continue;
         }
         noReportMetricIds.insert(noReportMetric);
     }
-    const set<int> atomsAllowedFromAnyUid(config.whitelisted_atom_ids().begin(),
-                                          config.whitelisted_atom_ids().end());
-    for (int i = 0; i < allMetricsCount; i++) {
+
+    for (size_t i = 0; i < newMetricProducers.size(); i++) {
         sp<MetricProducer> producer = newMetricProducers[i];
+        int64_t metricId = producer->getMetricId();
         // Register metrics to StateTrackers
         for (int atomId : producer->getSlicedStateAtoms()) {
             // Register listener for atoms that use allowed_log_sources.
-            // Using atoms allowed from any uid as a sliced state atom is not allowed.
-            // Redo this check for all metrics in case the atoms allowed from any uid changed.
-            if (atomsAllowedFromAnyUid.find(atomId) != atomsAllowedFromAnyUid.end()) {
-                return InvalidConfigReason(
-                        INVALID_CONFIG_REASON_METRIC_SLICED_STATE_ATOM_ALLOWED_FROM_ANY_UID,
-                        producer->getMetricId());
-                // Preserved metrics should've already registered.`
-            } else if (metricUpdateStatus[i] != UPDATE_PRESERVE) {
+            if (metricUpdateStatus[metricId] != UPDATE_PRESERVE) {
                 StateManager::getInstance().registerListener(atomId, producer);
             }
         }
@@ -1210,7 +1301,9 @@ optional<InvalidConfigReason> updateMetrics(
 
     // Init new/replaced metrics.
     for (size_t i = 0; i < newMetricProducers.size(); i++) {
-        if (metricUpdateStatus[i] == UPDATE_REPLACE || metricUpdateStatus[i] == UPDATE_NEW) {
+        int64_t metricId = newMetricProducers[i]->getMetricId();
+        if (metricUpdateStatus[metricId] == UPDATE_REPLACE ||
+            metricUpdateStatus[metricId] == UPDATE_NEW) {
             newMetricProducers[i]->prepareFirstBucket();
         }
     }
@@ -1223,7 +1316,7 @@ optional<InvalidConfigReason> updateMetrics(
             oldMetricProducer->onMetricRemove();
         }
     }
-    return nullopt;
+    return allMetricsValid;
 }
 
 optional<InvalidConfigReason> determineAlertUpdateStatus(
@@ -1399,10 +1492,12 @@ optional<InvalidConfigReason> updateStatsdConfig(
         return invalidEntities.begin()->second;
     }
 
-    bool allConditionsValid = updateConditions(
-            key, config, newAtomMatchingTrackerMap, replacedMatchers, oldConditionTrackerMap,
-            oldConditionTrackers, newConditionTrackerMap, newConditionTrackers,
-            trackerToConditionMap, conditionCache, replacedConditions, invalidEntities);
+    unordered_map<int64_t, ConditionProtoAndTracker> allConditionsMap;
+    bool allConditionsValid =
+            updateConditions(key, config, newAtomMatchingTrackerMap, replacedMatchers,
+                             oldConditionTrackerMap, oldConditionTrackers, newConditionTrackerMap,
+                             newConditionTrackers, trackerToConditionMap, conditionCache,
+                             replacedConditions, allConditionsMap, invalidEntities);
     if (!allConditionsValid) {
         ALOGE("updateConditions failed");
         return invalidEntities.begin()->second;
@@ -1416,18 +1511,18 @@ optional<InvalidConfigReason> updateStatsdConfig(
         return invalidEntities.begin()->second;
     }
 
-    invalidConfigReason = updateMetrics(
+    bool allMetricsValid = updateMetrics(
             key, config, timeBaseNs, currentTimeNs, pullerManager, oldAtomMatchingTrackerMap,
             newAtomMatchingTrackerMap, replacedMatchers, newAtomMatchingTrackers,
             newConditionTrackerMap, replacedConditions, newConditionTrackers, conditionCache,
             stateAtomIdMap, allStateGroupMaps, replacedStates, oldMetricProducerMap,
-            oldMetricProducers, configMetadataProvider, newMetricProducerMap, newMetricProducers,
-            conditionToMetricMap, trackerToMetricMap, noReportMetricIds,
+            oldMetricProducers, configMetadataProvider, allConditionsMap, newMetricProducerMap,
+            newMetricProducers, conditionToMetricMap, trackerToMetricMap, noReportMetricIds,
             activationTrackerToMetricMap, deactivationTrackerToMetricMap, metricsWithActivation,
-            replacedMetrics);
-    if (invalidConfigReason.has_value()) {
+            replacedMetrics, invalidEntities);
+    if (!allMetricsValid) {
         ALOGE("updateMetrics failed");
-        return invalidConfigReason;
+        return invalidEntities.begin()->second;
     }
 
     invalidConfigReason = updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
