@@ -74,6 +74,7 @@ bool AtomsInUseProvider<Clock>::isAtomInUseLocked(int32_t atomId, int64_t nowNs)
 template <typename Clock>
 void AtomsInUseProvider<Clock>::updateCacheIfNeededLocked(int64_t nowNs) {
     if (!mCacheCooldownTimer.isExpired(nowNs)) {
+        VLOG("updateCacheIfNeededLocked: cooldown timer not expired");
         return;
     }
     // whatever will go wrong below - keep delay before retry
@@ -81,11 +82,13 @@ void AtomsInUseProvider<Clock>::updateCacheIfNeededLocked(int64_t nowNs) {
 
     int64_t newVersion = 0;
     if (!isSyncNeededLocked(newVersion)) {
+        VLOG("updateCacheIfNeededLocked: no sync needed");
         return;
     }
 
     // if list was removed - need to clear cache
     if (newVersion == 0) {
+        VLOG("updateCacheIfNeededLocked: list not defined");
         mListVersion = 0;
         mAtomsInUseCached.clear();
         return;
@@ -95,6 +98,7 @@ void AtomsInUseProvider<Clock>::updateCacheIfNeededLocked(int64_t nowNs) {
     if (syncAtomsList()) {
         mListVersion = newVersion;
     } else {
+        VLOG("updateCacheIfNeededLocked: sync failed");
         // if something went wrong - by default all atoms are in use
         mAtomsInUseCached.clear();
     }

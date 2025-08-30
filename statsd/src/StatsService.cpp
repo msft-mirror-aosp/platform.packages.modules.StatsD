@@ -1141,6 +1141,7 @@ void StatsService::onStatsdInitCompleted(int initEventDelaySecs) {
     // This function is called from a dedicated thread without holding locks, so sleeping is ok.
     // See MultiConditionTrigger::markComplete() executorThread for details
     // For more details see http://b/277958338
+    VLOG("StatsService::onStatsdInitCompleted() waiting for %d seconds", initEventDelaySecs);
 
     unique_lock<mutex> lk(mStatsdInitCompletedHandlerTerminationFlagMutex);
     if (mStatsdInitCompletedHandlerTerminationFlag.wait_for(
@@ -1149,6 +1150,8 @@ void StatsService::onStatsdInitCompleted(int initEventDelaySecs) {
         VLOG("StatsService::onStatsdInitCompleted() Early termination is requested");
         return;
     }
+
+    VLOG("StatsService::onStatsdInitCompleted()");
 
     mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs());
     // to not stress I/O subsystem reasonable to postpone atom ids file creation and avoid

@@ -20,7 +20,9 @@ android_test {
     name: "LibStatsPullTests",
     static_libs: [
         "androidx.test.rules",
+        "compatibility-device-util-axt",
         "platformprotoslite",
+        "statsd_flags_java_lib",
         "statsdprotolite",
         "truth",
     ],
@@ -34,6 +36,7 @@ android_test {
     srcs: [
         "src/**/*.java",
         "protos/**/*.proto",
+        ":statslog-statsdtest-java-gen",
     ],
     test_suites: [
         "device-tests",

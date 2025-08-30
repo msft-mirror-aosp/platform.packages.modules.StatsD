@@ -58,7 +58,7 @@ bool AtomsInUseListProducer::setAtomsIds(const std::vector<int32_t>& atomIds) {
     ATRACE_CALL();
     TIME_CALL_DEBUG();
 
-    ALOGW("setAtoms for %d ids", (int)atomIds.size());
+    VLOG("setAtoms for %d ids", (int)atomIds.size());
 
     if (atomIds.empty()) {
         reset();

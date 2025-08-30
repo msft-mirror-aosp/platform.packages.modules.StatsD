@@ -38,7 +38,7 @@ public:
 
 private:
     const int64_t mTimeoutNanos;
-    std::atomic_int64_t mCooldownTimerFinishAtNanos;
+    std::atomic_int64_t mCooldownTimerFinishAtNanos = 0;
 };
 
 class RealTimeClock {
