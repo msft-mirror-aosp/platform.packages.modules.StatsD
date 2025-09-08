@@ -277,21 +277,28 @@ sp<MetricProducer> createKllMetricProducerAndUpdateMetadata(
         std::vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider);
 
-// Creates an AnomalyTracker and adds it to the appropriate metric.
-// Returns an sp to the AnomalyTracker, or nullopt if there was an error.
-std::optional<sp<AnomalyTracker>> createAnomalyTracker(
-        const Alert& alert, const sp<AlarmMonitor>& anomalyAlarmMonitor,
-        const UpdateStatus& updateStatus, int64_t currentTimeNs,
-        const std::unordered_map<int64_t, int>& metricProducerMap,
-        std::vector<sp<MetricProducer>>& allMetricProducers,
-        std::optional<InvalidConfigReason>& invalidConfigReason);
+// Checks whether the alert is valid
+std::optional<InvalidConfigReason> isNewAlertValid(
+        const Alert& alert, const std::unordered_map<int64_t, int>& metricProducerMap,
+        const std::vector<sp<MetricProducer>>& allMetricProducers,
+        const std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
-// Templated function for adding subscriptions to alarms or alerts. Returns nullopt if successful
-// and InvalidConfigReason if not.
+// Creates an AnomalyTracker and adds it to the appropriate metric.
+// Returns an sp to the AnomalyTracker.
+sp<AnomalyTracker> createAnomalyTracker(const Alert& alert,
+                                        const sp<AlarmMonitor>& anomalyAlarmMonitor,
+                                        const UpdateStatus& updateStatus, int64_t currentTimeNs,
+                                        const std::unordered_map<int64_t, int>& metricProducerMap,
+                                        std::vector<sp<MetricProducer>>& allMetricProducers);
+
+// Templated function for adding subscriptions to alarms or alerts. Returns whether all the
+// subscriptions for the ruleType is valid.
 template <typename T>
-std::optional<InvalidConfigReason> initSubscribersForSubscriptionType(
+bool initSubscribersForSubscriptionType(
         const StatsdConfig& config, const Subscription_RuleType ruleType,
-        const std::unordered_map<int64_t, int>& ruleMap, std::vector<T>& allRules) {
+        const std::unordered_map<int64_t, int>& ruleMap, std::vector<T>& allRules,
+        std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities) {
+    bool allSubscribersValid = true;
     for (int i = 0; i < config.subscription_size(); ++i) {
         const Subscription& subscription = config.subscription(i);
         if (subscription.rule_type() != ruleType) {
@@ -300,8 +307,30 @@ std::optional<InvalidConfigReason> initSubscribersForSubscriptionType(
         if (subscription.subscriber_information_case() ==
             Subscription::SubscriberInformationCase::SUBSCRIBER_INFORMATION_NOT_SET) {
             ALOGW("subscription \"%lld\" has no subscriber info.\"", (long long)subscription.id());
-            return createInvalidConfigReasonWithSubscription(
-                    INVALID_CONFIG_REASON_SUBSCRIPTION_SUBSCRIBER_INFO_MISSING, subscription.id());
+            invalidEntities[{subscription.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}] =
+                    createInvalidConfigReasonWithSubscription(
+                            INVALID_CONFIG_REASON_SUBSCRIPTION_SUBSCRIBER_INFO_MISSING,
+                            subscription.id());
+            allSubscribersValid = false;
+            continue;
+        }
+        if (ruleType == Subscription_RuleType_ALERT &&
+            invalidEntities.contains({subscription.rule_id(), INVALID_ENTITY_TYPE_ALERT})) {
+            invalidEntities[{subscription.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}] =
+                    createInvalidConfigReasonWithSubscriptionAndAlert(
+                            INVALID_CONFIG_REASON_SUBSCRIPTION_INVALID_ALERT_DEPENDENCY,
+                            subscription.id(), subscription.rule_id());
+            allSubscribersValid = false;
+            continue;
+        }
+        if (ruleType == Subscription_RuleType_ALARM &&
+            invalidEntities.contains({subscription.rule_id(), INVALID_ENTITY_TYPE_ALARM})) {
+            invalidEntities[{subscription.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}] =
+                    createInvalidConfigReasonWithSubscriptionAndAlarm(
+                            INVALID_CONFIG_REASON_SUBSCRIPTION_INVALID_ALARM_DEPENDENCY,
+                            subscription.id(), subscription.rule_id());
+            allSubscribersValid = false;
+            continue;
         }
         const auto& itr = ruleMap.find(subscription.rule_id());
         if (itr == ruleMap.end()) {
@@ -309,22 +338,32 @@ std::optional<InvalidConfigReason> initSubscribersForSubscriptionType(
                   (long long)subscription.id(), (long long)subscription.rule_id());
             switch (subscription.rule_type()) {
                 case Subscription::ALARM:
-                    return createInvalidConfigReasonWithSubscriptionAndAlarm(
-                            INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND, subscription.id(),
-                            subscription.rule_id());
+                    invalidEntities[{subscription.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}] =
+                            createInvalidConfigReasonWithSubscriptionAndAlarm(
+                                    INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND,
+                                    subscription.id(), subscription.rule_id());
+                    allSubscribersValid = false;
+                    continue;
                 case Subscription::ALERT:
-                    return createInvalidConfigReasonWithSubscriptionAndAlert(
-                            INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND, subscription.id(),
-                            subscription.rule_id());
+                    invalidEntities[{subscription.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}] =
+                            createInvalidConfigReasonWithSubscriptionAndAlert(
+                                    INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND,
+                                    subscription.id(), subscription.rule_id());
+                    allSubscribersValid = false;
+                    continue;
                 case Subscription::RULE_TYPE_UNSPECIFIED:
-                    return createInvalidConfigReasonWithSubscription(
-                            INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND, subscription.id());
+                    invalidEntities[{subscription.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}] =
+                            createInvalidConfigReasonWithSubscription(
+                                    INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND,
+                                    subscription.id());
+                    allSubscribersValid = false;
+                    continue;
             }
         }
         const int ruleIndex = itr->second;
         allRules[ruleIndex]->addSubscription(subscription);
     }
-    return std::nullopt;
+    return allSubscribersValid;
 }
 
 // Helper functions for MetricsManager to initialize from StatsdConfig.
@@ -430,12 +469,22 @@ bool initMetrics(
         const wp<ConfigMetadataProvider> configMetadataProvider,
         std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
+// Initialize alerts
+bool initAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
+                const std::unordered_map<int64_t, int>& metricProducerMap,
+                std::unordered_map<int64_t, int>& alertTrackerMap,
+                const sp<AlarmMonitor>& anomalyAlarmMonitor,
+                std::vector<sp<MetricProducer>>& allMetricProducers,
+                std::vector<sp<AnomalyTracker>>& allAnomalyTrackers,
+                std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
+
 // Initialize alarms
 // Is called both on initialize new configs and config updates since alarms do not have any state.
-std::optional<InvalidConfigReason> initAlarms(const StatsdConfig& config, const ConfigKey& key,
-                                              const sp<AlarmMonitor>& periodicAlarmMonitor,
-                                              const int64_t timeBaseNs, int64_t currentTimeNs,
-                                              std::vector<sp<AlarmTracker>>& allAlarmTrackers);
+bool initAlarms(const StatsdConfig& config, const ConfigKey& key,
+                const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
+                int64_t currentTimeNs, std::unordered_map<int64_t, int>& alarmTrackerMap,
+                std::vector<sp<AlarmTracker>>& allAlarmTrackers,
+                std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
 // Initialize MetricsManager from StatsdConfig.
 // Parameters are the members of MetricsManager. See MetricsManager for declaration.

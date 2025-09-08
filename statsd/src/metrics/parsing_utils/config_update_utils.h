@@ -243,17 +243,18 @@ std::optional<InvalidConfigReason> determineAlertUpdateStatus(
 // output:
 // [newAlertTrackerMap]: mapping of alert id to index in the new config
 // [newAnomalyTrackers]: contains the list of sp to the AnomalyTrackers created.
-// Returns nullopt if successful and InvalidConfigReason if not.
-std::optional<InvalidConfigReason> updateAlerts(
-        const StatsdConfig& config, int64_t currentTimeNs,
-        const std::unordered_map<int64_t, int>& metricProducerMap,
-        const std::set<int64_t>& replacedMetrics,
-        const std::unordered_map<int64_t, int>& oldAlertTrackerMap,
-        const std::vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
-        const sp<AlarmMonitor>& anomalyAlarmMonitor,
-        std::vector<sp<MetricProducer>>& allMetricProducers,
-        std::unordered_map<int64_t, int>& newAlertTrackerMap,
-        std::vector<sp<AnomalyTracker>>& newAnomalyTrackers);
+// [invalidEntities]: map of entity id to the reason why it is invalid.
+// Returns whether all alerts are valid.
+bool updateAlerts(const StatsdConfig& config, int64_t currentTimeNs,
+                  const std::unordered_map<int64_t, int>& metricProducerMap,
+                  const std::set<int64_t>& replacedMetrics,
+                  const std::unordered_map<int64_t, int>& oldAlertTrackerMap,
+                  const std::vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
+                  const sp<AlarmMonitor>& anomalyAlarmMonitor,
+                  std::vector<sp<MetricProducer>>& allMetricProducers,
+                  std::unordered_map<int64_t, int>& newAlertTrackerMap,
+                  std::vector<sp<AnomalyTracker>>& newAnomalyTrackers,
+                  std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
 // Updates the existing MetricsManager from a new StatsdConfig.
 // Parameters are the members of MetricsManager. See MetricsManager for declaration.

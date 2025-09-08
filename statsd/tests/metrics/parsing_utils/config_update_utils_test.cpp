@@ -3844,10 +3844,10 @@ TEST_F(ConfigUpdateTest, TestUpdateAlerts) {
 
     unordered_map<int64_t, int> newAlertTrackerMap;
     vector<sp<AnomalyTracker>> newAnomalyTrackers;
-    EXPECT_EQ(updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
-                           oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
-                           newMetricProducers, newAlertTrackerMap, newAnomalyTrackers),
-              nullopt);
+    EXPECT_TRUE(updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
+                             oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
+                             newMetricProducers, newAlertTrackerMap, newAnomalyTrackers,
+                             invalidEntities));
 
     unordered_map<int64_t, int> expectedAlertMap = {
             {alert1Id, alert1Index},
@@ -3942,9 +3942,10 @@ TEST_F(ConfigUpdateTest, TestUpdateAlarms) {
     // Update time is 2 seconds after the base time.
     int64_t currentTimeNs = timeBaseNs + 2 * NS_PER_SEC;
     vector<sp<AlarmTracker>> newAlarmTrackers;
-    EXPECT_EQ(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
-                         newAlarmTrackers),
-              nullopt);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    EXPECT_TRUE(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
+                           alarmTrackerMap, newAlarmTrackers, invalidEntities));
 
     ASSERT_EQ(newAlarmTrackers.size(), 3);
     // Config is updated 2 seconds after statsd start
@@ -3974,9 +3975,9 @@ TEST_F(ConfigUpdateTest, TestUpdateAlarms) {
     // Do another update 60 seconds after config creation time, after the offsets of each alarm.
     currentTimeNs = timeBaseNs + 60 * NS_PER_SEC;
     newAlarmTrackers.clear();
-    EXPECT_EQ(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
-                         newAlarmTrackers),
-              nullopt);
+    alarmTrackerMap.clear();
+    EXPECT_TRUE(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
+                           alarmTrackerMap, newAlarmTrackers, invalidEntities));
 
     ASSERT_EQ(newAlarmTrackers.size(), 3);
     // Config is updated one minute after statsd start.
@@ -6079,6 +6080,274 @@ TEST_F(ConfigUpdateTest, TestUpdateKllMetricsHasInvalidMetrics) {
     ASSERT_TRUE(reason.metricId.has_value());
     EXPECT_EQ(reason.metricId.value(), kll1.id());
     EXPECT_THAT(reason.matcherIds, UnorderedElementsAre(matcher4Id));
+}
+
+TEST_F(ConfigUpdateTest, TestUpdateAlertsHasInvalidAlert) {
+    StatsdConfig config;
+    // Add atom matchers/predicates/metrics. These are mostly needed for initStatsdConfig
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+    *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
+    *config.add_predicate() = CreateScreenIsOnPredicate();
+
+    CountMetric countMetric = createCountMetric("COUNT1", config.atom_matcher(0).id(), nullopt, {});
+    int64_t countMetricId = countMetric.id();
+    *config.add_count_metric() = countMetric;
+
+    DurationMetric durationMetric =
+            createDurationMetric("DURATION1", config.predicate(0).id(), nullopt, {});
+    int64_t durationMetricId = durationMetric.id();
+    *config.add_duration_metric() = durationMetric;
+
+    unordered_map<int64_t, ConditionProtoAndTracker> allConditionsMap;
+    allConditionsMap[config.predicate(0).id()] = {config.predicate(0), nullptr};
+
+    // Add alerts.
+    // Preserved.
+    Alert alert1 = createAlert("Alert1", durationMetricId, /*buckets*/ 1, /*triggerSum*/ 5000);
+    int64_t alert1Id = alert1.id();
+    *config.add_alert() = alert1;
+
+    // Will be invalid due to missing metric id
+    Alert alert2 = createAlert("Alert2", countMetricId, /*buckets*/ 1, /*triggerSum*/ 2);
+    int64_t alert2Id = alert2.id();
+    *config.add_alert() = alert2;
+
+    // Replaced.
+    Alert alert3 = createAlert("Alert3", durationMetricId, /*buckets*/ 3, /*triggerSum*/ 5000);
+    int64_t alert3Id = alert3.id();
+    *config.add_alert() = alert3;
+
+    // Add Subscriptions.
+    Subscription subscription1 = createSubscription("S1", Subscription::ALERT, alert1Id);
+    *config.add_subscription() = subscription1;
+    Subscription subscription2 = createSubscription("S2", Subscription::ALERT, alert1Id);
+    *config.add_subscription() = subscription2;
+    Subscription subscription3 = createSubscription("S3", Subscription::ALERT, alert2Id);
+    *config.add_subscription() = subscription3;
+
+    EXPECT_TRUE(initConfig(config));
+
+    // Add a duration tracker to the duration metric to ensure durationTrackers are updated
+    // with the proper anomalyTrackers.
+    unique_ptr<LogEvent> event = CreateScreenStateChangedEvent(
+            timeBaseNs + 1, android::view::DisplayStateEnum::DISPLAY_STATE_ON);
+    oldMetricProducers[1]->onMatchedLogEvent(0, *event.get());
+
+    // Change the count metric. Causes alert2 to be replaced.
+    config.mutable_count_metric(0)->set_bucket(ONE_DAY);
+    // Change num buckets on alert3, causing replacement.
+    alert3.set_num_buckets(5);
+
+    // New alert.
+    Alert alert4 = createAlert("Alert4", durationMetricId, /*buckets*/ 3, /*triggerSum*/ 10000);
+    int64_t alert4Id = alert4.id();
+
+    // Move subscription2 to be on alert2 and make a new subscription.
+    subscription2.set_rule_id(alert2Id);
+    Subscription subscription4 = createSubscription("S4", Subscription::ALERT, alert2Id);
+
+    // Update alert2 to have no threshold.
+    alert2.clear_trigger_if_sum_gt();
+
+    // Create the new config. Modify the old one to avoid adding the matchers/predicates.
+    // Add alerts in different order so the map is changed.
+    config.clear_alert();
+    *config.add_alert() = alert4;
+    const int alert4Index = 0;
+    *config.add_alert() = alert3;
+    const int alert3Index = 1;
+    *config.add_alert() = alert1;
+    const int alert1Index = 2;
+    *config.add_alert() = alert2;
+
+    // Subscription3 is removed.
+    config.clear_subscription();
+    *config.add_subscription() = subscription4;
+    *config.add_subscription() = subscription2;
+    *config.add_subscription() = subscription1;
+
+    // Output data structures from update metrics. Don't care about the outputs besides
+    // replacedMetrics, but need to do this so that the metrics clear their anomaly trackers.
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    set<int64_t> noReportMetricIds;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    set<int64_t> replacedMetrics;
+    int64_t currentTimeNs = 12345;
+    sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+    EXPECT_TRUE(updateMetrics(
+            key, config, /*timeBaseNs=*/123, currentTimeNs, new StatsPullerManager(),
+            oldAtomMatchingTrackerMap, oldAtomMatchingTrackerMap, /*replacedMatchers*/ {},
+            oldAtomMatchingTrackers, oldConditionTrackerMap, /*replacedConditions=*/{},
+            oldConditionTrackers, {ConditionState::kUnknown}, /*stateAtomIdMap*/ {},
+            /*allStateGroupMaps=*/{},
+            /*replacedStates=*/{}, oldMetricProducerMap, oldMetricProducers, provider,
+            allConditionsMap, newMetricProducerMap, newMetricProducers, conditionToMetricMap,
+            trackerToMetricMap, noReportMetricIds, activationAtomTrackerToMetricMap,
+            deactivationAtomTrackerToMetricMap, metricsWithActivation, replacedMetrics,
+            invalidEntities));
+
+    EXPECT_EQ(replacedMetrics, set<int64_t>({countMetricId}));
+
+    unordered_map<int64_t, int> newAlertTrackerMap;
+    vector<sp<AnomalyTracker>> newAnomalyTrackers;
+    EXPECT_FALSE(updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
+                              oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
+                              newMetricProducers, newAlertTrackerMap, newAnomalyTrackers,
+                              invalidEntities));
+
+    unordered_map<int64_t, int> expectedAlertMap = {
+            {alert1Id, alert1Index},
+            {alert3Id, alert3Index},
+            {alert4Id, alert4Index},
+    };
+    EXPECT_THAT(newAlertTrackerMap, ContainerEq(expectedAlertMap));
+
+    // Make sure preserved alerts are the same.
+    ASSERT_EQ(newAnomalyTrackers.size(), 3);
+    EXPECT_EQ(oldAnomalyTrackers[oldAlertTrackerMap.at(alert1Id)],
+              newAnomalyTrackers[newAlertTrackerMap.at(alert1Id)]);
+
+    // Make sure replaced alerts are different.
+    EXPECT_NE(oldAnomalyTrackers[oldAlertTrackerMap.at(alert3Id)],
+              newAnomalyTrackers[newAlertTrackerMap.at(alert3Id)]);
+
+    // Verify the alerts have the correct anomaly trackers.
+    ASSERT_EQ(newMetricProducers.size(), 2);
+    // For durationMetric, make sure the duration trackers get the updated anomalyTrackers.
+    DurationMetricProducer* durationProducer =
+            static_cast<DurationMetricProducer*>(newMetricProducers[1].get());
+    EXPECT_THAT(
+            durationProducer->mAnomalyTrackers,
+            UnorderedElementsAre(newAnomalyTrackers[alert1Index], newAnomalyTrackers[alert3Index],
+                                 newAnomalyTrackers[alert4Index]));
+    ASSERT_EQ(durationProducer->mCurrentSlicedDurationTrackerMap.size(), 1);
+    for (const auto& durationTrackerIt : durationProducer->mCurrentSlicedDurationTrackerMap) {
+        EXPECT_EQ(durationTrackerIt.second->mAnomalyTrackers, durationProducer->mAnomalyTrackers);
+    }
+
+    // Verify alerts have the correct subscriptions. Use subscription id as proxy for equivalency.
+    vector<int64_t> alert1Subscriptions;
+    for (const Subscription& subscription : newAnomalyTrackers[alert1Index]->mSubscriptions) {
+        alert1Subscriptions.push_back(subscription.id());
+    }
+    EXPECT_THAT(alert1Subscriptions, UnorderedElementsAre(subscription1.id()));
+    EXPECT_THAT(newAnomalyTrackers[alert3Index]->mSubscriptions, IsEmpty());
+    EXPECT_THAT(newAnomalyTrackers[alert4Index]->mSubscriptions, IsEmpty());
+
+    EXPECT_EQ(invalidEntities.size(), 3);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{alert2.id(), INVALID_ENTITY_TYPE_ALERT}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_ALERT_THRESHOLD_MISSING);
+    ASSERT_TRUE(reason.alertId.has_value());
+    EXPECT_EQ(reason.alertId.value(), alert2.id());
+    reason =
+            invalidEntities[InvalidEntityKey{subscription2.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_SUBSCRIPTION_INVALID_ALERT_DEPENDENCY);
+    ASSERT_TRUE(reason.subscriptionId.has_value());
+    EXPECT_EQ(reason.subscriptionId.value(), subscription2.id());
+    ASSERT_TRUE(reason.alertId.has_value());
+    EXPECT_EQ(reason.alertId.value(), alert2.id());
+    reason =
+            invalidEntities[InvalidEntityKey{subscription4.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_SUBSCRIPTION_INVALID_ALERT_DEPENDENCY);
+    ASSERT_TRUE(reason.subscriptionId.has_value());
+    EXPECT_EQ(reason.subscriptionId.value(), subscription4.id());
+    ASSERT_TRUE(reason.alertId.has_value());
+    EXPECT_EQ(reason.alertId.value(), alert2.id());
+}
+
+TEST_F(ConfigUpdateTest, TestUpdateAlarmsHasInvalidAlarm) {
+    StatsdConfig config;
+    // Add alarms.
+    Alarm alarm1 = createAlarm("Alarm1", /*offset*/ 1 * MS_PER_SEC, /*period*/ 50 * MS_PER_SEC);
+    int64_t alarm1Id = alarm1.id();
+    *config.add_alarm() = alarm1;
+
+    Alarm alarm2 = createAlarm("Alarm2", /*offset*/ 1 * MS_PER_SEC, /*period*/ 2000 * MS_PER_SEC);
+    int64_t alarm2Id = alarm2.id();
+    *config.add_alarm() = alarm2;
+
+    Alarm alarm3 = createAlarm("Alarm3", /*offset*/ 10 * MS_PER_SEC, /*period*/ 5000 * MS_PER_SEC);
+    int64_t alarm3Id = alarm3.id();
+    *config.add_alarm() = alarm3;
+
+    // Add Subscriptions.
+    Subscription subscription1 = createSubscription("S1", Subscription::ALARM, alarm1Id);
+    *config.add_subscription() = subscription1;
+    Subscription subscription2 = createSubscription("S2", Subscription::ALARM, alarm1Id);
+    *config.add_subscription() = subscription2;
+    Subscription subscription3 = createSubscription("S3", Subscription::ALARM, alarm2Id);
+    *config.add_subscription() = subscription3;
+
+    EXPECT_TRUE(initConfig(config));
+
+    ASSERT_EQ(oldAlarmTrackers.size(), 3);
+    // Config is created at statsd start time, so just add the offsets.
+    EXPECT_EQ(oldAlarmTrackers[0]->getAlarmTimestampSec(), timeBaseNs / NS_PER_SEC + 1);
+    EXPECT_EQ(oldAlarmTrackers[1]->getAlarmTimestampSec(), timeBaseNs / NS_PER_SEC + 1);
+    EXPECT_EQ(oldAlarmTrackers[2]->getAlarmTimestampSec(), timeBaseNs / NS_PER_SEC + 10);
+
+    // Change alarm2/alarm3.
+    config.mutable_alarm(1)->set_offset_millis(-1);  // Make alarm2 invalid.
+    config.mutable_alarm(2)->set_period_millis(10000 * MS_PER_SEC);
+
+    // Move subscription2 to be on alarm2 to make it invalid.
+    config.mutable_subscription(1)->set_rule_id(alarm2Id);
+    Subscription subscription4 = createSubscription("S4", Subscription::ALARM, alarm1Id);
+    *config.add_subscription() = subscription4;
+
+    // Update time is 2 seconds after the base time.
+    int64_t currentTimeNs = timeBaseNs + 2 * NS_PER_SEC;
+    vector<sp<AlarmTracker>> newAlarmTrackers;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    EXPECT_FALSE(initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
+                            alarmTrackerMap, newAlarmTrackers, invalidEntities));
+    ASSERT_EQ(newAlarmTrackers.size(), 2);
+    // Config is updated 2 seconds after statsd start
+    // Alarm2 is invalid
+    EXPECT_EQ(newAlarmTrackers[0]->getAlarmTimestampSec(), timeBaseNs / NS_PER_SEC + 1 + 50);
+    EXPECT_EQ(newAlarmTrackers[1]->getAlarmTimestampSec(), timeBaseNs / NS_PER_SEC + 10);
+
+    // Verify alarms have the correct subscriptions. Use subscription id as proxy for equivalency.
+    vector<int64_t> alarm1Subscriptions;
+    for (const Subscription& subscription : newAlarmTrackers[0]->mSubscriptions) {
+        alarm1Subscriptions.push_back(subscription.id());
+    }
+    EXPECT_THAT(alarm1Subscriptions, UnorderedElementsAre(subscription1.id(), subscription4.id()));
+    EXPECT_THAT(newAlarmTrackers[1]->mSubscriptions, IsEmpty());
+
+    // Verify the alarm monitor is updated accordingly once the old alarms are removed.
+    // Alarm2 fires the earliest.
+    oldAlarmTrackers.clear();
+    EXPECT_EQ(periodicAlarmMonitor->getRegisteredAlarmTimeSec(), timeBaseNs / NS_PER_SEC + 10);
+
+    EXPECT_EQ(invalidEntities.size(), 3);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{alarm2.id(), INVALID_ENTITY_TYPE_ALARM}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_ALARM_OFFSET_LESS_THAN_OR_EQUAL_ZERO);
+    ASSERT_TRUE(reason.alarmId.has_value());
+    EXPECT_EQ(reason.alarmId.value(), alarm2.id());
+    reason =
+            invalidEntities[InvalidEntityKey{subscription2.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_SUBSCRIPTION_INVALID_ALARM_DEPENDENCY);
+    ASSERT_TRUE(reason.subscriptionId.has_value());
+    EXPECT_EQ(reason.subscriptionId.value(), subscription2.id());
+    ASSERT_TRUE(reason.alarmId.has_value());
+    EXPECT_EQ(reason.alarmId.value(), alarm2.id());
+    reason =
+            invalidEntities[InvalidEntityKey{subscription3.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_SUBSCRIPTION_INVALID_ALARM_DEPENDENCY);
+    ASSERT_TRUE(reason.subscriptionId.has_value());
+    EXPECT_EQ(reason.subscriptionId.value(), subscription3.id());
+    ASSERT_TRUE(reason.alarmId.has_value());
+    EXPECT_EQ(reason.alarmId.value(), alarm2.id());
 }
 
 TEST_P(ConfigUpdateDimLimitTest, TestDimLimit) {

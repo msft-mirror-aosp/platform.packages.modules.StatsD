@@ -241,13 +241,6 @@ sp<AnomalyTracker> DurationMetricProducer::addAnomalyTracker(
         const Alert& alert, const sp<AlarmMonitor>& anomalyAlarmMonitor,
         const UpdateStatus& updateStatus, const int64_t updateTimeNs) {
     std::lock_guard lock(mMutex);
-    if (mAggregationType == DurationMetric_AggregationType_SUM) {
-        if (alert.trigger_if_sum_gt() > alert.num_buckets() * mBucketSizeNs) {
-            ALOGW("invalid alert for SUM: threshold (%f) > possible recordable value (%d x %lld)",
-                  alert.trigger_if_sum_gt(), alert.num_buckets(), (long long)mBucketSizeNs);
-            return nullptr;
-        }
-    }
     sp<AnomalyTracker> anomalyTracker =
             new DurationAnomalyTracker(alert, mConfigKey, anomalyAlarmMonitor);
     // The update status is either new or replaced.

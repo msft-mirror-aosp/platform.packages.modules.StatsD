@@ -698,6 +698,7 @@ protected:
     FRIEND_TEST(ConfigUpdateTest, TestUpdateCountMetricsHasInvalidMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateGaugeMetricsHasInvalidMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateDurationMetricsHasInvalidMetrics);
+    FRIEND_TEST(ConfigUpdateTest, TestUpdateAlertsHasInvalidAlert);
 
     FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnDumpReport);
     FRIEND_TEST(EventMetricProducerTest, TestCorruptedDataReason_OnDropData);

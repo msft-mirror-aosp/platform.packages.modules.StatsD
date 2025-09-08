@@ -200,10 +200,12 @@ private:
     FRIEND_TEST(DurationMetricProducerTest_PartialBucket, TestMaxDurationWithSplitInNextBucket);
 
     FRIEND_TEST(MetricsManagerUtilTest, TestInitDurationMetricsHasInvalidMetrics);
+    FRIEND_TEST(MetricsManagerUtilTest, TestInitAlertsHasInvalidAlerts);
 
     FRIEND_TEST(ConfigUpdateTest, TestUpdateDurationMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateDurationMetricsHasInvalidMetrics);
     FRIEND_TEST(ConfigUpdateTest, TestUpdateAlerts);
+    FRIEND_TEST(ConfigUpdateTest, TestUpdateAlertsHasInvalidAlert);
 
     FRIEND_TEST(MetricsManagerUtilDimLimitTest, TestDimLimit);
 

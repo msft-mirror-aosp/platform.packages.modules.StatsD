@@ -1358,31 +1358,43 @@ optional<InvalidConfigReason> determineAlertUpdateStatus(
     return nullopt;
 }
 
-optional<InvalidConfigReason> updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
-                                           const unordered_map<int64_t, int>& metricProducerMap,
-                                           const set<int64_t>& replacedMetrics,
-                                           const unordered_map<int64_t, int>& oldAlertTrackerMap,
-                                           const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
-                                           const sp<AlarmMonitor>& anomalyAlarmMonitor,
-                                           vector<sp<MetricProducer>>& allMetricProducers,
-                                           unordered_map<int64_t, int>& newAlertTrackerMap,
-                                           vector<sp<AnomalyTracker>>& newAnomalyTrackers) {
+bool updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
+                  const unordered_map<int64_t, int>& metricProducerMap,
+                  const set<int64_t>& replacedMetrics,
+                  const unordered_map<int64_t, int>& oldAlertTrackerMap,
+                  const vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
+                  const sp<AlarmMonitor>& anomalyAlarmMonitor,
+                  vector<sp<MetricProducer>>& allMetricProducers,
+                  unordered_map<int64_t, int>& newAlertTrackerMap,
+                  vector<sp<AnomalyTracker>>& newAnomalyTrackers,
+                  unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities) {
     int alertCount = config.alert_size();
-    vector<UpdateStatus> alertUpdateStatuses(alertCount);
     optional<InvalidConfigReason> invalidConfigReason;
+    bool allAlertsValid = true;
+    unordered_map<int64_t, UpdateStatus> alertUpdateStatuses;
     for (int i = 0; i < alertCount; i++) {
-        invalidConfigReason =
-                determineAlertUpdateStatus(config.alert(i), oldAlertTrackerMap, oldAnomalyTrackers,
-                                           replacedMetrics, alertUpdateStatuses[i]);
+        invalidConfigReason = determineAlertUpdateStatus(config.alert(i), oldAlertTrackerMap,
+                                                         oldAnomalyTrackers, replacedMetrics,
+                                                         alertUpdateStatuses[config.alert(i).id()]);
         if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
+            invalidEntities[{config.alert(i).id(), INVALID_ENTITY_TYPE_ALERT}] =
+                    invalidConfigReason.value();
+            allAlertsValid = false;
+            continue;
         }
     }
 
     for (int i = 0; i < alertCount; i++) {
         const Alert& alert = config.alert(i);
-        newAlertTrackerMap[alert.id()] = newAnomalyTrackers.size();
-        switch (alertUpdateStatuses[i]) {
+        invalidConfigReason =
+                isNewAlertValid(alert, metricProducerMap, allMetricProducers, invalidEntities);
+        if (invalidConfigReason.has_value()) {
+            invalidEntities[{alert.id(), INVALID_ENTITY_TYPE_ALERT}] = invalidConfigReason.value();
+            allAlertsValid = false;
+            continue;
+        }
+        sp<AnomalyTracker> anomalyTracker;
+        switch (alertUpdateStatuses[alert.id()]) {
             case UPDATE_PRESERVE: {
                 // Find the alert and update it.
                 const auto& oldAnomalyTrackerIt = oldAlertTrackerMap.find(alert.id());
@@ -1390,50 +1402,47 @@ optional<InvalidConfigReason> updateAlerts(const StatsdConfig& config, const int
                     ALOGW("Could not find AnomalyTracker %lld in the previous config, but "
                           "expected it to be there",
                           (long long)alert.id());
-                    return createInvalidConfigReasonWithAlert(
-                            INVALID_CONFIG_REASON_ALERT_NOT_IN_PREV_CONFIG, alert.id());
+                    invalidEntities[{alert.id(), INVALID_ENTITY_TYPE_ALERT}] =
+                            createInvalidConfigReasonWithAlert(
+                                    INVALID_CONFIG_REASON_ALERT_NOT_IN_PREV_CONFIG, alert.id());
+                    continue;
                 }
-                sp<AnomalyTracker> anomalyTracker = oldAnomalyTrackers[oldAnomalyTrackerIt->second];
+                anomalyTracker = oldAnomalyTrackers[oldAnomalyTrackerIt->second];
                 anomalyTracker->onConfigUpdated();
                 // Add the alert to the relevant metric.
-                const auto& metricProducerIt = metricProducerMap.find(alert.metric_id());
-                if (metricProducerIt == metricProducerMap.end()) {
-                    ALOGW("alert \"%lld\" has unknown metric id: \"%lld\"", (long long)alert.id(),
-                          (long long)alert.metric_id());
-                    return createInvalidConfigReasonWithAlert(
-                            INVALID_CONFIG_REASON_ALERT_METRIC_NOT_FOUND, alert.metric_id(),
-                            alert.id());
-                }
-                allMetricProducers[metricProducerIt->second]->addAnomalyTracker(anomalyTracker,
-                                                                                currentTimeNs);
-                newAnomalyTrackers.push_back(anomalyTracker);
+                const auto& metricProducerIndex = metricProducerMap.at(alert.metric_id());
+                allMetricProducers[metricProducerIndex]->addAnomalyTracker(anomalyTracker,
+                                                                           currentTimeNs);
                 break;
             }
             case UPDATE_REPLACE:
             case UPDATE_NEW: {
-                optional<sp<AnomalyTracker>> anomalyTracker = createAnomalyTracker(
-                        alert, anomalyAlarmMonitor, alertUpdateStatuses[i], currentTimeNs,
-                        metricProducerMap, allMetricProducers, invalidConfigReason);
-                if (!anomalyTracker) {
-                    return invalidConfigReason;
-                }
-                newAnomalyTrackers.push_back(anomalyTracker.value());
+                anomalyTracker = createAnomalyTracker(
+                        alert, anomalyAlarmMonitor, alertUpdateStatuses[alert.id()], currentTimeNs,
+                        metricProducerMap, allMetricProducers);
                 break;
             }
             default: {
+                if (invalidEntities.contains({alert.id(), INVALID_ENTITY_TYPE_ALERT})) {
+                    // Invalid alerts may not have an update state.
+                    continue;
+                }
                 ALOGE("Alert \"%lld\" update state is unknown. This should never happen",
                       (long long)alert.id());
-                return createInvalidConfigReasonWithAlert(
-                        INVALID_CONFIG_REASON_ALERT_UPDATE_STATUS_UNKNOWN, alert.id());
+                invalidEntities[{alert.id(), INVALID_ENTITY_TYPE_ALERT}] =
+                        createInvalidConfigReasonWithAlert(
+                                INVALID_CONFIG_REASON_ALERT_UPDATE_STATUS_UNKNOWN, alert.id());
+                continue;
             }
         }
+        newAlertTrackerMap[alert.id()] = newAnomalyTrackers.size();
+        newAnomalyTrackers.push_back(anomalyTracker);
     }
-    invalidConfigReason = initSubscribersForSubscriptionType(
-            config, Subscription::ALERT, newAlertTrackerMap, newAnomalyTrackers);
-    if (invalidConfigReason.has_value()) {
-        return invalidConfigReason;
-    }
-    return nullopt;
+
+    allAlertsValid &= initSubscribersForSubscriptionType(
+            config, Subscription::ALERT, newAlertTrackerMap, newAnomalyTrackers, invalidEntities);
+
+    return allAlertsValid;
 }
 
 optional<InvalidConfigReason> updateStatsdConfig(
@@ -1525,21 +1534,24 @@ optional<InvalidConfigReason> updateStatsdConfig(
         return invalidEntities.begin()->second;
     }
 
-    invalidConfigReason = updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
+    bool allAlertsValid = updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
                                        oldAlertTrackerMap, oldAnomalyTrackers, anomalyAlarmMonitor,
-                                       newMetricProducers, newAlertTrackerMap, newAnomalyTrackers);
-    if (invalidConfigReason.has_value()) {
+                                       newMetricProducers, newAlertTrackerMap, newAnomalyTrackers,
+                                       invalidEntities);
+    if (!allAlertsValid) {
         ALOGE("updateAlerts failed");
-        return invalidConfigReason;
+        return invalidEntities.begin()->second;
     }
 
-    invalidConfigReason = initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
-                                     newPeriodicAlarmTrackers);
+    unordered_map<int64_t, int> newAlarmTrackerMap;
+    bool allAlarmsValid = initAlarms(config, key, periodicAlarmMonitor, timeBaseNs, currentTimeNs,
+                                     newAlarmTrackerMap, newPeriodicAlarmTrackers, invalidEntities);
     // Alarms do not have any state, so we can reuse the initialization logic.
-    if (invalidConfigReason.has_value()) {
+    if (!allAlarmsValid) {
         ALOGE("initAlarms failed");
-        return invalidConfigReason;
+        return invalidEntities.begin()->second;
     }
+
     return nullopt;
 }
 

@@ -45,6 +45,7 @@ using std::map;
 using std::nullopt;
 using std::optional;
 using std::set;
+using std::shared_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
@@ -335,7 +336,10 @@ void initConfigAndDependencies(
         unordered_map<int, vector<int>>& trackerToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation,
+        vector<int>& metricsWithActivation, unordered_map<int64_t, int>& alertTrackerMap,
+        vector<sp<AnomalyTracker>>& allAnomalyTrackers,
+        unordered_map<int64_t, int>& alarmTrackerMap,
+        vector<sp<AlarmTracker>>& allPeriodicAlarmTrackers,
         unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities) {
     unordered_map<int, vector<int>> tagIds;
     unordered_map<int64_t, int> newAtomMatchingTrackerMap;
@@ -391,6 +395,33 @@ void initConfigAndDependencies(
             conditionCache, newMetricProducers, conditionToMetricMap, trackerToMetricMap,
             newMetricProducerMap, noReportMetricIds, activationAtomTrackerToMetricMap,
             deactivationAtomTrackerToMetricMap, metricsWithActivation, provider, invalidEntities);
+    newInvalidEntityCount = invalidEntities.size();
+    if (newInvalidEntityCount == oldInvalidEntityCount) {
+        EXPECT_TRUE(isValid);
+    } else {
+        EXPECT_FALSE(isValid);
+    }
+
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    oldInvalidEntityCount = newInvalidEntityCount;
+    isValid = initAlerts(config, /*currentTimeNs=*/12345, newMetricProducerMap, alertTrackerMap,
+                         anomalyAlarmMonitor, newMetricProducers, allAnomalyTrackers,
+                         invalidEntities);
+    newInvalidEntityCount = invalidEntities.size();
+    if (newInvalidEntityCount == oldInvalidEntityCount) {
+        EXPECT_TRUE(isValid);
+    } else {
+        EXPECT_FALSE(isValid);
+    }
+
+    sp<AlarmMonitor> periodicAlarmMonitor = new AlarmMonitor(
+            /*minDiffToUpdateRegisteredAlarmTimeSec=*/0,
+            [](const shared_ptr<IStatsCompanionService>&, int64_t) {},
+            [](const shared_ptr<IStatsCompanionService>&) {});
+    oldInvalidEntityCount = newInvalidEntityCount;
+    isValid = initAlarms(config, key, periodicAlarmMonitor, /*timeBaseNs=*/123,
+                         /*currentTimeNs=*/12345, alarmTrackerMap, allPeriodicAlarmTrackers,
+                         invalidEntities);
     newInvalidEntityCount = invalidEntities.size();
     if (newInvalidEntityCount == oldInvalidEntityCount) {
         EXPECT_TRUE(isValid);
@@ -1565,7 +1596,7 @@ TEST_F(MetricsManagerUtilTest, TestCreateConditionTrackerCombination) {
     EXPECT_FALSE(tracker->IsSimpleCondition());
 }
 
-TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerInvalidMetric) {
+TEST_F(MetricsManagerUtilTest, TestIsNewAlertValidMissingMetric) {
     Alert alert;
     alert.set_id(123);
     alert.set_metric_id(1);
@@ -1574,17 +1605,16 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerInvalidMetric) {
 
     sp<AlarmMonitor> anomalyAlarmMonitor;
     vector<sp<MetricProducer>> metricProducers;
-    optional<InvalidConfigReason> invalidConfigReason;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
     // Pass in empty metric producers, causing an error.
-    EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123, {},
-                                   metricProducers, invalidConfigReason),
-              nullopt);
+    optional<InvalidConfigReason> invalidConfigReason =
+            isNewAlertValid(alert, {}, metricProducers, invalidEntities);
     EXPECT_EQ(invalidConfigReason,
               createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_METRIC_NOT_FOUND,
                                                  alert.metric_id(), alert.id()));
 }
 
-TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerNoThreshold) {
+TEST_F(MetricsManagerUtilTest, TestIsNewAlertValidNoThreshold) {
     int64_t metricId = 1;
     Alert alert;
     alert.set_id(123);
@@ -1600,16 +1630,15 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerNoThreshold) {
             {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
                                      0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
-    optional<InvalidConfigReason> invalidConfigReason;
-    EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
-                                   {{1, 0}}, metricProducers, invalidConfigReason),
-              nullopt);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+    optional<InvalidConfigReason> invalidConfigReason =
+            isNewAlertValid(alert, {{1, 0}}, metricProducers, invalidEntities);
     EXPECT_EQ(invalidConfigReason,
               createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_THRESHOLD_MISSING,
                                                  alert.id()));
 }
 
-TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerMissingBuckets) {
+TEST_F(MetricsManagerUtilTest, TestIsNewAlertValidMissingBuckets) {
     int64_t metricId = 1;
     Alert alert;
     alert.set_id(123);
@@ -1625,16 +1654,15 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerMissingBuckets) {
             {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
                                      0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
-    optional<InvalidConfigReason> invalidConfigReason;
-    EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
-                                   {{1, 0}}, metricProducers, invalidConfigReason),
-              nullopt);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+    optional<InvalidConfigReason> invalidConfigReason =
+            isNewAlertValid(alert, {{1, 0}}, metricProducers, invalidEntities);
     EXPECT_EQ(invalidConfigReason,
               createInvalidConfigReasonWithAlert(
                       INVALID_CONFIG_REASON_ALERT_INVALID_TRIGGER_OR_NUM_BUCKETS, alert.id()));
 }
 
-TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerGood) {
+TEST_F(MetricsManagerUtilTest, TestIsNewAlertValidInvalidMetric) {
     int64_t metricId = 1;
     Alert alert;
     alert.set_id(123);
@@ -1651,41 +1679,40 @@ TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerGood) {
             {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
                                      0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
-    optional<InvalidConfigReason> invalidConfigReason;
-    EXPECT_NE(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
-                                   {{1, 0}}, metricProducers, invalidConfigReason),
-              nullopt);
-    EXPECT_EQ(invalidConfigReason, nullopt);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+    invalidEntities[InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC}] =
+            createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_METRIC_MATCHER_NOT_FOUND,
+                                                 metricId, /*matcherId=*/0);
+    optional<InvalidConfigReason> invalidConfigReason =
+            isNewAlertValid(alert, {{1, 0}}, metricProducers, invalidEntities);
+    EXPECT_EQ(invalidConfigReason,
+              createInvalidConfigReasonWithAlert(
+                      INVALID_CONFIG_REASON_ALERT_INVALID_METRIC_DEPENDENCY, metricId, alert.id()));
 }
 
-TEST_F(MetricsManagerUtilTest, TestCreateAnomalyTrackerDurationTooLong) {
+TEST_F(MetricsManagerUtilTest, TestIsNewAlertValidAnomalyTrackerValid) {
     int64_t metricId = 1;
     Alert alert;
     alert.set_id(123);
     alert.set_metric_id(metricId);
-    // Impossible for alert to fire since the time is bigger than bucketSize * numBuckets
-    alert.set_trigger_if_sum_gt(MillisToNano(TimeUnitToBucketSizeInMillis(ONE_MINUTE)) + 1);
+    alert.set_trigger_if_sum_gt(1);
     alert.set_num_buckets(1);
 
-    DurationMetric metric;
+    CountMetric metric;
     metric.set_id(metricId);
     metric.set_bucket(ONE_MINUTE);
-    metric.set_aggregation_type(DurationMetric_AggregationType_SUM);
-    FieldMatcher dimensions;
     sp<MockConditionWizard> wizard = new NaggyMock<MockConditionWizard>();
     sp<MockConfigMetadataProvider> provider = makeMockConfigMetadataProvider(/*enabled=*/false);
-    vector<sp<MetricProducer>> metricProducers({new DurationMetricProducer(
-            kConfigKey, metric, -1 /*no condition*/, {}, -1 /* what index not needed*/,
-            1 /* start index */, 2 /* stop index */, 3 /* stop_all index */, false /*nesting*/,
-            wizard, 0x0123456789, dimensions, 0, 0, provider)});
+    vector<sp<MetricProducer>> metricProducers(
+            {new CountMetricProducer(kConfigKey, metric, 0, {ConditionState::kUnknown}, wizard,
+                                     0x0123456789, 0, 0, provider)});
     sp<AlarmMonitor> anomalyAlarmMonitor;
-    optional<InvalidConfigReason> invalidConfigReason;
-    EXPECT_EQ(createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123,
-                                   {{1, 0}}, metricProducers, invalidConfigReason),
-              nullopt);
-    EXPECT_EQ(invalidConfigReason,
-              createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_CANNOT_ADD_ANOMALY,
-                                                 alert.metric_id(), alert.id()));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+    optional<InvalidConfigReason> invalidConfigReason =
+            isNewAlertValid(alert, {{1, 0}}, metricProducers, invalidEntities);
+    createAnomalyTracker(alert, anomalyAlarmMonitor, UPDATE_NEW, /*updateTime=*/123, {{1, 0}},
+                         metricProducers);
+    EXPECT_EQ(invalidConfigReason, nullopt);
 }
 
 TEST_F(MetricsManagerUtilTest, TestCreateDurationProducerDimensionsInWhatInvalid) {
@@ -3129,6 +3156,11 @@ TEST_F(MetricsManagerUtilTest, TestInitCountMetricsHasInvalidMetrics) {
     int count3Index = 1;
     *config.add_count_metric() = count3;
 
+    unordered_map<int64_t, int> alertTrackerMap;
+    vector<sp<AnomalyTracker>> allAnomalyTrackers;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    vector<sp<AlarmTracker>> allPeriodicAlarmTrackers;
+
     // Output data structures to validate.
     unordered_map<int64_t, int> newMetricProducerMap;
     vector<sp<MetricProducer>> newMetricProducers;
@@ -3142,7 +3174,8 @@ TEST_F(MetricsManagerUtilTest, TestInitCountMetricsHasInvalidMetrics) {
     initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
                               conditionToMetricMap, trackerToMetricMap,
                               activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                              metricsWithActivation, invalidEntities);
+                              metricsWithActivation, alertTrackerMap, allAnomalyTrackers,
+                              alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
 
     unordered_map<int64_t, int> expectedMetricProducerMap = {{count1Id, count1Index},
                                                              {count3Id, count3Index}};
@@ -3252,6 +3285,11 @@ TEST_F(MetricsManagerUtilTest, TestInitGaugeMetricsHasInvalidMetrics) {
     int gauge5Index = 2;
     *config.add_gauge_metric() = gauge5;
 
+    unordered_map<int64_t, int> alertTrackerMap;
+    vector<sp<AnomalyTracker>> allAnomalyTrackers;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    vector<sp<AlarmTracker>> allPeriodicAlarmTrackers;
+
     // Output data structures to validate.
     unordered_map<int64_t, int> newMetricProducerMap;
     vector<sp<MetricProducer>> newMetricProducers;
@@ -3265,7 +3303,8 @@ TEST_F(MetricsManagerUtilTest, TestInitGaugeMetricsHasInvalidMetrics) {
     initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
                               conditionToMetricMap, trackerToMetricMap,
                               activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                              metricsWithActivation, invalidEntities);
+                              metricsWithActivation, alertTrackerMap, allAnomalyTrackers,
+                              alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
 
     unordered_map<int64_t, int> expectedMetricProducerMap = {
             {gauge2Id, gauge2Index},
@@ -3449,6 +3488,11 @@ TEST_F(MetricsManagerUtilTest, TestInitDurationMetricsHasInvalidMetrics) {
     int duration5Index = 2;
     *config.add_duration_metric() = duration5;
 
+    unordered_map<int64_t, int> alertTrackerMap;
+    vector<sp<AnomalyTracker>> allAnomalyTrackers;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    vector<sp<AlarmTracker>> allPeriodicAlarmTrackers;
+
     // Output data structures to validate.
     unordered_map<int64_t, int> newMetricProducerMap;
     vector<sp<MetricProducer>> newMetricProducers;
@@ -3462,7 +3506,8 @@ TEST_F(MetricsManagerUtilTest, TestInitDurationMetricsHasInvalidMetrics) {
     initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
                               conditionToMetricMap, trackerToMetricMap,
                               activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                              metricsWithActivation, invalidEntities);
+                              metricsWithActivation, alertTrackerMap, allAnomalyTrackers,
+                              alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
 
     unordered_map<int64_t, int> expectedMetricProducerMap = {{duration2Id, duration2Index},
                                                              {duration4Id, duration4Index},
@@ -3645,6 +3690,11 @@ TEST_F(MetricsManagerUtilTest, TestInitEventMetricsHasInvalidMetrics) {
     int event5Index = 2;
     *config.add_event_metric() = event5;
 
+    unordered_map<int64_t, int> alertTrackerMap;
+    vector<sp<AnomalyTracker>> allAnomalyTrackers;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    vector<sp<AlarmTracker>> allPeriodicAlarmTrackers;
+
     // Output data structures to validate.
     unordered_map<int64_t, int> newMetricProducerMap;
     vector<sp<MetricProducer>> newMetricProducers;
@@ -3658,7 +3708,8 @@ TEST_F(MetricsManagerUtilTest, TestInitEventMetricsHasInvalidMetrics) {
     initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
                               conditionToMetricMap, trackerToMetricMap,
                               activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                              metricsWithActivation, invalidEntities);
+                              metricsWithActivation, alertTrackerMap, allAnomalyTrackers,
+                              alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
 
     unordered_map<int64_t, int> expectedMetricProducerMap = {
             {event2Id, event2Index},
@@ -3804,6 +3855,11 @@ TEST_F(MetricsManagerUtilTest, TestInitValueMetricsHasInvalidMetrics) {
     int value5Index = 2;
     *config.add_value_metric() = value5;
 
+    unordered_map<int64_t, int> alertTrackerMap;
+    vector<sp<AnomalyTracker>> allAnomalyTrackers;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    vector<sp<AlarmTracker>> allPeriodicAlarmTrackers;
+
     // Output data structures to validate.
     unordered_map<int64_t, int> newMetricProducerMap;
     vector<sp<MetricProducer>> newMetricProducers;
@@ -3817,7 +3873,8 @@ TEST_F(MetricsManagerUtilTest, TestInitValueMetricsHasInvalidMetrics) {
     initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
                               conditionToMetricMap, trackerToMetricMap,
                               activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                              metricsWithActivation, invalidEntities);
+                              metricsWithActivation, alertTrackerMap, allAnomalyTrackers,
+                              alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
 
     unordered_map<int64_t, int> expectedMetricProducerMap = {
             {value2Id, value2Index},
@@ -3950,6 +4007,11 @@ TEST_F(MetricsManagerUtilTest, TestInitKllMetricsHasInvalidMetrics) {
     int kll5Index = 2;
     *config.add_kll_metric() = kll5;
 
+    unordered_map<int64_t, int> alertTrackerMap;
+    vector<sp<AnomalyTracker>> allAnomalyTrackers;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    vector<sp<AlarmTracker>> allPeriodicAlarmTrackers;
+
     // Output data structures to validate.
     unordered_map<int64_t, int> newMetricProducerMap;
     vector<sp<MetricProducer>> newMetricProducers;
@@ -3963,7 +4025,8 @@ TEST_F(MetricsManagerUtilTest, TestInitKllMetricsHasInvalidMetrics) {
     initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
                               conditionToMetricMap, trackerToMetricMap,
                               activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                              metricsWithActivation, invalidEntities);
+                              metricsWithActivation, alertTrackerMap, allAnomalyTrackers,
+                              alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
 
     unordered_map<int64_t, int> expectedMetricProducerMap = {
             {kll3Id, kll3Index},
@@ -4026,6 +4089,186 @@ TEST_F(MetricsManagerUtilTest, TestInitKllMetricsHasInvalidMetrics) {
     EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_KLL_METRIC_MISSING_KLL_FIELD);
     ASSERT_TRUE(reason.metricId.has_value());
     EXPECT_EQ(reason.metricId.value(), kll2.id());
+}
+
+TEST_F(MetricsManagerUtilTest, TestInitAlertsHasInvalidAlerts) {
+    StatsdConfig config;
+    // Add atom matchers/predicates/metrics. These are mostly needed for initStatsdConfig
+    *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
+    *config.add_atom_matcher() = CreateScreenTurnedOffAtomMatcher();
+    *config.add_predicate() = CreateScreenIsOnPredicate();
+
+    CountMetric countMetric = createCountMetric("COUNT1", config.atom_matcher(0).id(), nullopt, {});
+    int64_t countMetricId = countMetric.id();
+    *config.add_count_metric() = countMetric;
+
+    DurationMetric durationMetric =
+            createDurationMetric("DURATION1", config.predicate(0).id(), nullopt, {});
+    int64_t durationMetricId = durationMetric.id();
+    *config.add_duration_metric() = durationMetric;
+
+    // Add alerts.
+    Alert alert1 = createAlert("Alert1", durationMetricId, /*buckets*/ 1, /*triggerSum*/ 5000);
+    int64_t alert1Id = alert1.id();
+    *config.add_alert() = alert1;
+
+    // Invalid due to missing metric Id
+    Alert alert2 = createAlert("Alert2", /*metricId=*/0, /*buckets*/ 1, /*triggerSum*/ 2);
+    int64_t alert2Id = alert2.id();
+    *config.add_alert() = alert2;
+
+    Alert alert3 = createAlert("Alert3", durationMetricId, /*buckets*/ 3, /*triggerSum*/ 5000);
+    int64_t alert3Id = alert3.id();
+    *config.add_alert() = alert3;
+
+    // Add Subscriptions.
+    Subscription subscription1 = createSubscription("S1", Subscription::ALERT, alert1Id);
+    *config.add_subscription() = subscription1;
+    Subscription subscription2 = createSubscription("S2", Subscription::ALERT, alert1Id);
+    *config.add_subscription() = subscription2;
+    Subscription subscription3 = createSubscription("S3", Subscription::ALERT, alert2Id);
+    *config.add_subscription() = subscription3;
+
+    // Output data structures to validate.
+    unordered_map<int64_t, int> alertTrackerMap;
+    vector<sp<AnomalyTracker>> allAnomalyTrackers;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    vector<sp<AlarmTracker>> allPeriodicAlarmTrackers;
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+
+    initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
+                              conditionToMetricMap, trackerToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation, alertTrackerMap, allAnomalyTrackers,
+                              alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
+
+    int alert1Index = 0;
+    int alert3Index = 1;
+    unordered_map<int64_t, int> expectedAlertMap = {
+            {alert1Id, alert1Index},
+            {alert3Id, alert3Index},
+    };
+    EXPECT_THAT(alertTrackerMap, ContainerEq(expectedAlertMap));
+    ASSERT_EQ(allAnomalyTrackers.size(), 2);
+
+    // Verify metrics have the correct alerts added.
+    ASSERT_EQ(newMetricProducers.size(), 2);
+    DurationMetricProducer* durationProducer =
+            static_cast<DurationMetricProducer*>(newMetricProducers[1].get());
+    EXPECT_THAT(
+            durationProducer->mAnomalyTrackers,
+            UnorderedElementsAre(allAnomalyTrackers[alert1Index], allAnomalyTrackers[alert3Index]));
+    for (const auto& durationTrackerIt : durationProducer->mCurrentSlicedDurationTrackerMap) {
+        EXPECT_EQ(durationTrackerIt.second->mAnomalyTrackers, durationProducer->mAnomalyTrackers);
+    }
+
+    // Verify alerts have the correct subscriptions. Use subscription id as proxy for equivalency.
+    vector<int64_t> alert1Subscriptions;
+    for (const Subscription& subscription : allAnomalyTrackers[alert1Index]->mSubscriptions) {
+        alert1Subscriptions.push_back(subscription.id());
+    }
+    EXPECT_THAT(alert1Subscriptions, UnorderedElementsAre(subscription1.id(), subscription2.id()));
+    EXPECT_THAT(allAnomalyTrackers[alert3Index]->mSubscriptions, IsEmpty());
+
+    EXPECT_EQ(invalidEntities.size(), 2);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{alert2.id(), INVALID_ENTITY_TYPE_ALERT}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_ALERT_METRIC_NOT_FOUND);
+    ASSERT_TRUE(reason.alertId.has_value());
+    EXPECT_EQ(reason.alertId.value(), alert2.id());
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), 0);
+    reason =
+            invalidEntities[InvalidEntityKey{subscription3.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_SUBSCRIPTION_INVALID_ALERT_DEPENDENCY);
+    ASSERT_TRUE(reason.alertId.has_value());
+    EXPECT_EQ(reason.alertId.value(), alert2.id());
+    ASSERT_TRUE(reason.subscriptionId.has_value());
+    EXPECT_EQ(reason.subscriptionId.value(), subscription3.id());
+}
+
+TEST_F(MetricsManagerUtilTest, TestInitAlarmsHasInvalidAlarms) {
+    StatsdConfig config;
+    // Add alarms.
+    Alarm alarm1 = createAlarm("Alarm1", /*offset*/ 1 * MS_PER_SEC, /*period*/ 50 * MS_PER_SEC);
+    int64_t alarm1Id = alarm1.id();
+    *config.add_alarm() = alarm1;
+
+    // Invalid due to negative period
+    Alarm alarm2 = createAlarm("Alarm2", /*offset*/ 1 * MS_PER_SEC, /*period*/ -2000 * MS_PER_SEC);
+    int64_t alarm2Id = alarm2.id();
+    *config.add_alarm() = alarm2;
+
+    Alarm alarm3 = createAlarm("Alarm3", /*offset*/ 10 * MS_PER_SEC, /*period*/ 5000 * MS_PER_SEC);
+    int64_t alarm3Id = alarm3.id();
+    *config.add_alarm() = alarm3;
+
+    // Add Subscriptions.
+    Subscription subscription1 = createSubscription("S1", Subscription::ALARM, alarm1Id);
+    *config.add_subscription() = subscription1;
+    Subscription subscription2 = createSubscription("S2", Subscription::ALARM, alarm1Id);
+    *config.add_subscription() = subscription2;
+    Subscription subscription3 = createSubscription("S3", Subscription::ALARM, alarm2Id);
+    *config.add_subscription() = subscription3;
+
+    // Output data structures to validate.
+    unordered_map<int64_t, int> alertTrackerMap;
+    vector<sp<AnomalyTracker>> allAnomalyTrackers;
+    unordered_map<int64_t, int> alarmTrackerMap;
+    vector<sp<AlarmTracker>> allPeriodicAlarmTrackers;
+    unordered_map<int64_t, int> newMetricProducerMap;
+    vector<sp<MetricProducer>> newMetricProducers;
+    unordered_map<int, vector<int>> conditionToMetricMap;
+    unordered_map<int, vector<int>> trackerToMetricMap;
+    unordered_map<int, vector<int>> activationAtomTrackerToMetricMap;
+    unordered_map<int, vector<int>> deactivationAtomTrackerToMetricMap;
+    vector<int> metricsWithActivation;
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
+
+    initConfigAndDependencies(config, newMetricProducerMap, newMetricProducers,
+                              conditionToMetricMap, trackerToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation, alertTrackerMap, allAnomalyTrackers,
+                              alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
+
+    int alarm1Index = 0;
+    int alarm3Index = 1;
+    unordered_map<int64_t, int> expectedAlarmMap = {
+            {alarm1Id, alarm1Index},
+            {alarm3Id, alarm3Index},
+    };
+    EXPECT_THAT(alarmTrackerMap, ContainerEq(expectedAlarmMap));
+    ASSERT_EQ(allPeriodicAlarmTrackers.size(), 2);
+
+    // Verify alarms have the correct subscriptions. Use subscription id as proxy for equivalency.
+    vector<int64_t> alarm1Subscriptions;
+    for (const Subscription& subscription : allPeriodicAlarmTrackers[alarm1Index]->mSubscriptions) {
+        alarm1Subscriptions.push_back(subscription.id());
+    }
+
+    EXPECT_THAT(alarm1Subscriptions, UnorderedElementsAre(subscription1.id(), subscription2.id()));
+    EXPECT_THAT(allPeriodicAlarmTrackers[alarm3Index]->mSubscriptions, IsEmpty());
+
+    EXPECT_EQ(invalidEntities.size(), 2);
+    InvalidConfigReason reason =
+            invalidEntities[InvalidEntityKey{alarm2.id(), INVALID_ENTITY_TYPE_ALARM}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_ALARM_PERIOD_LESS_THAN_OR_EQUAL_ZERO);
+    ASSERT_TRUE(reason.alarmId.has_value());
+    EXPECT_EQ(reason.alarmId.value(), alarm2.id());
+    reason =
+            invalidEntities[InvalidEntityKey{subscription3.id(), INVALID_ENTITY_TYPE_SUBSCRIPTION}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_SUBSCRIPTION_INVALID_ALARM_DEPENDENCY);
+    ASSERT_TRUE(reason.alarmId.has_value());
+    EXPECT_EQ(reason.alarmId.value(), alarm2.id());
+    ASSERT_TRUE(reason.subscriptionId.has_value());
+    EXPECT_EQ(reason.subscriptionId.value(), subscription3.id());
 }
 
 }  // namespace statsd
