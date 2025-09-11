@@ -258,7 +258,7 @@ bool updateAlerts(const StatsdConfig& config, int64_t currentTimeNs,
 
 // Updates the existing MetricsManager from a new StatsdConfig.
 // Parameters are the members of MetricsManager. See MetricsManager for declaration.
-std::optional<InvalidConfigReason> updateStatsdConfig(
+std::unordered_map<InvalidEntityKey, InvalidConfigReason> updateStatsdConfig(
         const ConfigKey& key, const StatsdConfig& config, const sp<UidMap>& uidMap,
         const sp<StatsPullerManager>& pullerManager, const sp<AlarmMonitor>& anomalyAlarmMonitor,
         const sp<AlarmMonitor>& periodicAlarmMonitor, int64_t timeBaseNs,

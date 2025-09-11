@@ -213,7 +213,7 @@ private:
     int64_t mLastReportTimeNs;
     int64_t mLastReportWallClockNs;
 
-    std::optional<InvalidConfigReason> mInvalidConfigReason;
+    std::unordered_map<InvalidEntityKey, InvalidConfigReason> mInvalidEntities;
 
     sp<StatsPullerManager> mPullerManager;
 
@@ -441,10 +441,13 @@ private:
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
     FRIEND_TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
+    FRIEND_TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker);
+    FRIEND_TEST(MetricsManagerTest, TestInvalidEntitiesClearedOnConfigUpdate);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);
     FRIEND_TEST(MetricsManagerUtilTest, TestSampledMetrics);
     FRIEND_TEST(MetricsManagerUtilTest, TestUidFields);
+    FRIEND_TEST(MetricsManagerUtilTest, TestCreateDurationProducerDimensionsInWhatInvalid);
 
     FRIEND_TEST(StatsLogProcessorTest, TestActiveConfigMetricDiskWriteRead);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationOnBoot);
@@ -470,6 +473,7 @@ private:
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStateMapped);
     FRIEND_TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset);
     FRIEND_TEST(DurationMetricE2eTest, TestUploadThreshold);
+    FRIEND_TEST(DurationMetricE2eTest, TestSlicedStatePrimaryFieldsNotSubsetDimInWhat);
 
     FRIEND_TEST(EventMetricE2eTest, TestSlicedState);
 
@@ -482,6 +486,11 @@ private:
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes);
     FRIEND_TEST(ValueMetricE2eTest, TestInitWithDefaultAggType);
+    FRIEND_TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL);
+
+    FRIEND_TEST(KllMetricE2eTest, TestInitWithKllFieldPositionALL);
+
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate);
 
     FRIEND_TEST(DataCorruptionQueueOverflowTest, TestNotifyOnlyInterestedMetrics);
     FRIEND_TEST(DataCorruptionQueueOverflowTest, TestNotifyInterestedMetricsWithNewLoss);

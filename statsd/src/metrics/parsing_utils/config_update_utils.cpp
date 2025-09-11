@@ -1445,7 +1445,7 @@ bool updateAlerts(const StatsdConfig& config, const int64_t currentTimeNs,
     return allAlertsValid;
 }
 
-optional<InvalidConfigReason> updateStatsdConfig(
+unordered_map<InvalidEntityKey, InvalidConfigReason> updateStatsdConfig(
         const ConfigKey& key, const StatsdConfig& config, const sp<UidMap>& uidMap,
         const sp<StatsPullerManager>& pullerManager, const sp<AlarmMonitor>& anomalyAlarmMonitor,
         const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
@@ -1484,12 +1484,13 @@ optional<InvalidConfigReason> updateStatsdConfig(
     unordered_map<int64_t, int> stateAtomIdMap;
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
     unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
-    optional<InvalidConfigReason> invalidConfigReason;
 
     if (config.package_certificate_hash_size_bytes() > UINT8_MAX) {
         ALOGE("Invalid value for package_certificate_hash_size_bytes: %d",
               config.package_certificate_hash_size_bytes());
-        return InvalidConfigReason(INVALID_CONFIG_REASON_PACKAGE_CERT_HASH_SIZE_TOO_LARGE);
+        invalidEntities[{key.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
+                InvalidConfigReason(INVALID_CONFIG_REASON_PACKAGE_CERT_HASH_SIZE_TOO_LARGE);
+        return invalidEntities;
     }
 
     bool allTrackersValid = updateAtomMatchingTrackers(
@@ -1498,7 +1499,6 @@ optional<InvalidConfigReason> updateStatsdConfig(
             replacedMatchers, invalidEntities);
     if (!allTrackersValid) {
         ALOGE("updateAtomMatchingTrackers failed");
-        return invalidEntities.begin()->second;
     }
 
     unordered_map<int64_t, ConditionProtoAndTracker> allConditionsMap;
@@ -1509,7 +1509,6 @@ optional<InvalidConfigReason> updateStatsdConfig(
                              replacedConditions, allConditionsMap, invalidEntities);
     if (!allConditionsValid) {
         ALOGE("updateConditions failed");
-        return invalidEntities.begin()->second;
     }
 
     bool allStatesValid =
@@ -1517,7 +1516,6 @@ optional<InvalidConfigReason> updateStatsdConfig(
                          newStateProtoHashes, replacedStates, invalidEntities);
     if (!allStatesValid) {
         ALOGE("updateStates failed");
-        return invalidEntities.begin()->second;
     }
 
     bool allMetricsValid = updateMetrics(
@@ -1531,7 +1529,6 @@ optional<InvalidConfigReason> updateStatsdConfig(
             replacedMetrics, invalidEntities);
     if (!allMetricsValid) {
         ALOGE("updateMetrics failed");
-        return invalidEntities.begin()->second;
     }
 
     bool allAlertsValid = updateAlerts(config, currentTimeNs, newMetricProducerMap, replacedMetrics,
@@ -1540,7 +1537,6 @@ optional<InvalidConfigReason> updateStatsdConfig(
                                        invalidEntities);
     if (!allAlertsValid) {
         ALOGE("updateAlerts failed");
-        return invalidEntities.begin()->second;
     }
 
     unordered_map<int64_t, int> newAlarmTrackerMap;
@@ -1549,10 +1545,9 @@ optional<InvalidConfigReason> updateStatsdConfig(
     // Alarms do not have any state, so we can reuse the initialization logic.
     if (!allAlarmsValid) {
         ALOGE("initAlarms failed");
-        return invalidEntities.begin()->second;
     }
 
-    return nullopt;
+    return invalidEntities;
 }
 
 }  // namespace statsd

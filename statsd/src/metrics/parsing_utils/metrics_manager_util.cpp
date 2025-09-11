@@ -2265,7 +2265,7 @@ bool initAlarms(const StatsdConfig& config, const ConfigKey& key,
     return allAlarmsValid;
 }
 
-optional<InvalidConfigReason> initStatsdConfig(
+unordered_map<InvalidEntityKey, InvalidConfigReason> initStatsdConfig(
         const ConfigKey& key, const StatsdConfig& config, const sp<UidMap>& uidMap,
         const sp<StatsPullerManager>& pullerManager, const sp<AlarmMonitor>& anomalyAlarmMonitor,
         const sp<AlarmMonitor>& periodicAlarmMonitor, const int64_t timeBaseNs,
@@ -2290,11 +2290,12 @@ optional<InvalidConfigReason> initStatsdConfig(
     unordered_map<int64_t, int> stateAtomIdMap;
     unordered_map<int64_t, unordered_map<int, int64_t>> allStateGroupMaps;
     unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
-
     if (config.package_certificate_hash_size_bytes() > UINT8_MAX) {
         ALOGE("Invalid value for package_certificate_hash_size_bytes: %d",
               config.package_certificate_hash_size_bytes());
-        return InvalidConfigReason(INVALID_CONFIG_REASON_PACKAGE_CERT_HASH_SIZE_TOO_LARGE);
+        invalidEntities[{key.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
+                InvalidConfigReason(INVALID_CONFIG_REASON_PACKAGE_CERT_HASH_SIZE_TOO_LARGE);
+        return invalidEntities;
     }
 
     bool allMatchersValid = initAtomMatchingTrackers(config, uidMap, atomMatchingTrackerMap,
@@ -2302,7 +2303,6 @@ optional<InvalidConfigReason> initStatsdConfig(
                                                      allTagIdsToMatchersMap, invalidEntities);
     if (!allMatchersValid) {
         ALOGE("initAtomMatchingTrackers has invalid matchers");
-        return invalidEntities.begin()->second;
     }
     VLOG("initAtomMatchingTrackers succeed...");
 
@@ -2313,14 +2313,12 @@ optional<InvalidConfigReason> initStatsdConfig(
             trackerToConditionMap, initialConditionCache, allConditionsMap, invalidEntities);
     if (!allConditionsValid) {
         ALOGE("initConditionTrackers failed");
-        return invalidEntities.begin()->second;
     }
 
     bool allStatesValid = initStates(config, stateAtomIdMap, allStateGroupMaps, stateProtoHashes,
                                      invalidEntities);
     if (!allStatesValid) {
         ALOGE("initStates failed");
-        return invalidEntities.begin()->second;
     }
 
     bool allMetricsValid = initMetrics(
@@ -2332,7 +2330,6 @@ optional<InvalidConfigReason> initStatsdConfig(
             metricsWithActivation, configMetadataProvider, invalidEntities);
     if (!allMetricsValid) {
         ALOGE("initMetricProducers failed");
-        return invalidEntities.begin()->second;
     }
 
     bool allAlertsValid = initAlerts(config, currentTimeNs, metricProducerMap, alertTrackerMap,
@@ -2340,7 +2337,6 @@ optional<InvalidConfigReason> initStatsdConfig(
                                      invalidEntities);
     if (!allAlertsValid) {
         ALOGE("initAlerts failed");
-        return invalidEntities.begin()->second;
     }
 
     unordered_map<int64_t, int> alarmTrackerMap;
@@ -2348,10 +2344,9 @@ optional<InvalidConfigReason> initStatsdConfig(
                                      alarmTrackerMap, allPeriodicAlarmTrackers, invalidEntities);
     if (!allAlarmsValid) {
         ALOGE("initAlarms failed");
-        return invalidEntities.begin()->second;
     }
 
-    return nullopt;
+    return invalidEntities;
 }
 
 }  // namespace statsd

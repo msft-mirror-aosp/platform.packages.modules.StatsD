@@ -14,6 +14,7 @@
 
 #include "src/metrics/parsing_utils/metrics_manager_util.h"
 
+#include <com_android_os_statsd_flags.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <private/android_filesystem_config.h>
@@ -49,6 +50,8 @@ using std::shared_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+
+namespace flags = com::android::os::statsd::flags;
 
 #ifdef __ANDROID__
 
@@ -452,8 +455,7 @@ INSTANTIATE_TEST_SUITE_P(DimLimit, MetricsManagerUtilDimLimitTest, ValuesIn(dimL
 }  // anonymous namespace
 
 TEST_F(MetricsManagerUtilTest, TestInitialConditions) {
-    // initConfig returns nullopt if config is valid
-    EXPECT_EQ(initConfig(buildConfigWithDifferentPredicates()), nullopt);
+    EXPECT_TRUE(initConfig(buildConfigWithDifferentPredicates()).empty());
     ASSERT_EQ(4u, allMetricProducers.size());
     ASSERT_EQ(5u, allConditionTrackers.size());
 
@@ -481,8 +483,8 @@ TEST_F(MetricsManagerUtilTest, TestInitialConditions) {
 
 TEST_F(MetricsManagerUtilTest, TestGoodConfig) {
     StatsdConfig config = buildGoodConfig(kConfigId, kAlertId);
-    // initConfig returns nullopt if config is valid
-    EXPECT_EQ(initConfig(config), nullopt);
+    config.add_no_report_metric(config.count_metric(0).id());
+    EXPECT_TRUE(initConfig(config).empty());
     ASSERT_EQ(5u, allMetricProducers.size());
     EXPECT_THAT(metricProducerMap, UnorderedElementsAre(Key(config.count_metric(0).id()),
                                                         Key(config.duration_metric(0).id()),
@@ -497,7 +499,9 @@ TEST_F(MetricsManagerUtilTest, TestGoodConfig) {
 }
 
 TEST_F(MetricsManagerUtilTest, TestDimensionMetricsWithMultiTags) {
-    EXPECT_EQ(initConfig(buildDimensionMetricsWithMultiTags()),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities =
+            initConfig(buildDimensionMetricsWithMultiTags());
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{/*metric id =*/3, INVALID_ENTITY_TYPE_METRIC})],
               createInvalidConfigReasonWithMatcher(
                       INVALID_CONFIG_REASON_METRIC_MATCHER_MORE_THAN_ONE_ATOM, /*metric id=*/3,
                       StringToId("BATTERY_LOW")));
@@ -508,7 +512,12 @@ TEST_F(MetricsManagerUtilTest, TestCircleLogMatcherDependency) {
             createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_MATCHER_CYCLE,
                                                  StringToId("SCREEN_ON_OR_OFF"));
 
-    EXPECT_EQ(initConfig(buildCircleMatchers()), expectedInvalidConfigReason);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities =
+            initConfig(buildCircleMatchers());
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("SCREEN_ON_OR_OFF"),
+                                                INVALID_ENTITY_TYPE_MATCHER})],
+              expectedInvalidConfigReason);
 }
 
 TEST_F(MetricsManagerUtilTest, TestMissingMatchers) {
@@ -517,14 +526,24 @@ TEST_F(MetricsManagerUtilTest, TestMissingMatchers) {
                                                  StringToId("SCREEN_ON_OR_OFF"));
     expectedInvalidConfigReason->matcherIds.push_back(StringToId("ABC"));
 
-    EXPECT_EQ(initConfig(buildMissingMatchers()), expectedInvalidConfigReason);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities =
+            initConfig(buildMissingMatchers());
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("SCREEN_ON_OR_OFF"),
+                                                INVALID_ENTITY_TYPE_MATCHER})],
+              expectedInvalidConfigReason);
 }
 
 TEST_F(MetricsManagerUtilTest, TestMissingPredicate) {
-    EXPECT_EQ(
-            initConfig(buildMissingPredicate()),
+    optional<InvalidConfigReason> expectedInvalidConfigReason =
             createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_METRIC_CONDITION_NOT_FOUND,
-                                                   /*metric id=*/3, StringToId("SOME_CONDITION")));
+                                                   /*metric id=*/3, StringToId("SOME_CONDITION"));
+
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities =
+            initConfig(buildMissingPredicate());
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{/*metric id=*/3, INVALID_ENTITY_TYPE_METRIC})],
+              expectedInvalidConfigReason);
 }
 
 TEST_F(MetricsManagerUtilTest, TestCirclePredicateDependency) {
@@ -532,13 +551,24 @@ TEST_F(MetricsManagerUtilTest, TestCirclePredicateDependency) {
             createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_CONDITION_CYCLE,
                                                    StringToId("SCREEN_IS_EITHER_ON_OFF"));
 
-    EXPECT_EQ(initConfig(buildCirclePredicates()), expectedInvalidConfigReason);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities =
+            initConfig(buildCirclePredicates());
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("SCREEN_IS_EITHER_ON_OFF"),
+                                                INVALID_ENTITY_TYPE_PREDICATE})],
+              expectedInvalidConfigReason);
 }
 
 TEST_F(MetricsManagerUtilTest, TestAlertWithUnknownMetric) {
-    EXPECT_EQ(initConfig(buildAlertWithUnknownMetric()),
-              createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_METRIC_NOT_FOUND,
-                                                 /*metric id=*/2, /*matcher id=*/3));
+    optional<InvalidConfigReason> expectedInvalidConfigReason =
+            createInvalidConfigReasonWithAlert(INVALID_CONFIG_REASON_ALERT_METRIC_NOT_FOUND,
+                                               /*metric id=*/2, /*matcher id=*/3);
+
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities =
+            initConfig(buildAlertWithUnknownMetric());
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{/*alert id=*/3, INVALID_ENTITY_TYPE_ALERT})],
+              expectedInvalidConfigReason);
 }
 
 TEST_F(MetricsManagerUtilTest, TestMetricWithMultipleActivations) {
@@ -551,7 +581,9 @@ TEST_F(MetricsManagerUtilTest, TestMetricWithMultipleActivations) {
     metric_activation2->set_metric_id(metricId);
     metric_activation2->set_activation_type(ACTIVATE_IMMEDIATELY);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_HAS_MULTIPLE_ACTIVATIONS, metricId));
 }
 
@@ -561,7 +593,9 @@ TEST_F(MetricsManagerUtilTest, TestCountMetricMissingIdOrWhat) {
     CountMetric* metric = config.add_count_metric();
     metric->set_id(metricId);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metricId));
 }
 
@@ -575,7 +609,9 @@ TEST_F(MetricsManagerUtilTest, TestCountMetricConditionlinkNoCondition) {
     auto link = metric->add_links();
     link->set_condition(1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
                                   StringToId("Count")));
 }
@@ -586,7 +622,9 @@ TEST_F(MetricsManagerUtilTest, TestDurationMetricMissingIdOrWhat) {
     DurationMetric* metric = config.add_duration_metric();
     metric->set_id(metricId);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metricId));
 }
 
@@ -602,7 +640,9 @@ TEST_F(MetricsManagerUtilTest, TestDurationMetricConditionlinkNoCondition) {
     auto link = metric->add_links();
     link->set_condition(1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
                                   StringToId("Duration")));
 }
@@ -613,7 +653,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricMissingIdOrWhat) {
     GaugeMetric* metric = config.add_gauge_metric();
     metric->set_id(metricId);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metricId));
 }
 
@@ -628,7 +670,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricConditionlinkNoCondition) {
     auto link = metric->add_links();
     link->set_condition(1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
                                   StringToId("Gauge")));
 }
@@ -639,7 +683,9 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricMissingIdOrWhat) {
     EventMetric* metric = config.add_event_metric();
     metric->set_id(metricId);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metricId));
 }
 
@@ -653,7 +699,9 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricConditionlinkNoCondition) {
     auto link = metric->add_links();
     link->set_condition(1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
                                   StringToId("Event")));
 }
@@ -666,7 +714,9 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentage) {
     metric->set_sampling_percentage(101);
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
                                   StringToId("Event")));
 }
@@ -679,7 +729,9 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricInvalidSamplingPercentageZero) {
     metric->set_sampling_percentage(0);
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
                                   StringToId("Event")));
 }
@@ -692,7 +744,7 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricValidSamplingPercentage) {
     metric->set_sampling_percentage(50);
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestEventMetricIncorrectFieldFilter) {
@@ -703,7 +755,9 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricIncorrectFieldFilter) {
     metric->set_what(1);
     metric->mutable_fields_filter()->mutable_fields();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
 }
 
@@ -715,7 +769,9 @@ TEST_F(MetricsManagerUtilTest, TestEventMetricIncorrectFieldFilterOmitNoLeafValu
     metric->set_what(1);
     metric->mutable_fields_filter()->mutable_omit_fields();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
 }
 
@@ -728,7 +784,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidSamplingPercentage) {
     metric->set_sampling_percentage(101);
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
                                   StringToId("Gauge")));
 }
@@ -742,7 +800,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidSamplingPercentageZero) {
     metric->set_sampling_percentage(0);
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
                                   StringToId("Gauge")));
 }
@@ -756,7 +816,7 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricValidSamplingPercentage) {
     metric->set_sampling_percentage(50);
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestPulledGaugeMetricWithSamplingPercentage) {
@@ -769,7 +829,9 @@ TEST_F(MetricsManagerUtilTest, TestPulledGaugeMetricWithSamplingPercentage) {
     *config.add_atom_matcher() =
             CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING,
                                   StringToId("Gauge")));
 }
@@ -784,7 +846,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbability) {
     *config.add_atom_matcher() =
             CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
                                   StringToId("Gauge")));
 }
@@ -799,7 +863,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricInvalidPullProbabilityZero) {
     *config.add_atom_matcher() =
             CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
                                   StringToId("Gauge")));
 }
@@ -814,7 +880,7 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricValidPullProbability) {
     *config.add_atom_matcher() =
             CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
 
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestPushedGaugeMetricWithPullProbability) {
@@ -826,7 +892,9 @@ TEST_F(MetricsManagerUtilTest, TestPushedGaugeMetricWithPullProbability) {
     metric->set_pull_probability(50);
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY,
                                   StringToId("Gauge")));
 }
@@ -841,7 +909,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricRandomOneSampleWithPullProbability
     *config.add_atom_matcher() =
             CreateSimpleAtomMatcher("SubsystemSleep", util::SUBSYSTEM_SLEEP_STATE);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(
                       INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
                       StringToId("Gauge")));
@@ -853,7 +923,9 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingIdOrWhat) {
     ValueMetric* metric = config.add_value_metric();
     metric->set_id(metricId);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metricId));
 }
 
@@ -867,7 +939,9 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricConditionlinkNoCondition) {
     auto link = metric->add_links();
     link->set_condition(1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
                                   StringToId("NumericValue")));
 }
@@ -883,7 +957,9 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHasBothSingleAndMultipleAgg
     metric->add_aggregation_types(ValueMetric::SUM);
     metric->add_aggregation_types(ValueMetric::MIN);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(
                       INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
                       StringToId("NumericValue")));
@@ -899,8 +975,10 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMoreAggTypesThanValueFields
     metric->add_aggregation_types(ValueMetric::SUM);
     metric->add_aggregation_types(ValueMetric::MIN);
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
     EXPECT_EQ(
-            initConfig(config),
+            invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
             InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
                                 StringToId("NumericValue")));
 }
@@ -919,8 +997,10 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMoreValueFieldsThanAggTypes
     *metric->mutable_value_field() = CreateDimensions(
             util::SUBSYSTEM_SLEEP_STATE, {3 /* count */, 4 /* time_millis */, 3 /* count */});
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
     EXPECT_EQ(
-            initConfig(config),
+            invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
             InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
                                 StringToId("NumericValue")));
 }
@@ -935,7 +1015,7 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricDefaultAggTypeOutOfOrderFie
     *metric->mutable_value_field() =
             CreateDimensions(util::SUBSYSTEM_SLEEP_STATE, {4 /* time_millis */, 3 /* count */});
 
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMultipleAggTypesOutOfOrderFields) {
@@ -951,7 +1031,7 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMultipleAggTypesOutOfOrderF
     *metric->mutable_value_field() = CreateDimensions(
             util::SUBSYSTEM_SLEEP_STATE, {3 /* count */, 4 /* time_millis */, 3 /* count */});
 
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestKllMetricMissingIdOrWhat) {
@@ -960,7 +1040,9 @@ TEST_F(MetricsManagerUtilTest, TestKllMetricMissingIdOrWhat) {
     KllMetric* metric = config.add_kll_metric();
     metric->set_id(metricId);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metricId));
 }
 
@@ -974,7 +1056,9 @@ TEST_F(MetricsManagerUtilTest, TestKllMetricConditionlinkNoCondition) {
     auto link = metric->add_links();
     link->set_condition(1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
                                   StringToId("Kll")));
 }
@@ -985,9 +1069,12 @@ TEST_F(MetricsManagerUtilTest, TestMetricMatcherNotFound) {
             createCountMetric(/*name=*/"Count", /*what=*/StringToId("SOME MATCHER"),
                               /*condition=*/nullopt, /*states=*/{});
 
-    EXPECT_EQ(initConfig(config), createInvalidConfigReasonWithMatcher(
-                                          INVALID_CONFIG_REASON_METRIC_MATCHER_NOT_FOUND,
-                                          StringToId("Count"), StringToId("SOME MATCHER")));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(
+            invalidEntities[(InvalidEntityKey{StringToId("Count"), INVALID_ENTITY_TYPE_METRIC})],
+            createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_METRIC_MATCHER_NOT_FOUND,
+                                                 StringToId("Count"), StringToId("SOME MATCHER")));
 }
 
 TEST_F(MetricsManagerUtilTest, TestMetricConditionLinkNotFound) {
@@ -1001,9 +1088,12 @@ TEST_F(MetricsManagerUtilTest, TestMetricConditionLinkNotFound) {
     auto link = metric->add_links();
     link->set_condition(StringToId("SOME CONDITION"));
 
-    EXPECT_EQ(initConfig(config), createInvalidConfigReasonWithPredicate(
-                                          INVALID_CONFIG_REASON_METRIC_CONDITION_LINK_NOT_FOUND,
-                                          StringToId("Count"), StringToId("SOME CONDITION")));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
+              createInvalidConfigReasonWithPredicate(
+                      INVALID_CONFIG_REASON_METRIC_CONDITION_LINK_NOT_FOUND, StringToId("Count"),
+                      StringToId("SOME CONDITION")));
 }
 
 TEST_F(MetricsManagerUtilTest, TestMetricStateNotFound) {
@@ -1013,7 +1103,9 @@ TEST_F(MetricsManagerUtilTest, TestMetricStateNotFound) {
                               /*condition=*/nullopt, /*states=*/{StringToId("SOME STATE")});
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("Count"), INVALID_ENTITY_TYPE_METRIC})],
               createInvalidConfigReasonWithState(INVALID_CONFIG_REASON_METRIC_STATE_NOT_FOUND,
                                                  StringToId("Count"), StringToId("SOME STATE")));
 }
@@ -1028,7 +1120,9 @@ TEST_F(MetricsManagerUtilTest, TestMetricStatelinkNoState) {
     auto link = metric->add_state_link();
     link->set_state_atom_id(2);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE,
                                   StringToId("Count")));
 }
@@ -1042,7 +1136,9 @@ TEST_F(MetricsManagerUtilTest, TestMetricBadThreshold) {
 
     metric->mutable_threshold()->set_lt_float(1.0);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_BAD_THRESHOLD, StringToId("Count")));
 }
 
@@ -1059,9 +1155,12 @@ TEST_F(MetricsManagerUtilTest, TestMetricActivationMatcherNotFound) {
 
     event_activation->set_atom_matcher_id(StringToId("SOME_MATCHER"));
 
-    EXPECT_EQ(initConfig(config), createInvalidConfigReasonWithMatcher(
-                                          INVALID_CONFIG_REASON_METRIC_ACTIVATION_MATCHER_NOT_FOUND,
-                                          StringToId("Count"), StringToId("SOME_MATCHER")));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("Count"), INVALID_ENTITY_TYPE_METRIC})],
+              createInvalidConfigReasonWithMatcher(
+                      INVALID_CONFIG_REASON_METRIC_ACTIVATION_MATCHER_NOT_FOUND,
+                      StringToId("Count"), StringToId("SOME_MATCHER")));
 }
 
 TEST_F(MetricsManagerUtilTest, TestMetricDeactivationMatcherNotFound) {
@@ -1078,7 +1177,9 @@ TEST_F(MetricsManagerUtilTest, TestMetricDeactivationMatcherNotFound) {
 
     event_activation->set_deactivation_atom_matcher_id(StringToId("SOME_MATCHER"));
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("Count"), INVALID_ENTITY_TYPE_METRIC})],
               createInvalidConfigReasonWithMatcher(
                       INVALID_CONFIG_REASON_METRIC_DEACTIVATION_MATCHER_NOT_FOUND,
                       StringToId("Count"), StringToId("SOME_MATCHER")));
@@ -1095,8 +1196,10 @@ TEST_F(MetricsManagerUtilTest, TestMetricSlicedStateAtomAllowedFromAnyUid) {
     metric->add_slice_by_state(StringToId("ScreenState"));
     config.add_whitelisted_atom_ids(util::SCREEN_STATE_CHANGED);
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
     EXPECT_EQ(
-            initConfig(config),
+            invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
             InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SLICED_STATE_ATOM_ALLOWED_FROM_ANY_UID,
                                 StringToId("Count")));
 }
@@ -1116,10 +1219,13 @@ TEST_F(MetricsManagerUtilTest, TestDurationMetricWhatNotSimple) {
     combination->add_predicate(StringToId("ScreenIsOn"));
     combination->add_predicate(StringToId("ScreenIsOff"));
 
-    EXPECT_EQ(initConfig(config),
-              createInvalidConfigReasonWithPredicate(
-                      INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE, StringToId("Duration"),
-                      StringToId("ScreenIsEitherOnOff")));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(
+            invalidEntities[(InvalidEntityKey{StringToId("Duration"), INVALID_ENTITY_TYPE_METRIC})],
+            createInvalidConfigReasonWithPredicate(
+                    INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE, StringToId("Duration"),
+                    StringToId("ScreenIsEitherOnOff")));
 }
 
 TEST_F(MetricsManagerUtilTest, TestDurationMetricWhatNotFound) {
@@ -1130,9 +1236,12 @@ TEST_F(MetricsManagerUtilTest, TestDurationMetricWhatNotFound) {
 
     metric->set_what(StringToId("SOME WHAT"));
 
-    EXPECT_EQ(initConfig(config), createInvalidConfigReasonWithPredicate(
-                                          INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND,
-                                          metricId, StringToId("SOME WHAT")));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
+              createInvalidConfigReasonWithPredicate(
+                      INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND, metricId,
+                      StringToId("SOME WHAT")));
 }
 
 TEST_F(MetricsManagerUtilTest, TestDurationMetricMissingStart) {
@@ -1146,9 +1255,13 @@ TEST_F(MetricsManagerUtilTest, TestDurationMetricMissingStart) {
     SimplePredicate* simplePredicate = condition->mutable_simple_predicate();
     simplePredicate->set_stop(StringToId("SCREEN_IS_OFF"));
 
-    EXPECT_EQ(initConfig(config), createInvalidConfigReasonWithPredicate(
-                                          INVALID_CONFIG_REASON_DURATION_METRIC_MISSING_START,
-                                          StringToId("Duration"), StringToId("SCREEN_IS_ON")));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(
+            invalidEntities[(InvalidEntityKey{StringToId("Duration"), INVALID_ENTITY_TYPE_METRIC})],
+            createInvalidConfigReasonWithPredicate(
+                    INVALID_CONFIG_REASON_DURATION_METRIC_MISSING_START, StringToId("Duration"),
+                    StringToId("SCREEN_IS_ON")));
 }
 
 TEST_F(MetricsManagerUtilTest, TestDurationMetricMaxSparseHasSpliceByState) {
@@ -1164,8 +1277,10 @@ TEST_F(MetricsManagerUtilTest, TestDurationMetricMaxSparseHasSpliceByState) {
     metric->add_slice_by_state(StringToId("ScreenState"));
     metric->set_aggregation_type(DurationMetric::MAX_SPARSE);
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
     EXPECT_EQ(
-            initConfig(config),
+            invalidEntities[(InvalidEntityKey{metric->id(), INVALID_ENTITY_TYPE_METRIC})],
             InvalidConfigReason(INVALID_CONFIG_REASON_DURATION_METRIC_MAX_SPARSE_HAS_SLICE_BY_STATE,
                                 StringToId("Duration")));
 }
@@ -1177,8 +1292,10 @@ TEST_F(MetricsManagerUtilTest, TestValueMetricMissingValueField) {
     metric->set_id(metricId);
     metric->set_what(1);
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
     EXPECT_EQ(
-            initConfig(config),
+            invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
             InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_MISSING_VALUE_FIELD, metricId));
 }
 
@@ -1192,7 +1309,9 @@ TEST_F(MetricsManagerUtilTest, TestValueMetricValueFieldHasPositionAll) {
     metric->mutable_value_field()->add_child()->set_field(2);
     metric->mutable_value_field()->mutable_child(0)->set_position(ALL);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL,
                                   metricId));
 }
@@ -1206,7 +1325,9 @@ TEST_F(MetricsManagerUtilTest, TestValueMetricHasIncorrectValueField) {
 
     metric->mutable_value_field()->set_position(ANY);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HAS_INCORRECT_VALUE_FIELD,
                                   metricId));
 }
@@ -1218,7 +1339,9 @@ TEST_F(MetricsManagerUtilTest, TestKllMetricMissingKllField) {
     metric->set_id(metricId);
     metric->set_what(1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_MISSING_KLL_FIELD, metricId));
 }
 
@@ -1231,7 +1354,9 @@ TEST_F(MetricsManagerUtilTest, TestKllMetricKllFieldHasPositionAll) {
 
     metric->mutable_kll_field()->set_position(ALL);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_KLL_FIELD_HAS_POSITION_ALL,
                                   metricId));
 }
@@ -1245,7 +1370,9 @@ TEST_F(MetricsManagerUtilTest, TestKllMetricHasIncorrectKllField) {
 
     metric->mutable_kll_field()->set_position(ANY);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_HAS_INCORRECT_KLL_FIELD,
                                   metricId));
 }
@@ -1258,7 +1385,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricIncorrectFieldFilterNoLeafValues) 
     metric->set_what(1);
     metric->mutable_gauge_fields_filter()->mutable_fields();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
 }
 
@@ -1270,7 +1399,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricIncorrectFieldFilterOmitNoLeafValu
     metric->set_what(1);
     metric->mutable_gauge_fields_filter()->mutable_omit_fields();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metricId));
 }
 
@@ -1284,8 +1415,10 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricTriggerNoPullAtom) {
 
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
     EXPECT_EQ(
-            initConfig(config),
+            invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
             InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_PULL_ATOM, metricId));
 }
 
@@ -1300,7 +1433,9 @@ TEST_F(MetricsManagerUtilTest, TestGaugeMetricTriggerNoFirstNSamples) {
 
     metric->set_trigger_event(StringToId("Matcher"));
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{metricId, INVALID_ENTITY_TYPE_METRIC})],
               InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_FIRST_N_SAMPLES,
                                   metricId));
 }
@@ -1311,7 +1446,10 @@ TEST_F(MetricsManagerUtilTest, TestMatcherDuplicate) {
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
     *config.add_atom_matcher() = CreateScreenTurnedOnAtomMatcher();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(
+                      InvalidEntityKey{StringToId("ScreenTurnedOn"), INVALID_ENTITY_TYPE_MATCHER})],
               createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_MATCHER_DUPLICATE,
                                                    StringToId("ScreenTurnedOn")));
 }
@@ -1324,8 +1462,11 @@ TEST_F(MetricsManagerUtilTest, TestMatcherNoOperation) {
     matcher->set_id(matcherId);
     matcher->mutable_combination()->add_matcher(StringToId("ScreenTurnedOn"));
 
-    EXPECT_EQ(initConfig(config), createInvalidConfigReasonWithMatcher(
-                                          INVALID_CONFIG_REASON_MATCHER_NO_OPERATION, matcherId));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{matcherId, INVALID_ENTITY_TYPE_MATCHER})],
+              createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_MATCHER_NO_OPERATION,
+                                                   matcherId));
 }
 
 TEST_F(MetricsManagerUtilTest, TestMatcherNotOperationIsNotUnary) {
@@ -1340,7 +1481,9 @@ TEST_F(MetricsManagerUtilTest, TestMatcherNotOperationIsNotUnary) {
     matcher->mutable_combination()->add_matcher(StringToId("ScreenTurnedOn"));
     matcher->mutable_combination()->add_matcher(StringToId("ScreenTurnedOff"));
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{matcherId, INVALID_ENTITY_TYPE_MATCHER})],
               createInvalidConfigReasonWithMatcher(
                       INVALID_CONFIG_REASON_MATCHER_NOT_OPERATION_IS_NOT_UNARY, matcherId));
 }
@@ -1359,7 +1502,10 @@ TEST_F(MetricsManagerUtilTest, TestConditionChildNotFound) {
             createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_CONDITION_CHILD_NOT_FOUND,
                                                    conditionId);
     expectedInvalidConfigReason->conditionIds.push_back(childConditionId);
-    EXPECT_EQ(initConfig(config), expectedInvalidConfigReason);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{conditionId, INVALID_ENTITY_TYPE_PREDICATE})],
+              expectedInvalidConfigReason);
 }
 
 TEST_F(MetricsManagerUtilTest, TestConditionDuplicate) {
@@ -1367,7 +1513,10 @@ TEST_F(MetricsManagerUtilTest, TestConditionDuplicate) {
     *config.add_predicate() = CreateScreenIsOnPredicate();
     *config.add_predicate() = CreateScreenIsOnPredicate();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(
+                      InvalidEntityKey{StringToId("ScreenIsOn"), INVALID_ENTITY_TYPE_PREDICATE})],
               createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_CONDITION_DUPLICATE,
                                                      StringToId("ScreenIsOn")));
 }
@@ -1381,7 +1530,9 @@ TEST_F(MetricsManagerUtilTest, TestConditionNoOperation) {
     condition->set_id(conditionId);
     condition->mutable_combination()->add_predicate(StringToId("ScreenIsOn"));
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{conditionId, INVALID_ENTITY_TYPE_PREDICATE})],
               createInvalidConfigReasonWithPredicate(INVALID_CONFIG_REASON_CONDITION_NO_OPERATION,
                                                      conditionId));
 }
@@ -1398,7 +1549,9 @@ TEST_F(MetricsManagerUtilTest, TestConditionNotOperationIsNotUnary) {
     condition->mutable_combination()->add_predicate(StringToId("ScreenIsOn"));
     condition->mutable_combination()->add_predicate(StringToId("ScreenIsOff"));
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{conditionId, INVALID_ENTITY_TYPE_PREDICATE})],
               createInvalidConfigReasonWithPredicate(
                       INVALID_CONFIG_REASON_CONDITION_NOT_OPERATION_IS_NOT_UNARY, conditionId));
 }
@@ -1408,9 +1561,13 @@ TEST_F(MetricsManagerUtilTest, TestSubscriptionRuleNotFoundAlert) {
     int64_t alertId = 1;
     *config.add_subscription() = createSubscription("Subscription", Subscription::ALERT, alertId);
 
-    EXPECT_EQ(initConfig(config), createInvalidConfigReasonWithSubscriptionAndAlert(
-                                          INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND,
-                                          StringToId("Subscription"), alertId));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("Subscription"),
+                                                INVALID_ENTITY_TYPE_SUBSCRIPTION})],
+              createInvalidConfigReasonWithSubscriptionAndAlert(
+                      INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND, StringToId("Subscription"),
+                      alertId));
 }
 
 TEST_F(MetricsManagerUtilTest, TestSubscriptionRuleNotFoundAlarm) {
@@ -1418,9 +1575,13 @@ TEST_F(MetricsManagerUtilTest, TestSubscriptionRuleNotFoundAlarm) {
     int64_t alarmId = 1;
     *config.add_subscription() = createSubscription("Subscription", Subscription::ALARM, alarmId);
 
-    EXPECT_EQ(initConfig(config), createInvalidConfigReasonWithSubscriptionAndAlarm(
-                                          INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND,
-                                          StringToId("Subscription"), alarmId));
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("Subscription"),
+                                                INVALID_ENTITY_TYPE_SUBSCRIPTION})],
+              createInvalidConfigReasonWithSubscriptionAndAlarm(
+                      INVALID_CONFIG_REASON_SUBSCRIPTION_RULE_NOT_FOUND, StringToId("Subscription"),
+                      alarmId));
 }
 
 TEST_F(MetricsManagerUtilTest, TestSubscriptionSubscriberInfoMissing) {
@@ -1430,7 +1591,10 @@ TEST_F(MetricsManagerUtilTest, TestSubscriptionSubscriberInfoMissing) {
     subscription.clear_subscriber_information();
     *config.add_subscription() = subscription;
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("Subscription"),
+                                                INVALID_ENTITY_TYPE_SUBSCRIPTION})],
               createInvalidConfigReasonWithSubscription(
                       INVALID_CONFIG_REASON_SUBSCRIPTION_SUBSCRIBER_INFO_MISSING,
                       StringToId("Subscription")));
@@ -1440,7 +1604,9 @@ TEST_F(MetricsManagerUtilTest, TestAlarmPeriodLessThanOrEqualZero) {
     StatsdConfig config;
     *config.add_alarm() = createAlarm("Alarm", /*offset=*/1, /*period=*/-1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("Alarm"), INVALID_ENTITY_TYPE_ALARM})],
               createInvalidConfigReasonWithAlarm(
                       INVALID_CONFIG_REASON_ALARM_PERIOD_LESS_THAN_OR_EQUAL_ZERO,
                       StringToId("Alarm")));
@@ -1450,7 +1616,9 @@ TEST_F(MetricsManagerUtilTest, TestAlarmOffsetLessThanOrEqualZero) {
     StatsdConfig config;
     *config.add_alarm() = createAlarm("Alarm", /*offset=*/-1, /*period=*/1);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    EXPECT_EQ(invalidEntities[(InvalidEntityKey{StringToId("Alarm"), INVALID_ENTITY_TYPE_ALARM})],
               createInvalidConfigReasonWithAlarm(
                       INVALID_CONFIG_REASON_ALARM_OFFSET_LESS_THAN_OR_EQUAL_ZERO,
                       StringToId("Alarm")));
@@ -1748,7 +1916,22 @@ TEST_F(MetricsManagerUtilTest, TestCreateDurationProducerDimensionsInWhatInvalid
     sp<MetricsManager> metricsManager =
             new MetricsManager(key, config, timeNs, timeNs, uidMap, pullerManager,
                                anomalyAlarmMonitor, periodicAlarmMonitor);
-    EXPECT_FALSE(metricsManager->isConfigValid());
+
+    if (flags::partial_invalid_configs()) {
+        // No Metric Initialized.
+        EXPECT_TRUE(metricsManager->isConfigValid());
+        EXPECT_EQ(metricsManager->getNumMetrics(), 0);
+        auto& invalidEntities = metricsManager->mInvalidEntities;
+        InvalidConfigReason reason =
+                invalidEntities[InvalidEntityKey{durationMetric->id(), INVALID_ENTITY_TYPE_METRIC}];
+        EXPECT_EQ(
+                reason.reason,
+                INVALID_CONFIG_REASON_METRIC_DIMENSIONS_IN_WHAT_NOT_SUBSET_OF_INTERNAL_DIMENSIONS);
+        ASSERT_TRUE(reason.metricId.has_value());
+        EXPECT_EQ(reason.metricId.value(), durationMetric->id());
+    } else {
+        EXPECT_FALSE(metricsManager->isConfigValid());
+    }
 }
 
 TEST_F(MetricsManagerUtilTest, TestSampledMetrics) {
@@ -1912,7 +2095,11 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasShardCountButNoSampledField) {
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(
                       INVALID_CONFIG_REASON_METRIC_DIMENSIONAL_SAMPLING_INFO_MISSING_SAMPLED_FIELD,
                       metric.id()));
@@ -1932,7 +2119,11 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasSampledFieldIncorrectShardCount) {
             CreateDimensions(util::APP_CRASH_OCCURRED, {1 /*uid*/});
     *config.add_count_metric() = metric;
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(
                       INVALID_CONFIG_REASON_METRIC_DIMENSIONAL_SAMPLING_INFO_INCORRECT_SHARD_COUNT,
                       metric.id()));
@@ -1953,7 +2144,11 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasMultipleSampledFields) {
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
                                   metric.id()));
 }
@@ -1975,7 +2170,11 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionALL) {
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
                                   metric.id()));
 }
@@ -1997,7 +2196,11 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_PositionANY) {
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
                                   metric.id()));
 }
@@ -2016,8 +2219,12 @@ TEST_F(MetricsManagerUtilTest, TestMetricSampledField_DifferentFieldsNotSubsetDi
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
     EXPECT_EQ(
-            initConfig(config),
+            expectedInvalidConfigReason,
             InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
                                 metric.id()));
 }
@@ -2039,8 +2246,12 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastNotSubsetDi
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
     EXPECT_EQ(
-            initConfig(config),
+            expectedInvalidConfigReason,
             InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
                                 metric.id()));
 }
@@ -2062,8 +2273,12 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstNotSubsetD
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
 
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
     EXPECT_EQ(
-            initConfig(config),
+            expectedInvalidConfigReason,
             InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT,
                                 metric.id()));
 }
@@ -2085,7 +2300,7 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstSubsetDime
                                      {Position::FIRST});
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 // dimensions_in_what position ALL, sampled_what_field position LAST
@@ -2105,7 +2320,7 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastSubsetDimen
                                      {Position::LAST});
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 // dimensions_in_what position FIRST, sampled_what_field position FIRST
@@ -2125,7 +2340,7 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_FirstSubsetDime
                                      {Position::FIRST});
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 // dimensions_in_what position LAST, sampled_what_field position LAST
@@ -2145,51 +2360,76 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedSampledField_LastSubsetDimen
                                      {Position::LAST});
     metric.mutable_dimensional_sampling_info()->set_shard_count(2);
     *config.add_count_metric() = metric;
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestCountMetricHasRestrictedDelegate) {
     StatsdConfig config;
+    config.set_id(12345);
     CountMetric* metric = config.add_count_metric();
     config.set_restricted_metrics_delegate_package_name("com.android.app.test");
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{/*configId=*/12345, INVALID_ENTITY_TYPE_CONFIG}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
 }
 
 TEST_F(MetricsManagerUtilTest, TestDurationMetricHasRestrictedDelegate) {
     StatsdConfig config;
+    config.set_id(12345);
     DurationMetric* metric = config.add_duration_metric();
     config.set_restricted_metrics_delegate_package_name("com.android.app.test");
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{/*configId=*/12345, INVALID_ENTITY_TYPE_CONFIG}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
 }
 
 TEST_F(MetricsManagerUtilTest, TestGaugeMetricHasRestrictedDelegate) {
     StatsdConfig config;
+    config.set_id(12345);
     GaugeMetric* metric = config.add_gauge_metric();
     config.set_restricted_metrics_delegate_package_name("com.android.app.test");
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{/*configId=*/12345, INVALID_ENTITY_TYPE_CONFIG}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHasRestrictedDelegate) {
     StatsdConfig config;
+    config.set_id(12345);
     ValueMetric* metric = config.add_value_metric();
     config.set_restricted_metrics_delegate_package_name("com.android.app.test");
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{/*configId=*/12345, INVALID_ENTITY_TYPE_CONFIG}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
 }
 
 TEST_F(MetricsManagerUtilTest, TestKllMetricHasRestrictedDelegate) {
     StatsdConfig config;
+    config.set_id(12345);
     KllMetric* metric = config.add_kll_metric();
     config.set_restricted_metrics_delegate_package_name("com.android.app.test");
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{/*configId=*/12345, INVALID_ENTITY_TYPE_CONFIG}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_SUPPORTED));
 }
 
@@ -2205,7 +2445,7 @@ TEST_P(MetricsManagerUtilDimLimitTest, TestDimLimit) {
     }
 
     // initConfig returns nullopt if config is valid
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
     ASSERT_EQ(5u, allMetricProducers.size());
 
     sp<MetricProducer> producer =
@@ -2240,11 +2480,12 @@ TEST_F(MetricsManagerUtilTest, TestMissingValueMatcherAndStringReplacer) {
     matcher->mutable_simple_atom_matcher()->set_atom_id(SCREEN_STATE_ATOM_ID);
     matcher->mutable_simple_atom_matcher()->add_field_value_matcher();
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[(InvalidEntityKey{/*matcherId=*/111, INVALID_ENTITY_TYPE_MATCHER})];
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_NO_VALUE_MATCHER_NOR_STRING_REPLACER);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(111));
 }
 
 TEST_F(MetricsManagerUtilTest, TestMatcherWithValueMatcherOnly) {
@@ -2258,9 +2499,7 @@ TEST_F(MetricsManagerUtilTest, TestMatcherWithValueMatcherOnly) {
     fvm->set_field(2 /*int_field*/);
     fvm->set_eq_int(1);
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
-
-    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+    ASSERT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplacerOnly) {
@@ -2275,9 +2514,7 @@ TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplacerOnly) {
     fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("#");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
-
-    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+    ASSERT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestValueMatcherWithPositionAll) {
@@ -2292,12 +2529,14 @@ TEST_F(MetricsManagerUtilTest, TestValueMatcherWithPositionAll) {
     fvm->set_position(Position::ALL);
     fvm->set_eq_int(1);
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
 
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[{/*matcherId=*/111, INVALID_ENTITY_TYPE_MATCHER}];
+
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(111));
 }
 
 TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAll) {
@@ -2314,12 +2553,14 @@ TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAll) 
     fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
 
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[{/*matcherId=*/111, INVALID_ENTITY_TYPE_MATCHER}];
+
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(111));
 }
 
 TEST_F(MetricsManagerUtilTest, TestValueMatcherWithPositionAllNested) {
@@ -2336,12 +2577,14 @@ TEST_F(MetricsManagerUtilTest, TestValueMatcherWithPositionAllNested) {
     fvm->mutable_matches_tuple()->add_field_value_matcher()->set_field(1 /* uid */);
     fvm->mutable_matches_tuple()->mutable_field_value_matcher(0)->set_eq_int(1);
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
 
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[{/*matcherId=*/111, INVALID_ENTITY_TYPE_MATCHER}];
+
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(111));
 }
 
 TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAllNested) {
@@ -2366,12 +2609,14 @@ TEST_F(MetricsManagerUtilTest, TestValueMatcherAndStringReplaceWithPositionAllNe
             ->mutable_replace_string()
             ->set_replacement("");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
 
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[{/*matcherId=*/111, INVALID_ENTITY_TYPE_MATCHER}];
+
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_VALUE_MATCHER_WITH_POSITION_ALL);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(111));
 }
 
 TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAny) {
@@ -2387,12 +2632,14 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAn
     fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
 
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[{/*matcherId=*/111, INVALID_ENTITY_TYPE_MATCHER}];
+
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_STRING_REPLACE_WITH_NO_VALUE_MATCHER_WITH_POSITION_ANY);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(111));
 }
 
 TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAnyNested) {
@@ -2416,12 +2663,14 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithNoValueMatcherWithPositionAn
             ->mutable_replace_string()
             ->set_replacement("");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
 
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[{/*matcherId=*/111, INVALID_ENTITY_TYPE_MATCHER}];
+
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_STRING_REPLACE_WITH_NO_VALUE_MATCHER_WITH_POSITION_ANY);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(111));
 }
 
 TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAny) {
@@ -2438,9 +2687,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAny)
     fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
-
-    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+    ASSERT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAnyNested) {
@@ -2465,9 +2712,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithValueMatcherWithPositionAnyN
             ->mutable_replace_string()
             ->set_replacement("");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
-
-    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+    ASSERT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestStringReplaceWithPositionAllNested) {
@@ -2486,9 +2731,7 @@ TEST_F(MetricsManagerUtilTest, TestStringReplaceWithPositionAllNested) {
     fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
-
-    ASSERT_EQ(actualInvalidConfigReason, nullopt);
+    ASSERT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplaceAndNonStringValueMatcher) {
@@ -2504,12 +2747,14 @@ TEST_F(MetricsManagerUtilTest, TestMatcherWithStringReplaceAndNonStringValueMatc
     fvm->mutable_replace_string()->set_regex(R"([0-9]+$)");
     fvm->mutable_replace_string()->set_replacement("#");
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
 
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[{/*matcherId=*/111, INVALID_ENTITY_TYPE_MATCHER}];
+
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_INVALID_VALUE_MATCHER_WITH_STRING_REPLACE);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(111));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(111));
 }
 
 TEST_F(MetricsManagerUtilTest, TestCombinationMatcherWithStringReplace) {
@@ -2529,18 +2774,23 @@ TEST_F(MetricsManagerUtilTest, TestCombinationMatcherWithStringReplace) {
     matcher->mutable_combination()->set_operation(LogicalOperation::NOT);
     matcher->mutable_combination()->add_matcher(111);
 
-    optional<InvalidConfigReason> actualInvalidConfigReason = initConfig(config);
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
 
-    ASSERT_NE(actualInvalidConfigReason, nullopt);
-    EXPECT_EQ(actualInvalidConfigReason->reason,
+    InvalidConfigReason actualInvalidConfigReason =
+            invalidEntities[{/*matcherId=*/222, INVALID_ENTITY_TYPE_MATCHER}];
+    EXPECT_EQ(actualInvalidConfigReason.reason,
               INVALID_CONFIG_REASON_MATCHER_COMBINATION_WITH_STRING_REPLACE);
-    EXPECT_THAT(actualInvalidConfigReason->matcherIds, ElementsAre(222));
+    EXPECT_THAT(actualInvalidConfigReason.matcherIds, ElementsAre(222));
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingHistogramBinConfigSingleAggType) {
     StatsdConfig config = createHistogramStatsdConfig();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(
                       INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
                       config.value_metric(0).id()));
@@ -2553,7 +2803,11 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricMissingHistogramBinConfigMu
     config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::HISTOGRAM);
     config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(
                       INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
                       config.value_metric(0).id()));
@@ -2564,7 +2818,11 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricExtraHistogramBinConfig) {
     *config.mutable_value_metric(0)->add_histogram_bin_configs() =
             createExplicitBinConfig(/* id */ 1, /* bins */ {5, 10, 20});
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(
                       INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
                       config.value_metric(0).id()));
@@ -2574,14 +2832,18 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramMultipleValueField
     StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
     config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
 
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramWithUploadThreshold) {
     StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
     config.mutable_value_metric(0)->mutable_threshold()->set_lt_float(1.0);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
                                   config.value_metric(0).id()));
 
@@ -2591,7 +2853,11 @@ TEST_F(MetricsManagerUtilTest, TestNumericValueMetricHistogramWithUploadThreshol
     config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
     config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
 
-    EXPECT_EQ(initConfig(config),
+    invalidEntities = initConfig(config);
+
+    expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
                                   config.value_metric(0).id()));
 }
@@ -2601,7 +2867,11 @@ TEST_F(MetricsManagerUtilTest,
     StatsdConfig config = createExplicitHistogramStatsdConfig({5, 10, 12});
     config.mutable_value_metric(0)->mutable_value_field()->mutable_child(0)->set_position(ALL);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL,
                                   config.value_metric(0).id()));
 
@@ -2611,7 +2881,11 @@ TEST_F(MetricsManagerUtilTest,
     config.mutable_value_metric(0)->add_aggregation_types(ValueMetric::SUM);
     config.mutable_value_metric(0)->mutable_value_field()->add_child()->set_field(2);
 
-    EXPECT_EQ(initConfig(config),
+    invalidEntities = initConfig(config);
+
+    expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL,
                                   config.value_metric(0).id()));
 }
@@ -2624,7 +2898,11 @@ TEST_F(MetricsManagerUtilTest,
             ->mutable_histogram_bin_configs(0)
             ->mutable_client_aggregated_bins();
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(
                       INVALID_CONFIG_REASON_VALUE_METRIC_HIST_CLIENT_AGGREGATED_NO_POSITION_ALL,
                       config.value_metric(0).id()));
@@ -2639,7 +2917,7 @@ TEST_F(MetricsManagerUtilTest,
             ->mutable_client_aggregated_bins();
     config.mutable_value_metric(0)->mutable_value_field()->mutable_child(0)->set_position(ALL);
 
-    EXPECT_EQ(initConfig(config), nullopt);
+    EXPECT_TRUE(initConfig(config).empty());
 }
 
 TEST_F(MetricsManagerUtilTest, TestValueMetricHistogramWithValueDirectionNotIncreasing) {
@@ -2651,7 +2929,11 @@ TEST_F(MetricsManagerUtilTest, TestValueMetricHistogramWithValueDirectionNotIncr
             ->mutable_client_aggregated_bins();
     config.mutable_value_metric(0)->set_value_direction(ValueMetric::DECREASING);
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION,
                                   config.value_metric(0).id()));
 
@@ -2664,7 +2946,11 @@ TEST_F(MetricsManagerUtilTest, TestValueMetricHistogramWithValueDirectionNotIncr
     config.mutable_value_metric(0)->mutable_value_field()->mutable_child(1)->set_position(ALL);
     config.mutable_value_metric(0)->set_value_direction(ValueMetric::ANY);
 
-    EXPECT_EQ(initConfig(config),
+    invalidEntities = initConfig(config);
+
+    expectedInvalidConfigReason =
+            invalidEntities[{config.value_metric(0).id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION,
                                   config.value_metric(0).id()));
 }
@@ -2795,7 +3081,11 @@ TEST_F(MetricsManagerUtilTest, TestMetricHasRepeatedUidField_PositionANY) {
             util::TEST_ATOM_REPORTED, {9 /*repeated_int_field*/}, {Position::ANY});
     *config.add_count_metric() = metric;
 
-    EXPECT_EQ(initConfig(config),
+    unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities = initConfig(config);
+
+    InvalidConfigReason expectedInvalidConfigReason =
+            invalidEntities[{metric.id(), INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(expectedInvalidConfigReason,
               InvalidConfigReason(INVALID_CONFIG_REASON_UID_FIELDS_WITH_POSITION_ANY, metric.id()));
 }
 

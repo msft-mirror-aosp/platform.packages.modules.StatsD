@@ -87,19 +87,19 @@ unordered_map<int, vector<int>> tmpDeactivationAtomTrackerToMetricMap;
 vector<int> metricsWithActivation;
 map<int64_t, uint64_t> oldStateHashes;
 set<int64_t> noReportMetricIds;
+unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
 
 bool initConfig(const StatsdConfig& config) {
-    // initStatsdConfig returns nullopt if config is valid
-    return !initStatsdConfig(
-                    key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
-                    timeBaseNs, timeBaseNs, configMetadataProvider, allTagIdsToMatchersMap,
-                    oldAtomMatchingTrackers, oldAtomMatchingTrackerMap, oldConditionTrackers,
-                    oldConditionTrackerMap, oldMetricProducers, oldMetricProducerMap,
-                    oldAnomalyTrackers, oldAlarmTrackers, tmpConditionToMetricMap,
-                    tmpTrackerToMetricMap, tmpTrackerToConditionMap,
-                    tmpActivationAtomTrackerToMetricMap, tmpDeactivationAtomTrackerToMetricMap,
-                    oldAlertTrackerMap, metricsWithActivation, oldStateHashes, noReportMetricIds)
-                    .has_value();
+    invalidEntities = initStatsdConfig(
+            key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
+            timeBaseNs, timeBaseNs, configMetadataProvider, allTagIdsToMatchersMap,
+            oldAtomMatchingTrackers, oldAtomMatchingTrackerMap, oldConditionTrackers,
+            oldConditionTrackerMap, oldMetricProducers, oldMetricProducerMap, oldAnomalyTrackers,
+            oldAlarmTrackers, tmpConditionToMetricMap, tmpTrackerToMetricMap,
+            tmpTrackerToConditionMap, tmpActivationAtomTrackerToMetricMap,
+            tmpDeactivationAtomTrackerToMetricMap, oldAlertTrackerMap, metricsWithActivation,
+            oldStateHashes, noReportMetricIds);
+    return invalidEntities.empty();
 }
 
 class ConfigUpdateTest : public ::testing::Test {

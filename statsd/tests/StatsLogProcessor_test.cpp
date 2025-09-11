@@ -467,8 +467,7 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
     EXPECT_EQ(0, StatsdStats::getInstance().mIceBox.size());
 
     StatsdConfig invalidConfig = MakeConfig(true);
-    auto invalidCountMetric = invalidConfig.add_count_metric();
-    invalidCountMetric->set_what(0);
+    invalidConfig.add_default_pull_packages("invalid pull package");
     p.OnConfigUpdated(0, key, invalidConfig);
     EXPECT_EQ(0, p.mMetricsManagers.size());
     // The current configs should not contain the invalid config.

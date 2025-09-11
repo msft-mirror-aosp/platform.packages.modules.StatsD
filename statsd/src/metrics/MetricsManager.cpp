@@ -22,6 +22,7 @@
 #include "MetricsManager.h"
 
 #include <assert.h>
+#include <com_android_os_statsd_flags.h>
 #include <private/android_filesystem_config.h>
 
 #include "CountMetricProducer.h"
@@ -57,6 +58,8 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
+
+namespace flags = com::android::os::statsd::flags;
 
 namespace android {
 namespace os {
@@ -97,7 +100,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
               set<string>(config.statsd_config_options().uidmap_package_allowlist().begin(),
                           config.statsd_config_options().uidmap_package_allowlist().end())) {
     if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
-        mInvalidConfigReason =
+        mInvalidEntities[{key.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return;
     }
@@ -106,7 +109,7 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
     }
     // Init the ttl end timestamp.
     refreshTtl(timeBaseNs);
-    mInvalidConfigReason = initStatsdConfig(
+    mInvalidEntities = initStatsdConfig(
             key, config, uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
             timeBaseNs, currentTimeNs, this, mTagIdsToMatchersMap, mAllAtomMatchingTrackers,
             mAtomMatchingTrackerMap, mAllConditionTrackers, mConditionTrackerMap,
@@ -147,8 +150,9 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
                                   const int64_t currentTimeNs,
                                   const sp<AlarmMonitor>& anomalyAlarmMonitor,
                                   const sp<AlarmMonitor>& periodicAlarmMonitor) {
+    mInvalidEntities.clear();
     if (!isAtLeastU() && config.has_restricted_metrics_delegate_package_name()) {
-        mInvalidConfigReason =
+        mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
                 InvalidConfigReason(INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         return false;
     }
@@ -175,7 +179,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mDeactivationAtomTrackerToMetricMap.clear();
     mMetricIndexesWithActivation.clear();
     mNoReportMetricIds.clear();
-    mInvalidConfigReason = updateStatsdConfig(
+    mInvalidEntities = updateStatsdConfig(
             mConfigKey, config, mUidMap, mPullerManager, anomalyAlarmMonitor, periodicAlarmMonitor,
             timeBaseNs, currentTimeNs, mAllAtomMatchingTrackers, mAtomMatchingTrackerMap,
             mAllConditionTrackers, mConditionTrackerMap, mAllMetricProducers, mMetricProducerMap,
@@ -232,7 +236,7 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
-    return !mInvalidConfigReason.has_value();
+    return isConfigValid();
 }
 
 void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
@@ -248,7 +252,8 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
 
     if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
         ALOGE("Too many log sources. This is likely to be an error in the config.");
-        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
+        mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
+                InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
     } else {
         initAllowedLogSources();
     }
@@ -262,7 +267,7 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
             mDefaultPullUids.insert(it->second);
         } else {
             ALOGE("Default pull atom packages must be in sAidToUidMapping");
-            mInvalidConfigReason =
+            mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
                     InvalidConfigReason(INVALID_CONFIG_REASON_DEFAULT_PULL_PACKAGES_NOT_IN_MAP);
         }
     }
@@ -282,7 +287,7 @@ void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
     if (numPullPackages > StatsdStats::kMaxPullAtomPackages) {
         ALOGE("Too many sources in default_pull_packages and pull_atom_packages. This is likely to "
               "be an error in the config");
-        mInvalidConfigReason =
+        mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
                 InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_SOURCES_IN_PULL_PACKAGES);
     } else {
         initPullAtomSources();
@@ -323,25 +328,29 @@ void MetricsManager::verifyGuardrailsAndUpdateStatsdStats() {
     // Guardrail. Reject the config if it's too big.
     if (mAllMetricProducers.size() > StatsdStats::kMaxMetricCountPerConfig) {
         ALOGE("This config has too many metrics! Reject!");
-        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_METRICS);
+        mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
+                InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_METRICS);
     }
     if (mAllConditionTrackers.size() > StatsdStats::kMaxConditionCountPerConfig) {
         ALOGE("This config has too many predicates! Reject!");
-        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_CONDITIONS);
+        mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
+                InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_CONDITIONS);
     }
     if (mAllAtomMatchingTrackers.size() > StatsdStats::kMaxMatcherCountPerConfig) {
         ALOGE("This config has too many matchers! Reject!");
-        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_MATCHERS);
+        mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
+                InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_MATCHERS);
     }
     if (mAllAnomalyTrackers.size() > StatsdStats::kMaxAlertCountPerConfig) {
         ALOGE("This config has too many alerts! Reject!");
-        mInvalidConfigReason = InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_ALERTS);
+        mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
+                InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_ALERTS);
     }
     // no matter whether this config is valid, log it in the stats.
     StatsdStats::getInstance().noteConfigReceived(
             mConfigKey, mAllMetricProducers.size(), mAllConditionTrackers.size(),
             mAllAtomMatchingTrackers.size(), mAllAnomalyTrackers.size(), mAnnotations,
-            mInvalidConfigReason);
+            mInvalidEntities);
 }
 
 void MetricsManager::initializeConfigActiveStatus() {
@@ -385,7 +394,14 @@ void MetricsManager::initPullAtomSources() {
 }
 
 bool MetricsManager::isConfigValid() const {
-    return !mInvalidConfigReason.has_value();
+    if (flags::partial_invalid_configs()) {
+        if (mInvalidEntities.contains({mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG})) {
+            return false;
+        }
+        return true;
+    } else {
+        return mInvalidEntities.empty();
+    }
 }
 
 void MetricsManager::notifyAppUpgrade(const int64_t eventTimeNs, const string& apk, const int uid,
@@ -558,10 +574,6 @@ bool MetricsManager::checkLogCredentials(const int32_t uid, const int32_t atomId
 
 // Consume the stats log if it's interesting to this metric.
 void MetricsManager::onLogEvent(const LogEvent& event) {
-    if (!isConfigValid()) {
-        return;
-    }
-
     const int tagId = event.GetTagId();
 
     if (tagId == util::STATS_SOCKET_LOSS_REPORTED) {

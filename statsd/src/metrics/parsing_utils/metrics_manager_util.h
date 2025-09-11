@@ -488,7 +488,7 @@ bool initAlarms(const StatsdConfig& config, const ConfigKey& key,
 
 // Initialize MetricsManager from StatsdConfig.
 // Parameters are the members of MetricsManager. See MetricsManager for declaration.
-std::optional<InvalidConfigReason> initStatsdConfig(
+std::unordered_map<InvalidEntityKey, InvalidConfigReason> initStatsdConfig(
         const ConfigKey& key, const StatsdConfig& config, const sp<UidMap>& uidMap,
         const sp<StatsPullerManager>& pullerManager, const sp<AlarmMonitor>& anomalyAlarmMonitor,
         const sp<AlarmMonitor>& periodicAlarmMonitor, int64_t timeBaseNs,

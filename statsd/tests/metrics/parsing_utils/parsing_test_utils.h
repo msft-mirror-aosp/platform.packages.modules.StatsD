@@ -54,7 +54,8 @@ protected:
 
     void clearData();
 
-    std::optional<InvalidConfigReason> initConfig(const StatsdConfig& config);
+    std::unordered_map<InvalidEntityKey, InvalidConfigReason> initConfig(
+            const StatsdConfig& config);
 
     void SetUp() override;
 
@@ -81,6 +82,7 @@ protected:
     std::vector<int> metricsWithActivation;
     std::map<int64_t, uint64_t> stateProtoHashes;
     std::set<int64_t> noReportMetricIds;
+    std::unordered_map<InvalidEntityKey, InvalidConfigReason> invalidEntities;
 };
 
 std::vector<int> filterMatcherIndexesById(
