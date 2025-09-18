@@ -155,7 +155,7 @@ public:
     // This metric and all of its dependencies are guaranteed to be preserved across the update.
     // This function also updates several maps used by metricsManager.
     // This function clears all anomaly trackers. All anomaly trackers need to be added again.
-    std::optional<InvalidConfigReason> onConfigUpdated(
+    void onConfigUpdated(
             const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -171,12 +171,12 @@ public:
             std::unordered_map<int, std::vector<int>>& deactivationAtomTrackerToMetricMap,
             std::vector<int>& metricsWithActivation) {
         std::lock_guard lock(mMutex);
-        return onConfigUpdatedLocked(config, configIndex, metricIndex, allAtomMatchingTrackers,
-                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
-                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
-                                     wizard, metricToActivationMap, trackerToMetricMap,
-                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
-                                     deactivationAtomTrackerToMetricMap, metricsWithActivation);
+        onConfigUpdatedLocked(config, configIndex, metricIndex, allAtomMatchingTrackers,
+                              oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                              allConditionTrackers, conditionTrackerMap, wizard,
+                              metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation);
     };
 
     /**
@@ -258,7 +258,7 @@ public:
                            str_set, usedUids, protoOutput);
     }
 
-    virtual std::optional<InvalidConfigReason> onConfigUpdatedLocked(
+    virtual void onConfigUpdatedLocked(
             const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,

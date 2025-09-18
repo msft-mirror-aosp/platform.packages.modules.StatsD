@@ -107,7 +107,7 @@ EventMetricProducer::~EventMetricProducer() {
     VLOG("~EventMetricProducer() called");
 }
 
-optional<InvalidConfigReason> EventMetricProducer::onConfigUpdatedLocked(
+void EventMetricProducer::onConfigUpdatedLocked(
         const StatsdConfig& config, const int configIndex, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
         const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -131,15 +131,12 @@ optional<InvalidConfigReason> EventMetricProducer::onConfigUpdatedLocked(
     const EventMetric& metric = config.event_metric(configIndex);
     int trackerIndex;
     // Update appropriate indices, specifically mConditionIndex and MetricsManager maps.
-    handleMetricWithAtomMatchingTrackers(metric.what(), mMetricId, metricIndex, false,
-                                         allAtomMatchingTrackers, newAtomMatchingTrackerMap,
+    handleMetricWithAtomMatchingTrackers(metric.what(), metricIndex, newAtomMatchingTrackerMap,
                                          trackerToMetricMap, trackerIndex);
     if (metric.has_condition()) {
-        handleMetricWithConditions(metric.condition(), mMetricId, metricIndex, conditionTrackerMap,
-                                   metric.links(), allConditionTrackers, mConditionTrackerIndex,
-                                   conditionToMetricMap);
+        handleMetricWithConditions(metric.condition(), metricIndex, conditionTrackerMap,
+                                   mConditionTrackerIndex, conditionToMetricMap);
     }
-    return nullopt;
 }
 
 void EventMetricProducer::dropDataLocked(const int64_t dropTimeNs) {

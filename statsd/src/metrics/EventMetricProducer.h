@@ -73,7 +73,7 @@ private:
     // Internal interface to handle sliced condition change.
     void onSlicedConditionMayChangeLocked(bool overallCondition, int64_t eventTime) override;
 
-    std::optional<InvalidConfigReason> onConfigUpdatedLocked(
+    void onConfigUpdatedLocked(
             const StatsdConfig& config, int configIndex, int metricIndex,
             const std::vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
             const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,

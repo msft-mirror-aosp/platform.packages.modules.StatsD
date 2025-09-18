@@ -783,43 +783,32 @@ optional<InvalidConfigReason> checkMetricUpdate(
 
 // Called when a metric is preserved during a config update. Finds the metric in oldMetricProducers
 // and calls onConfigUpdated to update all indices.
-optional<sp<MetricProducer>> updateMetric(
-        const StatsdConfig& config, const int configIndex, const int metricIndex,
-        const int64_t metricId, const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
-        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
-        const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-        const sp<EventMatcherWizard>& matcherWizard,
-        const vector<sp<ConditionTracker>>& allConditionTrackers,
-        const unordered_map<int64_t, int>& conditionTrackerMap, const sp<ConditionWizard>& wizard,
-        const unordered_map<int64_t, int>& oldMetricProducerMap,
-        const vector<sp<MetricProducer>>& oldMetricProducers,
-        const unordered_map<int64_t, int>& metricToActivationMap,
-        unordered_map<int, vector<int>>& trackerToMetricMap,
-        unordered_map<int, vector<int>>& conditionToMetricMap,
-        unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
-        unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason) {
-    const auto& oldMetricProducerIt = oldMetricProducerMap.find(metricId);
-    if (oldMetricProducerIt == oldMetricProducerMap.end()) {
-        ALOGE("Could not find Metric %lld in the previous config, but expected it "
-              "to be there",
-              (long long)metricId);
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_NOT_IN_PREV_CONFIG, metricId);
-        return nullopt;
-    }
-    const int oldIndex = oldMetricProducerIt->second;
-    sp<MetricProducer> producer = oldMetricProducers[oldIndex];
-    invalidConfigReason = producer->onConfigUpdated(
-            config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
-            newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
-            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
-    return {producer};
+sp<MetricProducer> updateMetric(const StatsdConfig& config, const int configIndex,
+                                const int metricIndex, const int64_t metricId,
+                                const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+                                const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+                                const unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
+                                const sp<EventMatcherWizard>& matcherWizard,
+                                const vector<sp<ConditionTracker>>& allConditionTrackers,
+                                const unordered_map<int64_t, int>& conditionTrackerMap,
+                                const sp<ConditionWizard>& wizard,
+                                const unordered_map<int64_t, int>& oldMetricProducerMap,
+                                const vector<sp<MetricProducer>>& oldMetricProducers,
+                                const unordered_map<int64_t, int>& metricToActivationMap,
+                                unordered_map<int, vector<int>>& trackerToMetricMap,
+                                unordered_map<int, vector<int>>& conditionToMetricMap,
+                                unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
+                                unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
+                                vector<int>& metricsWithActivation,
+                                optional<InvalidConfigReason>& invalidConfigReason) {
+    sp<MetricProducer> producer = oldMetricProducers[oldMetricProducerMap.at(metricId)];
+    producer->onConfigUpdated(config, configIndex, metricIndex, allAtomMatchingTrackers,
+                              oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                              allConditionTrackers, conditionTrackerMap, wizard,
+                              metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
+                              activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
+                              metricsWithActivation);
+    return producer;
 }
 
 optional<InvalidConfigReason> updateMetrics(
@@ -900,16 +889,14 @@ optional<InvalidConfigReason> updateMetrics(
                 if (invalidConfigReason.has_value()) {
                     return invalidConfigReason;
                 }
-                producer =
-                        updateMetric(config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
-                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
-                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
-                                     wizard, oldMetricProducerMap, oldMetricProducers,
-                                     metricToActivationMap, trackerToMetricMap,
-                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
-                                     deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                                     invalidConfigReason)
-                                .value();
+                producer = updateMetric(
+                        config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
+                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                        allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
+                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                        invalidConfigReason);
                 break;
             }
             case UPDATE_REPLACE:
@@ -918,10 +905,9 @@ optional<InvalidConfigReason> updateMetrics(
             case UPDATE_NEW: {
                 producer = createCountMetricProducerAndUpdateMetadata(
                         key, config, timeBaseNs, currentTimeNs, metric, metricIndex,
-                        allAtomMatchingTrackers, newAtomMatchingTrackerMap, allConditionTrackers,
-                        conditionTrackerMap, initialConditionCache, wizard, stateAtomIdMap,
-                        allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        newAtomMatchingTrackerMap, conditionTrackerMap, initialConditionCache,
+                        wizard, stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
                         configMetadataProvider);
                 break;
@@ -953,16 +939,14 @@ optional<InvalidConfigReason> updateMetrics(
                 if (invalidConfigReason.has_value()) {
                     return invalidConfigReason;
                 }
-                producer =
-                        updateMetric(config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
-                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
-                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
-                                     wizard, oldMetricProducerMap, oldMetricProducers,
-                                     metricToActivationMap, trackerToMetricMap,
-                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
-                                     deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                                     invalidConfigReason)
-                                .value();
+                producer = updateMetric(
+                        config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
+                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                        allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
+                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                        invalidConfigReason);
                 break;
             }
             case UPDATE_REPLACE:
@@ -971,10 +955,9 @@ optional<InvalidConfigReason> updateMetrics(
             case UPDATE_NEW: {
                 producer = createDurationMetricProducerAndUpdateMetadata(
                         key, config, timeBaseNs, currentTimeNs, metric, metricIndex,
-                        allAtomMatchingTrackers, newAtomMatchingTrackerMap, allConditionTrackers,
-                        conditionTrackerMap, initialConditionCache, wizard, stateAtomIdMap,
-                        allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
-                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        newAtomMatchingTrackerMap, conditionTrackerMap, initialConditionCache,
+                        wizard, stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
+                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
                         configMetadataProvider);
                 break;
@@ -1006,16 +989,14 @@ optional<InvalidConfigReason> updateMetrics(
                 if (invalidConfigReason.has_value()) {
                     return invalidConfigReason;
                 }
-                producer =
-                        updateMetric(config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
-                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
-                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
-                                     wizard, oldMetricProducerMap, oldMetricProducers,
-                                     metricToActivationMap, trackerToMetricMap,
-                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
-                                     deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                                     invalidConfigReason)
-                                .value();
+                producer = updateMetric(
+                        config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
+                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                        allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
+                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                        invalidConfigReason);
                 break;
             }
             case UPDATE_REPLACE:
@@ -1023,12 +1004,12 @@ optional<InvalidConfigReason> updateMetrics(
                 [[fallthrough]];  // Intentionally fallthrough to create the new metric producer.
             case UPDATE_NEW: {
                 producer = createEventMetricProducerAndUpdateMetadata(
-                        key, config, timeBaseNs, metric, metricIndex, allAtomMatchingTrackers,
-                        newAtomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
-                        initialConditionCache, wizard, stateAtomIdMap, allStateGroupMaps,
-                        metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
-                        activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                        metricsWithActivation, configMetadataProvider);
+                        key, config, timeBaseNs, metric, metricIndex, newAtomMatchingTrackerMap,
+                        conditionTrackerMap, initialConditionCache, wizard, stateAtomIdMap,
+                        allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                        configMetadataProvider);
                 break;
             }
             default: {
@@ -1059,16 +1040,14 @@ optional<InvalidConfigReason> updateMetrics(
                 if (invalidConfigReason.has_value()) {
                     return invalidConfigReason;
                 }
-                producer =
-                        updateMetric(config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
-                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
-                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
-                                     wizard, oldMetricProducerMap, oldMetricProducers,
-                                     metricToActivationMap, trackerToMetricMap,
-                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
-                                     deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                                     invalidConfigReason)
-                                .value();
+                producer = updateMetric(
+                        config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
+                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                        allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
+                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                        invalidConfigReason);
                 break;
             }
             case UPDATE_REPLACE:
@@ -1077,10 +1056,10 @@ optional<InvalidConfigReason> updateMetrics(
             case UPDATE_NEW: {
                 producer = createNumericValueMetricProducerAndUpdateMetadata(
                         key, config, timeBaseNs, currentTimeNs, pullerManager, metric, metricIndex,
-                        allAtomMatchingTrackers, newAtomMatchingTrackerMap, allConditionTrackers,
-                        conditionTrackerMap, initialConditionCache, wizard, matcherWizard,
-                        stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
-                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        allAtomMatchingTrackers, newAtomMatchingTrackerMap, conditionTrackerMap,
+                        initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
+                        allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
                         configMetadataProvider);
                 break;
@@ -1113,16 +1092,14 @@ optional<InvalidConfigReason> updateMetrics(
                 if (invalidConfigReason.has_value()) {
                     return invalidConfigReason;
                 }
-                producer =
-                        updateMetric(config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
-                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
-                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
-                                     wizard, oldMetricProducerMap, oldMetricProducers,
-                                     metricToActivationMap, trackerToMetricMap,
-                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
-                                     deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                                     invalidConfigReason)
-                                .value();
+                producer = updateMetric(
+                        config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
+                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                        allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
+                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                        invalidConfigReason);
                 break;
             }
             case UPDATE_REPLACE:
@@ -1131,10 +1108,10 @@ optional<InvalidConfigReason> updateMetrics(
             case UPDATE_NEW: {
                 producer = createGaugeMetricProducerAndUpdateMetadata(
                         key, config, timeBaseNs, currentTimeNs, pullerManager, metric, metricIndex,
-                        allAtomMatchingTrackers, newAtomMatchingTrackerMap, allConditionTrackers,
-                        conditionTrackerMap, initialConditionCache, wizard, matcherWizard,
-                        stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
-                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        allAtomMatchingTrackers, newAtomMatchingTrackerMap, conditionTrackerMap,
+                        initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
+                        allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
                         configMetadataProvider);
                 break;
@@ -1167,16 +1144,14 @@ optional<InvalidConfigReason> updateMetrics(
                 if (invalidConfigReason.has_value()) {
                     return invalidConfigReason;
                 }
-                producer =
-                        updateMetric(config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
-                                     oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap,
-                                     matcherWizard, allConditionTrackers, conditionTrackerMap,
-                                     wizard, oldMetricProducerMap, oldMetricProducers,
-                                     metricToActivationMap, trackerToMetricMap,
-                                     conditionToMetricMap, activationAtomTrackerToMetricMap,
-                                     deactivationAtomTrackerToMetricMap, metricsWithActivation,
-                                     invalidConfigReason)
-                                .value();
+                producer = updateMetric(
+                        config, i, metricIndex, metric.id(), allAtomMatchingTrackers,
+                        oldAtomMatchingTrackerMap, newAtomMatchingTrackerMap, matcherWizard,
+                        allConditionTrackers, conditionTrackerMap, wizard, oldMetricProducerMap,
+                        oldMetricProducers, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                        invalidConfigReason);
                 break;
             }
             case UPDATE_REPLACE:
@@ -1186,10 +1161,10 @@ optional<InvalidConfigReason> updateMetrics(
             case UPDATE_NEW: {
                 producer = createKllMetricProducerAndUpdateMetadata(
                         key, config, timeBaseNs, currentTimeNs, pullerManager, metric, metricIndex,
-                        allAtomMatchingTrackers, newAtomMatchingTrackerMap, allConditionTrackers,
-                        conditionTrackerMap, initialConditionCache, wizard, matcherWizard,
-                        stateAtomIdMap, allStateGroupMaps, metricToActivationMap,
-                        trackerToMetricMap, conditionToMetricMap, activationAtomTrackerToMetricMap,
+                        allAtomMatchingTrackers, newAtomMatchingTrackerMap, conditionTrackerMap,
+                        initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
+                        allStateGroupMaps, metricToActivationMap, trackerToMetricMap,
+                        conditionToMetricMap, activationAtomTrackerToMetricMap,
                         deactivationAtomTrackerToMetricMap, metricsWithActivation,
                         configMetadataProvider);
                 break;
