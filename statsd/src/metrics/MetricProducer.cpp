@@ -64,7 +64,6 @@ MetricProducer::MetricProducer(
     : mMetricId(metricId),
       mProtoHash(protoHash),
       mConfigKey(key),
-      mValid(true),
       mTimeBaseNs(timeBaseNs),
       mCurrentBucketStartTimeNs(timeBaseNs),
       mCurrentBucketNum(0),

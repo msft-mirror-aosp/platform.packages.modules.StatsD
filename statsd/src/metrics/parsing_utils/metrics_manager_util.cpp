@@ -139,6 +139,206 @@ optional<InvalidConfigReason> validateSimpleAtomMatcher(int64_t matcherId,
     return nullopt;
 }
 
+optional<InvalidConfigReason> checkMetricAtomMatchingTrackers(
+        const int64_t matcherId, const int64_t metricId, const bool enforceOneAtom,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap) {
+    auto logTrackerIt = atomMatchingTrackerMap.find(matcherId);
+    if (logTrackerIt == atomMatchingTrackerMap.end()) {
+        ALOGW("cannot find the AtomMatcher \"%lld\" in config", (long long)matcherId);
+        return createInvalidConfigReasonWithMatcher(INVALID_CONFIG_REASON_METRIC_MATCHER_NOT_FOUND,
+                                                    metricId, matcherId);
+    }
+    if (enforceOneAtom && allAtomMatchingTrackers[logTrackerIt->second]->getAtomIds().size() > 1) {
+        ALOGE("AtomMatcher \"%lld\" has more than one tag ids. When a metric has dimension, "
+              "the \"what\" can only be about one atom type. trigger_event matchers can also only "
+              "be about one atom type.",
+              (long long)matcherId);
+        return createInvalidConfigReasonWithMatcher(
+                INVALID_CONFIG_REASON_METRIC_MATCHER_MORE_THAN_ONE_ATOM, metricId, matcherId);
+    }
+    return nullopt;
+}
+
+optional<InvalidConfigReason> checkMetricWithConditions(
+        const int64_t condition, const int64_t metricId,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const ::google::protobuf::RepeatedPtrField<MetricConditionLink>& links) {
+    auto condition_it = conditionTrackerMap.find(condition);
+    if (condition_it == conditionTrackerMap.end()) {
+        ALOGW("cannot find Predicate \"%lld\" in the config", (long long)condition);
+        return createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_METRIC_CONDITION_NOT_FOUND, metricId, condition);
+    }
+    for (const auto& link : links) {
+        auto it = conditionTrackerMap.find(link.condition());
+        if (it == conditionTrackerMap.end()) {
+            ALOGW("cannot find Predicate \"%lld\" in the config", (long long)link.condition());
+            return createInvalidConfigReasonWithPredicate(
+                    INVALID_CONFIG_REASON_METRIC_CONDITION_LINK_NOT_FOUND, metricId,
+                    link.condition());
+        }
+    }
+    return nullopt;
+}
+
+optional<InvalidConfigReason> checkMetricWithStates(
+        const int64_t metricId, const ::google::protobuf::RepeatedField<int64_t>& stateIds,
+        const unordered_map<int64_t, int>& stateAtomIdMap) {
+    for (const auto& stateId : stateIds) {
+        auto it = stateAtomIdMap.find(stateId);
+        if (it == stateAtomIdMap.end()) {
+            ALOGW("cannot find State %" PRId64 " in the config", stateId);
+            return createInvalidConfigReasonWithState(INVALID_CONFIG_REASON_METRIC_STATE_NOT_FOUND,
+                                                      metricId, stateId);
+        }
+    }
+    return nullopt;
+}
+
+// Validates a metricActivation.
+optional<InvalidConfigReason> checkMetricActivation(
+        const StatsdConfig& config, const int64_t metricId,
+        const unordered_map<int64_t, int>& metricToActivationMap,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap) {
+    // Check if metric has an associated activation
+    auto itr = metricToActivationMap.find(metricId);
+    if (itr == metricToActivationMap.end()) {
+        return nullopt;
+    }
+
+    int activationIndex = itr->second;
+    const MetricActivation& metricActivation = config.metric_activation(activationIndex);
+
+    for (int i = 0; i < metricActivation.event_activation_size(); i++) {
+        const EventActivation& activation = metricActivation.event_activation(i);
+
+        auto itr = atomMatchingTrackerMap.find(activation.atom_matcher_id());
+        if (itr == atomMatchingTrackerMap.end()) {
+            ALOGE("Atom matcher not found for event activation.");
+            return createInvalidConfigReasonWithMatcher(
+                    INVALID_CONFIG_REASON_METRIC_ACTIVATION_MATCHER_NOT_FOUND, metricId,
+                    activation.atom_matcher_id());
+        }
+
+        if (activation.has_deactivation_atom_matcher_id()) {
+            itr = atomMatchingTrackerMap.find(activation.deactivation_atom_matcher_id());
+            if (itr == atomMatchingTrackerMap.end()) {
+                ALOGE("Atom matcher not found for event deactivation.");
+                return createInvalidConfigReasonWithMatcher(
+                        INVALID_CONFIG_REASON_METRIC_DEACTIVATION_MATCHER_NOT_FOUND, metricId,
+                        activation.deactivation_atom_matcher_id());
+            }
+        }
+    }
+    return nullopt;
+}
+
+optional<InvalidConfigReason> checkMetricWithDimensionalSampling(
+        const int64_t metricId, const DimensionalSamplingInfo& dimSamplingInfo,
+        const vector<Matcher>& dimensionsInWhat) {
+    if (!dimSamplingInfo.has_sampled_what_field()) {
+        ALOGE("metric DimensionalSamplingInfo missing sampledWhatField");
+        return InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_DIMENSIONAL_SAMPLING_INFO_MISSING_SAMPLED_FIELD,
+                metricId);
+    }
+
+    if (dimSamplingInfo.shard_count() <= 1) {
+        ALOGE("metric shardCount must be > 1");
+        return InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_DIMENSIONAL_SAMPLING_INFO_INCORRECT_SHARD_COUNT,
+                metricId);
+    }
+
+    if (HasPositionALL(dimSamplingInfo.sampled_what_field()) ||
+        HasPositionANY(dimSamplingInfo.sampled_what_field())) {
+        ALOGE("metric has repeated field with position ALL or ANY as the sampled dimension");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
+                                   metricId);
+    }
+    SamplingInfo samplingInfo;
+    translateFieldMatcher(dimSamplingInfo.sampled_what_field(), &samplingInfo.sampledWhatFields);
+    if (samplingInfo.sampledWhatFields.size() != 1) {
+        ALOGE("metric has incorrect number of sampled dimension fields");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELD_INCORRECT_SIZE,
+                                   metricId);
+    }
+    if (!subsetDimensions(samplingInfo.sampledWhatFields, dimensionsInWhat)) {
+        return InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_SAMPLED_FIELDS_NOT_SUBSET_DIM_IN_WHAT, metricId);
+    }
+    return nullopt;
+}
+
+template <typename T>
+optional<InvalidConfigReason> checkUidFields(const T& metric) {
+    if (metric.has_uid_fields()) {
+        if (HasPositionANY(metric.uid_fields())) {
+            ALOGE("Metric %lld has position ANY in uid fields", (long long)metric.id());
+            return InvalidConfigReason(INVALID_CONFIG_REASON_UID_FIELDS_WITH_POSITION_ANY,
+                                       metric.id());
+        }
+    }
+    return nullopt;
+}
+
+template <typename T>
+optional<InvalidConfigReason> checkCommonMetricFields(
+        const StatsdConfig& config, const T& metric,
+        const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const std::unordered_map<int64_t, int>& conditionTrackerMap,
+        const std::unordered_map<int64_t, int>& stateAtomIdMap,
+        const std::unordered_map<int64_t, int>& metricToActivationMap) {
+    if (!metric.has_id() || !metric.has_what()) {
+        ALOGE("cannot find metric id or \"what\" in metric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
+    }
+
+    optional<InvalidConfigReason> invalidConfigReason;
+    if (metric.has_condition()) {
+        invalidConfigReason = checkMetricWithConditions(metric.condition(), metric.id(),
+                                                        conditionTrackerMap, metric.links());
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    } else if (metric.links_size() > 0) {
+        ALOGW("metrics has a MetricConditionLink but doesn't have a condition");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION,
+                                   metric.id());
+    }
+
+    if (metric.slice_by_state_size() > 0) {
+        invalidConfigReason =
+                checkMetricWithStates(metric.id(), metric.slice_by_state(), stateAtomIdMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    } else if (metric.state_link_size() > 0) {
+        ALOGW("Metric has a MetricStateLink but doesn't have a sliced state");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
+    }
+
+    invalidConfigReason = checkMetricActivation(config, metric.id(), metricToActivationMap,
+                                                atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    uint64_t metricHash;
+    invalidConfigReason =
+            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    invalidConfigReason = checkUidFields(metric);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+    return nullopt;
+}
+
 }  // namespace
 
 sp<AtomMatchingTracker> createAtomMatchingTracker(
@@ -366,6 +566,18 @@ optional<InvalidConfigReason> handleMetricWithStateLink(const int64_t metricId,
     return nullopt;
 }
 
+optional<InvalidConfigReason> checkMetricWithStateLink(const int64_t metricId,
+                                                       const FieldMatcher& stateMatcher,
+                                                       const vector<Matcher>& dimensionsInWhat) {
+    vector<Matcher> stateMatchers;
+    translateFieldMatcher(stateMatcher, &stateMatchers);
+    if (!subsetDimensions(stateMatchers, dimensionsInWhat)) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINKS_NOT_SUBSET_DIM_IN_WHAT,
+                                   metricId);
+    }
+    return nullopt;
+}
+
 optional<InvalidConfigReason> handleMetricWithDimensionalSampling(
         const int64_t metricId, const DimensionalSamplingInfo& dimSamplingInfo,
         const vector<Matcher>& dimensionsInWhat, SamplingInfo& samplingInfo) {
@@ -481,6 +693,43 @@ optional<InvalidConfigReason> handleMetricActivation(
     return nullopt;
 }
 
+optional<InvalidConfigReason> checkMetricActivationOnConfigUpdate(
+        const StatsdConfig& config, const int64_t metricId,
+        const unordered_map<int64_t, int>& metricToActivationMap,
+        const unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
+        const unordered_map<int, shared_ptr<Activation>>& oldEventActivationMap) {
+    // Check if metric has an associated activation.
+    const auto& itr = metricToActivationMap.find(metricId);
+    if (itr == metricToActivationMap.end()) {
+        return nullopt;
+    }
+
+    int activationIndex = itr->second;
+    const MetricActivation& metricActivation = config.metric_activation(activationIndex);
+
+    for (int i = 0; i < metricActivation.event_activation_size(); i++) {
+        const int64_t activationMatcherId = metricActivation.event_activation(i).atom_matcher_id();
+
+        // Find the old activation struct and copy it over.
+        const auto& oldActivationIt = oldAtomMatchingTrackerMap.find(activationMatcherId);
+        if (oldActivationIt == oldAtomMatchingTrackerMap.end()) {
+            ALOGE("Atom matcher not found in existing config for event activation.");
+            return createInvalidConfigReasonWithMatcher(
+                    INVALID_CONFIG_REASON_METRIC_ACTIVATION_MATCHER_NOT_FOUND_EXISTING, metricId,
+                    activationMatcherId);
+        }
+        int oldActivationMatcherIndex = oldActivationIt->second;
+        const auto& oldEventActivationIt = oldEventActivationMap.find(oldActivationMatcherIndex);
+        if (oldEventActivationIt == oldEventActivationMap.end()) {
+            ALOGE("Could not find existing event activation to update");
+            return createInvalidConfigReasonWithMatcher(
+                    INVALID_CONFIG_REASON_METRIC_ACTIVATION_NOT_FOUND_EXISTING, metricId,
+                    activationMatcherId);
+        }
+    }
+    return nullopt;
+}
+
 // Validates a metricActivation and populates state.
 // Fills the new event activation/deactivation maps, preserving the existing activations
 // Returns false if there are errors.
@@ -556,7 +805,58 @@ optional<InvalidConfigReason> handleMetricActivationOnConfigUpdate(
     return nullopt;
 }
 
-optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
+optional<InvalidConfigReason> isNewCountMetricValid(
+        const StatsdConfig& config, const CountMetric& metric,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            metric.what(), metric.id(), metric.has_dimensions_in_what(), allAtomMatchingTrackers,
+            atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    // Check that all metric state links are a subset of dimensions_in_what fields.
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    for (const auto& stateLink : metric.state_link()) {
+        invalidConfigReason =
+                checkMetricWithStateLink(metric.id(), stateLink.fields_in_what(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            ALOGW("CountMetric's MetricStateLinks must be a subset of dimensions in what");
+            return invalidConfigReason;
+        }
+    }
+
+    if (metric.has_threshold() &&
+        (metric.threshold().value_comparison_case() == UploadThreshold::kLtFloat ||
+         metric.threshold().value_comparison_case() == UploadThreshold::kGtFloat)) {
+        ALOGW("Count metric incorrect upload threshold type or no type used");
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_BAD_THRESHOLD, metric.id());
+    }
+
+    if (metric.has_dimensional_sampling_info()) {
+        invalidConfigReason = checkMetricWithDimensionalSampling(
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    return nullopt;
+}
+
+sp<MetricProducer> createCountMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const CountMetric& metric, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
@@ -571,54 +871,122 @@ optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find metric id or \"what\" in CountMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
     int trackerIndex;
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), metric.id(), metricIndex, metric.has_dimensions_in_what(),
-            allAtomMatchingTrackers, atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), metric.id(), metricIndex,
+                                         metric.has_dimensions_in_what(), allAtomMatchingTrackers,
+                                         atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else {
-        if (metric.links_size() > 0) {
-            ALOGW("metrics has a MetricConditionLink but doesn't have a condition");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-            return nullopt;
-        }
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     unordered_map<int, unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
+    }
+
+    unordered_map<int, shared_ptr<Activation>> eventActivationMap;
+    unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
+
+    uint64_t metricHash;
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
+
+    sp<MetricProducer> metricProducer = new CountMetricProducer(
+            key, metric, conditionIndex, initialConditionCache, wizard, metricHash, timeBaseNs,
+            currentTimeNs, configMetadataProvider, eventActivationMap, eventDeactivationMap,
+            slicedStateAtoms, stateGroupMap);
+
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    SamplingInfo samplingInfo;
+    if (metric.has_dimensional_sampling_info()) {
+        handleMetricWithDimensionalSampling(metric.id(), metric.dimensional_sampling_info(),
+                                            dimensionsInWhat, samplingInfo);
+        metricProducer->setSamplingInfo(samplingInfo);
+    }
+
+    setUidFieldsIfNecessary(metric, metricProducer);
+    return metricProducer;
+}
+
+optional<InvalidConfigReason> isNewDurationMetricValid(
+        const StatsdConfig& config, const DurationMetric& metric,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    const auto& what_it = conditionTrackerMap.find(metric.what());
+    if (what_it == conditionTrackerMap.end()) {
+        ALOGE("DurationMetric's \"what\" is not present in the condition trackers");
+        return createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND, metric.id(), metric.what());
+    }
+
+    const int whatIndex = what_it->second;
+    const Predicate& durationWhat = config.predicate(whatIndex);
+    if (durationWhat.contents_case() != Predicate::ContentsCase::kSimplePredicate) {
+        ALOGE("DurationMetric's \"what\" must be a simple condition");
+        return createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE, metric.id(), metric.what());
+    }
+
+    const SimplePredicate& simplePredicate = durationWhat.simple_predicate();
+
+    if (!simplePredicate.has_start()) {
+        ALOGE("Duration metrics must specify a valid start event matcher");
+        return createInvalidConfigReasonWithPredicate(
+                INVALID_CONFIG_REASON_DURATION_METRIC_MISSING_START, metric.id(), metric.what());
+    }
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            simplePredicate.start(), metric.id(), metric.has_dimensions_in_what(),
+            allAtomMatchingTrackers, atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    if (simplePredicate.has_stop()) {
+        invalidConfigReason = checkMetricAtomMatchingTrackers(
+                simplePredicate.stop(), metric.id(), metric.has_dimensions_in_what(),
+                allAtomMatchingTrackers, atomMatchingTrackerMap);
         if (invalidConfigReason.has_value()) {
-            return nullopt;
+            return invalidConfigReason;
         }
-    } else {
-        if (metric.state_link_size() > 0) {
-            ALOGW("CountMetric has a MetricStateLink but doesn't have a slice_by_state");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-            return nullopt;
+    }
+
+    if (simplePredicate.has_stop_all()) {
+        invalidConfigReason = checkMetricAtomMatchingTrackers(
+                simplePredicate.stop_all(), metric.id(), metric.has_dimensions_in_what(),
+                allAtomMatchingTrackers, atomMatchingTrackerMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    if (metric.slice_by_state_size() > 0) {
+        if (metric.aggregation_type() == DurationMetric::MAX_SPARSE) {
+            ALOGE("DurationMetric with aggregation type MAX_SPARSE cannot be sliced by state");
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_DURATION_METRIC_MAX_SPARSE_HAS_SLICE_BY_STATE,
+                    metric.id());
         }
     }
 
@@ -626,63 +994,69 @@ optional<sp<MetricProducer>> createCountMetricProducerAndUpdateMetadata(
     std::vector<Matcher> dimensionsInWhat;
     translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     for (const auto& stateLink : metric.state_link()) {
-        invalidConfigReason = handleMetricWithStateLink(metric.id(), stateLink.fields_in_what(),
-                                                        dimensionsInWhat);
-        if (invalidConfigReason.has_value()) {
-            ALOGW("CountMetric's MetricStateLinks must be a subset of dimensions in what");
-            return nullopt;
-        }
-    }
-
-    unordered_map<int, shared_ptr<Activation>> eventActivationMap;
-    unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
-
-    uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
-
-    if (metric.has_threshold() &&
-        (metric.threshold().value_comparison_case() == UploadThreshold::kLtFloat ||
-         metric.threshold().value_comparison_case() == UploadThreshold::kGtFloat)) {
-        ALOGW("Count metric incorrect upload threshold type or no type used");
         invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_BAD_THRESHOLD, metric.id());
-        return nullopt;
-    }
-
-    sp<MetricProducer> metricProducer = new CountMetricProducer(
-            key, metric, conditionIndex, initialConditionCache, wizard, metricHash, timeBaseNs,
-            currentTimeNs, configMetadataProvider, eventActivationMap, eventDeactivationMap,
-            slicedStateAtoms, stateGroupMap);
-
-    SamplingInfo samplingInfo;
-    if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithDimensionalSampling(
-                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
+                checkMetricWithStateLink(metric.id(), stateLink.fields_in_what(), dimensionsInWhat);
         if (invalidConfigReason.has_value()) {
-            return nullopt;
+            ALOGW("DurationMetric's MetricStateLinks must be a subset of dimensions in what");
+            return invalidConfigReason;
         }
-        metricProducer->setSamplingInfo(samplingInfo);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
+    if (metric.has_threshold()) {
+        switch (metric.threshold().value_comparison_case()) {
+            case UploadThreshold::kLtInt:
+            case UploadThreshold::kGtInt:
+            case UploadThreshold::kLteInt:
+            case UploadThreshold::kGteInt:
+                break;
+            default:
+                ALOGE("Duration metric incorrect upload threshold type or no type used");
+                return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_BAD_THRESHOLD, metric.id());
+        }
     }
-    return metricProducer;
+
+    const FieldMatcher& internalDimensions = simplePredicate.dimensions();
+    vector<Matcher> translatedInternalDimensions;
+
+    if (internalDimensions.has_field()) {
+        translateFieldMatcher(internalDimensions, &translatedInternalDimensions);
+    }
+    // Dimensions in what must be subset of internal dimensions
+    if (!subsetDimensions(dimensionsInWhat, translatedInternalDimensions)) {
+        ALOGE("Dimensions in what must be a subset of the internal dimensions");
+        return InvalidConfigReason(
+                INVALID_CONFIG_REASON_METRIC_DIMENSIONS_IN_WHAT_NOT_SUBSET_OF_INTERNAL_DIMENSIONS,
+                metric.id());
+    }
+
+    for (const auto& link : metric.links()) {
+        std::vector<Matcher> metricFields;
+        translateFieldMatcher(link.fields_in_what(), &metricFields);
+        if (!subsetDimensions(metricFields, translatedInternalDimensions)) {
+            ALOGE(("Condition links must be a subset of the internal dimensions"));
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_METRIC_CONDITION_LINKS_NOT_SUBSET_OF_INTERNAL_DIMENSIONS,
+                    metric.id());
+        }
+    }
+
+    // Checking state links being a subet of internal dimensions is not needed because
+    // 1. dimensions_in_what being a subset of internal dims is already checked
+    // 2. state links are subset of dimensions_in_what is already checked
+    // 3. state links are transitively a subset of internal dims.
+
+    if (metric.has_dimensional_sampling_info()) {
+        invalidConfigReason = checkMetricWithDimensionalSampling(
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    return nullopt;
 }
 
-optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
+sp<MetricProducer> createDurationMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const DurationMetric& metric, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
@@ -697,183 +1071,115 @@ optional<sp<MetricProducer>> createDurationMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find metric id or \"what\" in DurationMetric \"%lld\"",
-              (long long)metric.id());
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
     const auto& what_it = conditionTrackerMap.find(metric.what());
-    if (what_it == conditionTrackerMap.end()) {
-        ALOGE("DurationMetric's \"what\" is not present in the condition trackers");
-        invalidConfigReason = createInvalidConfigReasonWithPredicate(
-                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_FOUND, metric.id(), metric.what());
-        return nullopt;
-    }
-
     const int whatIndex = what_it->second;
     const Predicate& durationWhat = config.predicate(whatIndex);
-    if (durationWhat.contents_case() != Predicate::ContentsCase::kSimplePredicate) {
-        ALOGE("DurationMetric's \"what\" must be a simple condition");
-        invalidConfigReason = createInvalidConfigReasonWithPredicate(
-                INVALID_CONFIG_REASON_DURATION_METRIC_WHAT_NOT_SIMPLE, metric.id(), metric.what());
-        return nullopt;
-    }
-
     const SimplePredicate& simplePredicate = durationWhat.simple_predicate();
-    bool nesting = simplePredicate.count_nesting();
-
+    const bool nesting = simplePredicate.count_nesting();
     int startIndex = -1, stopIndex = -1, stopAllIndex = -1;
-    if (!simplePredicate.has_start()) {
-        ALOGE("Duration metrics must specify a valid start event matcher");
-        invalidConfigReason = createInvalidConfigReasonWithPredicate(
-                INVALID_CONFIG_REASON_DURATION_METRIC_MISSING_START, metric.id(), metric.what());
-        return nullopt;
-    }
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            simplePredicate.start(), metric.id(), metricIndex, metric.has_dimensions_in_what(),
-            allAtomMatchingTrackers, atomMatchingTrackerMap, trackerToMetricMap, startIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(simplePredicate.start(), metric.id(), metricIndex,
+                                         metric.has_dimensions_in_what(), allAtomMatchingTrackers,
+                                         atomMatchingTrackerMap, trackerToMetricMap, startIndex);
 
     if (simplePredicate.has_stop()) {
-        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
+        handleMetricWithAtomMatchingTrackers(
                 simplePredicate.stop(), metric.id(), metricIndex, metric.has_dimensions_in_what(),
                 allAtomMatchingTrackers, atomMatchingTrackerMap, trackerToMetricMap, stopIndex);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
     }
 
     if (simplePredicate.has_stop_all()) {
-        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-                simplePredicate.stop_all(), metric.id(), metricIndex,
-                metric.has_dimensions_in_what(), allAtomMatchingTrackers, atomMatchingTrackerMap,
-                trackerToMetricMap, stopAllIndex);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithAtomMatchingTrackers(simplePredicate.stop_all(), metric.id(), metricIndex,
+                                             metric.has_dimensions_in_what(),
+                                             allAtomMatchingTrackers, atomMatchingTrackerMap,
+                                             trackerToMetricMap, stopAllIndex);
     }
-
-    const FieldMatcher& internalDimensions = simplePredicate.dimensions();
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.links_size() > 0) {
-        ALOGW("metrics has a MetricConditionLink but doesn't have a condition");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-        return nullopt;
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     unordered_map<int, unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        if (metric.aggregation_type() == DurationMetric::MAX_SPARSE) {
-            ALOGE("DurationMetric with aggregation type MAX_SPARSE cannot be sliced by state");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_DURATION_METRIC_MAX_SPARSE_HAS_SLICE_BY_STATE,
-                    metric.id());
-            return nullopt;
-        }
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.state_link_size() > 0) {
-        ALOGW("DurationMetric has a MetricStateLink but doesn't have a sliced state");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-        return nullopt;
-    }
-
-    // Check that all metric state links are a subset of dimensions_in_what fields.
-    std::vector<Matcher> dimensionsInWhat;
-    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
-    for (const auto& stateLink : metric.state_link()) {
-        invalidConfigReason = handleMetricWithStateLink(metric.id(), stateLink.fields_in_what(),
-                                                        dimensionsInWhat);
-        if (invalidConfigReason.has_value()) {
-            ALOGW("DurationMetric's MetricStateLinks must be a subset of dimensions in what");
-            return nullopt;
-        }
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
 
     uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
 
-    if (metric.has_threshold()) {
-        switch (metric.threshold().value_comparison_case()) {
-            case UploadThreshold::kLtInt:
-            case UploadThreshold::kGtInt:
-            case UploadThreshold::kLteInt:
-            case UploadThreshold::kGteInt:
-                break;
-            default:
-                ALOGE("Duration metric incorrect upload threshold type or no type used");
-                invalidConfigReason = InvalidConfigReason(
-                        INVALID_CONFIG_REASON_METRIC_BAD_THRESHOLD, metric.id());
-                return nullopt;
-        }
-    }
+    const FieldMatcher& internalDimensions = simplePredicate.dimensions();
 
     sp<MetricProducer> metricProducer = new DurationMetricProducer(
             key, metric, conditionIndex, initialConditionCache, whatIndex, startIndex, stopIndex,
             stopAllIndex, nesting, wizard, metricHash, internalDimensions, timeBaseNs,
             currentTimeNs, configMetadataProvider, eventActivationMap, eventDeactivationMap,
             slicedStateAtoms, stateGroupMap);
-    if (!metricProducer->isValid()) {
-        // TODO: Remove once invalidConfigReason is added to the DurationMetricProducer constructor
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_DURATION_METRIC_PRODUCER_INVALID, metric.id());
-        return nullopt;
-    }
 
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithDimensionalSampling(
-                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithDimensionalSampling(metric.id(), metric.dimensional_sampling_info(),
+                                            dimensionsInWhat, samplingInfo);
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
-
+    setUidFieldsIfNecessary(metric, metricProducer);
     return metricProducer;
 }
 
-optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
+optional<InvalidConfigReason> isNewEventMetricValid(
+        const StatsdConfig& config, const EventMetric& metric,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    if (metric.has_fields_filter()) {
+        const FieldFilter& filter = metric.fields_filter();
+        if ((filter.has_fields() && !hasLeafNode(filter.fields())) ||
+            (filter.has_omit_fields() && !hasLeafNode(filter.omit_fields()))) {
+            ALOGW("Incorrect field filter setting in EventMetric %lld", (long long)metric.id());
+            return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER,
+                                       metric.id());
+        }
+    }
+
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            metric.what(), metric.id(), false, allAtomMatchingTrackers, atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                   metric.id());
+    }
+
+    return nullopt;
+}
+
+sp<MetricProducer> createEventMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const EventMetric& metric, const int metricIndex,
         const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
@@ -888,87 +1194,36 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find the metric name or what in config");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
-
-    if (metric.has_fields_filter()) {
-        const FieldFilter& filter = metric.fields_filter();
-        if ((filter.has_fields() && !hasLeafNode(filter.fields())) ||
-            (filter.has_omit_fields() && !hasLeafNode(filter.omit_fields()))) {
-            ALOGW("Incorrect field filter setting in EventMetric %lld", (long long)metric.id());
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
-            return nullopt;
-        }
-    }
-
     int trackerIndex;
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), metric.id(), metricIndex, false, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), metric.id(), metricIndex, false,
+                                         allAtomMatchingTrackers, atomMatchingTrackerMap,
+                                         trackerToMetricMap, trackerIndex);
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else {
-        if (metric.links_size() > 0) {
-            ALOGW("metrics has a MetricConditionLink but doesn't have a condition");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-            return nullopt;
-        }
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     unordered_map<int, unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.state_link_size() > 0) {
-        ALOGW("EventMetric has a MetricStateLink but doesn't have a sliced state");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-        return nullopt;
-    }
-
-    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE, metric.id());
-        return nullopt;
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) return nullptr;
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
 
     uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
 
     sp<MetricProducer> metricProducer;
     if (config.has_restricted_metrics_delegate_package_name()) {
@@ -983,11 +1238,7 @@ optional<sp<MetricProducer>> createEventMetricProducerAndUpdateMetadata(
                 stateGroupMap);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
-
+    setUidFieldsIfNecessary(metric, metricProducer);
     return metricProducer;
 }
 
@@ -1028,7 +1279,126 @@ optional<InvalidConfigReason> validatePositionAllInValueFields(
 }
 }  // anonymous namespace
 
-optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
+optional<InvalidConfigReason> isNewNumericValueMetricValid(
+        const StatsdConfig& config, const ValueMetric& metric,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+    if (!metric.has_value_field()) {
+        ALOGE("cannot find \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_MISSING_VALUE_FIELD,
+                                   metric.id());
+    }
+    std::vector<Matcher> fieldMatchers;
+    translateFieldMatcher(metric.value_field(), &fieldMatchers);
+    if (fieldMatchers.size() < 1) {
+        ALOGE("incorrect \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HAS_INCORRECT_VALUE_FIELD,
+                                   metric.id());
+    }
+
+    std::vector<ValueMetric::AggregationType> aggregationTypes;
+    int histogramCount = 0;
+    if (!metric.aggregation_types().empty()) {
+        if (metric.has_aggregation_type()) {
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
+                    metric.id());
+        }
+        if (metric.aggregation_types_size() != (int)fieldMatchers.size()) {
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
+                    metric.id());
+        }
+        for (int i = 0; i < metric.aggregation_types_size(); i++) {
+            const ValueMetric::AggregationType aggType = metric.aggregation_types(i);
+            aggregationTypes.push_back(aggType);
+            if (aggType == ValueMetric::HISTOGRAM) {
+                histogramCount++;
+            }
+            invalidConfigReason = validatePositionAllInValueFields(
+                    metric, histogramCount - 1, aggType, fieldMatchers.begin() + i,
+                    fieldMatchers.begin() + i + 1);
+            if (invalidConfigReason != nullopt) {
+                return invalidConfigReason;
+            }
+        }
+    } else {  // aggregation_type() is set or default is used.
+        const ValueMetric::AggregationType aggType = metric.aggregation_type();
+        aggregationTypes.push_back(aggType);
+        if (aggType == ValueMetric::HISTOGRAM) {
+            histogramCount = 1;
+        }
+        invalidConfigReason = validatePositionAllInValueFields(
+                metric, 0, aggType, fieldMatchers.begin(), fieldMatchers.end());
+        if (invalidConfigReason != nullopt) {
+            return invalidConfigReason;
+        }
+    }
+
+    if (metric.histogram_bin_configs_size() != histogramCount) {
+        ALOGE("%d histogram aggregations specified but there are %d histogram_bin_configs",
+              histogramCount, metric.histogram_bin_configs_size());
+        return InvalidConfigReason(
+                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
+                metric.id());
+    }
+
+    if (aggregationTypes.front() == ValueMetric::HISTOGRAM && metric.has_threshold()) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD,
+                                   metric.id());
+    }
+
+    if (histogramCount > 0 && metric.has_value_direction() &&
+        metric.value_direction() != ValueMetric::INCREASING) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION,
+                                   metric.id());
+    }
+
+    ParseHistogramBinConfigsResult parseBinConfigsResult =
+            parseHistogramBinConfigs(metric, aggregationTypes);
+    if (std::holds_alternative<InvalidConfigReason>(parseBinConfigsResult)) {
+        return std::get<InvalidConfigReason>(parseBinConfigsResult);
+    }
+
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            metric.what(), metric.id(), true, allAtomMatchingTrackers, atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    // Check that all metric state links are a subset of dimensions_in_what fields.
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    for (const auto& stateLink : metric.state_link()) {
+        invalidConfigReason =
+                checkMetricWithStateLink(metric.id(), stateLink.fields_in_what(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            ALOGW("ValueMetric's MetricStateLinks must be a subset of the dimensions in what");
+            return invalidConfigReason;
+        }
+    }
+
+    if (metric.has_dimensional_sampling_info()) {
+        invalidConfigReason = checkMetricWithDimensionalSampling(
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    return nullopt;
+}
+
+sp<MetricProducer> createNumericValueMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const ValueMetric& metric, const int metricIndex,
@@ -1045,107 +1415,27 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find metric id or \"what\" in ValueMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
-    if (!metric.has_value_field()) {
-        ALOGE("cannot find \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_MISSING_VALUE_FIELD, metric.id());
-        return nullopt;
-    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.value_field(), &fieldMatchers);
-    if (fieldMatchers.size() < 1) {
-        ALOGE("incorrect \"value_field\" in ValueMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_HAS_INCORRECT_VALUE_FIELD, metric.id());
-        return nullopt;
-    }
 
     std::vector<ValueMetric::AggregationType> aggregationTypes;
-    int histogramCount = 0;
     if (!metric.aggregation_types().empty()) {
-        if (metric.has_aggregation_type()) {
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_VALUE_METRIC_DEFINES_SINGLE_AND_MULTIPLE_AGG_TYPES,
-                    metric.id());
-            return nullopt;
-        }
-        if (metric.aggregation_types_size() != (int)fieldMatchers.size()) {
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_VALUE_METRIC_AGG_TYPES_DNE_VALUE_FIELDS_SIZE,
-                    metric.id());
-            return nullopt;
-        }
         for (int i = 0; i < metric.aggregation_types_size(); i++) {
-            const ValueMetric::AggregationType aggType = metric.aggregation_types(i);
-            aggregationTypes.push_back(aggType);
-            if (aggType == ValueMetric::HISTOGRAM) {
-                histogramCount++;
-            }
-            invalidConfigReason = validatePositionAllInValueFields(
-                    metric, histogramCount - 1, aggType, fieldMatchers.begin() + i,
-                    fieldMatchers.begin() + i + 1);
-            if (invalidConfigReason != nullopt) {
-                return nullopt;
-            }
+            aggregationTypes.push_back(metric.aggregation_types(i));
         }
     } else {  // aggregation_type() is set or default is used.
-        const ValueMetric::AggregationType aggType = metric.aggregation_type();
-        aggregationTypes.push_back(aggType);
-        if (aggType == ValueMetric::HISTOGRAM) {
-            histogramCount = 1;
-        }
-        invalidConfigReason = validatePositionAllInValueFields(
-                metric, 0, aggType, fieldMatchers.begin(), fieldMatchers.end());
-        if (invalidConfigReason != nullopt) {
-            return nullopt;
-        }
-    }
-
-    if (metric.histogram_bin_configs_size() != histogramCount) {
-        ALOGE("%d histogram aggregations specified but there are %d histogram_bin_configs",
-              histogramCount, metric.histogram_bin_configs_size());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_COUNT_DNE_HIST_BIN_CONFIGS_COUNT,
-                metric.id());
-        return nullopt;
-    }
-
-    if (aggregationTypes.front() == ValueMetric::HISTOGRAM && metric.has_threshold()) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_WITH_UPLOAD_THRESHOLD, metric.id());
-        return nullopt;
-    }
-
-    if (histogramCount > 0 && metric.has_value_direction() &&
-        metric.value_direction() != ValueMetric::INCREASING) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_VALUE_METRIC_HIST_INVALID_VALUE_DIRECTION, metric.id());
-        return nullopt;
+        aggregationTypes.push_back(metric.aggregation_type());
     }
 
     ParseHistogramBinConfigsResult parseBinConfigsResult =
             parseHistogramBinConfigs(metric, aggregationTypes);
-    if (std::holds_alternative<InvalidConfigReason>(parseBinConfigsResult)) {
-        invalidConfigReason = std::get<InvalidConfigReason>(parseBinConfigsResult);
-        return nullopt;
-    }
 
     int trackerIndex;
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), metric.id(), metricIndex,
-            /*enforceOneAtom=*/true, allAtomMatchingTrackers, atomMatchingTrackerMap,
-            trackerToMetricMap, trackerIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), metric.id(), metricIndex,
+                                         /*enforceOneAtom=*/true, allAtomMatchingTrackers,
+                                         atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
 
     const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     int atomTagId = *(atomMatcher->getAtomIds().begin());
@@ -1153,63 +1443,27 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.links_size() > 0) {
-        ALOGE("metrics has a MetricConditionLink but doesn't have a condition");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-        return nullopt;
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     unordered_map<int, unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.state_link_size() > 0) {
-        ALOGE("ValueMetric has a MetricStateLink but doesn't have a sliced state");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-        return nullopt;
-    }
-
-    // Check that all metric state links are a subset of dimensions_in_what fields.
-    std::vector<Matcher> dimensionsInWhat;
-    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
-    for (const auto& stateLink : metric.state_link()) {
-        invalidConfigReason = handleMetricWithStateLink(metric.id(), stateLink.fields_in_what(),
-                                                        dimensionsInWhat);
-        if (invalidConfigReason.has_value()) {
-            ALOGW("ValueMetric's MetricStateLinks must be a subset of the dimensions in what");
-            return nullopt;
-        }
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
 
     uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
 
     const TimeUnit bucketSizeTimeUnit =
             metric.bucket() == TIME_UNIT_UNSPECIFIED ? ONE_HOUR : metric.bucket();
@@ -1244,25 +1498,82 @@ optional<sp<MetricProducer>> createNumericValueMetricProducerAndUpdateMetadata(
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit},
             configMetadataProvider);
 
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithDimensionalSampling(
-                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithDimensionalSampling(metric.id(), metric.dimensional_sampling_info(),
+                                            dimensionsInWhat, samplingInfo);
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    setUidFieldsIfNecessary(metric, metricProducer);
 
     return metricProducer;
 }
 
-optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
+optional<InvalidConfigReason> isNewKllMetricValid(
+        const StatsdConfig& config, const KllMetric& metric,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    if (!metric.has_kll_field()) {
+        ALOGE("cannot find \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_MISSING_KLL_FIELD, metric.id());
+    }
+    if (HasPositionALL(metric.kll_field())) {
+        ALOGE("kll field with position ALL is not supported. KllMetric \"%lld\"",
+              (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_KLL_FIELD_HAS_POSITION_ALL,
+                                   metric.id());
+    }
+    std::vector<Matcher> fieldMatchers;
+    translateFieldMatcher(metric.kll_field(), &fieldMatchers);
+    if (fieldMatchers.empty()) {
+        ALOGE("incorrect \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
+        return InvalidConfigReason(INVALID_CONFIG_REASON_KLL_METRIC_HAS_INCORRECT_KLL_FIELD,
+                                   metric.id());
+    }
+
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            metric.what(), metric.id(), true, allAtomMatchingTrackers, atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    // Check that all metric state links are a subset of dimensions_in_what fields.
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    for (const auto& stateLink : metric.state_link()) {
+        invalidConfigReason =
+                checkMetricWithStateLink(metric.id(), stateLink.fields_in_what(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            ALOGW("KllMetric's MetricStateLinks must be a subset of the dimensions in what");
+            return nullopt;
+        }
+    }
+
+    if (metric.has_dimensional_sampling_info()) {
+        invalidConfigReason = checkMetricWithDimensionalSampling(
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    return nullopt;
+}
+
+sp<MetricProducer> createKllMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const KllMetric& metric, const int metricIndex,
@@ -1279,104 +1590,39 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find metric id or \"what\" in KllMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
-    if (!metric.has_kll_field()) {
-        ALOGE("cannot find \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_KLL_METRIC_MISSING_KLL_FIELD, metric.id());
-        return nullopt;
-    }
-    if (HasPositionALL(metric.kll_field())) {
-        ALOGE("kll field with position ALL is not supported. KllMetric \"%lld\"",
-              (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_KLL_METRIC_KLL_FIELD_HAS_POSITION_ALL, metric.id());
-        return nullopt;
-    }
     std::vector<Matcher> fieldMatchers;
     translateFieldMatcher(metric.kll_field(), &fieldMatchers);
-    if (fieldMatchers.empty()) {
-        ALOGE("incorrect \"kll_field\" in KllMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_KLL_METRIC_HAS_INCORRECT_KLL_FIELD, metric.id());
-        return nullopt;
-    }
 
     int trackerIndex;
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), metric.id(), metricIndex,
-            /*enforceOneAtom=*/true, allAtomMatchingTrackers, atomMatchingTrackerMap,
-            trackerToMetricMap, trackerIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), metric.id(), metricIndex,
+                                         /*enforceOneAtom=*/true, allAtomMatchingTrackers,
+                                         atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.links_size() > 0) {
-        ALOGE("metrics has a MetricConditionLink but doesn't have a condition");
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-        return nullopt;
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     unordered_map<int, unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.state_link_size() > 0) {
-        ALOGE("KllMetric has a MetricStateLink but doesn't have a sliced state");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-        return nullopt;
-    }
-
-    // Check that all metric state links are a subset of dimensions_in_what fields.
-    std::vector<Matcher> dimensionsInWhat;
-    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
-    for (const auto& stateLink : metric.state_link()) {
-        invalidConfigReason = handleMetricWithStateLink(metric.id(), stateLink.fields_in_what(),
-                                                        dimensionsInWhat);
-        if (invalidConfigReason.has_value()) {
-            ALOGW("KllMetric's MetricStateLinks must be a subset of the dimensions in what");
-            return nullopt;
-        }
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
 
     uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
 
     const TimeUnit bucketSizeTimeUnit =
             metric.bucket() == TIME_UNIT_UNSPECIFIED ? ONE_HOUR : metric.bucket();
@@ -1409,25 +1655,116 @@ optional<sp<MetricProducer>> createKllMetricProducerAndUpdateMetadata(
             {eventActivationMap, eventDeactivationMap}, {dimensionSoftLimit, dimensionHardLimit},
             configMetadataProvider);
 
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     SamplingInfo samplingInfo;
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithDimensionalSampling(
-                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithDimensionalSampling(metric.id(), metric.dimensional_sampling_info(),
+                                            dimensionsInWhat, samplingInfo);
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
-
+    setUidFieldsIfNecessary(metric, metricProducer);
     return metricProducer;
 }
 
-optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
+optional<InvalidConfigReason> isNewGaugeMetricValid(
+        const StatsdConfig& config, const GaugeMetric& metric,
+        const sp<StatsPullerManager>& pullerManager,
+        const vector<sp<AtomMatchingTracker>>& allAtomMatchingTrackers,
+        const unordered_map<int64_t, int>& atomMatchingTrackerMap,
+        const unordered_map<int64_t, int>& conditionTrackerMap,
+        const unordered_map<int64_t, int>& stateAtomIdMap,
+        const unordered_map<int64_t, int>& metricToActivationMap) {
+    optional<InvalidConfigReason> invalidConfigReason =
+            checkCommonMetricFields(config, metric, atomMatchingTrackerMap, conditionTrackerMap,
+                                    stateAtomIdMap, metricToActivationMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    if (metric.has_gauge_fields_filter()) {
+        const FieldFilter& filter = metric.gauge_fields_filter();
+        if ((filter.has_fields() && !hasLeafNode(filter.fields())) ||
+            (filter.has_omit_fields() && !hasLeafNode(filter.omit_fields()))) {
+            ALOGW("Incorrect field filter setting in GaugeMetric %lld", (long long)metric.id());
+            return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER,
+                                       metric.id());
+        }
+    }
+
+    invalidConfigReason = checkMetricAtomMatchingTrackers(
+            metric.what(), metric.id(), true, allAtomMatchingTrackers, atomMatchingTrackerMap);
+    if (invalidConfigReason.has_value()) {
+        return invalidConfigReason;
+    }
+
+    const int trackerIndex = atomMatchingTrackerMap.at(metric.what());
+    const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
+    int atomTagId = *(atomMatcher->getAtomIds().begin());
+    int pullTagId = pullerManager->PullerForMatcherExists(atomTagId) ? atomTagId : -1;
+
+    if (metric.has_trigger_event()) {
+        if (pullTagId == -1) {
+            ALOGW("Pull atom not specified for trigger");
+            return InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_PULL_ATOM,
+                                       metric.id());
+        }
+        // trigger_event should be used with FIRST_N_SAMPLES
+        if (metric.sampling_type() != GaugeMetric::FIRST_N_SAMPLES) {
+            ALOGW("Gauge Metric with trigger event must have sampling type FIRST_N_SAMPLES");
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_FIRST_N_SAMPLES, metric.id());
+        }
+        invalidConfigReason =
+                checkMetricAtomMatchingTrackers(metric.trigger_event(), metric.id(), true,
+                                                allAtomMatchingTrackers, atomMatchingTrackerMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    if (pullTagId != -1 && metric.sampling_percentage() != 100) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING,
+                                   metric.id());
+    }
+
+    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE,
+                                   metric.id());
+    }
+
+    if (metric.pull_probability() < 1 || metric.pull_probability() > 100) {
+        return InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY,
+                                   metric.id());
+    }
+
+    if (metric.pull_probability() != 100) {
+        if (pullTagId == -1) {
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY, metric.id());
+        }
+        if (metric.sampling_type() == GaugeMetric::RANDOM_ONE_SAMPLE) {
+            return InvalidConfigReason(
+                    INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
+                    metric.id());
+        }
+    }
+
+    std::vector<Matcher> dimensionsInWhat;
+    translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
+    if (metric.has_dimensional_sampling_info()) {
+        invalidConfigReason = checkMetricWithDimensionalSampling(
+                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
+    }
+
+    return invalidConfigReason;
+}
+
+sp<MetricProducer> createGaugeMetricProducerAndUpdateMetadata(
         const ConfigKey& key, const StatsdConfig& config, const int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const GaugeMetric& metric, const int metricIndex,
@@ -1444,33 +1781,12 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
-        vector<int>& metricsWithActivation, optional<InvalidConfigReason>& invalidConfigReason,
+        vector<int>& metricsWithActivation,
         const wp<ConfigMetadataProvider> configMetadataProvider) {
-    if (!metric.has_id() || !metric.has_what()) {
-        ALOGE("cannot find metric id or \"what\" in GaugeMetric \"%lld\"", (long long)metric.id());
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_MISSING_ID_OR_WHAT, metric.id());
-        return nullopt;
-    }
-
-    if (metric.has_gauge_fields_filter()) {
-        const FieldFilter& filter = metric.gauge_fields_filter();
-        if ((filter.has_fields() && !hasLeafNode(filter.fields())) ||
-            (filter.has_omit_fields() && !hasLeafNode(filter.omit_fields()))) {
-            ALOGW("Incorrect field filter setting in GaugeMetric %lld", (long long)metric.id());
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_METRIC_INCORRECT_FIELD_FILTER, metric.id());
-            return nullopt;
-        }
-    }
-
     int trackerIndex;
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), metric.id(), metricIndex, true, allAtomMatchingTrackers,
-            atomMatchingTrackerMap, trackerToMetricMap, trackerIndex);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), metric.id(), metricIndex, true,
+                                         allAtomMatchingTrackers, atomMatchingTrackerMap,
+                                         trackerToMetricMap, trackerIndex);
 
     const sp<AtomMatchingTracker>& atomMatcher = allAtomMatchingTrackers.at(trackerIndex);
     int atomTagId = *(atomMatcher->getAtomIds().begin());
@@ -1479,26 +1795,10 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     int triggerTrackerIndex;
     int triggerAtomId = -1;
     if (metric.has_trigger_event()) {
-        if (pullTagId == -1) {
-            ALOGW("Pull atom not specified for trigger");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_PULL_ATOM, metric.id());
-            return nullopt;
-        }
-        // trigger_event should be used with FIRST_N_SAMPLES
-        if (metric.sampling_type() != GaugeMetric::FIRST_N_SAMPLES) {
-            ALOGW("Gauge Metric with trigger event must have sampling type FIRST_N_SAMPLES");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_GAUGE_METRIC_TRIGGER_NO_FIRST_N_SAMPLES, metric.id());
-            return nullopt;
-        }
-        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-                metric.trigger_event(), metric.id(), metricIndex,
-                /*enforceOneAtom=*/true, allAtomMatchingTrackers, atomMatchingTrackerMap,
-                trackerToMetricMap, triggerTrackerIndex);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithAtomMatchingTrackers(metric.trigger_event(), metric.id(), metricIndex,
+                                             /*enforceOneAtom=*/true, allAtomMatchingTrackers,
+                                             atomMatchingTrackerMap, trackerToMetricMap,
+                                             triggerTrackerIndex);
         const sp<AtomMatchingTracker>& triggerAtomMatcher =
                 allAtomMatchingTrackers.at(triggerTrackerIndex);
         triggerAtomId = *(triggerAtomMatcher->getAtomIds().begin());
@@ -1506,85 +1806,27 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
 
     int conditionIndex = -1;
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), metric.id(), metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, conditionIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else {
-        if (metric.links_size() > 0) {
-            ALOGW("metrics has a MetricConditionLink but doesn't have a condition");
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_METRIC_CONDITIONLINK_NO_CONDITION, metric.id());
-            return nullopt;
-        }
+        handleMetricWithConditions(metric.condition(), metric.id(), metricIndex,
+                                   conditionTrackerMap, metric.links(), allConditionTrackers,
+                                   conditionIndex, conditionToMetricMap);
     }
 
     std::vector<int> slicedStateAtoms;
     std::unordered_map<int, std::unordered_map<int, int64_t>> stateGroupMap;
     if (metric.slice_by_state_size() > 0) {
-        invalidConfigReason =
-                handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
-                                       allStateGroupMaps, slicedStateAtoms, stateGroupMap);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
-    } else if (metric.state_link_size() > 0) {
-        ALOGE("GaugeMetric has a MetricStateLink but doesn't have a sliced state");
-        invalidConfigReason =
-                InvalidConfigReason(INVALID_CONFIG_REASON_METRIC_STATELINK_NO_STATE, metric.id());
-        return nullopt;
-    }
-
-    if (pullTagId != -1 && metric.sampling_percentage() != 100) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_GAUGE_METRIC_PULLED_WITH_SAMPLING, metric.id());
-        return nullopt;
-    }
-
-    if (metric.sampling_percentage() < 1 || metric.sampling_percentage() > 100) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_INCORRECT_SAMPLING_PERCENTAGE, metric.id());
-        return nullopt;
-    }
-
-    if (metric.pull_probability() < 1 || metric.pull_probability() > 100) {
-        invalidConfigReason = InvalidConfigReason(
-                INVALID_CONFIG_REASON_METRIC_INCORRECT_PULL_PROBABILITY, metric.id());
-        return nullopt;
-    }
-
-    if (metric.pull_probability() != 100) {
-        if (pullTagId == -1) {
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_GAUGE_METRIC_PUSHED_WITH_PULL_PROBABILITY, metric.id());
-            return nullopt;
-        }
-        if (metric.sampling_type() == GaugeMetric::RANDOM_ONE_SAMPLE) {
-            invalidConfigReason = InvalidConfigReason(
-                    INVALID_CONFIG_REASON_GAUGE_METRIC_RANDOM_ONE_SAMPLE_WITH_PULL_PROBABILITY,
-                    metric.id());
-            return nullopt;
-        }
+        handleMetricWithStates(config, metric.id(), metric.slice_by_state(), stateAtomIdMap,
+                               allStateGroupMaps, slicedStateAtoms, stateGroupMap);
     }
 
     unordered_map<int, shared_ptr<Activation>> eventActivationMap;
     unordered_map<int, vector<shared_ptr<Activation>>> eventDeactivationMap;
-    invalidConfigReason = handleMetricActivation(
-            config, metric.id(), metricIndex, metricToActivationMap, atomMatchingTrackerMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation, eventActivationMap, eventDeactivationMap);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    handleMetricActivation(config, metric.id(), metricIndex, metricToActivationMap,
+                           atomMatchingTrackerMap, activationAtomTrackerToMetricMap,
+                           deactivationAtomTrackerToMetricMap, metricsWithActivation,
+                           eventActivationMap, eventDeactivationMap);
 
     uint64_t metricHash;
-    invalidConfigReason =
-            getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    getMetricProtoHash(config, metric, metric.id(), metricToActivationMap, metricHash);
 
     const auto [dimensionSoftLimit, dimensionHardLimit] =
             StatsdStats::getAtomDimensionKeySizeLimits(
@@ -1601,18 +1843,12 @@ optional<sp<MetricProducer>> createGaugeMetricProducerAndUpdateMetadata(
     std::vector<Matcher> dimensionsInWhat;
     translateFieldMatcher(metric.dimensions_in_what(), &dimensionsInWhat);
     if (metric.has_dimensional_sampling_info()) {
-        invalidConfigReason = handleMetricWithDimensionalSampling(
-                metric.id(), metric.dimensional_sampling_info(), dimensionsInWhat, samplingInfo);
-        if (invalidConfigReason.has_value()) {
-            return nullopt;
-        }
+        handleMetricWithDimensionalSampling(metric.id(), metric.dimensional_sampling_info(),
+                                            dimensionsInWhat, samplingInfo);
         metricProducer->setSamplingInfo(samplingInfo);
     }
 
-    invalidConfigReason = setUidFieldsIfNecessary(metric, metricProducer);
-    if (invalidConfigReason.has_value()) {
-        return nullopt;
-    }
+    setUidFieldsIfNecessary(metric, metricProducer);
 
     return metricProducer;
 }
@@ -1903,109 +2139,126 @@ optional<InvalidConfigReason> initMetrics(
     for (int i = 0; i < config.count_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const CountMetric& metric = config.count_metric(i);
+        invalidConfigReason = isNewCountMetricValid(config, metric, allAtomMatchingTrackers,
+                                                    atomMatchingTrackerMap, conditionTrackerMap,
+                                                    stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-        optional<sp<MetricProducer>> producer = createCountMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createCountMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
                 conditionTrackerMap, initialConditionCache, wizard, stateAtomIdMap,
                 allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
 
     // build DurationMetricProducer
     for (int i = 0; i < config.duration_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const DurationMetric& metric = config.duration_metric(i);
+        invalidConfigReason = isNewDurationMetricValid(config, metric, allAtomMatchingTrackers,
+                                                       atomMatchingTrackerMap, conditionTrackerMap,
+                                                       stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-
-        optional<sp<MetricProducer>> producer = createDurationMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createDurationMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
                 conditionTrackerMap, initialConditionCache, wizard, stateAtomIdMap,
                 allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
 
     // build EventMetricProducer
     for (int i = 0; i < config.event_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const EventMetric& metric = config.event_metric(i);
+        invalidConfigReason = isNewEventMetricValid(config, metric, allAtomMatchingTrackers,
+                                                    atomMatchingTrackerMap, conditionTrackerMap,
+                                                    stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-        optional<sp<MetricProducer>> producer = createEventMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createEventMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, metric, metricIndex, allAtomMatchingTrackers,
                 atomMatchingTrackerMap, allConditionTrackers, conditionTrackerMap,
                 initialConditionCache, wizard, stateAtomIdMap, allStateGroupMaps,
                 metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
 
     // build NumericValueMetricProducer
     for (int i = 0; i < config.value_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const ValueMetric& metric = config.value_metric(i);
+        invalidConfigReason = isNewNumericValueMetricValid(
+                config, metric, allAtomMatchingTrackers, atomMatchingTrackerMap,
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-        optional<sp<MetricProducer>> producer = createNumericValueMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createNumericValueMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
                 conditionTrackerMap, initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
                 allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
 
     // build KllMetricProducer
     for (int i = 0; i < config.kll_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const KllMetric& metric = config.kll_metric(i);
+        invalidConfigReason =
+                isNewKllMetricValid(config, metric, allAtomMatchingTrackers, atomMatchingTrackerMap,
+                                    conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-        optional<sp<MetricProducer>> producer = createKllMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createKllMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
                 conditionTrackerMap, initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
                 allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
 
     // Gauge metrics.
     for (int i = 0; i < config.gauge_metric_size(); i++) {
         int metricIndex = allMetricProducers.size();
         const GaugeMetric& metric = config.gauge_metric(i);
+        invalidConfigReason = isNewGaugeMetricValid(
+                config, metric, pullerManager, allAtomMatchingTrackers, atomMatchingTrackerMap,
+                conditionTrackerMap, stateAtomIdMap, metricToActivationMap);
+        if (invalidConfigReason.has_value()) {
+            return invalidConfigReason;
+        }
         metricMap.insert({metric.id(), metricIndex});
-        optional<sp<MetricProducer>> producer = createGaugeMetricProducerAndUpdateMetadata(
+        sp<MetricProducer> producer = createGaugeMetricProducerAndUpdateMetadata(
                 key, config, timeBaseTimeNs, currentTimeNs, pullerManager, metric, metricIndex,
                 allAtomMatchingTrackers, atomMatchingTrackerMap, allConditionTrackers,
                 conditionTrackerMap, initialConditionCache, wizard, matcherWizard, stateAtomIdMap,
                 allStateGroupMaps, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
                 activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-                metricsWithActivation, invalidConfigReason, configMetadataProvider);
-        if (!producer) {
-            return invalidConfigReason;
-        }
-        allMetricProducers.push_back(producer.value());
+                metricsWithActivation, configMetadataProvider);
+        allMetricProducers.push_back(producer);
     }
     for (int i = 0; i < config.no_report_metric_size(); ++i) {
         const auto no_report_metric = config.no_report_metric(i);

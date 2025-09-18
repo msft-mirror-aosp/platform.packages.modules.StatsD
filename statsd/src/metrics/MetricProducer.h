@@ -354,6 +354,10 @@ public:
         return mProtoHash;
     }
 
+    const inline std::unordered_map<int, std::shared_ptr<Activation>>& getEventActivationMap() {
+        return mEventActivationMap;
+    }
+
     virtual MetricType getMetricType() const = 0;
 
     // For test only.
@@ -364,10 +368,6 @@ public:
     inline const std::vector<int> getSlicedStateAtoms() {
         std::lock_guard lock(mMutex);
         return mSlicedStateAtoms;
-    }
-
-    inline bool isValid() const {
-        return mValid;
     }
 
     /* Adds an AnomalyTracker and returns it. */
@@ -529,8 +529,6 @@ protected:
     const uint64_t mProtoHash;
 
     const ConfigKey mConfigKey;
-
-    bool mValid;
 
     // The time when this metric producer was first created. The end time for the current bucket
     // can be computed from this based on mCurrentBucketNum.

@@ -199,45 +199,33 @@ optional<InvalidConfigReason> GaugeMetricProducer::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+    MetricProducer::onConfigUpdatedLocked(
             config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
             newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
             wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
             activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
             metricsWithActivation);
-    if (invalidConfigReason.has_value()) {
-        return invalidConfigReason;
-    }
 
     const GaugeMetric& metric = config.gauge_metric(configIndex);
     // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            metric.what(), mMetricId, metricIndex, /*enforceOneAtom=*/false,
-            allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap,
-            mWhatMatcherIndex);
-    if (invalidConfigReason.has_value()) {
-        return invalidConfigReason;
-    }
+    handleMetricWithAtomMatchingTrackers(metric.what(), mMetricId, metricIndex,
+                                         /*enforceOneAtom=*/false, allAtomMatchingTrackers,
+                                         newAtomMatchingTrackerMap, trackerToMetricMap,
+                                         mWhatMatcherIndex);
 
     // Need to update maps since the index changed, but mTriggerAtomId will not change.
     int triggerTrackerIndex;
     if (metric.has_trigger_event()) {
-        invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-                metric.trigger_event(), mMetricId, metricIndex,
-                /*enforceOneAtom=*/true, allAtomMatchingTrackers, newAtomMatchingTrackerMap,
-                trackerToMetricMap, triggerTrackerIndex);
-        if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
-        }
+        handleMetricWithAtomMatchingTrackers(metric.trigger_event(), mMetricId, metricIndex,
+                                             /*enforceOneAtom=*/true, allAtomMatchingTrackers,
+                                             newAtomMatchingTrackerMap, trackerToMetricMap,
+                                             triggerTrackerIndex);
     }
 
     if (metric.has_condition()) {
-        invalidConfigReason = handleMetricWithConditions(
-                metric.condition(), mMetricId, metricIndex, conditionTrackerMap, metric.links(),
-                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
-        }
+        handleMetricWithConditions(metric.condition(), mMetricId, metricIndex, conditionTrackerMap,
+                                   metric.links(), allConditionTrackers, mConditionTrackerIndex,
+                                   conditionToMetricMap);
     }
     sp<EventMatcherWizard> tmpEventWizard = mEventMatcherWizard;
     mEventMatcherWizard = matcherWizard;

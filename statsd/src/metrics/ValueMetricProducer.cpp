@@ -198,33 +198,24 @@ ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
         unordered_map<int, vector<int>>& deactivationAtomTrackerToMetricMap,
         vector<int>& metricsWithActivation) {
-    optional<InvalidConfigReason> invalidConfigReason = MetricProducer::onConfigUpdatedLocked(
+    MetricProducer::onConfigUpdatedLocked(
             config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
             newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
             wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
             activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
             metricsWithActivation);
-    if (invalidConfigReason.has_value()) {
-        return invalidConfigReason;
-    }
     // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
     const int64_t atomMatcherId = getWhatAtomMatcherIdForMetric(config, configIndex);
-    invalidConfigReason = handleMetricWithAtomMatchingTrackers(
-            atomMatcherId, mMetricId, metricIndex, /*enforceOneAtom=*/false,
-            allAtomMatchingTrackers, newAtomMatchingTrackerMap, trackerToMetricMap,
-            mWhatMatcherIndex);
-    if (invalidConfigReason.has_value()) {
-        return invalidConfigReason;
-    }
+    handleMetricWithAtomMatchingTrackers(atomMatcherId, mMetricId, metricIndex,
+                                         /*enforceOneAtom=*/false, allAtomMatchingTrackers,
+                                         newAtomMatchingTrackerMap, trackerToMetricMap,
+                                         mWhatMatcherIndex);
     const optional<int64_t>& conditionIdOpt = getConditionIdForMetric(config, configIndex);
     const ConditionLinks& conditionLinks = getConditionLinksForMetric(config, configIndex);
     if (conditionIdOpt.has_value()) {
-        invalidConfigReason = handleMetricWithConditions(
-                conditionIdOpt.value(), mMetricId, metricIndex, conditionTrackerMap, conditionLinks,
-                allConditionTrackers, mConditionTrackerIndex, conditionToMetricMap);
-        if (invalidConfigReason.has_value()) {
-            return invalidConfigReason;
-        }
+        handleMetricWithConditions(conditionIdOpt.value(), mMetricId, metricIndex,
+                                   conditionTrackerMap, conditionLinks, allConditionTrackers,
+                                   mConditionTrackerIndex, conditionToMetricMap);
     }
     sp<EventMatcherWizard> tmpEventWizard = mEventMatcherWizard;
     mEventMatcherWizard = matcherWizard;
