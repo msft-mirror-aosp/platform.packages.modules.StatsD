@@ -79,7 +79,7 @@ public class LibStatsSocketTests {
     }
 
     /**
-     * Test that a generates 2 atoms while config collects only 1 second atom should not be pushed
+     * Test that a generates 2 atoms while config collects only 1. Second atom should not be pushed
      * to the socket due to being unused
      */
     @Test
