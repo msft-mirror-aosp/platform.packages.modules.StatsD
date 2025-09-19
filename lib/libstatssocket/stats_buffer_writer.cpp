@@ -16,11 +16,13 @@
 
 #include "stats_buffer_writer.h"
 
+#include <StatsdLoggingControl.h>
 #include <com_android_os_statsd_flags.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/uio.h>
 
+#include "atoms_in_use_provider.h"
 #include "logging_rate_limiter.h"
 #include "stats_buffer_writer_impl.h"
 #include "stats_buffer_writer_queue.h"
@@ -59,6 +61,19 @@ int stats_log_is_closed() {
     return statsdLoggerWrite.isClosed && (*statsdLoggerWrite.isClosed)();
 }
 
+AtomsInUseProvider<RealTimeClock>& get_atoms_in_use_provider() {
+    using namespace android::os::statsd;
+    static constexpr int64_t kCacheUpdateCooldownNanos = 5 * 1'000'000'000LL;  // 5s
+    static AtomsInUseProvider<RealTimeClock>* provider = new AtomsInUseProvider<RealTimeClock>(
+            kAtomIdsFileName, kAtomIdsVersionName, kCacheUpdateCooldownNanos);
+
+    return *provider;
+}
+
+bool is_atom_in_use(uint32_t atomId) {
+    return get_atoms_in_use_provider().isAtomInUse(static_cast<int32_t>(atomId));
+}
+
 bool can_log_atom(uint32_t atomId) {
     // Below values should be justified with experiments, as of now idea is to
     // allow to fill 10% of socket buffer at max (max_dgram_qlen == 2400) within 100ms.
@@ -75,6 +90,14 @@ bool can_log_atom(uint32_t atomId) {
 int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
     constexpr int kQueueOverflowErrorCode = 1;
     constexpr int kLoggingRateLimitExceededErrorCode = 2;
+    constexpr int kAtomNotInUseErrorCode = 3;
+
+    if (__builtin_available(android LOGGING_CONTROL_API_VERSION, *)) {
+        if (flags::logging_control_enabled() && !is_atom_in_use(atomId)) {
+            StatsSocketLossReporter::getInstance().noteDrop(kAtomNotInUseErrorCode, atomId);
+            return 0;
+        }
+    }
 
     if (should_write_via_queue(atomId)) {
         const bool ret =

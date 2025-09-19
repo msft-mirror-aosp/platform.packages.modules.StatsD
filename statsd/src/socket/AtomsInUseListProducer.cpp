@@ -96,7 +96,7 @@ bool AtomsInUseListProducer::createAtomIdsFile(const std::vector<int32_t>& atomI
         return false;
     }
 
-    // create new file staging file removing past version if any
+    // create new staging & file removing past version if any
     const string stagingFilePath =
             StringPrintf("%s.%" PRId64 ".tmp", mFileName.c_str(), mListVersion);
     StorageManager::deleteFile(stagingFilePath.c_str());
