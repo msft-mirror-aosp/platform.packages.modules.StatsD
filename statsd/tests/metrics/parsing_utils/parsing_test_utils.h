@@ -59,6 +59,8 @@ protected:
 
     void SetUp() override;
 
+    void TearDown() override;
+
     sp<UidMap> uidMap;
     sp<StatsPullerManager> pullerManager;
     sp<AlarmMonitor> anomalyAlarmMonitor;

@@ -73,6 +73,10 @@ protected:
     void SetUp() override {
         mLogEventFilter = std::make_shared<MockLogEventFilter>();
     }
+
+    void TearDown() override {
+        StateManager::getInstance().clear();
+    }
 };
 
 TEST_F_WITH_FLAGS(ConfigUpdateE2eTest, TestEventMetric,

@@ -1483,6 +1483,7 @@ TEST(GaugeMetricE2ePulledTest, TestSliceByStates) {
                              /*endTimeNs=*/configAddedTimeNs + 2 * bucketSizeNs,
                              /*eventTimesNs=*/
                              {(int64_t)(configAddedTimeNs + bucketSizeNs + 1)});
+    StateManager::getInstance().clear();
 }
 
 TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithTriggerAndCondition) {
@@ -1592,6 +1593,7 @@ TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithTriggerAndCondition) {
                              /*endTimeNs=*/configAddedTimeNs + 2 * bucketSizeNs,
                              /*eventTimesNs=*/
                              {(int64_t)(configAddedTimeNs + bucketSizeNs + 50)});
+    StateManager::getInstance().clear();
 }
 
 TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithMapAndTrigger) {
@@ -1709,6 +1711,7 @@ TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithMapAndTrigger) {
             /*endTimeNs=*/configAddedTimeNs + bucketSizeNs,
             /*eventTimesNs=*/
             {(int64_t)(configAddedTimeNs + 160), (int64_t)(configAddedTimeNs + 210)});
+    StateManager::getInstance().clear();
 }
 
 TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithPrimaryFieldsAndTrigger) {
@@ -1892,6 +1895,7 @@ TEST(GaugeMetricE2ePulledTest, TestSliceByStatesWithPrimaryFieldsAndTrigger) {
                              /*endTimeNs=*/configAddedTimeNs + 2 * bucketSizeNs,
                              /*eventTimesNs=*/
                              {(int64_t)(configAddedTimeNs + bucketSizeNs + 220)});
+    StateManager::getInstance().clear();
 }
 
 TEST(GaugeMetricE2ePulledTest, TestFieldFilterOmit) {

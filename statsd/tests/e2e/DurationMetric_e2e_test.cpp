@@ -955,6 +955,7 @@ TEST(DurationMetricE2eTest, TestWithSlicedState) {
     EXPECT_EQ(40 * NS_PER_SEC, data.bucket_info(0).duration_nanos());
     EXPECT_EQ(10 * NS_PER_SEC, data.bucket_info(0).start_bucket_elapsed_nanos());
     EXPECT_EQ(310 * NS_PER_SEC, data.bucket_info(0).end_bucket_elapsed_nanos());
+    StateManager::getInstance().clear();
 }
 
 TEST(DurationMetricE2eTest, TestWithConditionAndSlicedState) {
@@ -1116,6 +1117,7 @@ TEST(DurationMetricE2eTest, TestWithConditionAndSlicedState) {
     EXPECT_EQ(30 * NS_PER_SEC, data.bucket_info(0).duration_nanos());
     EXPECT_EQ(10 * NS_PER_SEC, data.bucket_info(0).start_bucket_elapsed_nanos());
     EXPECT_EQ(310 * NS_PER_SEC, data.bucket_info(0).end_bucket_elapsed_nanos());
+    StateManager::getInstance().clear();
 }
 
 TEST(DurationMetricE2eTest, TestWithSlicedStateMapped) {
@@ -1263,6 +1265,7 @@ TEST(DurationMetricE2eTest, TestWithSlicedStateMapped) {
     EXPECT_EQ(80 * NS_PER_SEC, data.bucket_info(1).duration_nanos());
     EXPECT_EQ(310 * NS_PER_SEC, data.bucket_info(1).start_bucket_elapsed_nanos());
     EXPECT_EQ(500 * NS_PER_SEC, data.bucket_info(1).end_bucket_elapsed_nanos());
+    StateManager::getInstance().clear();
 }
 
 TEST(DurationMetricE2eTest, TestSlicedStatePrimaryFieldsNotSubsetDimInWhat) {
@@ -1318,6 +1321,7 @@ TEST(DurationMetricE2eTest, TestSlicedStatePrimaryFieldsNotSubsetDimInWhat) {
     } else {
         ASSERT_EQ(processor->mMetricsManagers.size(), 0);
     }
+    StateManager::getInstance().clear();
 }
 
 TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset) {
@@ -1565,6 +1569,7 @@ TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset) {
     EXPECT_EQ(70 * NS_PER_SEC, data.bucket_info(0).duration_nanos());
     EXPECT_EQ(10 * NS_PER_SEC, data.bucket_info(0).start_bucket_elapsed_nanos());
     EXPECT_EQ(310 * NS_PER_SEC, data.bucket_info(0).end_bucket_elapsed_nanos());
+    StateManager::getInstance().clear();
 }
 
 TEST(DurationMetricE2eTest, TestUploadThreshold) {

@@ -94,6 +94,10 @@ void InitConfigTest::SetUp() {
     StateManager::getInstance().clear();
 }
 
+void InitConfigTest::TearDown() {
+    StateManager::getInstance().clear();
+}
+
 StatsdConfig createHistogramStatsdConfig() {
     StatsdConfig config;
     *config.add_atom_matcher() = CreateSimpleAtomMatcher("matcher", /* atomId */ 1);

@@ -204,6 +204,7 @@ TEST(ValueMetricE2eTest, TestInitialConditionChanges) {
     processor->OnLogEvent(pluggedNoneEvent.get());
     EXPECT_EQ(ConditionState::kFalse, metricProducer1->mCondition);
     EXPECT_EQ(ConditionState::kTrue, metricProducer2->mCondition);
+    StateManager::getInstance().clear();
 }
 
 TEST(ValueMetricE2eTest, TestPulledEvents) {
@@ -702,6 +703,7 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState) {
     ASSERT_EQ(1, metricProducer->mSlicedStateAtoms.size());
     EXPECT_EQ(SCREEN_STATE_ATOM_ID, metricProducer->mSlicedStateAtoms.at(0));
     ASSERT_EQ(0, metricProducer->mStateGroupMap.size());
+    StateManager::getInstance().clear();
 }
 
 /**
@@ -761,6 +763,7 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithDimensions) {
     ASSERT_EQ(1, metricProducer->mSlicedStateAtoms.size());
     EXPECT_EQ(UID_PROCESS_STATE_ATOM_ID, metricProducer->mSlicedStateAtoms.at(0));
     ASSERT_EQ(0, metricProducer->mStateGroupMap.size());
+    StateManager::getInstance().clear();
 }
 
 /**
@@ -1108,6 +1111,7 @@ TEST_WITH_FLAGS(ValueMetricE2eTest, TestDimensionGuardrailHitWithZeroDefaultBase
             EXPECT_EQ(bucket.values(0).value_long(), 3);
         }
     }
+    StateManager::getInstance().clear();
 }
 
 TEST_WITH_FLAGS(ValueMetricE2eTest,
