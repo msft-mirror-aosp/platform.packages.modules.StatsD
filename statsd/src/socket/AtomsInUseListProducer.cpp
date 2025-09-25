@@ -23,6 +23,7 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 
+#include <cinttypes>
 #include <filesystem>
 #include <fstream>
 
@@ -45,7 +46,7 @@ AtomsInUseListProducer::~AtomsInUseListProducer() {
     reset();
 }
 
-bool AtomsInUseListProducer::setAtomsIds(const std::vector<int32_t>& atomIds) {
+void AtomsInUseListProducer::setAtomsIds(const std::vector<int32_t>& atomIds) {
     /**
      * the flow sequence for enable/update logging control:
      * - create/update file
@@ -62,13 +63,17 @@ bool AtomsInUseListProducer::setAtomsIds(const std::vector<int32_t>& atomIds) {
 
     if (atomIds.empty()) {
         reset();
-        return true;
+        return;
     }
 
     // TODO: consider update atom list back to back during short period of time.
     // Alternative is to have a worker thread with a queue + throttling to prevent
     // too frequent I/O & file re-writes
-    return createAtomIdsFile(atomIds) && increaseVersionProperty();
+    if (!(createAtomIdsFile(atomIds) && increaseVersionProperty())) {
+        // in case of failure to produce atoms in use file or property setup
+        // reset atom ids version property to effectively disable logging control
+        reset();
+    }
 }
 
 // removes the file & removes system property version, this will allow clients
@@ -167,6 +172,7 @@ bool AtomsInUseListProducer::increaseVersionProperty() {
         ALOGW("increaseVersionProperty failed");
         return false;
     }
+    VLOG("increaseVersionProperty for %" PRId64, mListVersion);
     return true;
 }
 

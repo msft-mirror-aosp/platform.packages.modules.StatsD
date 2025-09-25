@@ -27,6 +27,7 @@
 #include <android-base/strings.h>
 
 #include <cerrno>
+#include <cinttypes>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -109,14 +110,15 @@ bool AtomsInUseProvider<Clock>::isSyncNeededLocked(int64_t& newVersion) {
     // check if there is a new list published
     const std::string value = android::base::GetProperty(mVersionPropertyName, "");
     if (value.empty()) {
-        // list was removed
+        VLOG("isSyncNeededLocked: list was removed or not defined");
         return mListVersion > 0;
     }
 
-    const int64_t currentVersion = atol(value.c_str());
+    newVersion = atoll(value.c_str());
+    VLOG("isSyncNeededLocked: newVersion %" PRId64 " vs mListVersion %" PRId64, newVersion,
+         mListVersion);
     // test if new version is available
-    newVersion = currentVersion;
-    return currentVersion != mListVersion;
+    return newVersion != mListVersion;
 }
 
 template <typename Clock>
