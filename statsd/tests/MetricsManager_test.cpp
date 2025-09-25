@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <com_android_os_statsd_flags.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <private/android_filesystem_config.h>
@@ -42,6 +43,8 @@ using std::set;
 using std::unordered_map;
 using std::vector;
 
+namespace flags = com::android::os::statsd::flags;
+
 #ifdef __ANDROID__
 
 namespace android {
@@ -51,6 +54,7 @@ namespace statsd {
 namespace {
 const int kConfigId = 12345;
 const ConfigKey kConfigKey(0, kConfigId);
+const int kMetricId = 3;
 
 const long timeBaseSec = 1000;
 
@@ -67,7 +71,7 @@ StatsdConfig buildEventConfig(bool isRestricted) {
     simpleAtomMatcher->set_atom_id(2 /*SCREEN_STATE_CHANGE*/);
 
     EventMetric* metric = config.add_event_metric();
-    metric->set_id(3);
+    metric->set_id(kMetricId);
     metric->set_what(StringToId("SCREEN_IS_ON"));
     return config;
 }
@@ -78,6 +82,12 @@ StatsdConfig buildGoodRestrictedConfig() {
 
 StatsdConfig buildGoodEventConfig() {
     return buildEventConfig(/*isRestricted*/ false);
+}
+
+StatsdConfig buildInvalidEventConfig() {
+    StatsdConfig config = buildGoodEventConfig();
+    config.clear_atom_matcher();
+    return config;
 }
 
 set<int32_t> unionSet(const vector<set<int32_t>> sets) {
@@ -329,6 +339,7 @@ TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {
     *config.add_state() = state;
 
     config.mutable_count_metric(0)->add_slice_by_state(state.id());
+    int64_t countMetricId = config.count_metric(0).id();
 
     StateManager::getInstance().clear();
 
@@ -336,7 +347,20 @@ TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {
                                   pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
 
     EXPECT_EQ(0, StateManager::getInstance().getStateTrackersCount());
-    EXPECT_FALSE(metricsManager.isConfigValid());
+
+    if (flags::partial_invalid_configs()) {
+        EXPECT_TRUE(metricsManager.isConfigValid());
+        auto& invalidEntities = metricsManager.mInvalidEntities;
+        EXPECT_THAT(invalidEntities.size(), 1);
+        InvalidConfigReason reason =
+                invalidEntities[InvalidEntityKey{countMetricId, INVALID_ENTITY_TYPE_METRIC}];
+        EXPECT_EQ(reason.reason,
+                  INVALID_CONFIG_REASON_METRIC_SLICED_STATE_ATOM_ALLOWED_FROM_ANY_UID);
+        ASSERT_TRUE(reason.metricId.has_value());
+        EXPECT_EQ(reason.metricId.value(), countMetricId);
+    } else {
+        EXPECT_FALSE(metricsManager.isConfigValid());
+    }
 }
 
 TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
@@ -355,8 +379,9 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig) {
     if (isAtLeastU()) {
         EXPECT_TRUE(metricsManager.isConfigValid());
     } else {
-        EXPECT_EQ(metricsManager.mInvalidConfigReason,
-                  INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
+        const auto& reason = metricsManager.mInvalidEntities[InvalidEntityKey{
+                kConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}];
+        EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         ASSERT_FALSE(metricsManager.isConfigValid());
     }
 }
@@ -381,8 +406,9 @@ TEST_P(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate) {
     if (isAtLeastU()) {
         EXPECT_TRUE(metricsManager.isConfigValid());
     } else {
-        EXPECT_EQ(metricsManager.mInvalidConfigReason,
-                  INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
+        const auto& reason = metricsManager.mInvalidEntities[InvalidEntityKey{
+                kConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}];
+        EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_RESTRICTED_METRIC_NOT_ENABLED);
         ASSERT_FALSE(metricsManager.isConfigValid());
     }
 }
@@ -537,6 +563,29 @@ TEST(MetricsManagerTest, TestGetTriggerMemoryKbUnset) {
     // Since the memory limit is unset, we default back to 192KB
     EXPECT_EQ(defaultMemoryLimit, metricsManager.getTriggerGetDataBytes());
     EXPECT_TRUE(metricsManager.isConfigValid());
+}
+
+TEST(MetricsManagerTest, TestInvalidEntitiesClearedOnConfigUpdate) {
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+
+    StatsdConfig config = buildInvalidEventConfig();
+    config.add_allowed_log_source("AID_SYSTEM");
+
+    MetricsManager metricsManager(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                  pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    InvalidConfigReason invalidConfigReason =
+            metricsManager.mInvalidEntities[{kMetricId, INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(invalidConfigReason.reason, INVALID_CONFIG_REASON_METRIC_MATCHER_NOT_FOUND);
+
+    StatsdConfig newConfig = buildGoodEventConfig();
+    metricsManager.updateConfig(newConfig, timeBaseSec, timeBaseSec, anomalyAlarmMonitor,
+                                periodicAlarmMonitor);
+
+    EXPECT_EQ(metricsManager.mInvalidEntities.size(), 0);
 }
 
 }  // namespace statsd

@@ -25,6 +25,8 @@
 
 using ::ndk::SharedRefBase;
 
+namespace flags = com::android::os::statsd::flags;
+
 namespace android {
 namespace os {
 namespace statsd {
@@ -805,8 +807,20 @@ TEST(ValueMetricE2eTest, TestInitWithSlicedState_WithIncorrectDimensions) {
     // No StateTrackers are initialized.
     EXPECT_EQ(0, StateManager::getInstance().getStateTrackersCount());
 
-    // Config initialization fails.
-    ASSERT_EQ(0, processor->mMetricsManagers.size());
+    if (flags::partial_invalid_configs()) {
+        // No Metrics are initializezd.
+        ASSERT_EQ(processor->mMetricsManagers.size(), 1);
+        const sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+        EXPECT_EQ(metricsManager->getNumMetrics(), 0);
+        auto& invalidEntities = metricsManager->mInvalidEntities;
+        InvalidConfigReason reason =
+                invalidEntities[InvalidEntityKey{valueMetric->id(), INVALID_ENTITY_TYPE_METRIC}];
+        EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_STATELINKS_NOT_SUBSET_DIM_IN_WHAT);
+        ASSERT_TRUE(reason.metricId.has_value());
+        EXPECT_EQ(reason.metricId.value(), valueMetric->id());
+    } else {
+        ASSERT_EQ(0, processor->mMetricsManagers.size());
+    }
 }
 
 TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL) {
@@ -834,8 +848,20 @@ TEST(ValueMetricE2eTest, TestInitWithValueFieldPositionALL) {
     sp<StatsLogProcessor> processor =
             CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
 
-    // Config initialization fails.
-    ASSERT_EQ(0, processor->mMetricsManagers.size());
+    if (flags::partial_invalid_configs()) {
+        // No Metrics are initializezd.
+        ASSERT_EQ(processor->mMetricsManagers.size(), 1);
+        const sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+        EXPECT_EQ(metricsManager->getNumMetrics(), 0);
+        auto& invalidEntities = metricsManager->mInvalidEntities;
+        InvalidConfigReason reason =
+                invalidEntities[InvalidEntityKey{valueMetric->id(), INVALID_ENTITY_TYPE_METRIC}];
+        EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_VALUE_METRIC_VALUE_FIELD_HAS_POSITION_ALL);
+        ASSERT_TRUE(reason.metricId.has_value());
+        EXPECT_EQ(reason.metricId.value(), valueMetric->id());
+    } else {
+        ASSERT_EQ(0, processor->mMetricsManagers.size());
+    }
 }
 
 TEST(ValueMetricE2eTest, TestInitWithMultipleAggTypes) {

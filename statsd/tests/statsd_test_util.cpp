@@ -2505,8 +2505,6 @@ StatsdConfig buildGoodConfig(int configId) {
     countMetric->mutable_dimensions_in_what()->set_field(SCREEN_STATE_ATOM_ID);
     countMetric->mutable_dimensions_in_what()->add_child()->set_field(1);
 
-    config.add_no_report_metric(StringToId("Count"));
-
     *config.add_predicate() = CreateScreenIsOnPredicate();
     *config.add_duration_metric() =
             createDurationMetric("Duration", StringToId("ScreenIsOn") /* what */,

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <com_android_os_statsd_flags.h>
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -20,6 +21,8 @@
 #include "src/state/StateTracker.h"
 #include "src/stats_log_util.h"
 #include "tests/statsd_test_util.h"
+
+namespace flags = com::android::os::statsd::flags;
 
 namespace android {
 namespace os {
@@ -1300,9 +1303,21 @@ TEST(DurationMetricE2eTest, TestSlicedStatePrimaryFieldsNotSubsetDimInWhat) {
             TimeUnitToBucketSizeInMillis(config.duration_metric(0).bucket()) * 1000000LL;
     auto processor = CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
 
-    // This config is rejected because the dimension in what fields are not a superset of the sliced
-    // state primary fields.
-    ASSERT_EQ(processor->mMetricsManagers.size(), 0);
+    if (flags::partial_invalid_configs()) {
+        // The metric is invalid because the dimension in what fields are not a superset of the
+        // sliced state primary fields.
+        ASSERT_EQ(processor->mMetricsManagers.size(), 1);
+        const sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+        EXPECT_EQ(metricsManager->getNumMetrics(), 0);
+        auto& invalidEntities = metricsManager->mInvalidEntities;
+        InvalidConfigReason reason =
+                invalidEntities[InvalidEntityKey{durationMetric->id(), INVALID_ENTITY_TYPE_METRIC}];
+        EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_STATELINKS_NOT_SUBSET_DIM_IN_WHAT);
+        ASSERT_TRUE(reason.metricId.has_value());
+        EXPECT_EQ(reason.metricId.value(), durationMetric->id());
+    } else {
+        ASSERT_EQ(processor->mMetricsManagers.size(), 0);
+    }
 }
 
 TEST(DurationMetricE2eTest, TestWithSlicedStatePrimaryFieldsSubset) {

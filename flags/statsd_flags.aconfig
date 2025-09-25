@@ -12,6 +12,16 @@ flag {
 }
 
 flag {
+  name: "partial_invalid_configs"
+  namespace: "statsd"
+  description: "Whether to enable partially invalid config"
+  bug: "435264546"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+flag {
   name: "trigger_uprobestats"
   namespace: "statsd"
   description: "Whether to call AUprobestatsClient_startUprobestats."

@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <android-base/stringprintf.h>
+#include <com_android_os_statsd_flags.h>
+#include <flag_macros.h>
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -738,7 +740,9 @@ TEST_F(RestrictedEventMetricE2eTest, TestModularConfigUpdateChangeRestrictedDele
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
 }
 
-TEST_F(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate) {
+TEST_F_WITH_FLAGS(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate,
+                  REQUIRES_FLAGS_ENABLED(ACONFIG_FLAG(com::android::os::statsd::flags,
+                                                      partial_invalid_configs))) {
     std::vector<std::unique_ptr<LogEvent>> events;
     events.push_back(CreateRestrictedLogEvent(atomTag, configAddedTimeNs + 100));
 
@@ -752,15 +756,42 @@ TEST_F(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate) 
     // Update the existing config with an invalid config update
     processor->OnConfigUpdated(configAddedTimeNs + 1 * NS_PER_SEC, configKey, config);
 
+    ASSERT_EQ(processor->mMetricsManagers.size(), 1);
+    const sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
+    EXPECT_EQ(metricsManager->getNumMetrics(), 1);  // ValidRestrictedMetric added in setup()
+    auto& invalidEntities = metricsManager->mInvalidEntities;
+    InvalidConfigReason reason = invalidEntities[InvalidEntityKey{metricWithoutMatcher.id(),
+                                                                  INVALID_ENTITY_TYPE_METRIC}];
+    EXPECT_EQ(reason.reason, INVALID_CONFIG_REASON_METRIC_MATCHER_NOT_FOUND);
+    ASSERT_TRUE(reason.metricId.has_value());
+    EXPECT_EQ(reason.metricId.value(), metricWithoutMatcher.id());
+
     std::stringstream query;
     query << "SELECT * FROM metric_" << dbutils::reformatMetricId(restrictedMetricId);
+    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/delegate_uid);
+
+    EXPECT_EQ(rowCountResult, 1);
+    EXPECT_THAT(queryDataResult, ElementsAre(to_string(atomTag), to_string(configAddedTimeNs + 100),
+                                             _,  // wallClockNs
+                                             _   // field_1
+                                             ));
+    EXPECT_THAT(columnNamesResult,
+                ElementsAre("atomId", "elapsedTimestampNs", "wallTimestampNs", "field_1"));
+    EXPECT_THAT(columnTypesResult,
+                ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
+
+    query.str("");
+    query << "SELECT * FROM metric_" << dbutils::reformatMetricId(metricWithoutMatcher.id());
     string err;
     std::vector<int32_t> columnTypes;
     std::vector<string> columnNames;
     std::vector<std::vector<std::string>> rows;
     EXPECT_FALSE(dbutils::query(configKey, query.str(), rows, columnTypes, columnNames, err));
     EXPECT_EQ(rows.size(), 0);
-    EXPECT_THAT(err, StartsWith("unable to open database file"));
+    EXPECT_THAT(err, StartsWith("no such table:"));
 }
 
 TEST_F(RestrictedEventMetricE2eTest, TestRestrictedConfigUpdateDoesNotUpdateUidMap) {

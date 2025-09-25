@@ -438,6 +438,7 @@ private:
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeGuardrail);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestRestrictedMetricLoadsTtlFromDisk);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);

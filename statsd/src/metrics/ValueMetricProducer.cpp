@@ -192,6 +192,7 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
         const vector<sp<ConditionTracker>>& allConditionTrackers,
         const unordered_map<int64_t, int>& conditionTrackerMap, const sp<ConditionWizard>& wizard,
         const unordered_map<int64_t, int>& metricToActivationMap,
+        const unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
         unordered_map<int, vector<int>>& trackerToMetricMap,
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
@@ -200,9 +201,9 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
     MetricProducer::onConfigUpdatedLocked(
             config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
             newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
-            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation);
+            wizard, metricToActivationMap, allConditionsMap, trackerToMetricMap,
+            conditionToMetricMap, activationAtomTrackerToMetricMap,
+            deactivationAtomTrackerToMetricMap, metricsWithActivation);
     // Update appropriate indices: mWhatMatcherIndex, mConditionIndex and MetricsManager maps.
     const int64_t atomMatcherId = getWhatAtomMatcherIdForMetric(config, configIndex);
     handleMetricWithAtomMatchingTrackers(atomMatcherId, metricIndex, newAtomMatchingTrackerMap,

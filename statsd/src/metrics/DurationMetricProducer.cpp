@@ -175,6 +175,7 @@ void DurationMetricProducer::onConfigUpdatedLocked(
         const vector<sp<ConditionTracker>>& allConditionTrackers,
         const unordered_map<int64_t, int>& conditionTrackerMap, const sp<ConditionWizard>& wizard,
         const unordered_map<int64_t, int>& metricToActivationMap,
+        const unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
         unordered_map<int, vector<int>>& trackerToMetricMap,
         unordered_map<int, vector<int>>& conditionToMetricMap,
         unordered_map<int, vector<int>>& activationAtomTrackerToMetricMap,
@@ -183,13 +184,12 @@ void DurationMetricProducer::onConfigUpdatedLocked(
     MetricProducer::onConfigUpdatedLocked(
             config, configIndex, metricIndex, allAtomMatchingTrackers, oldAtomMatchingTrackerMap,
             newAtomMatchingTrackerMap, matcherWizard, allConditionTrackers, conditionTrackerMap,
-            wizard, metricToActivationMap, trackerToMetricMap, conditionToMetricMap,
-            activationAtomTrackerToMetricMap, deactivationAtomTrackerToMetricMap,
-            metricsWithActivation);
+            wizard, metricToActivationMap, allConditionsMap, trackerToMetricMap,
+            conditionToMetricMap, activationAtomTrackerToMetricMap,
+            deactivationAtomTrackerToMetricMap, metricsWithActivation);
 
     const DurationMetric& metric = config.duration_metric(configIndex);
-    const auto& what_it = conditionTrackerMap.find(metric.what());
-    const Predicate& durationWhat = config.predicate(what_it->second);
+    const Predicate& durationWhat = allConditionsMap.at(metric.what()).predicate;
     const SimplePredicate& simplePredicate = durationWhat.simple_predicate();
 
     // Update indices: mStartIndex, mStopIndex, mStopAllIndex, mConditionIndex and MetricsManager
@@ -241,13 +241,6 @@ sp<AnomalyTracker> DurationMetricProducer::addAnomalyTracker(
         const Alert& alert, const sp<AlarmMonitor>& anomalyAlarmMonitor,
         const UpdateStatus& updateStatus, const int64_t updateTimeNs) {
     std::lock_guard lock(mMutex);
-    if (mAggregationType == DurationMetric_AggregationType_SUM) {
-        if (alert.trigger_if_sum_gt() > alert.num_buckets() * mBucketSizeNs) {
-            ALOGW("invalid alert for SUM: threshold (%f) > possible recordable value (%d x %lld)",
-                  alert.trigger_if_sum_gt(), alert.num_buckets(), (long long)mBucketSizeNs);
-            return nullptr;
-        }
-    }
     sp<AnomalyTracker> anomalyTracker =
             new DurationAnomalyTracker(alert, mConfigKey, anomalyAlarmMonitor);
     // The update status is either new or replaced.
