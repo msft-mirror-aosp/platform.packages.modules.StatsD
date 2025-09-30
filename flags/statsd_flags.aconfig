@@ -52,3 +52,9 @@ flag {
   bug: "408060408"
 }
 
+flag {
+    name: "use_iouring_socket_listener"
+    namespace: "statsd"
+    description: "Enables iouring implementation of the statsd"
+    bug: "297114355"
+}
