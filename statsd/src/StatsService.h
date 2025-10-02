@@ -422,7 +422,9 @@ private:
      */
     void onStatsdInitCompletedHandlerTermination();
 
-    std::atomic<bool> mIsStopRequested = false;
+    std::atomic_bool mPrintAllLogs = false;
+
+    std::atomic_bool mIsStopRequested = false;
 
     /**
      * Tracks the uid <--> package name mapping.

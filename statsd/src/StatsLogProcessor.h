@@ -18,8 +18,8 @@
 
 #include <aidl/android/os/BnStatsd.h>
 #include <gtest/gtest_prod.h>
-#include <stdio.h>
 
+#include <atomic>
 #include <unordered_map>
 
 #include "config/ConfigListener.h"
@@ -372,7 +372,7 @@ private:
     // The time for the next anomaly alarm for alerts.
     int64_t mNextAnomalyAlarmTime = 0;
 
-    bool mPrintAllLogs = false;
+    std::atomic_bool mPrintAllLogs = false;
 
     StatsdStats::QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
 

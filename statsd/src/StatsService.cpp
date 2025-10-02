@@ -964,15 +964,16 @@ status_t StatsService::cmd_print_logs(int /*out*/, const Vector<String8>& args) 
 
     VLOG("StatsService::cmd_print_logs with pid %i, uid %i", AIBinder_getCallingPid(),
          AIBinder_getCallingUid());
-    bool enabled = true;
-    if (args.size() >= 2) {
-        enabled = atoi(args[1].c_str()) != 0;
+    if (args.size() == 1) {
+        mPrintAllLogs = true;
+    } else if (args.size() == 2) {
+        mPrintAllLogs = atoi(args[1].c_str()) != 0;
     }
-    mProcessor->setPrintLogs(enabled);
+    mProcessor->setPrintLogs(mPrintAllLogs);
     // Turning on print logs turns off pushed event filtering to enforce
     // complete log event buffer parsing
-    mLogEventFilter->setFilteringEnabled(!enabled);
-    mSocketLogEventControl->setControlEnabled(!enabled);
+    mLogEventFilter->setFilteringEnabled(!mPrintAllLogs);
+    mSocketLogEventControl->setControlEnabled(!mPrintAllLogs);
     return NO_ERROR;
 }
 
@@ -1156,7 +1157,7 @@ void StatsService::onStatsdInitCompleted(int initEventDelaySecs) {
     mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs());
     // to not stress I/O subsystem reasonable to postpone atom ids file creation and avoid
     // high volume read file requests from many apps which will log their first atom
-    mSocketLogEventControl->setControlEnabled(true);
+    mSocketLogEventControl->setControlEnabled(!mPrintAllLogs);
 }
 
 void StatsService::Startup() {
