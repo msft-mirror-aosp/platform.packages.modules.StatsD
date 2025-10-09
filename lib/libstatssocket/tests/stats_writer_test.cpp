@@ -19,6 +19,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "stats_annotations.h"
 #include "stats_buffer_writer.h"
 #include "stats_event.h"
 #include "stats_socket.h"
@@ -30,8 +31,12 @@ using namespace ::testing;
 
 TEST(StatsWriterTest, TestSocketClose) {
     AStatsEvent* event = AStatsEvent_obtain();
-    AStatsEvent_setAtomId(event, 100);
+    // AppBreadcrumbReported
+    AStatsEvent_setAtomId(event, 47);
     AStatsEvent_writeInt32(event, 5);
+    AStatsEvent_addBoolAnnotation(event, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
+    AStatsEvent_writeInt32(event, 0);
+    AStatsEvent_writeInt32(event, 0);
     int successResult = AStatsEvent_write(event);
     AStatsEvent_release(event);
 
@@ -54,8 +59,11 @@ TEST_WITH_FLAGS(StatsWriterTest, TestRateLimit,
     int32_t eventsCount = 0;
     for (int i = 0; i < maxTestEvents; i++) {
         AStatsEvent* event = AStatsEvent_obtain();
-        AStatsEvent_setAtomId(event, 100);
+        AStatsEvent_setAtomId(event, 47);
         AStatsEvent_writeInt32(event, 5);
+        AStatsEvent_addBoolAnnotation(event, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
+        AStatsEvent_writeInt32(event, 0);
+        AStatsEvent_writeInt32(event, 0);
         int bytesWritten = AStatsEvent_write(event);
         AStatsEvent_release(event);
         if (bytesWritten > 0) {
