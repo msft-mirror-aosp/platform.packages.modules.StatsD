@@ -435,6 +435,10 @@ status_t StatsService::handleShellCommand(int in, int out, int err, const char**
             return cmd_print_logs(out, utf8Args);
         }
 
+        if (!utf8Args[0].compare(String8("logging-control"))) {
+            return cmd_logging_control(out, utf8Args);
+        }
+
         if (!utf8Args[0].compare(String8("send-active-configs"))) {
             return cmd_trigger_active_config_broadcast(out, utf8Args);
         }
@@ -573,6 +577,10 @@ void StatsService::print_cmd_help(int out) {
     dprintf(out, "usage: adb shell cmd stats print-logs\n");
     dprintf(out, "  Requires root privileges.\n");
     dprintf(out, "  Can be disabled by calling adb shell cmd stats print-logs 0\n");
+    dprintf(out, "\n");
+    dprintf(out, "usage: adb shell cmd stats logging-control\n");
+    dprintf(out, "  Can be disabled by calling adb shell cmd stats logging-control 0\n");
+    dprintf(out, "\n");
 }
 
 status_t StatsService::cmd_trigger_broadcast(int out, Vector<String8>& args) {
@@ -974,6 +982,19 @@ status_t StatsService::cmd_print_logs(int /*out*/, const Vector<String8>& args) 
     // complete log event buffer parsing
     mLogEventFilter->setFilteringEnabled(!mPrintAllLogs);
     mSocketLogEventControl->setControlEnabled(!mPrintAllLogs);
+    return NO_ERROR;
+}
+
+status_t StatsService::cmd_logging_control(int /*out*/, const Vector<String8>& args) {
+    VLOG("StatsService::cmd_logging_control with pid %i, uid %i", AIBinder_getCallingPid(),
+         AIBinder_getCallingUid());
+    bool enabled = true;
+    if (args.size() == 2) {
+        enabled = atoi(args[1].c_str()) != 0;
+    }
+
+    // Turning on logging control enables pushed event filtering.
+    mSocketLogEventControl->setControlEnabled(enabled);
     return NO_ERROR;
 }
 

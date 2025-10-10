@@ -359,6 +359,11 @@ private:
     status_t cmd_print_logs(int outFd, const Vector<String8>& args);
 
     /**
+     * Enable or disable logging control.
+     */
+    status_t cmd_logging_control(int outFd, const Vector<String8>& args);
+
+    /**
      * Implementation for request data for the configuration key.
      */
     void getDataChecked(int64_t key, const int32_t callingUid, std::vector<uint8_t>* output);
