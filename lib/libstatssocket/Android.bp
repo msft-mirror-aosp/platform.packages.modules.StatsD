@@ -88,6 +88,9 @@ cc_library_shared {
         ],
     },
     apex_available: ["com.android.os.statsd"],
+    // APIs are not ABI-stable, and this should only be used as an
+    // implementation detail of LL-NDK libraries
+    vendor_available: false,
 }
 
 cc_library_headers {
@@ -98,6 +101,9 @@ cc_library_headers {
         "//apex_available:platform",
     ],
     min_sdk_version: "29",
+    // APIs are not ABI-stable, and this should only be used as an
+    // implementation detail of LL-NDK libraries
+    vendor_available: false,
 }
 
 filegroup {
