@@ -1,4 +1,4 @@
-// Copyright (C) 2019 The Android Open Source Project
+// Copyright (C) 2025 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,54 +17,18 @@ package {
     default_team: "trendy_team_android_telemetry_client_infra",
 }
 
-android_test {
-    name: "LibStatsPullTests",
+java_test_helper_library {
+    name: "libstatsconfigutils",
     static_libs: [
-        "androidx.test.rules",
         "compatibility-device-util-axt",
-        "libstatsconfigutils",
         "platformprotoslite",
-        "statsd_flags_java_lib",
         "statsdprotolite",
         "truth",
     ],
-    libs: [
-        "android.test.runner.stubs",
-        "android.test.base.stubs",
-    ],
-    jni_libs: [
-        "libstatspull_testhelper",
-    ],
+
     srcs: [
         "src/**/*.java",
-        "protos/**/*.proto",
-        ":statslog-statsdtest-java-gen",
-    ],
-    test_suites: [
-        "device-tests",
-        "mts",
     ],
     platform_apis: true,
-    privileged: true,
-    certificate: "platform",
-    compile_multilib: "both",
     min_sdk_version: "30",
-}
-
-cc_test_library {
-    name: "libstatspull_testhelper",
-    srcs: ["jni/stats_pull_helper.cpp"],
-    cflags: [
-        "-Wall",
-        "-Werror",
-        "-Wthread-safety",
-    ],
-    shared_libs: [
-        "libstatspull",
-        "libstatssocket",
-    ],
-    header_libs: ["libnativehelper_header_only"],
-    static_libs: [
-        "libbase",
-    ],
 }

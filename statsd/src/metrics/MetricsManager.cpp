@@ -566,7 +566,7 @@ bool MetricsManager::checkLogCredentials(const int32_t uid, const int32_t atomId
 
     std::lock_guard lock(mAllowedLogSourcesMutex);
     if (mAllowedLogSources.find(uid) == mAllowedLogSources.end()) {
-        VLOG("log source %d not on the whitelist", uid);
+        VLOG("For atom %d log source %d not on the whitelist", atomId, uid);
         return false;
     }
     return true;
