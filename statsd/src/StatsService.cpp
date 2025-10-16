@@ -988,13 +988,12 @@ status_t StatsService::cmd_print_logs(int /*out*/, const Vector<String8>& args) 
 status_t StatsService::cmd_logging_control(int /*out*/, const Vector<String8>& args) {
     VLOG("StatsService::cmd_logging_control with pid %i, uid %i", AIBinder_getCallingPid(),
          AIBinder_getCallingUid());
-    bool enabled = true;
     if (args.size() == 2) {
-        enabled = atoi(args[1].c_str()) != 0;
+        mLoggingControlDisabled = atoi(args[1].c_str()) == 0;
     }
 
     // Turning on logging control enables pushed event filtering.
-    mSocketLogEventControl->setControlEnabled(enabled);
+    mSocketLogEventControl->setControlEnabled(!mLoggingControlDisabled);
     return NO_ERROR;
 }
 
@@ -1178,7 +1177,12 @@ void StatsService::onStatsdInitCompleted(int initEventDelaySecs) {
     mProcessor->onStatsdInitCompleted(getElapsedRealtimeNs());
     // to not stress I/O subsystem reasonable to postpone atom ids file creation and avoid
     // high volume read file requests from many apps which will log their first atom
-    mSocketLogEventControl->setControlEnabled(!mPrintAllLogs);
+    // Bypass if mPrintAllLogs was enabled explicitly or the logging control was
+    // disabled explicitly already
+    if (mPrintAllLogs || mLoggingControlDisabled) {
+        return;
+    }
+    mSocketLogEventControl->setControlEnabled(true);
 }
 
 void StatsService::Startup() {

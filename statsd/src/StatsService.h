@@ -495,6 +495,8 @@ private:
     std::shared_ptr<LogEventFilter> mLogEventFilter;
     std::shared_ptr<SocketLogEventControl> mSocketLogEventControl;
 
+    std::atomic_bool mLoggingControlDisabled = false;
+
     friend class StatsServiceConfigTest;
     friend class RestrictedConfigE2ETest;
 
