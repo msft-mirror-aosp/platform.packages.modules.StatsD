@@ -209,7 +209,6 @@ void ValueMetricProducer<AggregatedValue, DimExtras>::onConfigUpdatedLocked(
     handleMetricWithAtomMatchingTrackers(atomMatcherId, metricIndex, newAtomMatchingTrackerMap,
                                          trackerToMetricMap, mWhatMatcherIndex);
     const optional<int64_t>& conditionIdOpt = getConditionIdForMetric(config, configIndex);
-    const ConditionLinks& conditionLinks = getConditionLinksForMetric(config, configIndex);
     if (conditionIdOpt.has_value()) {
         handleMetricWithConditions(conditionIdOpt.value(), metricIndex, conditionTrackerMap,
                                    mConditionTrackerIndex, conditionToMetricMap);
