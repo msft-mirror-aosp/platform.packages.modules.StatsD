@@ -25,7 +25,7 @@ import android.os.IStatsQueryCallback;
 
 /**
   * Binder interface to communicate with the statistics management service.
-  * {@hide}
+  * @hide
   */
 interface IStatsd {
     /**

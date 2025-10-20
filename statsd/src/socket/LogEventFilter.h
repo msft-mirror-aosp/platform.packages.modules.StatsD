@@ -21,9 +21,9 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
-#include <unordered_set>
 
 #include "LogEventFilterUtils.h"
+#include "socket/AtomsInUseChangeListener.h"
 
 namespace android {
 namespace os {
@@ -34,7 +34,8 @@ namespace statsd {
  * Maintains thread-local copy for fast search operations without holding a mutex
  * on each query
  */
-class LogEventFilter {
+
+class LogEventFilter : public AtomsInUseChangeListener {
 public:
     virtual ~LogEventFilter() = default;
 
@@ -54,7 +55,7 @@ public:
      * @param atomId
      * @return true if atom is used by any of consumer or filtering is disabled
      */
-    virtual bool isAtomInUse(int atomId) const {
+    bool isAtomInUse(int32_t atomId) const {
         if (!mLogsFilteringEnabled) {
             return true;
         }
@@ -64,34 +65,29 @@ public:
             std::lock_guard guard(mTagIdsMutex);
             mLocalSetUpdateCounter = mSetUpdateCounter.load(std::memory_order_relaxed);
             // swap provides constant complexity - no copy overhead
-            // the content of mAtomIdsSetManager is invalid after, which is ok
+            // the content of mAtomIdSetManager is invalid after, which is ok
             // it is not used anywhere else except for thread local cache update
-            mLocalTagIds.swap(mAtomIdsSetManager.getAtomIdsMutable());
+            mLocalTagIds.swap(mAtomIdSetManager.getAtomIdsMutable());
         }
         return isAtomInSet(mLocalTagIds, atomId);
     }
 
-    using ConsumerId = const void*;
-
-    using AtomIdSet = std::unordered_set<int32_t>;
     /**
      * @brief Set the Atom Ids object
      *
      * @param tagIds set of atoms ids
      * @param consumer used to differentiate the consumers to form proper superset of ids
      */
-    virtual void setAtomIds(AtomIdSet tagIds, ConsumerId consumer) {
+    void setAtomIds(AtomIdSet tagIds, ConsumerId consumer) override {
         std::lock_guard lock(mTagIdsMutex);
-        mAtomIdsSetManager.setAtomIds(std::move(tagIds), consumer);
+        mAtomIdSetManager.setAtomIds(std::move(tagIds), consumer);
         mSetUpdateCounter.fetch_add(1, std::memory_order_relaxed);
     }
 
 private:
-    using AtomIdsSetManager = AtomIdSetManagerBase<AtomIdSet>;
-
     std::atomic_bool mLogsFilteringEnabled = false;
     mutable std::mutex mTagIdsMutex;
-    mutable AtomIdsSetManager mAtomIdsSetManager;
+    mutable AtomIdSetManager mAtomIdSetManager;
     std::atomic_int mSetUpdateCounter;
 
     mutable int mLocalSetUpdateCounter;

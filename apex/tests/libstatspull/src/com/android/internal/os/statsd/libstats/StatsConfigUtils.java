@@ -20,6 +20,7 @@ import static com.google.common.truth.Truth.assertThat;
 import android.app.StatsManager;
 import android.util.Log;
 import android.util.Pair;
+
 import com.android.internal.os.StatsdConfigProto.AtomMatcher;
 import com.android.internal.os.StatsdConfigProto.FieldValueMatcher;
 import com.android.internal.os.StatsdConfigProto.SimpleAtomMatcher;
@@ -35,8 +36,10 @@ import com.android.os.StatsLog.StatsLogReport;
 import com.android.os.StatsLog.StatsdStatsReport;
 import com.android.os.StatsLog.StatsdStatsReport.ConfigStats;
 import com.android.os.StatsLogEnums;
+
+import com.google.protobuf.ExtensionRegistryLite;
+
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -45,7 +48,7 @@ import java.util.stream.Collectors;
  * Util class for constructing statsd configs.
  */
 public class StatsConfigUtils {
-    public static final String TAG = "statsd.StatsConfigUtils";
+    public static final String TAG = StatsConfigUtils.class.getSimpleName();
     public static final int SHORT_WAIT = 2_000; // 2 seconds.
 
     /**
@@ -55,7 +58,6 @@ public class StatsConfigUtils {
         return StatsdConfig.newBuilder().setId(configId)
                 .addAllowedLogSource(StatsConfigUtils.class.getPackage().getName());
     }
-
 
     public static boolean verifyValidConfigExists(StatsManager statsManager, long configId) {
         StatsdStatsReport report = null;
@@ -81,20 +83,32 @@ public class StatsConfigUtils {
                 .setSimpleAtomMatcher(
                         SimpleAtomMatcher.newBuilder()
                                 .setAtomId(Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER)
-                                .addFieldValueMatcher(FieldValueMatcher.newBuilder()
-                                        .setField(AppBreadcrumbReported.LABEL_FIELD_NUMBER)
-                                        .setEqInt(label)
-                                )
-                )
+                                .addFieldValueMatcher(
+                                        FieldValueMatcher.newBuilder()
+                                                .setField(AppBreadcrumbReported.LABEL_FIELD_NUMBER)
+                                                .setEqInt(label)))
                 .build();
     }
 
-    public static ConfigMetricsReport getConfigMetricsReport(StatsManager statsManager,
-            long configId) {
+    static AtomMatcher getSimpleAtomMatcher(int atomTag, long atomMatcherId) {
+        return AtomMatcher.newBuilder()
+                .setId(atomMatcherId)
+                .setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder().setAtomId(atomTag))
+                .build();
+    }
+
+    static ConfigMetricsReport getConfigMetricsReport(StatsManager statsManager, long configId) {
+        ExtensionRegistryLite extensionRegistry = ExtensionRegistryLite.newInstance();
+        return getConfigMetricsReport(statsManager, configId, extensionRegistry);
+    }
+
+    static ConfigMetricsReport getConfigMetricsReport(
+            StatsManager statsManager, long configId, ExtensionRegistryLite extensionRegistry) {
         ConfigMetricsReportList reportList = null;
         try {
-            reportList = ConfigMetricsReportList.parser()
-                    .parseFrom(statsManager.getReports(configId));
+            reportList =
+                    ConfigMetricsReportList.parser()
+                            .parseFrom(statsManager.getReports(configId), extensionRegistry);
         } catch (Exception e) {
             Log.e(TAG, "getData failed", e);
         }
@@ -131,6 +145,13 @@ public class StatsConfigUtils {
         return getGaugeMetricDataList(report);
     }
 
+    static List<Atom> getGaugeMetricDataList(
+            StatsManager statsManager, long configId, ExtensionRegistryLite extensionRegistry) {
+        ConfigMetricsReport report =
+                getConfigMetricsReport(statsManager, configId, extensionRegistry);
+        return getGaugeMetricDataList(report);
+    }
+
     private static List<Atom> backFillGaugeBucketAtoms(
             List<StatsLog.AggregatedAtomInfo> atomInfoList) {
         List<Pair<Atom, Long>> atomTimestamp = new ArrayList<>();
@@ -143,4 +164,3 @@ public class StatsConfigUtils {
         return atomTimestamp.stream().map(p -> p.first).collect(Collectors.toList());
     }
 }
-

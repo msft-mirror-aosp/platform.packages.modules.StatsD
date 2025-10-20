@@ -400,7 +400,7 @@ void ShellSubscriberClient::onUnsubscribe() {
     }
 }
 
-void ShellSubscriberClient::addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const {
+void ShellSubscriberClient::addAllAtomIds(AtomsInUseChangeListener::AtomIdSet& allAtomIds) const {
     for (const auto& matcher : mPushedMatchers) {
         allAtomIds.insert(matcher.atom_id());
     }

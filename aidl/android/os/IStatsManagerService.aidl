@@ -23,7 +23,7 @@ import android.os.IStatsQueryCallback;
 /**
   * Binder interface to communicate with the Java-based statistics service helper.
   * Contains parcelable objects available only in Java.
-  * {@hide}
+  * @hide
   */
 interface IStatsManagerService {
 

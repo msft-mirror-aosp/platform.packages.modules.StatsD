@@ -19,13 +19,13 @@
 #include <gtest/gtest_prod.h>
 
 #include <map>
+#include <unordered_set>
 
 namespace android {
 namespace os {
 namespace statsd {
 
 /**
- * Templating is for benchmarks only
  *
  * Based on benchmarks the more fast container to be used for atom ids filtering
  * is unordered_set<int>
@@ -34,18 +34,17 @@ namespace statsd {
  * #BM_LogEventFilterSet                                613362 ns     611259 ns         1146
  * #BM_LogEventFilterSet2Consumers                     1859397 ns    1854193 ns          378
  *
- * See @LogEventFilter definition below
  */
 
 /**
  * Stores superset of atoms ids consumed by various consumers
  */
-template <typename T>
-class AtomIdSetManagerBase {
+
+class AtomIdSetManager {
 public:
     using ConsumerId = const void*;
 
-    using AtomIdSet = T;
+    using AtomIdSet = std::unordered_set<int32_t>;
 
     const AtomIdSet& getAtomIds() const {
         return mTagIds;
@@ -74,8 +73,7 @@ private:
     AtomIdSet mTagIds;
 };
 
-template <typename AtomIdSet>
-bool isAtomInSet(const AtomIdSet& s, int32_t atomId) {
+inline bool isAtomInSet(const std::unordered_set<int32_t>& s, int32_t atomId) {
     return s.find(atomId) != s.end();
 }
 

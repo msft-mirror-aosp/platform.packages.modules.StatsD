@@ -34,6 +34,7 @@
 #include "logd/LogEventQueue.h"
 #include "packages/UidMap.h"
 #include "shell/ShellSubscriber.h"
+#include "socket/SocketLogEventControl.h"
 #include "statscompanion_util.h"
 #include "utils/MultiConditionTrigger.h"
 
@@ -358,6 +359,11 @@ private:
     status_t cmd_print_logs(int outFd, const Vector<String8>& args);
 
     /**
+     * Enable or disable logging control.
+     */
+    status_t cmd_logging_control(int outFd, const Vector<String8>& args);
+
+    /**
      * Implementation for request data for the configuration key.
      */
     void getDataChecked(int64_t key, const int32_t callingUid, std::vector<uint8_t>* output);
@@ -421,7 +427,9 @@ private:
      */
     void onStatsdInitCompletedHandlerTermination();
 
-    std::atomic<bool> mIsStopRequested = false;
+    std::atomic_bool mPrintAllLogs = false;
+
+    std::atomic_bool mIsStopRequested = false;
 
     /**
      * Tracks the uid <--> package name mapping.
@@ -465,7 +473,6 @@ private:
      */
     mutable std::mutex mShellSubscriberMutex;
     std::shared_ptr<LogEventQueue> mEventQueue;
-    std::shared_ptr<LogEventFilter> mLogEventFilter;
 
     std::unique_ptr<std::thread> mLogsReaderThread;
 
@@ -483,6 +490,12 @@ private:
     static const inline std::string kAllPullersRegisteredTag = "PULLERS_REGISTERED";
 
     ScopedAIBinder_DeathRecipient mStatsCompanionServiceDeathRecipient;
+
+    std::shared_ptr<AtomsInUseChangeDispatcher> mAtomsInUseChangeDispatcher;
+    std::shared_ptr<LogEventFilter> mLogEventFilter;
+    std::shared_ptr<SocketLogEventControl> mSocketLogEventControl;
+
+    std::atomic_bool mLoggingControlDisabled = false;
 
     friend class StatsServiceConfigTest;
     friend class RestrictedConfigE2ETest;
@@ -517,6 +530,7 @@ private:
     FRIEND_TEST(AnomalyDurationDetectionE2eTest, TestDurationMetric_SUM_long_refractory_period);
 
     FRIEND_TEST(StatsServiceConfigTest, StatsServiceStatsdInitTest);
+    FRIEND_TEST(StatsServiceConfigTest, LogEventFilterOnSetPrintLogs);
 };
 
 }  // namespace statsd

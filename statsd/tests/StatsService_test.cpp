@@ -278,6 +278,29 @@ TEST_F(StatsServiceConfigTest, StatsServiceStatsdInitTest) {
               NanoToMillis(service->mProcessor->mTimeBaseNs + bucketSizeNs));
 }
 
+TEST_F(StatsServiceConfigTest, LogEventFilterOnSetPrintLogs) {
+    shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
+
+    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
+            .Times(1);
+    Expectation filterSetFalse =
+            EXPECT_CALL(*mockLogEventFilter, setFilteringEnabled(false)).Times(1);
+    EXPECT_CALL(*mockLogEventFilter, setFilteringEnabled(true)).Times(1).After(filterSetFalse);
+
+    auto service = createStatsService(mockLogEventFilter);
+
+    Vector<String8> argsEnable;
+    argsEnable.push(String8("print-logs"));
+    argsEnable.push(String8("1"));
+
+    Vector<String8> argsDisable;
+    argsDisable.push(String8("print-logs"));
+    argsDisable.push(String8("0"));
+
+    service->cmd_print_logs(0, argsEnable);
+    service->cmd_print_logs(0, argsDisable);
+}
+
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
 #endif

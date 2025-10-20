@@ -467,8 +467,7 @@ TEST(StatsLogProcessorTest, InvalidConfigRemoved) {
     EXPECT_EQ(0, StatsdStats::getInstance().mIceBox.size());
 
     StatsdConfig invalidConfig = MakeConfig(true);
-    auto invalidCountMetric = invalidConfig.add_count_metric();
-    invalidCountMetric->set_what(0);
+    invalidConfig.add_default_pull_packages("invalid pull package");
     p.OnConfigUpdated(0, key, invalidConfig);
     EXPECT_EQ(0, p.mMetricsManagers.size());
     // The current configs should not contain the invalid config.
@@ -1853,29 +1852,6 @@ TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart) {
     service->mProcessor->onDumpReport(cfgKey1, getElapsedRealtimeNs(),
                                       false /* include_current_bucket*/, true /* erase_data */,
                                       ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
-}
-
-TEST(StatsLogProcessorTest, LogEventFilterOnSetPrintLogs) {
-    sp<UidMap> m = new UidMap();
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    sp<AlarmMonitor> anomalyAlarmMonitor;
-    sp<AlarmMonitor> periodicAlarmMonitor;
-
-    std::shared_ptr<MockLogEventFilter> mockLogEventFilter = std::make_shared<MockLogEventFilter>();
-    EXPECT_CALL(*mockLogEventFilter, setAtomIds(StatsLogProcessor::getDefaultAtomIdSet(), _))
-            .Times(1);
-    StatsLogProcessor p(
-            m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
-            [](const ConfigKey& key) { return true; },
-            [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, mockLogEventFilter);
-
-    Expectation filterSetFalse =
-            EXPECT_CALL(*mockLogEventFilter, setFilteringEnabled(false)).Times(1);
-    EXPECT_CALL(*mockLogEventFilter, setFilteringEnabled(true)).Times(1).After(filterSetFalse);
-
-    p.setPrintLogs(true);
-    p.setPrintLogs(false);
 }
 
 TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogHostUid) {

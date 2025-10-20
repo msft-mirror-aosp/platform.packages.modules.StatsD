@@ -144,7 +144,7 @@ void StateManager::notifyAppChanged(const string& apk, const sp<UidMap>& uidMap)
     }
 }
 
-void StateManager::addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const {
+void StateManager::addAllAtomIds(AtomsInUseChangeListener::AtomIdSet& allIds) const {
     for (const auto& stateTracker : mStateTrackers) {
         allIds.insert(stateTracker.first);
     }

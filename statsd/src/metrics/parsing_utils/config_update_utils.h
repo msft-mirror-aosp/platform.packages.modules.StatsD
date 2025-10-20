@@ -25,6 +25,7 @@
 #include "external/StatsPullerManager.h"
 #include "matchers/AtomMatchingTracker.h"
 #include "metrics/MetricProducer.h"
+#include "metrics_manager_util.h"
 
 namespace android {
 namespace os {
@@ -35,23 +36,26 @@ namespace statsd {
 // All other functions are intermediate steps, created to make unit testing easier.
 
 // Recursive function to determine if a matcher needs to be updated.
+// Invalid matchers may not have an update status set.
 // input:
 // [config]: the input StatsdConfig
-// [matcherIdx]: the index of the current matcher to be updated
+// [matcher]: the current matcher to be updated
 // [oldAtomMatchingTrackerMap]: matcher id to index mapping in the existing MetricsManager
 // [oldAtomMatchingTrackers]: stores the existing AtomMatchingTrackers
-// [newAtomMatchingTrackerMap]: matcher id to index mapping in the input StatsdConfig
+// [allAtomMatcherMap]: matcher id to atom matcher mapping in the input StatsdConfig
 // output:
-// [matchersToUpdate]: vector of the update status of each matcher. The matcherIdx index will
+// [matchersToUpdate]: map of the matcherId to update status of each matcher. The matcher status
+// will
 //                     be updated from UPDATE_UNKNOWN after this call.
 // [cycleTracker]: intermediate param used during recursion.
 // Returns nullopt if successful and InvalidConfigReason if not.
 std::optional<InvalidConfigReason> determineMatcherUpdateStatus(
-        const StatsdConfig& config, int matcherIdx,
+        const StatsdConfig& config, const AtomMatcher& matcher,
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
         const std::vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
-        const std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
-        std::vector<UpdateStatus>& matchersToUpdate, std::vector<uint8_t>& cycleTracker);
+        const std::unordered_map<int64_t, AtomMatcherValue>& allAtomMatcherMap,
+        std::unordered_map<int64_t, UpdateStatus>& matchersToUpdate,
+        std::unordered_set<int64_t>& cycleTracker);
 
 // Updates the AtomMatchingTrackers.
 // input:
@@ -63,23 +67,26 @@ std::optional<InvalidConfigReason> determineMatcherUpdateStatus(
 // [newAtomMatchingTrackerMap]: new matcher id to index mapping
 // [newAtomMatchingTrackers]: stores the new AtomMatchingTrackers
 // [replacedMatchers]: set of matcher ids that changed and have been replaced
-// Returns nullopt if successful and InvalidConfigReason if not.
-std::optional<InvalidConfigReason> updateAtomMatchingTrackers(
+// [invalidEntities]: a map of entity id to the reason why the entity is invalid
+// Returns true is all atom matchers are valid.
+bool updateAtomMatchingTrackers(
         const StatsdConfig& config, const sp<UidMap>& uidMap,
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
         const std::vector<sp<AtomMatchingTracker>>& oldAtomMatchingTrackers,
         std::unordered_map<int, std::vector<int>>& allTagIdsToMatchersMap,
         std::unordered_map<int64_t, int>& newAtomMatchingTrackerMap,
         std::vector<sp<AtomMatchingTracker>>& newAtomMatchingTrackers,
-        std::set<int64_t>& replacedMatchers);
+        std::set<int64_t>& replacedMatchers,
+        std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
 // Recursive function to determine if a condition needs to be updated.
+// Invalid conditions may not have an update status set.
 // input:
 // [config]: the input StatsdConfig
-// [conditionIdx]: the index of the current condition to be updated
+// [predicate]: the predicate to be updated
 // [oldConditionTrackerMap]: condition id to index mapping in the existing MetricsManager
 // [oldConditionTrackers]: stores the existing ConditionTrackers
-// [newConditionTrackerMap]: condition id to index mapping in the input StatsdConfig
+// [allConditionsMap]: condition id to predicate mapping in the input StatsdConfig
 // [replacedMatchers]: set of replaced matcher ids. conditions using these matchers must be replaced
 // output:
 // [conditionsToUpdate]: vector of the update status of each condition. The conditionIdx index will
@@ -87,12 +94,13 @@ std::optional<InvalidConfigReason> updateAtomMatchingTrackers(
 // [cycleTracker]: intermediate param used during recursion.
 // Returns nullopt if successful and InvalidConfigReason if not.
 std::optional<InvalidConfigReason> determineConditionUpdateStatus(
-        const StatsdConfig& config, int conditionIdx,
+        const StatsdConfig& config, const Predicate& predicate,
         const std::unordered_map<int64_t, int>& oldConditionTrackerMap,
         const std::vector<sp<ConditionTracker>>& oldConditionTrackers,
-        const std::unordered_map<int64_t, int>& newConditionTrackerMap,
-        const std::set<int64_t>& replacedMatchers, std::vector<UpdateStatus>& conditionsToUpdate,
-        std::vector<uint8_t>& cycleTracker);
+        const std::unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
+        const std::set<int64_t>& replacedMatchers,
+        std::unordered_map<int64_t, UpdateStatus>& conditionsToUpdate,
+        std::unordered_set<int64_t>& cycleTracker);
 
 // Updates ConditionTrackers
 // input:
@@ -108,41 +116,51 @@ std::optional<InvalidConfigReason> determineConditionUpdateStatus(
 //                          to indices of condition trackers that use the matcher
 // [conditionCache]: stores the current conditions for each ConditionTracker
 // [replacedConditions]: set of condition ids that have changed and have been replaced
-// Returns nullopt if successful and InvalidConfigReason if not.
-std::optional<InvalidConfigReason> updateConditions(
-        const ConfigKey& key, const StatsdConfig& config,
-        const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
-        const std::set<int64_t>& replacedMatchers,
-        const std::unordered_map<int64_t, int>& oldConditionTrackerMap,
-        const std::vector<sp<ConditionTracker>>& oldConditionTrackers,
-        std::unordered_map<int64_t, int>& newConditionTrackerMap,
-        std::vector<sp<ConditionTracker>>& newConditionTrackers,
-        std::unordered_map<int, std::vector<int>>& trackerToConditionMap,
-        std::vector<ConditionState>& conditionCache, std::set<int64_t>& replacedConditions);
+// [allConditionsMap]: map of condition id to the condition proto and tracker. used for downstream
+// processing.
+// [invalidEntities]: a map of entity id to the reason why the entity is invalid Returns
+// whether all conditions were valid.
+bool updateConditions(const ConfigKey& key, const StatsdConfig& config,
+                      const std::unordered_map<int64_t, int>& atomMatchingTrackerMap,
+                      const std::set<int64_t>& replacedMatchers,
+                      const std::unordered_map<int64_t, int>& oldConditionTrackerMap,
+                      const std::vector<sp<ConditionTracker>>& oldConditionTrackers,
+                      std::unordered_map<int64_t, int>& newConditionTrackerMap,
+                      std::vector<sp<ConditionTracker>>& newConditionTrackers,
+                      std::unordered_map<int, std::vector<int>>& trackerToConditionMap,
+                      std::vector<ConditionState>& conditionCache,
+                      std::set<int64_t>& replacedConditions,
+                      std::unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
+                      std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
-std::optional<InvalidConfigReason> updateStates(
-        const StatsdConfig& config, const std::map<int64_t, uint64_t>& oldStateProtoHashes,
-        std::unordered_map<int64_t, int>& stateAtomIdMap,
-        std::unordered_map<int64_t, std::unordered_map<int, int64_t>>& allStateGroupMaps,
-        std::map<int64_t, uint64_t>& newStateProtoHashes, std::set<int64_t>& replacedStates);
+bool updateStates(const StatsdConfig& config,
+                  const std::map<int64_t, uint64_t>& oldStateProtoHashes,
+                  std::unordered_map<int64_t, int>& stateAtomIdMap,
+                  std::unordered_map<int64_t, std::unordered_map<int, int64_t>>& allStateGroupMaps,
+                  std::map<int64_t, uint64_t>& newStateProtoHashes,
+                  std::set<int64_t>& replacedStates,
+                  std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
 // Function to determine the update status (preserve/replace/new) of all metrics in the config.
+// Invalid metrics may not have an update status set.
 // [config]: the input StatsdConfig
 // [oldMetricProducerMap]: metric id to index mapping in the existing MetricsManager
 // [oldMetricProducers]: stores the existing MetricProducers
-// [metricToActivationMap]:  map from metric id to metric activation index
+// [allMetricActivations]: map of metric id to its metric activation from the config.
 // [replacedMatchers]: set of replaced matcher ids. metrics using these matchers must be replaced
 // [replacedConditions]: set of replaced conditions. metrics using these conditions must be replaced
 // [replacedStates]: set of replaced state ids. metrics using these states must be replaced
 // output:
 // [metricsToUpdate]: update status of each metric. Will be changed from UPDATE_UNKNOWN
-// Returns nullopt if successful and InvalidConfigReason if not.
-std::optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
+// Returns whether all metrics have successfully retrieved its update status
+bool determineAllMetricUpdateStatuses(
         const StatsdConfig& config, const std::unordered_map<int64_t, int>& oldMetricProducerMap,
         const std::vector<sp<MetricProducer>>& oldMetricProducers,
         const std::unordered_map<int64_t, int>& metricToActivationMap,
         const std::set<int64_t>& replacedMatchers, const std::set<int64_t>& replacedConditions,
-        const std::set<int64_t>& replacedStates, std::vector<UpdateStatus>& metricsToUpdate);
+        const std::set<int64_t>& replacedStates,
+        std::unordered_map<int64_t, UpdateStatus>& metricsToUpdate,
+        std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
 // Update MetricProducers.
 // input:
@@ -158,13 +176,17 @@ std::optional<InvalidConfigReason> determineAllMetricUpdateStatuses(
 // [stateAtomIdMap]: contains the mapping from state ids to atom ids
 // [allStateGroupMaps]: contains the mapping from atom ids and state values to
 //                      state group ids for all states
+// [allConditionsMap]: map of condition id to the condition proto and tracker. Used to update
+// duration metrics.
 // output:
-// [allMetricProducers]: contains the list of sp to the MetricProducers created.
+// [allMetricProducers]: contains the list of sp to the MetricProducers
+// created.
 // [conditionToMetricMap]: contains the mapping from condition tracker index to
 //                          the list of MetricProducer index
 // [trackerToMetricMap]: contains the mapping from log tracker to MetricProducer index.
-// Returns nullopt if successful and InvalidConfigReason if not.
-std::optional<InvalidConfigReason> updateMetrics(
+// [invalidEntities]: map of entity id to the reason why it is invalid.
+// Returns whether all metrics are valid
+bool updateMetrics(
         const ConfigKey& key, const StatsdConfig& config, int64_t timeBaseNs,
         const int64_t currentTimeNs, const sp<StatsPullerManager>& pullerManager,
         const std::unordered_map<int64_t, int>& oldAtomMatchingTrackerMap,
@@ -181,6 +203,7 @@ std::optional<InvalidConfigReason> updateMetrics(
         const std::unordered_map<int64_t, int>& oldMetricProducerMap,
         const std::vector<sp<MetricProducer>>& oldMetricProducers,
         const wp<ConfigMetadataProvider> configMetadataProvider,
+        const std::unordered_map<int64_t, ConditionProtoAndTracker>& allConditionsMap,
         std::unordered_map<int64_t, int>& newMetricProducerMap,
         std::vector<sp<MetricProducer>>& newMetricProducers,
         std::unordered_map<int, std::vector<int>>& conditionToMetricMap,
@@ -188,7 +211,8 @@ std::optional<InvalidConfigReason> updateMetrics(
         std::set<int64_t>& noReportMetricIds,
         std::unordered_map<int, std::vector<int>>& activationAtomTrackerToMetricMap,
         std::unordered_map<int, std::vector<int>>& deactivationAtomTrackerToMetricMap,
-        std::vector<int>& metricsWithActivation, std::set<int64_t>& replacedMetrics);
+        std::vector<int>& metricsWithActivation, std::set<int64_t>& replacedMetrics,
+        std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
 // Function to determine the update status (preserve/replace/new) of an alert.
 // [alert]: the input Alert
@@ -219,21 +243,22 @@ std::optional<InvalidConfigReason> determineAlertUpdateStatus(
 // output:
 // [newAlertTrackerMap]: mapping of alert id to index in the new config
 // [newAnomalyTrackers]: contains the list of sp to the AnomalyTrackers created.
-// Returns nullopt if successful and InvalidConfigReason if not.
-std::optional<InvalidConfigReason> updateAlerts(
-        const StatsdConfig& config, int64_t currentTimeNs,
-        const std::unordered_map<int64_t, int>& metricProducerMap,
-        const std::set<int64_t>& replacedMetrics,
-        const std::unordered_map<int64_t, int>& oldAlertTrackerMap,
-        const std::vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
-        const sp<AlarmMonitor>& anomalyAlarmMonitor,
-        std::vector<sp<MetricProducer>>& allMetricProducers,
-        std::unordered_map<int64_t, int>& newAlertTrackerMap,
-        std::vector<sp<AnomalyTracker>>& newAnomalyTrackers);
+// [invalidEntities]: map of entity id to the reason why it is invalid.
+// Returns whether all alerts are valid.
+bool updateAlerts(const StatsdConfig& config, int64_t currentTimeNs,
+                  const std::unordered_map<int64_t, int>& metricProducerMap,
+                  const std::set<int64_t>& replacedMetrics,
+                  const std::unordered_map<int64_t, int>& oldAlertTrackerMap,
+                  const std::vector<sp<AnomalyTracker>>& oldAnomalyTrackers,
+                  const sp<AlarmMonitor>& anomalyAlarmMonitor,
+                  std::vector<sp<MetricProducer>>& allMetricProducers,
+                  std::unordered_map<int64_t, int>& newAlertTrackerMap,
+                  std::vector<sp<AnomalyTracker>>& newAnomalyTrackers,
+                  std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
 
 // Updates the existing MetricsManager from a new StatsdConfig.
 // Parameters are the members of MetricsManager. See MetricsManager for declaration.
-std::optional<InvalidConfigReason> updateStatsdConfig(
+std::unordered_map<InvalidEntityKey, InvalidConfigReason> updateStatsdConfig(
         const ConfigKey& key, const StatsdConfig& config, const sp<UidMap>& uidMap,
         const sp<StatsPullerManager>& pullerManager, const sp<AlarmMonitor>& anomalyAlarmMonitor,
         const sp<AlarmMonitor>& periodicAlarmMonitor, int64_t timeBaseNs,

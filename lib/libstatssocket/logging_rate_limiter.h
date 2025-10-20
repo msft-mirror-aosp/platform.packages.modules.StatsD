@@ -16,20 +16,12 @@
 
 #pragma once
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
 
 #include "utils.h"
-
-class RealTimeClock {
-public:
-    static int64_t getTimeNs() {
-        return get_elapsed_realtime_ns();
-    }
-};
 
 template <typename Clock>
 class LoggingRateLimiter {

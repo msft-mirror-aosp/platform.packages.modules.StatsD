@@ -28,7 +28,7 @@
 #include "external/StatsPullerManager.h"
 #include "logd/LogEvent.h"
 #include "packages/UidMap.h"
-#include "socket/LogEventFilter.h"
+#include "socket/AtomsInUseChangeListener.h"
 #include "src/shell/shell_config.pb.h"
 #include "src/statsd_config.pb.h"
 
@@ -87,7 +87,7 @@ public:
         return kMaxSizeKb;
     }
 
-    void addAllAtomIds(LogEventFilter::AtomIdSet& allAtomIds) const;
+    void addAllAtomIds(AtomsInUseChangeListener::AtomIdSet& allAtomIds) const;
 
     // Minimum pull interval for callback subscriptions.
     static constexpr int64_t kMinCallbackPullIntervalMs = 60'000;  // 60 seconds.

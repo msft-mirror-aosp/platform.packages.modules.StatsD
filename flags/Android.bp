@@ -31,6 +31,7 @@ aconfig_declarations {
         "statsd_flags.aconfig",
         "stats_manager_flags.aconfig",
     ],
+    exportable: true,
 }
 
 cc_aconfig_library {

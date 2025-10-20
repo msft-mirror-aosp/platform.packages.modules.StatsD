@@ -40,7 +40,7 @@ public:
      * @return true if atom have been written into the socket successfully
      * @return false if atom have been written into the socket with an error
      */
-    void dumpAtomsLossStats(bool forceDump = false) __INTRODUCED_IN(__ANDROID_API_T__);
+    void dumpAtomsLossStats(bool forceDump = false);
 
     ~StatsSocketLossReporter();
 
@@ -55,11 +55,11 @@ private:
     // Loss info data will be logged to statsd as a regular AStatsEvent
     // which means it needs to obey event size limitations (4kB)
     // for N tag ids the loss info might take N * 12 + 8 + 8 + 4 bytes
-    // defining guardrail as a 100 tag ids should limit the atom size to
-    // 100 * 12 + 8 + 8 + 4 ~ 1.2kB
-    static constexpr size_t kMaxAtomTagsCount = 100;
+    // defining guardrail as a 300 tag ids should limit the atom size to
+    // 300 * 12 + 8 + 8 + 4 ~ 3.6kB
+    static constexpr size_t kMaxAtomTagsCount = 300;
 
-    static constexpr int64_t kCoolDownTimerDurationNanos = 10 * 1000 * 1000;  // 10ms
+    static constexpr int64_t kCoolDownTimerDurationNanos = 60 * 1'000'000'000LL;  // 1minute
 
     struct HashPair final {
         template <class TFirst, class TSecond>

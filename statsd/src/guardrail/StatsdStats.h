@@ -29,6 +29,7 @@
 #include "LoggingRate.h"
 #include "config/ConfigKey.h"
 #include "logd/logevent_util.h"
+#include "stats_util.h"
 
 namespace android {
 namespace os {
@@ -100,7 +101,7 @@ struct ConfigStats {
     int32_t config_metadata_provider_promote_failure = 0;
 
     // Stores reasons for why config is valid or not
-    std::optional<InvalidConfigReason> reason;
+    std::vector<InvalidConfigReason> reason;
 
     std::list<int32_t> broadcast_sent_time_sec;
 
@@ -323,16 +324,18 @@ public:
 
     static const int32_t kMaxLoggingRateStatsToReport = 50;
 
+    static const int32_t kMaxInvalidEntitiesToReport = 25;
+
     /**
      * Report a new config has been received and report the static stats about the config.
      *
      * The static stats include: the count of metrics, conditions, matchers, and alerts.
      * If the config is not valid, this config stats will be put into icebox immediately.
      */
-    void noteConfigReceived(const ConfigKey& key, int metricsCount, int conditionsCount,
-                            int matchersCount, int alertCount,
-                            const std::list<std::pair<const int64_t, const int32_t>>& annotations,
-                            const std::optional<InvalidConfigReason>& reason);
+    void noteConfigReceived(
+            const ConfigKey& key, int metricsCount, int conditionsCount, int matchersCount,
+            int alertCount, const std::list<std::pair<const int64_t, const int32_t>>& annotations,
+            const std::unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities);
     /**
      * Report a config has been removed.
      */
@@ -1130,7 +1133,7 @@ private:
     FRIEND_TEST(StatsdStatsTest, TestHasHitDimensionGuardrail);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigAdd);
     FRIEND_TEST(StatsdStatsTest, TestInvalidConfigMissingMetricId);
-    FRIEND_TEST(StatsdStatsTest, TestInvalidConfigOnlyMetricId);
+    FRIEND_TEST(StatsdStatsTest, TestInvalidConfigMetricAndSubscription);
     FRIEND_TEST(StatsdStatsTest, TestNonPlatformAtomLog);
     FRIEND_TEST(StatsdStatsTest, TestPullAtomStats);
     FRIEND_TEST(StatsdStatsTest, TestQueueStats);

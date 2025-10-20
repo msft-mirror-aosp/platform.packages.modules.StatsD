@@ -248,9 +248,7 @@ static int statsdWrite(struct timespec* ts, struct iovec* vec, size_t nr) {
             } else {
                 // try to send socket loss info only when socket connection established
                 // and it is proved by previous write that socket is available
-                if (__builtin_available(android __ANDROID_API_T__, *)) {
-                    StatsSocketLossReporter::getInstance().dumpAtomsLossStats();
-                }
+                StatsSocketLossReporter::getInstance().dumpAtomsLossStats();
             }
         }
     }

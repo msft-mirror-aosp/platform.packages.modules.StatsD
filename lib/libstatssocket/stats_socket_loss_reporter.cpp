@@ -34,9 +34,7 @@ StatsSocketLossReporter::~StatsSocketLossReporter() {
     // due to:
     // - cool down timer was active
     // - no input atoms to trigger loss info dump after cooldown timer expired
-    if (__builtin_available(android __ANDROID_API_T__, *)) {
-        dumpAtomsLossStats(true);
-    }
+    dumpAtomsLossStats(true);
 }
 
 StatsSocketLossReporter& StatsSocketLossReporter::getInstance() {
@@ -85,10 +83,11 @@ void StatsSocketLossReporter::dumpAtomsLossStats(bool forceDump) {
 
     const int64_t currentRealtimeTsNanos = get_elapsed_realtime_ns();
 
-    if (!forceDump && !mCooldownTimer.isExpired(currentRealtimeTsNanos)) {
+    if (!forceDump && !mCooldownTimer.isExpired(currentRealtimeTsNanos) &&
+        mLossInfo.size() < kMaxAtomTagsCount) {
         // Early termination to avoid socket flooding with more STATS_SOCKET_LOSS_REPORTED atoms,
         // which have high probability of write failures, the cooldown timer approach is applied:
-        // - start cooldown timer for 10us for every failed dump
+        // - start cooldown timer for kCoolDownTimerDurationNanos for every dump request
         // - before writing STATS_SOCKET_LOSS_REPORTED do check the timestamp to keep some delay
         return;
     }
@@ -115,17 +114,19 @@ void StatsSocketLossReporter::dumpAtomsLossStats(bool forceDump) {
         counts[i] = lossInfoIt->second;
     }
 
-    // below call might lead to socket loss event - intention is to avoid self counting
-    const int ret = stats_write(STATS_SOCKET_LOSS_REPORTED, mUid, mFirstTsNanos, mLastTsNanos,
-                                mOverflowCounter, errors, tags, counts);
-    if (ret > 0) {
-        // Otherwise, in case of failure we preserve all socket loss information between dumps.
-        // When above write failed - the socket loss stats are not discarded
-        // and would be re-send during next attempt.
-        mOverflowCounter = 0;
-        mLossInfo.clear();
+    if (__builtin_available(android __ANDROID_API_T__, *)) {
+        // below call might lead to socket loss event - intention is to avoid self counting
+        const int ret = stats_write(STATS_SOCKET_LOSS_REPORTED, mUid, mFirstTsNanos, mLastTsNanos,
+                                    mOverflowCounter, errors, tags, counts);
+        if (ret > 0) {
+            // Clear internal accumulated data. Otherwise, in case of failure we preserve all socket
+            // loss information between dumps. When above write failed - the socket loss stats are
+            // not discarded and would be re-send during next attempt.
+            mOverflowCounter = 0;
+            mLossInfo.clear();
 
-        mFirstTsNanos.store(0, std::memory_order_relaxed);
-        mLastTsNanos.store(0, std::memory_order_relaxed);
+            mFirstTsNanos.store(0, std::memory_order_relaxed);
+            mLastTsNanos.store(0, std::memory_order_relaxed);
+        }
     }
 }

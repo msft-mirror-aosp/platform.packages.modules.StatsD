@@ -30,83 +30,69 @@ namespace statsd {
 constexpr int kAtomIdsCount = 100;
 
 // Helper to generate a set of atom IDs
-template <typename SetType>
-SetType generateAtomIds(int start, int end) {
-    SetType ids;
+AtomIdSetManager::AtomIdSet generateAtomIds(int start, int end) {
+    AtomIdSetManager::AtomIdSet ids;
     for (int i = start; i <= end; ++i) {
         ids.insert(i);
     }
     return ids;
 }
 
-// Test fixture for AtomIdSetManagerBase.
-template <typename SetType>
-class AtomIdSetManagerBaseTest : public ::testing::Test {
-protected:
-    using Manager = AtomIdSetManagerBase<SetType>;
-    Manager manager;
-};
-
-using SetTypesToTest = ::testing::Types<std::set<int>, std::unordered_set<int>>;
-TYPED_TEST_SUITE(AtomIdSetManagerBaseTest, SetTypesToTest);
-
-TYPED_TEST(AtomIdSetManagerBaseTest, TestEmpty) {
-    const auto sampleIds = generateAtomIds<TypeParam>(1, kAtomIdsCount);
+TEST(AtomIdSetManagerTest, TestEmpty) {
+    AtomIdSetManager manager;
+    const auto sampleIds = generateAtomIds(1, kAtomIdsCount);
     for (const auto& atomId : sampleIds) {
-        EXPECT_FALSE(isAtomInSet(this->manager.getAtomIds(), atomId));
+        EXPECT_FALSE(isAtomInSet(manager.getAtomIds(), atomId));
     }
 }
 
-TYPED_TEST(AtomIdSetManagerBaseTest, TestRemoveNonExistingConsumer) {
-    EXPECT_FALSE(isAtomInSet(this->manager.getAtomIds(), 1));
-    typename TestFixture::Manager::AtomIdSet emptyAtomIdsSet;
-    this->manager.setAtomIds(emptyAtomIdsSet,
-                             reinterpret_cast<typename TestFixture::Manager::ConsumerId>(0));
-    EXPECT_FALSE(isAtomInSet(this->manager.getAtomIds(), 1));
+TEST(AtomIdSetManagerTest, TestRemoveNonExistingConsumer) {
+    AtomIdSetManager manager;
+    EXPECT_FALSE(isAtomInSet(manager.getAtomIds(), 1));
+    AtomIdSetManager::AtomIdSet emptyAtomIdsSet;
+    manager.setAtomIds(emptyAtomIdsSet, reinterpret_cast<AtomIdSetManager::ConsumerId>(0));
+    EXPECT_FALSE(isAtomInSet(manager.getAtomIds(), 1));
 }
 
-TYPED_TEST(AtomIdSetManagerBaseTest, TestSingleConsumer) {
-    auto filterIds = generateAtomIds<TypeParam>(1, kAtomIdsCount);
-    this->manager.setAtomIds(filterIds,
-                             reinterpret_cast<typename TestFixture::Manager::ConsumerId>(0));
+TEST(AtomIdSetManagerTest, TestSingleConsumer) {
+    AtomIdSetManager manager;
+    auto filterIds = generateAtomIds(1, kAtomIdsCount);
+    manager.setAtomIds(filterIds, reinterpret_cast<AtomIdSetManager::ConsumerId>(0));
 
     for (int i = 1; i <= kAtomIdsCount; ++i) {
-        EXPECT_TRUE(isAtomInSet(this->manager.getAtomIds(), i));
+        EXPECT_TRUE(isAtomInSet(manager.getAtomIds(), i));
     }
     for (int i = kAtomIdsCount + 1; i <= kAtomIdsCount * 2; ++i) {
-        EXPECT_FALSE(isAtomInSet(this->manager.getAtomIds(), i));
+        EXPECT_FALSE(isAtomInSet(manager.getAtomIds(), i));
     }
 }
 
-TYPED_TEST(AtomIdSetManagerBaseTest, TestMultipleConsumersWithOverlap) {
-    auto filterIds1 = generateAtomIds<TypeParam>(1, kAtomIdsCount);
-    auto filterIds2 = generateAtomIds<TypeParam>(kAtomIdsCount / 2, kAtomIdsCount * 3 / 2);
-    this->manager.setAtomIds(filterIds1,
-                             reinterpret_cast<typename TestFixture::Manager::ConsumerId>(0));
-    this->manager.setAtomIds(filterIds2,
-                             reinterpret_cast<typename TestFixture::Manager::ConsumerId>(1));
+TEST(AtomIdSetManagerTest, TestMultipleConsumersWithOverlap) {
+    AtomIdSetManager manager;
+    auto filterIds1 = generateAtomIds(1, kAtomIdsCount);
+    auto filterIds2 = generateAtomIds(kAtomIdsCount / 2, kAtomIdsCount * 3 / 2);
+    manager.setAtomIds(filterIds1, reinterpret_cast<AtomIdSetManager::ConsumerId>(0));
+    manager.setAtomIds(filterIds2, reinterpret_cast<AtomIdSetManager::ConsumerId>(1));
 
     for (int i = 1; i <= kAtomIdsCount * 3 / 2; ++i) {
-        EXPECT_TRUE(isAtomInSet(this->manager.getAtomIds(), i));
+        EXPECT_TRUE(isAtomInSet(manager.getAtomIds(), i));
     }
-    EXPECT_FALSE(isAtomInSet(this->manager.getAtomIds(), kAtomIdsCount * 3 / 2 + 1));
+    EXPECT_FALSE(isAtomInSet(manager.getAtomIds(), kAtomIdsCount * 3 / 2 + 1));
 }
 
-TYPED_TEST(AtomIdSetManagerBaseTest, TestMultipleConsumersRemoveOne) {
-    auto filterIds1 = generateAtomIds<TypeParam>(1, kAtomIdsCount);
-    auto filterIds2 = generateAtomIds<TypeParam>(kAtomIdsCount + 1, kAtomIdsCount * 2);
-    this->manager.setAtomIds(filterIds1,
-                             reinterpret_cast<typename TestFixture::Manager::ConsumerId>(0));
-    this->manager.setAtomIds(filterIds2,
-                             reinterpret_cast<typename TestFixture::Manager::ConsumerId>(1));
+TEST(AtomIdSetManagerTest, TestMultipleConsumersRemoveOne) {
+    AtomIdSetManager manager;
+    auto filterIds1 = generateAtomIds(1, kAtomIdsCount);
+    auto filterIds2 = generateAtomIds(kAtomIdsCount + 1, kAtomIdsCount * 2);
+    manager.setAtomIds(filterIds1, reinterpret_cast<AtomIdSetManager::ConsumerId>(0));
+    manager.setAtomIds(filterIds2, reinterpret_cast<AtomIdSetManager::ConsumerId>(1));
 
-    typename TestFixture::Manager::AtomIdSet emptySet;
-    this->manager.setAtomIds(emptySet,
-                             reinterpret_cast<typename TestFixture::Manager::ConsumerId>(1));
+    AtomIdSetManager::AtomIdSet emptySet;
+    manager.setAtomIds(emptySet, reinterpret_cast<AtomIdSetManager::ConsumerId>(1));
 
     for (int i = 1; i <= kAtomIdsCount * 2; ++i) {
         bool expectedInUse = (i <= kAtomIdsCount);
-        EXPECT_EQ(expectedInUse, isAtomInSet(this->manager.getAtomIds(), i));
+        EXPECT_EQ(expectedInUse, isAtomInSet(manager.getAtomIds(), i));
     }
 }
 

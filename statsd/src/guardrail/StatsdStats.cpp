@@ -271,7 +271,7 @@ void StatsdStats::addToIceBoxLocked(shared_ptr<ConfigStats>& stats) {
 void StatsdStats::noteConfigReceived(
         const ConfigKey& key, int metricsCount, int conditionsCount, int matchersCount,
         int alertsCount, const std::list<std::pair<const int64_t, const int32_t>>& annotations,
-        const optional<InvalidConfigReason>& reason) {
+        const unordered_map<InvalidEntityKey, InvalidConfigReason>& invalidEntities) {
     lock_guard lock(mLock);
     int32_t nowTimeSec = getWallClockSec();
 
@@ -286,13 +286,17 @@ void StatsdStats::noteConfigReceived(
     configStats->condition_count = conditionsCount;
     configStats->matcher_count = matchersCount;
     configStats->alert_count = alertsCount;
-    configStats->is_valid = !reason.has_value();
-    configStats->reason = reason;
+    configStats->is_valid = invalidEntities.empty();
+    for (const auto& [_, invalidConfigReason] : invalidEntities) {
+        if (configStats->reason.size() <= kMaxInvalidEntitiesToReport) {
+            configStats->reason.push_back(invalidConfigReason);
+        }
+    }
     for (auto& v : annotations) {
         configStats->annotations.emplace_back(v);
     }
 
-    if (!reason.has_value()) {
+    if (configStats->is_valid) {
         mConfigStats[key] = configStats;
     } else {
         configStats->deletion_time_sec = nowTimeSec;
@@ -1334,8 +1338,10 @@ void StatsdStats::dumpStats(int out) const {
         }
         dprintf(out, "\n");
         if (!configStats->is_valid) {
-            dprintf(out, "\tinvalid config reason: %s\n",
-                    InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
+            for (const auto& reason : configStats->reason) {
+                dprintf(out, "\tinvalid config reason: %s\n",
+                        InvalidConfigReasonEnum_Name(reason.reason).c_str());
+            }
         }
 
         for (const auto& broadcastTime : configStats->broadcast_sent_time_sec) {
@@ -1407,8 +1413,10 @@ void StatsdStats::dumpStats(int out) const {
         }
         dprintf(out, "\n");
         if (!configStats->is_valid) {
-            dprintf(out, "\tinvalid config reason: %s\n",
-                    InvalidConfigReasonEnum_Name(configStats->reason->reason).c_str());
+            for (const auto& reason : configStats->reason) {
+                dprintf(out, "\tinvalid config reason: %s\n",
+                        InvalidConfigReasonEnum_Name(reason.reason).c_str());
+            }
         }
 
         for (const auto& annotation : configStats->annotations) {
@@ -1770,41 +1778,43 @@ void addConfigStatsToProto(const ConfigStats& configStats, ProtoOutputStream* pr
     proto->write(FIELD_TYPE_BOOL | FIELD_ID_CONFIG_STATS_VALID, configStats.is_valid);
 
     if (!configStats.is_valid) {
-        uint64_t tmpToken =
-                proto->start(FIELD_TYPE_MESSAGE | FIELD_ID_CONFIG_STATS_INVALID_CONFIG_REASON);
-        proto->write(FIELD_TYPE_ENUM | FIELD_ID_INVALID_CONFIG_REASON_ENUM,
-                     configStats.reason->reason);
-        if (configStats.reason->metricId.has_value()) {
-            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID,
-                         configStats.reason->metricId.value());
+        for (const auto& invalidConfigReason : configStats.reason) {
+            uint64_t tmpToken = proto->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
+                                             FIELD_ID_CONFIG_STATS_INVALID_CONFIG_REASON);
+            proto->write(FIELD_TYPE_ENUM | FIELD_ID_INVALID_CONFIG_REASON_ENUM,
+                         invalidConfigReason.reason);
+            if (invalidConfigReason.metricId.has_value()) {
+                proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_METRIC_ID,
+                             invalidConfigReason.metricId.value());
+            }
+            if (invalidConfigReason.stateId.has_value()) {
+                proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_STATE_ID,
+                             invalidConfigReason.stateId.value());
+            }
+            if (invalidConfigReason.alertId.has_value()) {
+                proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_ALERT_ID,
+                             invalidConfigReason.alertId.value());
+            }
+            if (invalidConfigReason.alarmId.has_value()) {
+                proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_ALARM_ID,
+                             invalidConfigReason.alarmId.value());
+            }
+            if (invalidConfigReason.subscriptionId.has_value()) {
+                proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_SUBSCRIPTION_ID,
+                             invalidConfigReason.subscriptionId.value());
+            }
+            for (const auto& matcherId : invalidConfigReason.matcherIds) {
+                proto->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED |
+                                     FIELD_ID_INVALID_CONFIG_REASON_MATCHER_ID,
+                             matcherId);
+            }
+            for (const auto& conditionId : invalidConfigReason.conditionIds) {
+                proto->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED |
+                                     FIELD_ID_INVALID_CONFIG_REASON_CONDITION_ID,
+                             conditionId);
+            }
+            proto->end(tmpToken);
         }
-        if (configStats.reason->stateId.has_value()) {
-            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_STATE_ID,
-                         configStats.reason->stateId.value());
-        }
-        if (configStats.reason->alertId.has_value()) {
-            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_ALERT_ID,
-                         configStats.reason->alertId.value());
-        }
-        if (configStats.reason->alarmId.has_value()) {
-            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_ALARM_ID,
-                         configStats.reason->alarmId.value());
-        }
-        if (configStats.reason->subscriptionId.has_value()) {
-            proto->write(FIELD_TYPE_INT64 | FIELD_ID_INVALID_CONFIG_REASON_SUBSCRIPTION_ID,
-                         configStats.reason->subscriptionId.value());
-        }
-        for (const auto& matcherId : configStats.reason->matcherIds) {
-            proto->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED |
-                                 FIELD_ID_INVALID_CONFIG_REASON_MATCHER_ID,
-                         matcherId);
-        }
-        for (const auto& conditionId : configStats.reason->conditionIds) {
-            proto->write(FIELD_TYPE_INT64 | FIELD_COUNT_REPEATED |
-                                 FIELD_ID_INVALID_CONFIG_REASON_CONDITION_ID,
-                         conditionId);
-        }
-        proto->end(tmpToken);
     }
 
     for (const auto& broadcast : configStats.broadcast_sent_time_sec) {

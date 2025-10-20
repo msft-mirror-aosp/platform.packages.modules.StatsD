@@ -132,7 +132,7 @@ protected:
     const int kCallingUid = 10100;     // Randomly chosen
 
     void SetUp() override {
-        service = createStatsService();
+        service = createStatsService(std::make_shared<LogEventFilter>());
         // Removing config file from data/misc/stats-service and data/misc/stats-data if present
         ConfigKey configKey(kCallingUid, kConfigKey);
         service->removeConfiguration(kConfigKey, kCallingUid);
@@ -150,9 +150,9 @@ protected:
                                           ADB_DUMP, NO_TIME_CONSTRAINTS, nullptr);
     }
 
-    virtual std::shared_ptr<StatsService> createStatsService() {
-        return SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr,
-                                                 std::make_shared<LogEventFilter>());
+    std::shared_ptr<StatsService> createStatsService(
+            const std::shared_ptr<LogEventFilter>& filter) {
+        return SharedRefBase::make<StatsService>(new UidMap(), /* queue */ nullptr, filter);
     }
 
     bool sendConfig(const StatsdConfig& config);
@@ -646,8 +646,8 @@ sp<NumericValueMetricProducer> createNumericValueMetricProducer(
         std::unordered_map<int, std::unordered_map<int, int64_t>> stateGroupMap = {},
         sp<EventMatcherWizard> eventMatcherWizard = nullptr);
 
-LogEventFilter::AtomIdSet CreateAtomIdSetDefault();
-LogEventFilter::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config);
+AtomsInUseChangeListener::AtomIdSet CreateAtomIdSetDefault();
+AtomsInUseChangeListener::AtomIdSet CreateAtomIdSetFromConfig(const StatsdConfig& config);
 
 // Util function to sort the log events by timestamp.
 void sortLogEventsByTimestamp(std::vector<std::unique_ptr<LogEvent>> *events);

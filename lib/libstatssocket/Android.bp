@@ -25,6 +25,7 @@ package {
 cc_defaults {
     name: "libstatssocket_defaults",
     srcs: [
+        "atoms_in_use_provider.cpp",
         "stats_buffer_writer.cpp",
         "stats_buffer_writer_queue.cpp",
         "stats_event.cpp",
@@ -41,6 +42,7 @@ cc_defaults {
     header_libs: [
         "libcutils_headers",
         "liblog_headers",
+        "libstatsd_shared_headers",
     ],
     cflags: [
         "-Wall",
@@ -55,6 +57,13 @@ cc_defaults {
         "statsd_flags_c_lib",
     ],
     min_sdk_version: "30",
+    target: {
+        linux_glibc: {
+            shared_libs: [
+                "liblog",
+            ],
+        },
+    },
 }
 
 cc_library_shared {
@@ -79,6 +88,9 @@ cc_library_shared {
         ],
     },
     apex_available: ["com.android.os.statsd"],
+    // APIs are not ABI-stable, and this should only be used as an
+    // implementation detail of LL-NDK libraries
+    vendor_available: false,
 }
 
 cc_library_headers {
@@ -89,6 +101,9 @@ cc_library_headers {
         "//apex_available:platform",
     ],
     min_sdk_version: "29",
+    // APIs are not ABI-stable, and this should only be used as an
+    // implementation detail of LL-NDK libraries
+    vendor_available: false,
 }
 
 filegroup {
@@ -106,6 +121,7 @@ cc_test {
     name: "libstatssocket_test",
     defaults: ["libstatssocket_defaults"],
     srcs: [
+        "tests/atoms_in_use_provider_test.cpp",
         "tests/logging_rate_limiter_test.cpp",
         "tests/stats_event_test.cpp",
         "tests/stats_writer_test.cpp",

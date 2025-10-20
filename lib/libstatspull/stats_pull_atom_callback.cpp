@@ -116,6 +116,11 @@ class StatsPullAtomCallbackInternal : public BnPullAtomCallback {
 
     Status onPullAtom(int32_t atomTag,
                       const std::shared_ptr<IPullAtomResultReceiver>& resultReceiver) override {
+        // Return early if the resultReceiver is null. Statsd is likely dead.
+        if (resultReceiver == nullptr) {
+            return Status::fromExceptionCode(EX_NULL_POINTER);
+        }
+
         AStatsEventList statsEventList;
         int successInt = mCallback(atomTag, &statsEventList, mCookie);
         bool success = successInt == AStatsManager_PULL_SUCCESS;

@@ -18,8 +18,8 @@
 
 #include <aidl/android/os/BnStatsd.h>
 #include <gtest/gtest_prod.h>
-#include <stdio.h>
 
+#include <atomic>
 #include <unordered_map>
 
 #include "config/ConfigListener.h"
@@ -27,7 +27,7 @@
 #include "logd/LogEvent.h"
 #include "metrics/MetricsManager.h"
 #include "packages/UidMap.h"
-#include "socket/LogEventFilter.h"
+#include "socket/AtomsInUseChangeListener.h"
 #include "src/statsd_config.pb.h"
 #include "src/statsd_metadata.pb.h"
 
@@ -46,7 +46,7 @@ public:
                     sendActivationBroadcast,
             const std::function<void(const ConfigKey&, const std::string&,
                                      const std::vector<int64_t>&)>& sendRestrictedMetricsBroadcast,
-            const std::shared_ptr<LogEventFilter>& logEventFilter);
+            const std::shared_ptr<AtomsInUseChangeListener>& atomsInUseChangeListener);
 
     virtual ~StatsLogProcessor();
 
@@ -150,9 +150,6 @@ public:
     inline void setPrintLogs(bool enabled) {
         std::lock_guard lock(mMetricsMutex);
         mPrintAllLogs = enabled;
-        // Turning on print logs turns off pushed event filtering to enforce
-        // complete log event buffer parsing
-        mLogEventFilter->setFilteringEnabled(!enabled);
     }
 
     // Add a specific config key to the possible configs to dump ASAP.
@@ -172,7 +169,7 @@ public:
                                const int32_t delegateUid, std::vector<int64_t>* output);
 
     /* Returns pre-defined list of atoms to parse by LogEventFilter */
-    static LogEventFilter::AtomIdSet getDefaultAtomIdSet();
+    static AtomsInUseChangeListener::AtomIdSet getDefaultAtomIdSet();
 
 private:
     // For testing only.
@@ -224,7 +221,7 @@ private:
 
     sp<AlarmMonitor> mPeriodicAlarmMonitor;
 
-    std::shared_ptr<LogEventFilter> mLogEventFilter;
+    const std::shared_ptr<AtomsInUseChangeListener> mAtomsInUseChangeListener;
 
     void OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs);
 
@@ -375,7 +372,7 @@ private:
     // The time for the next anomaly alarm for alerts.
     int64_t mNextAnomalyAlarmTime = 0;
 
-    bool mPrintAllLogs = false;
+    std::atomic_bool mPrintAllLogs = false;
 
     StatsdStats::QueueOverflowAtomsStatsMap mQueueOverflowAtomsStats;
 
@@ -394,7 +391,6 @@ private:
     FRIEND_TEST(StatsLogProcessorTest,
             TestActivationOnBootMultipleActivationsDifferentActivationTypes);
     FRIEND_TEST(StatsLogProcessorTest, TestActivationsPersistAcrossSystemServerRestart);
-    FRIEND_TEST(StatsLogProcessorTest, LogEventFilterOnSetPrintLogs);
     FRIEND_TEST(StatsLogProcessorTest, TestUidMapHasSnapshot);
     FRIEND_TEST(StatsLogProcessorTest, TestEmptyConfigHasNoUidMap);
     FRIEND_TEST(StatsLogProcessorTest, TestReportIncludesSubConfig);
@@ -442,6 +438,7 @@ private:
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrails);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestEnforceDbGuardrailsDoesNotDeleteBeforeGuardrail);
     FRIEND_TEST(RestrictedEventMetricE2eTest, TestRestrictedMetricLoadsTtlFromDisk);
+    FRIEND_TEST(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestrictedDelegate);
 
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_single_bucket);
     FRIEND_TEST(AnomalyCountDetectionE2eTest, TestSlicedCountMetric_multiple_buckets);

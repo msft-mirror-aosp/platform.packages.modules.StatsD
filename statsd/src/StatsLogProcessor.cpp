@@ -122,7 +122,7 @@ StatsLogProcessor::StatsLogProcessor(
         const std::function<bool(const int&, const vector<int64_t>&)>& activateBroadcast,
         const std::function<void(const ConfigKey&, const string&, const vector<int64_t>&)>&
                 sendRestrictedMetricsBroadcast,
-        const std::shared_ptr<LogEventFilter>& logEventFilter)
+        const std::shared_ptr<AtomsInUseChangeListener>& atomsInUseChangeListener)
     : mLastTtlTime(0),
       mLastFlushRestrictedTime(0),
       mLastDbGuardrailEnforcementTime(0),
@@ -130,7 +130,7 @@ StatsLogProcessor::StatsLogProcessor(
       mPullerManager(pullerManager),
       mAnomalyAlarmMonitor(anomalyAlarmMonitor),
       mPeriodicAlarmMonitor(periodicAlarmMonitor),
-      mLogEventFilter(logEventFilter),
+      mAtomsInUseChangeListener(atomsInUseChangeListener),
       mSendBroadcast(sendBroadcast),
       mSendActivationBroadcast(activateBroadcast),
       mSendRestrictedMetricsBroadcast(sendRestrictedMetricsBroadcast),
@@ -1535,11 +1535,11 @@ void StatsLogProcessor::informAnomalyAlarmFiredLocked(const int64_t elapsedTimeM
     }
 }
 
-LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
+AtomsInUseChangeListener::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
     // populate hard-coded list of useful atoms
     // we add also atoms which could be pushed by statsd itself to simplify the logic
     // to handle metric configs update: APP_BREADCRUMB_REPORTED & ANOMALY_DETECTED
-    LogEventFilter::AtomIdSet allAtomIds{
+    AtomsInUseChangeListener::AtomIdSet allAtomIds{
             util::BINARY_PUSH_STATE_CHANGED, util::ISOLATED_UID_CHANGED,
             util::APP_BREADCRUMB_REPORTED,   util::WATCHDOG_ROLLBACK_OCCURRED,
             util::ANOMALY_DETECTED,          util::STATS_SOCKET_LOSS_REPORTED};
@@ -1548,7 +1548,7 @@ LogEventFilter::AtomIdSet StatsLogProcessor::getDefaultAtomIdSet() {
 
 void StatsLogProcessor::updateAtomIdsInUseLocked() const {
     TIME_CALL_DEBUG();
-    LogEventFilter::AtomIdSet allAtomIds = getDefaultAtomIdSet();
+    AtomsInUseChangeListener::AtomIdSet allAtomIds = getDefaultAtomIdSet();
     for (const auto& metricsManager : mMetricsManagers) {
         metricsManager.second->addAllAtomIds(allAtomIds);
     }
@@ -1558,7 +1558,7 @@ void StatsLogProcessor::updateAtomIdsInUseLocked() const {
         VLOG("Atom in use %d", atomId);
     }
 #endif  // STATSD_DEBUG
-    mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
+    mAtomsInUseChangeListener->setAtomIds(std::move(allAtomIds), this);
 }
 
 bool StatsLogProcessor::validateAppBreadcrumbEvent(const LogEvent& event) const {

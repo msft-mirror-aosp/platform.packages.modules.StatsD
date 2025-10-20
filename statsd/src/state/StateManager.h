@@ -92,7 +92,7 @@ public:
         return -1;
     }
 
-    void addAllAtomIds(LogEventFilter::AtomIdSet& allIds) const;
+    void addAllAtomIds(AtomsInUseChangeListener::AtomIdSet& allIds) const;
 
 private:
     // Notifies the correct StateTracker of lost event.

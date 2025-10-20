@@ -18,7 +18,6 @@
 
 #include <gtest/gtest_prod.h>
 #include <src/uid_data.pb.h>
-#include <stdio.h>
 #include <utils/RefBase.h>
 #include <utils/String16.h>
 

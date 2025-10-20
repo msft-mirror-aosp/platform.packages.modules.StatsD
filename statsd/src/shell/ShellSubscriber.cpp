@@ -210,12 +210,12 @@ void ShellSubscriber::unsubscribe(const shared_ptr<IStatsSubscriptionCallback>& 
 }
 
 void ShellSubscriber::updateAtomIdsInUseLocked() const {
-    LogEventFilter::AtomIdSet allAtomIds;
+    AtomsInUseChangeListener::AtomIdSet allAtomIds;
     for (const auto& client : mClientSet) {
         client->addAllAtomIds(allAtomIds);
     }
     VLOG("ShellSubscriber: Updating allAtomIds done. Total atoms %d", (int)allAtomIds.size());
-    mLogEventFilter->setAtomIds(std::move(allAtomIds), this);
+    mAtomsInUseChangeListener->setAtomIds(std::move(allAtomIds), this);
 }
 
 }  // namespace statsd
