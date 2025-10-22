@@ -152,7 +152,7 @@ public class MetadataTests extends MetadataTestCase {
             }
         }
 
-        if (report.getSocketLossStats() == null) {
+        if (!report.hasSocketLossStats()) {
             return;
         }
         // if many atoms were lost the information in DetectedLogLoss can be overwritten
@@ -194,7 +194,7 @@ public class MetadataTests extends MetadataTestCase {
             }
         }
 
-        if (report.getSocketLossStats() == null) {
+        if (!report.hasSocketLossStats()) {
             return;
         }
         // if many atoms were lost the information in DetectedLogLoss can be overwritten
@@ -263,7 +263,7 @@ public class MetadataTests extends MetadataTestCase {
 
             // it can be the case that system throughput is sufficient to overcome the
             // simulated event storm
-            if (report.getSocketLossStats() == null) {
+            if (!report.hasSocketLossStats()) {
                 return;
             }
 
@@ -366,7 +366,7 @@ public class MetadataTests extends MetadataTestCase {
 
     static private HashSet<Integer> getSocketLossUids(StatsdStatsReport report) {
         HashSet<Integer> result = new HashSet<Integer>();
-        assertThat(report.getSocketLossStats()).isNotNull();
+        assertThat(report.hasSocketLossStats()).isTrue();
         for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
             LogUtil.CLog.d(
                     "getSocketLossUids() collecting loss stats for uid "
