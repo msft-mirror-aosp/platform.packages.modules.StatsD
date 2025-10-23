@@ -33,6 +33,14 @@
     },
     {
       "name" : "statsd_test"
+    },
+    {
+      "name": "CtsStatsdHostTestCases",
+      "options": [
+        {
+          "include-filter": "android.cts.statsd.alarm.*"
+        }
+      ]
     }
   ],
   "hwasan-presubmit" : [
