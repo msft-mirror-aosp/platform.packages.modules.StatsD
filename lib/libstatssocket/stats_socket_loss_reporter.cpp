@@ -83,8 +83,7 @@ void StatsSocketLossReporter::dumpAtomsLossStats(bool forceDump) {
 
     const int64_t currentRealtimeTsNanos = get_elapsed_realtime_ns();
 
-    if (!forceDump && !mCooldownTimer.isExpired(currentRealtimeTsNanos) &&
-        mLossInfo.size() < kMaxAtomTagsCount) {
+    if (!forceDump && !mCooldownTimer.isExpired(currentRealtimeTsNanos)) {
         // Early termination to avoid socket flooding with more STATS_SOCKET_LOSS_REPORTED atoms,
         // which have high probability of write failures, the cooldown timer approach is applied:
         // - start cooldown timer for kCoolDownTimerDurationNanos for every dump request
