@@ -123,10 +123,11 @@ cc_test {
     srcs: [
         "tests/atoms_in_use_provider_test.cpp",
         "tests/logging_rate_limiter_test.cpp",
-        "tests/stats_event_test.cpp",
-        "tests/stats_writer_test.cpp",
         "tests/stats_buffer_writer_queue_test.cpp",
+        "tests/stats_event_test.cpp",
+        "tests/stats_socket_loss_reporter_test.cpp",
         "tests/stats_socketlog_test.cpp",
+        "tests/stats_writer_test.cpp",
         "tests/utils_test.cpp",
     ],
     cflags: [
