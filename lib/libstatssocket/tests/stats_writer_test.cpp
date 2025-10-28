@@ -29,7 +29,7 @@ using namespace ::testing;
 
 #define TEST_NS com::android::os::statsd::flags
 
-TEST(StatsWriterTest, TestSocketClose) {
+static int writeTestEvent() {
     AStatsEvent* event = AStatsEvent_obtain();
     // AppBreadcrumbReported
     AStatsEvent_setAtomId(event, 47);
@@ -37,11 +37,13 @@ TEST(StatsWriterTest, TestSocketClose) {
     AStatsEvent_addBoolAnnotation(event, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
     AStatsEvent_writeInt32(event, 0);
     AStatsEvent_writeInt32(event, 0);
-    int successResult = AStatsEvent_write(event);
+    const int result = AStatsEvent_write(event);
     AStatsEvent_release(event);
+    return result;
+}
 
-    // In the case of a successful write, we return the number of bytes written.
-    EXPECT_GT(successResult, 0);
+TEST(StatsWriterTest, TestSocketClose) {
+    EXPECT_GT(writeTestEvent(), 0);
     EXPECT_FALSE(stats_log_is_closed());
 
     AStatsSocket_close();
@@ -58,14 +60,7 @@ TEST_WITH_FLAGS(StatsWriterTest, TestRateLimit,
     const int64_t startNs = get_elapsed_realtime_ns();
     int32_t eventsCount = 0;
     for (int i = 0; i < maxTestEvents; i++) {
-        AStatsEvent* event = AStatsEvent_obtain();
-        AStatsEvent_setAtomId(event, 47);
-        AStatsEvent_writeInt32(event, 5);
-        AStatsEvent_addBoolAnnotation(event, ASTATSLOG_ANNOTATION_ID_IS_UID, true);
-        AStatsEvent_writeInt32(event, 0);
-        AStatsEvent_writeInt32(event, 0);
-        int bytesWritten = AStatsEvent_write(event);
-        AStatsEvent_release(event);
+        const int bytesWritten = writeTestEvent();
         if (bytesWritten > 0) {
             eventsCount++;
         }
