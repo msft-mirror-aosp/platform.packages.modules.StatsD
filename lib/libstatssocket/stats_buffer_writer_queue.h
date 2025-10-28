@@ -21,10 +21,6 @@
 #include <stdint.h>
 #include <sys/cdefs.h>
 
-__BEGIN_DECLS
-
 bool write_buffer_to_statsd_queue(const uint8_t* buffer, size_t size, uint32_t atomId);
 
 bool should_write_via_queue(uint32_t atomId);
-
-__END_DECLS

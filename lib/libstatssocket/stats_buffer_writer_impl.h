@@ -21,8 +21,4 @@
 #include <stdint.h>
 #include <sys/cdefs.h>
 
-__BEGIN_DECLS
-
 int write_buffer_to_statsd_impl(void* buffer, size_t size, uint32_t atomId, bool doNoteDrop);
-
-__END_DECLS
