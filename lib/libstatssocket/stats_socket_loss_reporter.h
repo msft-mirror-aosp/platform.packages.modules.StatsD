@@ -55,9 +55,9 @@ private:
     // Loss info data will be logged to statsd as a regular AStatsEvent
     // which means it needs to obey event size limitations (4kB)
     // for N tag ids the loss info might take N * 12 + 8 + 8 + 4 bytes
-    // defining guardrail as a 300 tag ids should limit the atom size to
-    // 300 * 12 + 8 + 8 + 4 ~ 3.6kB
-    static constexpr size_t kMaxAtomTagsCount = 300;
+    // defining guardrail as a 100 tag ids should limit the atom size to
+    // 100 * 12 + 8 + 8 + 4 ~ 1.2kB (max array field length is 127)
+    static constexpr size_t kMaxAtomTagsCount = 100;
 
     static constexpr int64_t kCoolDownTimerDurationNanos = 60 * 1'000'000'000LL;  // 1minute
 
