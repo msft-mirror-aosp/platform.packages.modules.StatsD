@@ -81,9 +81,9 @@ bool can_log_atom(uint32_t atomId) {
     constexpr int32_t kLogFrequencyThreshold = 240;
     constexpr int32_t kLoggingFrequencyWindowMs = 100;
 
-    static LoggingRateLimiter<RealTimeClock> rateLimiter(kLogFrequencyThreshold,
-                                                         kLoggingFrequencyWindowMs);
-    return rateLimiter.canLogAtom(atomId);
+    static LoggingRateLimiter<RealTimeClock>* rateLimiter = new LoggingRateLimiter<RealTimeClock>(
+            kLogFrequencyThreshold, kLoggingFrequencyWindowMs);
+    return rateLimiter->canLogAtom(atomId);
 }
 
 int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
