@@ -37,7 +37,6 @@ cc_defaults {
     local_include_dirs: [
         "include",
     ],
-    generated_sources: ["stats_statsdsocketlog.cpp"],
     generated_headers: ["stats_statsdsocketlog.h"],
     header_libs: [
         "libcutils_headers",
@@ -123,10 +122,11 @@ cc_test {
     srcs: [
         "tests/atoms_in_use_provider_test.cpp",
         "tests/logging_rate_limiter_test.cpp",
-        "tests/stats_event_test.cpp",
-        "tests/stats_writer_test.cpp",
         "tests/stats_buffer_writer_queue_test.cpp",
+        "tests/stats_event_test.cpp",
+        "tests/stats_socket_loss_reporter_test.cpp",
         "tests/stats_socketlog_test.cpp",
+        "tests/stats_writer_test.cpp",
         "tests/utils_test.cpp",
     ],
     cflags: [
@@ -183,19 +183,6 @@ genrule {
         "--namespace android,os,statsdsocket",
     out: [
         "stats_statsdsocketlog.h",
-    ],
-}
-
-genrule {
-    name: "stats_statsdsocketlog.cpp",
-    tools: ["stats-log-api-gen"],
-    cmd: "$(location stats-log-api-gen) " +
-        "--cpp $(genDir)/stats_statsdsocketlog.cpp " +
-        "--module statsdsocket " +
-        "--namespace android,os,statsdsocket " +
-        "--importHeader stats_statsdsocketlog.h",
-    out: [
-        "stats_statsdsocketlog.cpp",
     ],
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2023 The Android Open Source Project
+ * Copyright (C) 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,20 @@
 
 #pragma once
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <sys/cdefs.h>
+#include <stdlib.h>
 
-bool write_buffer_to_statsd_queue(const uint8_t* buffer, size_t size, uint32_t atomId);
-
-bool should_write_via_queue(uint32_t atomId);
+// The AStatsEvent struct holds the serialized encoding of an event
+// within a buf. Also includes other required fields.
+struct AStatsEvent {
+    uint8_t* buf;
+    // Location of last field within the buf. Here, field denotes either a
+    // metadata field (e.g. timestamp) or an atom field.
+    size_t lastFieldPos;
+    // Number of valid bytes within the buffer.
+    size_t numBytesWritten;
+    uint32_t numElements;
+    uint32_t atomId;
+    uint32_t errors;
+    bool built;
+    size_t bufSize;
+};
