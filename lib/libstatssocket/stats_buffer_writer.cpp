@@ -19,8 +19,10 @@
 #include <StatsdLoggingControl.h>
 #include <com_android_os_statsd_flags.h>
 #include <errno.h>
+#include <private/android_filesystem_config.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #include "atoms_in_use_provider.h"
 #include "logging_rate_limiter.h"
@@ -70,6 +72,13 @@ AtomsInUseProvider<RealTimeClock>& get_atoms_in_use_provider() {
 }
 
 bool is_atom_in_use(uint32_t atomId) {
+    const uint32_t appUid = getuid();
+
+    // hard-coded exclude all system server atoms from logging control
+    if (appUid == AID_SYSTEM) {
+        return true;
+    }
+
     return get_atoms_in_use_provider().isAtomInUse(static_cast<int32_t>(atomId));
 }
 
