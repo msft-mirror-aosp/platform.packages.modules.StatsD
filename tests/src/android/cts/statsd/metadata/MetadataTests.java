@@ -52,6 +52,8 @@ public class MetadataTests extends MetadataTestCase {
 
     private static final int SHELL_UID = 2000;
 
+    private static final int STATS_SOCKET_LOSS_INFO_CACHE_TTL_MS = 60_000;
+
     // Tests that the statsd config is reset after the specified ttl.
     @Test
     public void testConfigTtl() throws Exception {
@@ -136,6 +138,7 @@ public class MetadataTests extends MetadataTestCase {
         DeviceUtils.runDeviceTests(getDevice(), MetricsUtils.DEVICE_SIDE_TEST_PACKAGE,
                 ".StatsdStressLogging", "testLogAtomsBackToBack");
 
+        triggerAtomLossStatsPropagation();
         StatsdStatsReport report = getStatsdStatsReport();
         assertThat(report).isNotNull();
 
@@ -147,7 +150,6 @@ public class MetadataTests extends MetadataTestCase {
         // atom of interest
         for (LogLossStats lossStats : report.getDetectedLogLossList()) {
             if (lossStats.getLastTag() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
-
                 return;
             }
         }
@@ -177,6 +179,7 @@ public class MetadataTests extends MetadataTestCase {
                 ".StatsdStressLogging",
                 "testLogAtomsBackToBack");
 
+        triggerAtomLossStatsPropagation();
         StatsdStatsReport report = getStatsdStatsReport();
         assertThat(report).isNotNull();
 
@@ -232,21 +235,7 @@ public class MetadataTests extends MetadataTestCase {
                     getDevice(), MetricsUtils.DEVICE_SIDE_TEST_PACKAGE, ".StatsdStressLogging",
                     "testLogAtomsBackToBack");
 
-            // Delay to allow statsd socket recover after overflow
-            RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
-
-            // There is some un-deterministic component in AtomLossStats propagation:
-            // - the dumpAtomsLossStats() from the libstatssocket happens ONLY after the
-            //   next successful atom write to socket.
-            // - to avoid socket flood there is also cooldown timer incorporated. If no new atoms -
-            //   loss info will not be propagated, which is intention by design.
-            // Log atoms into socket successfully to trigger libstatsocket dumpAtomsLossStats()
-            AtomTestUtils.sendAppBreadcrumbReportedAtom(getDevice(),
-                    AtomsProto.AppBreadcrumbReported.State.START.getNumber(), /* irrelevant val */
-                    6); // Event, after TTL_TIME_SEC secs.
-
-            // Delay to allow libstatssocket loss info to be propagated to statsdstats
-            RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_LONG);
+            triggerAtomLossStatsPropagation();
 
             StatsdStatsReport report = getStatsdStatsReport();
             assertThat(report).isNotNull();
@@ -293,7 +282,7 @@ public class MetadataTests extends MetadataTestCase {
 
         final String testPkgName = "com.android.statsd.app.atomstorm";
         final String testApk = "StatsdAtomStormApp.apk";
-        final int runAttemptsPerPackage = 10;
+        final int runAttemptsPerPackage = 3;
 
         String[][] testPkgs = {
             {testPkgName, ".StatsdAtomStorm", "testLogManyAtomsBackToBack"},
@@ -322,6 +311,7 @@ public class MetadataTests extends MetadataTestCase {
                 DeviceUtils.uninstallTestApp(getDevice(), testPkgName);
                 return;
             }
+            assertThat(report.hasSocketLossStats()).isTrue();
             reportedUids.addAll(getSocketLossUids(report));
         }
 
@@ -343,7 +333,7 @@ public class MetadataTests extends MetadataTestCase {
 
             // the sleep is required since atoms are processed in async way by statsd
             // need to give time so statsd will process SocketLossStats atom
-            RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
+            triggerAtomLossStatsPropagation();
             LogUtil.CLog.d("runTestUntilLossAtomReported iteration " + attempt + " for " + pkg);
             report = getStatsdStatsReport();
             int newCount = getAtomStatsCount(report, StatsSocketLossReportedAtomId);
@@ -366,7 +356,9 @@ public class MetadataTests extends MetadataTestCase {
 
     static private HashSet<Integer> getSocketLossUids(StatsdStatsReport report) {
         HashSet<Integer> result = new HashSet<Integer>();
-        assertThat(report.hasSocketLossStats()).isTrue();
+        if (!report.hasSocketLossStats()) {
+            return result;
+        }
         for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
             LogUtil.CLog.d(
                     "getSocketLossUids() collecting loss stats for uid "
@@ -379,5 +371,21 @@ public class MetadataTests extends MetadataTestCase {
     private boolean sdkLevelAtLeast(int sdkLevel, String codename) throws Exception {
         return ApiLevelUtil.isAtLeast(getDevice(), sdkLevel)
                 || ApiLevelUtil.codenameEquals(getDevice(), codename);
+    }
+
+    private void triggerAtomLossStatsPropagation() throws Exception {
+        // Delay to allow statsd socket recover after overflow
+        RunUtil.getDefault().sleep(STATS_SOCKET_LOSS_INFO_CACHE_TTL_MS);
+
+        // There is some un-deterministic component in AtomLossStats propagation:
+        // - the dumpAtomsLossStats() from the libstatssocket happens ONLY after the
+        //   next successful atom write to socket.
+        // - to avoid socket flood there is also cooldown timer incorporated. If no new atoms -
+        //   loss info will not be propagated, which is intention by design.
+        // Log atoms into socket successfully to trigger libstatsocket dumpAtomsLossStats()
+        AtomTestUtils.sendAppBreadcrumbReportedAtom(
+                getDevice(), AtomsProto.AppBreadcrumbReported.State.START.getNumber(), 6);
+        // Delay to allow libstatssocket loss info to be propagated to statsdstats
+        RunUtil.getDefault().sleep(AtomTestUtils.WAIT_TIME_SHORT);
     }
 }

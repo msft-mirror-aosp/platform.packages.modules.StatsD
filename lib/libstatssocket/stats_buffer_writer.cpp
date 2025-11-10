@@ -19,8 +19,10 @@
 #include <StatsdLoggingControl.h>
 #include <com_android_os_statsd_flags.h>
 #include <errno.h>
+#include <private/android_filesystem_config.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #include "atoms_in_use_provider.h"
 #include "logging_rate_limiter.h"
@@ -70,6 +72,13 @@ AtomsInUseProvider<RealTimeClock>& get_atoms_in_use_provider() {
 }
 
 bool is_atom_in_use(uint32_t atomId) {
+    const uint32_t appUid = getuid();
+
+    // hard-coded exclude all system server atoms from logging control
+    if (appUid == AID_SYSTEM) {
+        return true;
+    }
+
     return get_atoms_in_use_provider().isAtomInUse(static_cast<int32_t>(atomId));
 }
 
@@ -81,9 +90,9 @@ bool can_log_atom(uint32_t atomId) {
     constexpr int32_t kLogFrequencyThreshold = 240;
     constexpr int32_t kLoggingFrequencyWindowMs = 100;
 
-    static LoggingRateLimiter<RealTimeClock> rateLimiter(kLogFrequencyThreshold,
-                                                         kLoggingFrequencyWindowMs);
-    return rateLimiter.canLogAtom(atomId);
+    static LoggingRateLimiter<RealTimeClock>* rateLimiter = new LoggingRateLimiter<RealTimeClock>(
+            kLogFrequencyThreshold, kLoggingFrequencyWindowMs);
+    return rateLimiter->canLogAtom(atomId);
 }
 
 int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {

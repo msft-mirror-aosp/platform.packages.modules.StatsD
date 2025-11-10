@@ -68,8 +68,8 @@ StatsSocketLossReporter::~StatsSocketLossReporter() {
 }
 
 StatsSocketLossReporter& StatsSocketLossReporter::getInstance() {
-    static StatsSocketLossReporter instance;
-    return instance;
+    static StatsSocketLossReporter* instance = new StatsSocketLossReporter();
+    return *instance;
 }
 
 void StatsSocketLossReporter::noteDrop(int32_t error, int32_t atomId) {
