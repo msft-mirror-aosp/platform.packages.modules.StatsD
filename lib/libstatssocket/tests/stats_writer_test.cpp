@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#include <com_android_os_statsd_flags.h>
-#include <flag_macros.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -26,8 +24,6 @@
 #include "utils.h"
 
 using namespace ::testing;
-
-#define TEST_NS com::android::os::statsd::flags
 
 static int writeTestEvent() {
     AStatsEvent* event = AStatsEvent_obtain();
@@ -51,8 +47,7 @@ TEST(StatsWriterTest, TestSocketClose) {
     EXPECT_TRUE(stats_log_is_closed());
 }
 
-TEST_WITH_FLAGS(StatsWriterTest, TestRateLimit,
-                REQUIRES_FLAGS_ENABLED(ACONFIG_FLAG(TEST_NS, logging_rate_limit_enabled))) {
+TEST(StatsWriterTest, TestRateLimit) {
     // write events in a tight loop
     // libstatssocket should start rate limit after 240 events
 

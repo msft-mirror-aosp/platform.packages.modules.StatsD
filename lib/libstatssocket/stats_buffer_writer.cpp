@@ -117,7 +117,7 @@ int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
         return ret;
     }
 
-    if (flags::logging_rate_limit_enabled() && !can_log_atom(atomId)) {
+    if (!can_log_atom(atomId)) {
         StatsSocketLossReporter::getInstance().noteDrop(kLoggingRateLimitExceededErrorCode, atomId);
         return 0;
     }

@@ -22,7 +22,6 @@ import android.cts.statsd.metric.MetricsUtils;
 import android.cts.statsdatom.lib.AtomTestUtils;
 import android.cts.statsdatom.lib.ConfigUtils;
 import android.cts.statsdatom.lib.DeviceUtils;
-import android.platform.test.annotations.RequiresFlagsEnabled;
 
 import com.android.compatibility.common.util.ApiLevelUtil;
 import com.android.internal.os.StatsdConfigProto.StatsdConfig;
@@ -34,7 +33,6 @@ import com.android.os.StatsLog.StatsdStatsReport.ConfigStats;
 import com.android.os.StatsLog.StatsdStatsReport.LogLossStats;
 import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid;
 import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid.AtomIdLossStats;
-import com.android.os.statsd.flags.Flags;
 import com.android.tradefed.log.LogUtil;
 import com.android.tradefed.testtype.DeviceJUnit4ClassRunner;
 import com.android.tradefed.util.RunUtil;
@@ -171,7 +169,6 @@ public class MetadataTests extends MetadataTestCase {
 
     /** Tests logging rate limiting applied by libstatssocket */
     @Test
-    @RequiresFlagsEnabled(Flags.FLAG_LOGGING_RATE_LIMIT_ENABLED)
     public void testSocketRateLimiting() throws Exception {
         DeviceUtils.runDeviceTests(
                 getDevice(),
