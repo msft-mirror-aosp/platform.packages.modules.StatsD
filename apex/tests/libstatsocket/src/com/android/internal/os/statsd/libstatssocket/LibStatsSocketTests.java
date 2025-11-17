@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package com.android.internal.os.statsd.libstats;
+package com.android.internal.os.statsd.libstatssocket;
 
-import static com.android.internal.os.statsd.libstats.StatsConfigUtils.SHORT_WAIT;
+import static com.android.internal.os.statsdutils.StatsConfigUtils.SHORT_WAIT;
 
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
@@ -31,6 +31,7 @@ import android.platform.test.flag.junit.DeviceFlagsValueProvider;
 import android.util.Log;
 import android.util.StatsdTestStatsLog;
 
+import androidx.test.filters.FlakyTest;
 import androidx.test.filters.LargeTest;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.runner.AndroidJUnit4;
@@ -39,6 +40,7 @@ import com.android.internal.os.StatsdConfigProto.FieldFilter;
 import com.android.internal.os.StatsdConfigProto.GaugeMetric;
 import com.android.internal.os.StatsdConfigProto.StatsdConfig;
 import com.android.internal.os.StatsdConfigProto.TimeUnit;
+import com.android.internal.os.statsdutils.StatsConfigUtils;
 import com.android.os.AtomsProto.Atom;
 import com.android.os.StatsLog.StatsdStatsReport;
 import com.android.os.StatsLog.StatsdStatsReport.AtomStats;
@@ -82,8 +84,9 @@ public class LibStatsSocketTests {
      * Test that a generates 2 atoms while config collects only 1. Second atom should not be pushed
      * to the socket due to being unused
      */
-    @Test
+    @Test(timeout = 180_000)
     @LargeTest
+    @FlakyTest
     @RequiresFlagsEnabled(Flags.FLAG_LOGGING_CONTROL_ENABLED)
     public void testLoggingControlAtomNotInUse() throws Exception {
         // This test must be executed at least in 90 seconds after statsd start
@@ -272,7 +275,8 @@ public class LibStatsSocketTests {
         long configId = System.currentTimeMillis();
         long triggerMatcherIdStart = configId + 10;
         long metricIdStart = configId + 100;
-        StatsdConfig.Builder configBuilder = StatsConfigUtils.getSimpleTestConfig(configId);
+        StatsdConfig.Builder configBuilder = StatsConfigUtils.getSimpleTestConfig(configId,
+                LibStatsSocketTests.class.getPackageName());
 
         for (int atomIdx = 0; atomIdx < atomIds.length; atomIdx++) {
 
@@ -289,6 +293,8 @@ public class LibStatsSocketTests {
                             .setBucket(TimeUnit.CTS)
                             .setSamplingType(GaugeMetric.SamplingType.FIRST_N_SAMPLES)
                             .setMaxNumGaugeAtomsPerBucket(10000000));
+
+            configBuilder.addWhitelistedAtomIds(atomId);
         }
         StatsdConfig config = configBuilder.build();
         statsManager.addConfig(configId, config.toByteArray());

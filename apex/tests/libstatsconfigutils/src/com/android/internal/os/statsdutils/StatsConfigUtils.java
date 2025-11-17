@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.android.internal.os.statsd.libstats;
+package com.android.internal.os.statsdutils;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -54,9 +54,9 @@ public class StatsConfigUtils {
     /**
      * @return An empty StatsdConfig in serialized proto format.
      */
-    public static StatsdConfig.Builder getSimpleTestConfig(long configId) {
+    public static StatsdConfig.Builder getSimpleTestConfig(long configId, String logSource) {
         return StatsdConfig.newBuilder().setId(configId)
-                .addAllowedLogSource(StatsConfigUtils.class.getPackage().getName());
+                .addAllowedLogSource(logSource);
     }
 
     public static boolean verifyValidConfigExists(StatsManager statsManager, long configId) {
@@ -90,7 +90,7 @@ public class StatsConfigUtils {
                 .build();
     }
 
-    static AtomMatcher getSimpleAtomMatcher(int atomTag, long atomMatcherId) {
+    public static AtomMatcher getSimpleAtomMatcher(int atomTag, long atomMatcherId) {
         return AtomMatcher.newBuilder()
                 .setId(atomMatcherId)
                 .setSimpleAtomMatcher(SimpleAtomMatcher.newBuilder().setAtomId(atomTag))
@@ -145,7 +145,7 @@ public class StatsConfigUtils {
         return getGaugeMetricDataList(report);
     }
 
-    static List<Atom> getGaugeMetricDataList(
+    public static List<Atom> getGaugeMetricDataList(
             StatsManager statsManager, long configId, ExtensionRegistryLite extensionRegistry) {
         ConfigMetricsReport report =
                 getConfigMetricsReport(statsManager, configId, extensionRegistry);
