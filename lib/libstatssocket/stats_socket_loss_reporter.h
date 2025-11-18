@@ -25,13 +25,14 @@
 #include <unordered_map>
 #include <utility>
 
+#include "stats_event_type.h"
 #include "utils.h"
 
 class StatsSocketLossReporter {
 public:
     static StatsSocketLossReporter& getInstance();
 
-    void noteDrop(int32_t error, int32_t atomId);
+    void noteDrop(int32_t error, AStatsEventAtomId atomId);
 
     /**
      * @brief Dump loss info into statsd as a STATS_SOCKET_LOSS_REPORTED atom instance
@@ -74,7 +75,7 @@ private:
     // guards access to below mLossInfo
     mutable std::mutex mMutex;
 
-    using LossInfoKey = std::pair<int, int32_t>;  // [error, tag]
+    using LossInfoKey = std::pair<int, AStatsEventAtomId>;  // [error, tag]
 
     // Represents loss info as a counter per [error, tag] pair
     std::unordered_map<LossInfoKey, int, HashPair> mLossInfo;

@@ -21,6 +21,7 @@
 #include <thread>
 #include <unordered_map>
 
+#include "stats_event_type.h"
 #include "utils.h"
 
 template <typename Clock>
@@ -31,7 +32,7 @@ public:
           mLogFrequencyWindowNs(logFrequencyWindowMs * 1000000) {
     }
 
-    bool canLogAtom(uint32_t atomId) {
+    bool canLogAtom(AStatsEventAtomId atomId) {
         const int64_t nowNs = Clock::getTimeNs();
 
         std::lock_guard lock(mMutex);
@@ -72,5 +73,5 @@ private:
     };
 
     // Key is atom id.
-    std::unordered_map<uint32_t, Frequency> mLogFrequencies;
+    std::unordered_map<AStatsEventAtomId, Frequency> mLogFrequencies;
 };

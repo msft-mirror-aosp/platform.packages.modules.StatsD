@@ -78,7 +78,7 @@ static int statsdAvailable();
 static int statsdOpen();
 static void statsdClose();
 static int statsdWrite(struct timespec* ts, struct iovec* vec, size_t nr);
-static void statsdNoteDrop(int error, int tag);
+static void statsdNoteDrop(int error, AStatsEventAtomId tag);
 static int statsdIsClosed();
 
 struct android_log_transport_write statsdLoggerWrite = {
@@ -166,7 +166,7 @@ static int statsdAvailable() {
     return 1;
 }
 
-static void statsdNoteDrop(int error, int tag) {
+static void statsdNoteDrop(int error, AStatsEventAtomId tag) {
     dropped.fetch_add(1, std::memory_order_relaxed);
     log_error.exchange(error, std::memory_order_relaxed);
     atom_tag.exchange(tag, std::memory_order_relaxed);

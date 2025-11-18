@@ -46,7 +46,7 @@ static int (*__write_to_statsd)(struct iovec* vec, size_t nr) = __write_to_stats
  * @param error To distinguish source of error, the errno code values must be negative,
  *              while the libstatssocket internal error codes are positive
  */
-void note_log_drop(int error, int atomId) {
+void note_log_drop(int error, AStatsEventAtomId atomId) {
     statsdLoggerWrite.noteDrop(error, atomId);
 }
 
@@ -71,7 +71,7 @@ AtomsInUseProvider<RealTimeClock>& get_atoms_in_use_provider() {
     return *provider;
 }
 
-bool is_atom_in_use(uint32_t atomId) {
+bool is_atom_in_use(AStatsEventAtomId atomId) {
     const uint32_t appUid = getuid();
 
     // hard-coded exclude all system server atoms from logging control
@@ -82,7 +82,7 @@ bool is_atom_in_use(uint32_t atomId) {
     return get_atoms_in_use_provider().isAtomInUse(static_cast<int32_t>(atomId));
 }
 
-bool can_log_atom(uint32_t atomId) {
+bool can_log_atom(AStatsEventAtomId atomId) {
     // Below values should be justified with experiments, as of now idea is to
     // allow to fill 10% of socket buffer at max (max_dgram_qlen == 2400) within 100ms.
     // This allows to fill entire buffer within a second.
@@ -95,7 +95,7 @@ bool can_log_atom(uint32_t atomId) {
     return rateLimiter->canLogAtom(atomId);
 }
 
-int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
+int write_buffer_to_statsd(void* buffer, size_t size, AStatsEventAtomId atomId) {
     constexpr int kQueueOverflowErrorCode = 1;
     constexpr int kLoggingRateLimitExceededErrorCode = 2;
     constexpr int kAtomNotInUseErrorCode = 3;
@@ -125,7 +125,8 @@ int write_buffer_to_statsd(void* buffer, size_t size, uint32_t atomId) {
     return write_buffer_to_statsd_impl(buffer, size, atomId, /*doNoteDrop*/ true);
 }
 
-int write_buffer_to_statsd_impl(void* buffer, size_t size, uint32_t atomId, bool doNoteDrop) {
+int write_buffer_to_statsd_impl(void* buffer, size_t size, AStatsEventAtomId atomId,
+                                bool doNoteDrop) {
     int ret = 1;
 
     struct iovec vecs[2];

@@ -18,6 +18,8 @@
 
 #include <stdlib.h>
 
+using AStatsEventAtomId = uint32_t;
+
 // The AStatsEvent struct holds the serialized encoding of an event
 // within a buf. Also includes other required fields.
 struct AStatsEvent {
@@ -28,7 +30,7 @@ struct AStatsEvent {
     // Number of valid bytes within the buffer.
     size_t numBytesWritten;
     uint32_t numElements;
-    uint32_t atomId;
+    AStatsEventAtomId atomId;
     uint32_t errors;
     bool built;
     size_t bufSize;
