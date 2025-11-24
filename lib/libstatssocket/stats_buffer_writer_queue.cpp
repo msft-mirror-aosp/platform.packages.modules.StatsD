@@ -42,7 +42,7 @@ BufferWriterQueue::~BufferWriterQueue() {
     drainQueue();
 }
 
-bool BufferWriterQueue::write(const uint8_t* buffer, size_t size, uint32_t atomId) {
+bool BufferWriterQueue::write(const uint8_t* buffer, size_t size, AStatsEventAtomId atomId) {
     Cmd cmd = createWriteBufferCmd(buffer, size, atomId);
     if (cmd.buffer == NULL) {
         return false;
@@ -79,7 +79,7 @@ bool BufferWriterQueue::pushToQueue(const Cmd& cmd) {
 }
 
 BufferWriterQueue::Cmd BufferWriterQueue::createWriteBufferCmd(const uint8_t* buffer, size_t size,
-                                                               uint32_t atomId) {
+                                                               AStatsEventAtomId atomId) {
     BufferWriterQueue::Cmd writeCmd;
     writeCmd.atomId = atomId;
     writeCmd.buffer = (uint8_t*)malloc(size);
@@ -161,12 +161,12 @@ bool BufferWriterQueue::handleCommand(const Cmd& cmd) const {
     return write_buffer_to_statsd_impl(cmd.buffer, cmd.size, cmd.atomId, /*doNoteDrop*/ false) > 0;
 }
 
-bool write_buffer_to_statsd_queue(const uint8_t* buffer, size_t size, uint32_t atomId) {
+bool write_buffer_to_statsd_queue(const uint8_t* buffer, size_t size, AStatsEventAtomId atomId) {
     static BufferWriterQueue queue;
     return queue.write(buffer, size, atomId);
 }
 
-bool should_write_via_queue(uint32_t atomId) {
+bool should_write_via_queue(AStatsEventAtomId atomId) {
     // bootstats is very short living process - queue does not have sufficient
     // time to be drained entirely so writing this atom straight to socket
     if (atomId == kBootTimeEventElapsedTimeAtomId) {

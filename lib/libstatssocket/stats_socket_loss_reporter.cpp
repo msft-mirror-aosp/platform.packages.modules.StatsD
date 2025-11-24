@@ -72,7 +72,7 @@ StatsSocketLossReporter& StatsSocketLossReporter::getInstance() {
     return *instance;
 }
 
-void StatsSocketLossReporter::noteDrop(int32_t error, int32_t atomId) {
+void StatsSocketLossReporter::noteDrop(int32_t error, AStatsEventAtomId atomId) {
     using namespace android::os::statsdsocket;
 
     const int64_t currentRealtimeTsNanos = get_elapsed_realtime_ns();

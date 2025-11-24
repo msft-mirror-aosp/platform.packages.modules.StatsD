@@ -103,6 +103,7 @@ cc_library_headers {
     // APIs are not ABI-stable, and this should only be used as an
     // implementation detail of LL-NDK libraries
     vendor_available: false,
+    host_supported: true,
 }
 
 filegroup {
@@ -211,4 +212,18 @@ cc_fuzz {
         users: "multi_user",
         fuzzed_code_usage: "shipped",
     },
+}
+
+cc_test_library {
+    name: "libstatssocket-fake",
+    host_supported: true,
+    header_libs: [
+        "libstatssocket_headers",
+    ],
+    export_header_lib_headers: [
+        "libstatssocket_headers",
+    ],
+    srcs: [
+        "fake/libstatssocket.c",
+    ],
 }
