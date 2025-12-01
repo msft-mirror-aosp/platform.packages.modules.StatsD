@@ -583,7 +583,7 @@ bool metricActivationDepsChange(const StatsdConfig& config,
 
 // Invalid metrics may not have an update status set.
 optional<InvalidConfigReason> determineMetricUpdateStatus(
-        const StatsdConfig config, const MessageLite& metric, const int64_t metricId,
+        const StatsdConfig& config, const MessageLite& metric, const int64_t metricId,
         const MetricType metricType, const set<int64_t>& matcherDependencies,
         const set<int64_t>& conditionDependencies,
         const ::google::protobuf::RepeatedField<int64_t>& stateDependencies,
