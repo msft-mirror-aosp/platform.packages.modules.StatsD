@@ -59,6 +59,9 @@ private:
     std::mutex mMutex;
     std::queue<std::unique_ptr<LogEvent>> mQueue;
 
+    bool mIsOverflowing = false;
+    int mOverflowLostCount = 0;
+
     friend class SocketParseMessageTest;
 
     FRIEND_TEST(SocketParseMessageTest, TestProcessMessage);

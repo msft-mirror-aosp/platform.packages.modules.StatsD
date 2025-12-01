@@ -18,6 +18,7 @@
 #include "Log.h"
 
 #include "LogEventQueue.h"
+#include "utils/api_tracing.h"
 
 namespace android {
 namespace os {
@@ -45,11 +46,27 @@ LogEventQueue::Result LogEventQueue::push(unique_ptr<LogEvent> item) {
         if (mQueue.size() < mQueueLimit) {
             mQueue.push(std::move(item));
             result.success = true;
+            if (mIsOverflowing) {
+                //  Overflow just ended
+                ATRACE_END();
+                ATRACE_INT("Statsd::EventQueueOverflowEnded", mOverflowLostCount);
+                mIsOverflowing = false;
+                mOverflowLostCount = 0;
+            }
         } else {
             // safe operation as queue must not be empty.
             result.oldestTimestampNs = mQueue.front()->GetElapsedTimestampNs();
             result.success = false;
+
+            if (!mIsOverflowing) {
+                //  Overflow just started
+                ATRACE_BEGIN("Statsd::QueueOverflow");
+                mIsOverflowing = true;
+                mOverflowLostCount = 0;
+            }
+            mOverflowLostCount++;
         }
+
         result.size = mQueue.size();
     }
 
