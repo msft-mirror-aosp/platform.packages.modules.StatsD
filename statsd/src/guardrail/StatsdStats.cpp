@@ -21,6 +21,9 @@
 #include <android/util/ProtoOutputStream.h>
 #include <com_android_os_statsd_flags.h>
 
+#include <iomanip>
+#include <sstream>
+
 #include "../stats_log_util.h"
 #include "shell/ShellSubscriber.h"
 #include "statslog_statsd.h"
@@ -246,6 +249,143 @@ const std::map<int, std::pair<size_t, size_t>> StatsdStats::kAtomDimensionKeySiz
 
 constexpr int64_t kLogFrequencyWindowNs = 100 * 1'000'000;  // 100ms
 constexpr size_t kTopNPeakRatesToReport = 50;
+
+namespace {
+
+bool hasRestrictedConfigErrors(const ConfigStats& configStats) {
+    return configStats.device_info_table_creation_failed || configStats.db_corrupted_count ||
+           configStats.db_deletion_size_exceeded_limit || configStats.db_deletion_stat_failed ||
+           configStats.db_deletion_config_invalid || configStats.db_deletion_too_old ||
+           configStats.db_deletion_config_removed || configStats.db_deletion_config_updated;
+}
+
+std::string buildTimeString(int64_t timeSec) {
+    time_t t = static_cast<time_t>(timeSec);
+    struct tm tm_buf;
+
+    if (localtime_r(&t, &tm_buf) == nullptr) {
+        return "";
+    }
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm_buf, "%Y-%m-%d %I:%M%p");
+    return oss.str();
+}
+
+void printConfigStats(int out, const ConfigStats& configStats, bool verbose) {
+    dprintf(out,
+            "Config {%d_%lld}: creation=%d, deletion=%d, reset=%d, #metric=%d, #condition=%d, "
+            "#matcher=%d, #alert=%d, valid=%d",
+            configStats.uid, (long long)configStats.id, configStats.creation_time_sec,
+            configStats.deletion_time_sec, configStats.reset_time_sec, configStats.metric_count,
+            configStats.condition_count, configStats.matcher_count, configStats.alert_count,
+            configStats.is_valid);
+    if (hasRestrictedConfigErrors(configStats)) {
+        dprintf(out,
+                ", device_info_table_creation_failed=%d, db_corrupted_count=%d, "
+                "db_size_exceeded=%d, db_stat_failed=%d, "
+                "db_config_invalid=%d, db_too_old=%d, db_deletion_config_removed=%d, "
+                "db_deletion_config_updated=%d",
+                configStats.device_info_table_creation_failed, configStats.db_corrupted_count,
+                configStats.db_deletion_size_exceeded_limit, configStats.db_deletion_stat_failed,
+                configStats.db_deletion_config_invalid, configStats.db_deletion_too_old,
+                configStats.db_deletion_config_removed, configStats.db_deletion_config_updated);
+    }
+    if (configStats.config_metadata_provider_promote_failure > 0) {
+        dprintf(out, "ConfigMetadataProviderPromotionFailure=%d",
+                configStats.config_metadata_provider_promote_failure);
+    }
+    dprintf(out, "\n");
+    if (!configStats.is_valid) {
+        for (const auto& reason : configStats.reason) {
+            dprintf(out, "\tinvalid config reason: %s\n",
+                    InvalidConfigReasonEnum_Name(reason.reason).c_str());
+        }
+    }
+
+    if (verbose) {
+        for (const auto& annotation : configStats.annotations) {
+            dprintf(out, "\tannotation: %lld, %d\n", (long long)annotation.first,
+                    annotation.second);
+        }
+    }
+
+    for (const auto& broadcastTime : configStats.broadcast_sent_time_sec) {
+        dprintf(out, "\tbroadcast time: %s(%lld)\n", buildTimeString(broadcastTime).c_str(),
+                (long long)broadcastTime);
+    }
+
+    for (const int& activationTime : configStats.activation_time_sec) {
+        dprintf(out, "\tactivation time: %d\n", activationTime);
+    }
+
+    for (const int& deactivationTime : configStats.deactivation_time_sec) {
+        dprintf(out, "\tdeactivation time: %d\n", deactivationTime);
+    }
+
+    auto dropTimePtr = configStats.data_drop_time_sec.begin();
+    auto dropBytesPtr = configStats.data_drop_bytes.begin();
+    for (size_t i = 0; i < configStats.data_drop_time_sec.size();
+         i++, dropTimePtr++, dropBytesPtr++) {
+        dprintf(out, "\tdata drop time: %s(%lld) with %lld bytes\n",
+                buildTimeString(*dropTimePtr).c_str(), (long long)*dropTimePtr,
+                (long long)*dropBytesPtr);
+    }
+
+    for (const auto& dump : configStats.dump_report_stats) {
+        dprintf(out, "\tdump report time: %s(%lld) bytes: %d reportNumber: %d\n",
+                buildTimeString(dump.mDumpReportTimeSec).c_str(),
+                (long long)dump.mDumpReportTimeSec, dump.mDumpReportSizeBytes,
+                dump.mDumpReportNumber);
+    }
+    if (verbose) {
+        for (const auto& stats : configStats.matcher_stats) {
+            dprintf(out, "matcher %lld matched %d times\n", (long long)stats.first, stats.second);
+        }
+
+        for (const auto& stats : configStats.condition_stats) {
+            dprintf(out, "condition %lld max output tuple size %d\n", (long long)stats.first,
+                    stats.second);
+        }
+
+        for (const auto& stats : configStats.metric_stats) {
+            dprintf(out, "metrics %lld max output tuple size %d\n", (long long)stats.first,
+                    stats.second);
+        }
+
+        for (const auto& stats : configStats.alert_stats) {
+            dprintf(out, "alert %lld declared %d times\n", (long long)stats.first, stats.second);
+        }
+    }
+
+    for (const auto& stats : configStats.restricted_metric_stats) {
+        dprintf(out, "Restricted MetricId %lld: ", (long long)stats.first);
+        dprintf(out, "Insert error %lld, ", (long long)stats.second.insertError);
+        dprintf(out, "Table creation error %lld, ", (long long)stats.second.tableCreationError);
+        dprintf(out, "Table deletion error %lld ", (long long)stats.second.tableDeletionError);
+        dprintf(out, "Category changed count %lld\n ",
+                (long long)stats.second.categoryChangedCount);
+        string flushLatencies = "Flush Latencies: ";
+        for (const int64_t latencyNs : stats.second.flushLatencyNs) {
+            flushLatencies.append(to_string(latencyNs).append(","));
+        }
+        if (!stats.second.flushLatencyNs.empty()) {
+            flushLatencies.pop_back();
+        }
+        flushLatencies.push_back('\n');
+        dprintf(out, "%s", flushLatencies.c_str());
+    }
+
+    for (const int64_t flushLatency : configStats.total_flush_latency_ns) {
+        dprintf(out, "\tflush latency time ns: %lld\n", (long long)flushLatency);
+    }
+
+    for (const int64_t dbSize : configStats.total_db_sizes) {
+        dprintf(out, "\tdb size: %lld\n", (long long)dbSize);
+    }
+}
+
+}  // namespace
 
 StatsdStats::StatsdStats()
     : mStatsdStatsId(rand()),
@@ -1252,14 +1392,6 @@ void StatsdStats::resetInternalLocked() {
     mPullerAlarmStats.alarm_with_puller_errors_count = 0;
 }
 
-string buildTimeString(int64_t timeSec) {
-    time_t t = timeSec;
-    struct tm* tm = localtime(&t);
-    char timeBuffer[80];
-    strftime(timeBuffer, sizeof(timeBuffer), "%Y-%m-%d %I:%M%p", tm);
-    return string(timeBuffer);
-}
-
 int StatsdStats::getPushedAtomErrorsLocked(int atomId) const {
     const auto& it = mPushedAtomErrorStats.find(atomId);
     if (it != mPushedAtomErrorStats.end()) {
@@ -1280,13 +1412,6 @@ int StatsdStats::getPushedAtomDropsLocked(int atomId) const {
 
 int StatsdStats::getLoggingRateLocked(int atomId) const {
     return mLoggingRateStats.getMaxRate(atomId);
-}
-
-bool StatsdStats::hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const {
-    return configStats->device_info_table_creation_failed || configStats->db_corrupted_count ||
-           configStats->db_deletion_size_exceeded_limit || configStats->db_deletion_stat_failed ||
-           configStats->db_deletion_config_invalid || configStats->db_deletion_too_old ||
-           configStats->db_deletion_config_removed || configStats->db_deletion_config_updated;
 }
 
 bool StatsdStats::hasEventQueueOverflow() const {
@@ -1313,187 +1438,11 @@ void StatsdStats::dumpStats(int out) const {
     dprintf(out, "Stats collection start second: %s\n", timeBuffer);
     dprintf(out, "%lu Config in icebox: \n", (unsigned long)mIceBox.size());
     for (const auto& configStats : mIceBox) {
-        dprintf(out,
-                "Config {%d_%lld}: creation=%d, deletion=%d, reset=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d",
-                configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
-                configStats->deletion_time_sec, configStats->reset_time_sec,
-                configStats->metric_count, configStats->condition_count, configStats->matcher_count,
-                configStats->alert_count, configStats->is_valid);
-        if (hasRestrictedConfigErrors(configStats)) {
-            dprintf(out,
-                    ", device_info_table_creation_failed=%d, db_corrupted_count=%d, "
-                    "db_size_exceeded=%d, db_stat_failed=%d, "
-                    "db_config_invalid=%d, db_too_old=%d, db_deletion_config_removed=%d, "
-                    "db_deletion_config_updated=%d",
-                    configStats->device_info_table_creation_failed, configStats->db_corrupted_count,
-                    configStats->db_deletion_size_exceeded_limit,
-                    configStats->db_deletion_stat_failed, configStats->db_deletion_config_invalid,
-                    configStats->db_deletion_too_old, configStats->db_deletion_config_removed,
-                    configStats->db_deletion_config_updated);
-        }
-        if (configStats->config_metadata_provider_promote_failure > 0) {
-            dprintf(out, "ConfigMetadataProviderPromotionFailure=%d",
-                    configStats->config_metadata_provider_promote_failure);
-        }
-        dprintf(out, "\n");
-        if (!configStats->is_valid) {
-            for (const auto& reason : configStats->reason) {
-                dprintf(out, "\tinvalid config reason: %s\n",
-                        InvalidConfigReasonEnum_Name(reason.reason).c_str());
-            }
-        }
-
-        for (const auto& broadcastTime : configStats->broadcast_sent_time_sec) {
-            dprintf(out, "\tbroadcast time: %d\n", broadcastTime);
-        }
-
-        for (const int& activationTime : configStats->activation_time_sec) {
-            dprintf(out, "\tactivation time: %d\n", activationTime);
-        }
-
-        for (const int& deactivationTime : configStats->deactivation_time_sec) {
-            dprintf(out, "\tdeactivation time: %d\n", deactivationTime);
-        }
-
-        auto dropTimePtr = configStats->data_drop_time_sec.begin();
-        auto dropBytesPtr = configStats->data_drop_bytes.begin();
-        for (int i = 0; i < (int)configStats->data_drop_time_sec.size();
-             i++, dropTimePtr++, dropBytesPtr++) {
-            dprintf(out, "\tdata drop time: %s(%lld) with %lld bytes\n",
-                    buildTimeString(*dropTimePtr).c_str(), (long long)*dropTimePtr,
-                    (long long)*dropBytesPtr);
-        }
-
-        for (const auto& stats : configStats->restricted_metric_stats) {
-            dprintf(out, "Restricted MetricId %lld: ", (long long)stats.first);
-            dprintf(out, "Insert error %lld, ", (long long)stats.second.insertError);
-            dprintf(out, "Table creation error %lld, ", (long long)stats.second.tableCreationError);
-            dprintf(out, "Table deletion error %lld ", (long long)stats.second.tableDeletionError);
-            dprintf(out, "Category changed count %lld\n ",
-                    (long long)stats.second.categoryChangedCount);
-            string flushLatencies = "Flush Latencies: ";
-            for (const int64_t latencyNs : stats.second.flushLatencyNs) {
-                flushLatencies.append(to_string(latencyNs).append(","));
-            }
-            flushLatencies.pop_back();
-            flushLatencies.push_back('\n');
-            dprintf(out, "%s", flushLatencies.c_str());
-        }
-
-        for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
-            dprintf(out, "\tflush latency time ns: %lld\n", (long long)flushLatency);
-        }
-
-        for (const int64_t dbSize : configStats->total_db_sizes) {
-            dprintf(out, "\tdb size: %lld\n", (long long)dbSize);
-        }
+        printConfigStats(out, *configStats, false /** verbose */);
     }
     dprintf(out, "%lu Active Configs\n", (unsigned long)mConfigStats.size());
     for (auto& pair : mConfigStats) {
-        auto& configStats = pair.second;
-        dprintf(out,
-                "Config {%d-%lld}: creation=%d, deletion=%d, #metric=%d, #condition=%d, "
-                "#matcher=%d, #alert=%d, valid=%d",
-                configStats->uid, (long long)configStats->id, configStats->creation_time_sec,
-                configStats->deletion_time_sec, configStats->metric_count,
-                configStats->condition_count, configStats->matcher_count, configStats->alert_count,
-                configStats->is_valid);
-        if (hasRestrictedConfigErrors(configStats)) {
-            dprintf(out,
-                    ", device_info_table_creation_failed=%d, db_corrupted_count=%d, "
-                    "db_size_exceeded=%d, db_stat_failed=%d, "
-                    "db_config_invalid=%d, db_too_old=%d, db_deletion_config_removed=%d, "
-                    "db_deletion_config_updated=%d",
-                    configStats->device_info_table_creation_failed, configStats->db_corrupted_count,
-                    configStats->db_deletion_size_exceeded_limit,
-                    configStats->db_deletion_stat_failed, configStats->db_deletion_config_invalid,
-                    configStats->db_deletion_too_old, configStats->db_deletion_config_removed,
-                    configStats->db_deletion_config_updated);
-        }
-        dprintf(out, "\n");
-        if (!configStats->is_valid) {
-            for (const auto& reason : configStats->reason) {
-                dprintf(out, "\tinvalid config reason: %s\n",
-                        InvalidConfigReasonEnum_Name(reason.reason).c_str());
-            }
-        }
-
-        for (const auto& annotation : configStats->annotations) {
-            dprintf(out, "\tannotation: %lld, %d\n", (long long)annotation.first,
-                    annotation.second);
-        }
-
-        for (const auto& broadcastTime : configStats->broadcast_sent_time_sec) {
-            dprintf(out, "\tbroadcast time: %s(%lld)\n", buildTimeString(broadcastTime).c_str(),
-                    (long long)broadcastTime);
-        }
-
-        for (const int& activationTime : configStats->activation_time_sec) {
-            dprintf(out, "\tactivation time: %d\n", activationTime);
-        }
-
-        for (const int& deactivationTime : configStats->deactivation_time_sec) {
-            dprintf(out, "\tdeactivation time: %d\n", deactivationTime);
-        }
-
-        auto dropTimePtr = configStats->data_drop_time_sec.begin();
-        auto dropBytesPtr = configStats->data_drop_bytes.begin();
-        for (int i = 0; i < (int)configStats->data_drop_time_sec.size();
-             i++, dropTimePtr++, dropBytesPtr++) {
-            dprintf(out, "\tdata drop time: %s(%lld) with %lld bytes\n",
-                    buildTimeString(*dropTimePtr).c_str(), (long long)*dropTimePtr,
-                    (long long)*dropBytesPtr);
-        }
-
-        for (const auto& dump : configStats->dump_report_stats) {
-            dprintf(out, "\tdump report time: %s(%lld) bytes: %d reportNumber: %d\n",
-                    buildTimeString(dump.mDumpReportTimeSec).c_str(),
-                    (long long)dump.mDumpReportTimeSec, dump.mDumpReportSizeBytes,
-                    dump.mDumpReportNumber);
-        }
-
-        for (const auto& stats : pair.second->matcher_stats) {
-            dprintf(out, "matcher %lld matched %d times\n", (long long)stats.first, stats.second);
-        }
-
-        for (const auto& stats : pair.second->condition_stats) {
-            dprintf(out, "condition %lld max output tuple size %d\n", (long long)stats.first,
-                    stats.second);
-        }
-
-        for (const auto& stats : pair.second->condition_stats) {
-            dprintf(out, "metrics %lld max output tuple size %d\n", (long long)stats.first,
-                    stats.second);
-        }
-
-        for (const auto& stats : pair.second->alert_stats) {
-            dprintf(out, "alert %lld declared %d times\n", (long long)stats.first, stats.second);
-        }
-
-        for (const auto& stats : configStats->restricted_metric_stats) {
-            dprintf(out, "Restricted MetricId %lld: ", (long long)stats.first);
-            dprintf(out, "Insert error %lld, ", (long long)stats.second.insertError);
-            dprintf(out, "Table creation error %lld, ", (long long)stats.second.tableCreationError);
-            dprintf(out, "Table deletion error %lld ", (long long)stats.second.tableDeletionError);
-            dprintf(out, "Category changed count %lld\n ",
-                    (long long)stats.second.categoryChangedCount);
-            string flushLatencies = "Flush Latencies: ";
-            for (const int64_t latencyNs : stats.second.flushLatencyNs) {
-                flushLatencies.append(to_string(latencyNs).append(","));
-            }
-            flushLatencies.pop_back();
-            flushLatencies.push_back('\n');
-            dprintf(out, "%s", flushLatencies.c_str());
-        }
-
-        for (const int64_t flushLatency : configStats->total_flush_latency_ns) {
-            dprintf(out, "flush latency time ns: %lld\n", (long long)flushLatency);
-        }
-
-        for (const int64_t dbSize : configStats->total_db_sizes) {
-            dprintf(out, "\tdb size: %lld\n", (long long)dbSize);
-        }
+        printConfigStats(out, *(pair.second), true /** verbose */);
     }
     dprintf(out, "********Disk Usage stats***********\n");
     StorageManager::printStats(out);
