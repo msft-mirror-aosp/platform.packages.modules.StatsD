@@ -18,6 +18,13 @@
 #include "Log.h"
 
 #include "LogEventQueue.h"
+
+#include <com_android_os_statsd_flags.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <thread>
+
 #include "utils/api_tracing.h"
 
 namespace android {
@@ -25,6 +32,67 @@ namespace os {
 namespace statsd {
 
 using std::unique_ptr;
+
+namespace flags = com::android::os::statsd::flags;
+
+namespace {
+
+// Cooldown duration for the Perfetto trigger, one day
+constexpr int64_t K_TRIGGER_COOLDOWN_NS = 24LL * 60 * 60 * 1000000000;
+
+int64_t getNowTimeNs() {
+    return getElapsedRealtimeNs();
+}
+
+void runTriggerPerfettoImpl() {
+    ATRACE_CALL();
+    ALOGI("Triggering Perfetto for statsd queue overflow");
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        ALOGE("Fork failed: %m");
+        return;
+    }
+
+    if (pid == 0) {
+        // --- CHILD ---
+        const char* args[] = {"/system/bin/trigger_perfetto", "android.os.statsd-queue-overflow",
+                              NULL};
+        execv(args[0], const_cast<char**>(args));
+        // execv only returns on error
+        ALOGE("execv trigger_perfetto failed: %m");
+        _exit(127);
+    }
+
+    // --- PARENT ---
+    // Wait for the child so we don't create a zombie. This part is blocking,
+    // but this function will be called asynchronously, so it's ok to wait.
+    int status;
+    if (TEMP_FAILURE_RETRY(waitpid(pid, &status, 0)) < 0) {
+        ALOGE("Failed to waitpid for trigger perfetto %m");
+    } else {
+        if (WIFEXITED(status)) {
+            if (WEXITSTATUS(status) != 0) {
+                ALOGE("trigger_perfetto exited with code %d", WEXITSTATUS(status));
+            } else {
+                ALOGI("trigger_perfetto completed successfully");
+            }
+        } else if (WIFSIGNALED(status)) {
+            ALOGW("trigger_perfetto terminated by signal %d", WTERMSIG(status));
+        }
+    }
+}
+
+void executePerfettoTriggerAsync() {
+    std::thread([]() { runTriggerPerfettoImpl(); }).detach();
+}
+
+}  // namespace
+
+RateLimitedAsyncTrigger LogEventQueue::sRateLimitedPerfettoTrigger(K_TRIGGER_COOLDOWN_NS,
+                                                                   getNowTimeNs,
+                                                                   executePerfettoTriggerAsync);
 
 unique_ptr<LogEvent> LogEventQueue::waitPop() {
     std::unique_lock<std::mutex> lock(mMutex);
@@ -63,6 +131,9 @@ LogEventQueue::Result LogEventQueue::push(unique_ptr<LogEvent> item) {
                 ATRACE_BEGIN("Statsd::QueueOverflow");
                 mIsOverflowing = true;
                 mOverflowLostCount = 0;
+                if (flags::trigger_perfetto()) {
+                    sRateLimitedPerfettoTrigger.trigger();
+                }
             }
             mOverflowLostCount++;
         }

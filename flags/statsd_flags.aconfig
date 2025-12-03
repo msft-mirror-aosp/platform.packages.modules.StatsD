@@ -58,3 +58,11 @@ flag {
     description: "Enables iouring implementation of the statsd"
     bug: "297114355"
 }
+
+flag {
+    name: "trigger_perfetto"
+    namespace: "statsd"
+    description: "Trigger perfetto when queue overflow happens"
+    bug: "462461710"
+}
+
