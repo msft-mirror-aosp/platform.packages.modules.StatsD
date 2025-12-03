@@ -44,8 +44,6 @@ java_test_host {
         "core_cts_test_resources",
         "perfetto_config-full",
         "cts-statsd-atom-host-test-utils",
-        "statsd_flags_java_lib",
-        "flag-junit-host",
     ],
     data: [
         "**/*.pbtxt",
