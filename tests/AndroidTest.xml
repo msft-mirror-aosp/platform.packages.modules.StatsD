@@ -40,8 +40,8 @@
     <target_preparer class="com.android.tradefed.targetprep.RunCommandTargetPreparer">
         <!-- Disables StatsD logging control-->
         <option name="run-command" value="cmd stats logging-control 0" />
-        <!-- Delay 30 seconds to allow StatsD process above command-->
-        <option name="delay-after-commands" value="30000" />
+        <!-- Delay 2 seconds to allow StatsD process above command-->
+        <option name="delay-after-commands" value="2000" />
         <option name="teardown-command" value="cmd stats logging-control 1" />
     </target_preparer>
 </configuration>
