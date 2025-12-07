@@ -130,9 +130,9 @@ void StatsSocketLossReporter::dumpAtomsLossStats(bool forceDump) {
     }
 
     // populate temp vectors to be written into the socket
-    std::vector<int> errors(mLossInfo.size());
-    std::vector<int> tags(mLossInfo.size());
-    std::vector<int> counts(mLossInfo.size());
+    std::vector<int32_t> errors(mLossInfo.size());
+    std::vector<int32_t> tags(mLossInfo.size());
+    std::vector<int32_t> counts(mLossInfo.size());
 
     auto lossInfoIt = mLossInfo.begin();
     for (size_t i = 0; i < mLossInfo.size(); i++, lossInfoIt++) {
