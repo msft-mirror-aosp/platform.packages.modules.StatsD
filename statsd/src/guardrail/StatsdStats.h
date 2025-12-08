@@ -1104,8 +1104,6 @@ private:
 
     int getLoggingRateLocked(int atomId) const;
 
-    bool hasRestrictedConfigErrors(const std::shared_ptr<ConfigStats>& configStats) const;
-
     /**
      * Get a reference to AtomMetricStats for a metric. If none exists, create it. The reference
      * will live as long as `this`.
