@@ -175,7 +175,7 @@ bool should_write_via_queue(AStatsEventAtomId atomId) {
 
     const uint32_t appUid = getuid();
 
-    // hard-coded push all system server atoms to queue
+    // hard-coded push all atoms to queue for the system user
     if (appUid == AID_SYSTEM) {
         return true;
     }
