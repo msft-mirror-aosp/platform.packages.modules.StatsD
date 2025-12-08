@@ -629,8 +629,8 @@ void StatsdStats::noteAtomDroppedLocked(int32_t atomId) {
 }
 
 void StatsdStats::noteAtomSocketLoss(const SocketLossInfo& lossInfo) {
-    ALOGW("SocketLossEvent detected: %lld (firstLossTsNanos), %lld (lastLossTsNanos)",
-          (long long)lossInfo.firstLossTsNanos, (long long)lossInfo.lastLossTsNanos);
+    VLOG("SocketLossEvent detected: %lld (firstLossTsNanos), %lld (lastLossTsNanos)",
+         (long long)lossInfo.firstLossTsNanos, (long long)lossInfo.lastLossTsNanos);
     lock_guard lock(mLock);
 
     if (mSocketLossStats.size() == kMaxSocketLossStatsSize) {
@@ -640,8 +640,8 @@ void StatsdStats::noteAtomSocketLoss(const SocketLossInfo& lossInfo) {
     mSocketLossStats.emplace_back(lossInfo.uid, lossInfo.firstLossTsNanos,
                                   lossInfo.lastLossTsNanos);
     for (size_t i = 0; i < lossInfo.atomIds.size(); i++) {
-        ALOGW("For uid %d atom %d was lost %d times with error %d", lossInfo.uid,
-              lossInfo.atomIds[i], lossInfo.counts[i], lossInfo.errors[i]);
+        VLOG("For uid %d atom %d was lost %d times with error %d", lossInfo.uid,
+             lossInfo.atomIds[i], lossInfo.counts[i], lossInfo.errors[i]);
         mSocketLossStats.back().mLossCountPerErrorAtomId.emplace_back(
                 lossInfo.atomIds[i], lossInfo.errors[i], lossInfo.counts[i]);
     }

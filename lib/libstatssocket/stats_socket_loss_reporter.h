@@ -60,7 +60,7 @@ private:
     // 100 * 12 + 8 + 8 + 4 ~ 1.2kB (max array field length is 127)
     static constexpr size_t kMaxAtomTagsCount = 100;
 
-    static constexpr int64_t kCoolDownTimerDurationNanos = 60 * 1'000'000'000LL;  // 1minute
+    static constexpr int64_t kCoolDownTimerDurationNanos = 60 * 1'000'000'000LL;  // 1 minute
 
     struct HashPair final {
         template <class TFirst, class TSecond>
