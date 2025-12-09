@@ -23,6 +23,7 @@
 #include <queue>
 
 #include "LogEvent.h"
+#include "utils/RateLimitedAsyncTrigger.h"
 
 namespace android {
 namespace os {
@@ -54,11 +55,11 @@ public:
     Result push(std::unique_ptr<LogEvent> event);
 
 private:
+    static RateLimitedAsyncTrigger sRateLimitedPerfettoTrigger;
     const size_t mQueueLimit;
     std::condition_variable mCondition;
     std::mutex mMutex;
     std::queue<std::unique_ptr<LogEvent>> mQueue;
-
     bool mIsOverflowing = false;
     int mOverflowLostCount = 0;
 
