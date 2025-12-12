@@ -57,7 +57,7 @@ void runTriggerPerfettoImpl() {
 
     if (pid == 0) {
         // --- CHILD ---
-        const char* args[] = {"/system/bin/trigger_perfetto", "android.os.statsd-queue-overflow",
+        const char* args[] = {"/system/bin/trigger_perfetto", "android.os.statsd.queue-overflow",
                               NULL};
         execv(args[0], const_cast<char**>(args));
         // execv only returns on error
