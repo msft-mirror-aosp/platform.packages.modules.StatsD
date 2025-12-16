@@ -62,6 +62,7 @@ private:
     std::queue<std::unique_ptr<LogEvent>> mQueue;
     bool mIsOverflowing = false;
     int mOverflowLostCount = 0;
+    int mLastReportedBucket = -1;
 
     friend class SocketParseMessageTest;
 
