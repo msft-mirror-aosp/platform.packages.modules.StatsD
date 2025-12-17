@@ -23,6 +23,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <thread>
 
 #include "utils/api_tracing.h"
@@ -32,6 +33,7 @@ namespace os {
 namespace statsd {
 
 using std::unique_ptr;
+using namespace std::chrono_literals;
 
 namespace flags = com::android::os::statsd::flags;
 
@@ -100,8 +102,12 @@ RateLimitedAsyncTrigger LogEventQueue::sRateLimitedPerfettoTrigger(K_TRIGGER_COO
 unique_ptr<LogEvent> LogEventQueue::waitPop() {
     std::unique_lock<std::mutex> lock(mMutex);
 
-    if (mQueue.empty()) {
-        mCondition.wait(lock, [this] { return !this->mQueue.empty(); });
+    while (mQueue.empty()) {
+        if (flags::use_wait_for()) {
+            mCondition.wait_for(lock, 2s, [this] { return !this->mQueue.empty(); });
+        } else {
+            mCondition.wait(lock, [this] { return !this->mQueue.empty(); });
+        }
     }
 
     unique_ptr<LogEvent> item = std::move(mQueue.front());

@@ -58,3 +58,9 @@ flag {
     bug: "462461710"
 }
 
+flag {
+    name: "use_wait_for"
+    namespace: "statsd"
+    description: "Use wait with timeout to check event queue"
+    bug: "462461710"
+}
