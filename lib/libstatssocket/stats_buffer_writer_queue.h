@@ -25,4 +25,4 @@
 
 bool write_buffer_to_statsd_queue(const uint8_t* buffer, size_t size, AStatsEventAtomId atomId);
 
-bool should_write_via_queue(AStatsEventAtomId atomId);
+bool should_write_via_queue(uid_t uid, AStatsEventAtomId atomId);

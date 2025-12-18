@@ -71,9 +71,7 @@ AtomsInUseProvider<RealTimeClock>& get_atoms_in_use_provider() {
     return *provider;
 }
 
-bool is_atom_in_use(AStatsEventAtomId atomId) {
-    const uint32_t appUid = getuid();
-
+bool is_atom_in_use(uid_t appUid, AStatsEventAtomId atomId) {
     // hard-coded exclude all system server atoms from logging control
     if (appUid == AID_SYSTEM) {
         return true;
@@ -100,14 +98,16 @@ int write_buffer_to_statsd(void* buffer, size_t size, AStatsEventAtomId atomId) 
     constexpr int kLoggingRateLimitExceededErrorCode = 2;
     constexpr int kAtomNotInUseErrorCode = 3;
 
+    const uid_t appUid = getuid();
+
     if (__builtin_available(android LOGGING_CONTROL_API_VERSION, *)) {
-        if (flags::logging_control_enabled() && !is_atom_in_use(atomId)) {
+        if (flags::logging_control_enabled() && !is_atom_in_use(appUid, atomId)) {
             StatsSocketLossReporter::getInstance().noteDrop(kAtomNotInUseErrorCode, atomId);
             return 0;
         }
     }
 
-    if (should_write_via_queue(atomId)) {
+    if (should_write_via_queue(appUid, atomId)) {
         const bool ret =
                 write_buffer_to_statsd_queue(static_cast<const uint8_t*>(buffer), size, atomId);
         if (!ret) {
