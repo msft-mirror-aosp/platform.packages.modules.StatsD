@@ -170,6 +170,7 @@ StatsService::StatsService(const sp<UidMap>& uidMap, shared_ptr<LogEventQueue> q
       mAtomsInUseChangeDispatcher(std::make_shared<AtomsInUseChangeDispatcher>()),
       mLogEventFilter(logEventFilter),
       mSocketLogEventControl(std::make_shared<SocketLogEventControl>()) {
+    ATRACE_CALL();
     mAtomsInUseChangeDispatcher->addListener(mLogEventFilter);
     mAtomsInUseChangeDispatcher->addListener(mSocketLogEventControl);
     mPullerManager = new StatsPullerManager();
@@ -303,6 +304,7 @@ void StatsService::init_build_type_callback(void* cookie, const char* /*name*/, 
  * TODO: Come up with a more robust method of enacting <serviceutils/PriorityDumper.h>.
  */
 status_t StatsService::dump(int fd, const char** args, uint32_t numArgs) {
+    ATRACE_CALL();
     if (!checkPermission(kPermissionDump)) {
         return PERMISSION_DENIED;
     }
@@ -374,6 +376,7 @@ void StatsService::dumpIncidentSection(int out) {
  */
 status_t StatsService::handleShellCommand(int in, int out, int err, const char** argv,
                                           uint32_t argc) {
+    ATRACE_CALL();
     uid_t uid = AIBinder_getCallingUid();
     if (uid != AID_ROOT && uid != AID_SHELL) {
         return PERMISSION_DENIED;
@@ -1116,6 +1119,7 @@ Status StatsService::informDeviceShutdown() {
 }
 
 void StatsService::sayHiToStatsCompanion() {
+    ATRACE_CALL();
     shared_ptr<IStatsCompanionService> statsCompanion =
             getStatsCompanionService(/*blocking=*/false);
     if (statsCompanion != nullptr) {
