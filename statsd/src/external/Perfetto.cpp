@@ -15,16 +15,17 @@
  */
 
 #define STATSD_DEBUG false  // STOPSHIP if true
-#include "config/ConfigKey.h"
 #include "Log.h"
-
-#include "src/statsd_config.pb.h"  // Alert
 
 #include <android-base/unique_fd.h>
 #include <inttypes.h>
 #include <sys/wait.h>
 
 #include <string>
+
+#include "config/ConfigKey.h"
+#include "src/statsd_config.pb.h"  // Alert
+#include "utils/api_tracing.h"
 
 namespace {
 const char kDropboxTag[] = "perfetto";
@@ -38,6 +39,7 @@ bool CollectPerfettoTraceAndUploadToDropbox(const PerfettoDetails& config,
                                             int64_t subscription_id,
                                             int64_t alert_id,
                                             const ConfigKey& configKey) {
+    ATRACE_CALL();
     VLOG("Starting trace collection through perfetto");
 
     if (!config.has_trace_config()) {
