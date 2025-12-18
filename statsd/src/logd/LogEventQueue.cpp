@@ -23,6 +23,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <thread>
 
 #include "utils/api_tracing.h"
@@ -32,6 +33,7 @@ namespace os {
 namespace statsd {
 
 using std::unique_ptr;
+using namespace std::chrono_literals;
 
 namespace flags = com::android::os::statsd::flags;
 
@@ -39,6 +41,9 @@ namespace {
 
 // Cooldown duration for the Perfetto trigger, one day
 constexpr int64_t K_TRIGGER_COOLDOWN_NS = 24LL * 60 * 60 * 1000000000;
+// Bucket size for the queue size histogram
+constexpr size_t kQueueSizeBucketSize = 5000;
+constexpr char kQueueSizeCounterName[] = "Statsd::EventQueueSizeBucket";
 
 int64_t getNowTimeNs() {
     return getElapsedRealtimeNs();
@@ -97,13 +102,22 @@ RateLimitedAsyncTrigger LogEventQueue::sRateLimitedPerfettoTrigger(K_TRIGGER_COO
 unique_ptr<LogEvent> LogEventQueue::waitPop() {
     std::unique_lock<std::mutex> lock(mMutex);
 
-    if (mQueue.empty()) {
-        mCondition.wait(lock, [this] { return !this->mQueue.empty(); });
+    while (mQueue.empty()) {
+        if (flags::use_wait_for()) {
+            mCondition.wait_for(lock, 2s, [this] { return !this->mQueue.empty(); });
+        } else {
+            mCondition.wait(lock, [this] { return !this->mQueue.empty(); });
+        }
     }
 
     unique_ptr<LogEvent> item = std::move(mQueue.front());
     mQueue.pop();
 
+    int bucket = mQueue.size() / kQueueSizeBucketSize;
+    if (bucket != mLastReportedBucket) {
+        ATRACE_INT(kQueueSizeCounterName, bucket);
+        mLastReportedBucket = bucket;
+    }
     return item;
 }
 
@@ -139,6 +153,11 @@ LogEventQueue::Result LogEventQueue::push(unique_ptr<LogEvent> item) {
         }
 
         result.size = mQueue.size();
+        int bucket = result.size / kQueueSizeBucketSize;
+        if (bucket != mLastReportedBucket) {
+            ATRACE_INT(kQueueSizeCounterName, bucket);
+            mLastReportedBucket = bucket;
+        }
     }
 
     mCondition.notify_one();
