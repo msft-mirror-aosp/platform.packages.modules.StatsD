@@ -52,17 +52,14 @@ cc_defaults {
         // "-DENABLE_BENCHMARK_SUPPORT",
     ],
     static_libs: [
+        "libaconfig_storage_read_api_cc",
         "libbase",
         "statsd_flags_c_lib",
     ],
+    shared_libs: [
+        "liblog",
+    ],
     min_sdk_version: "30",
-    target: {
-        linux_glibc: {
-            shared_libs: [
-                "liblog",
-            ],
-        },
-    },
 }
 
 cc_library_shared {
