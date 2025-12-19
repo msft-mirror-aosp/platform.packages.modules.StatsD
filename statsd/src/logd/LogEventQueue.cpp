@@ -44,6 +44,7 @@ constexpr int64_t K_TRIGGER_COOLDOWN_NS = 24LL * 60 * 60 * 1000000000;
 // Bucket size for the queue size histogram
 constexpr size_t kQueueSizeBucketSize = 5000;
 constexpr char kQueueSizeCounterName[] = "Statsd::EventQueueSizeBucket";
+constexpr int32_t kTriggerPerfettoQueueSize = 20000;
 
 int64_t getNowTimeNs() {
     return getElapsedRealtimeNs();
@@ -145,9 +146,6 @@ LogEventQueue::Result LogEventQueue::push(unique_ptr<LogEvent> item) {
                 ATRACE_BEGIN("Statsd::QueueOverflow");
                 mIsOverflowing = true;
                 mOverflowLostCount = 0;
-                if (flags::trigger_perfetto()) {
-                    sRateLimitedPerfettoTrigger.trigger();
-                }
             }
             mOverflowLostCount++;
         }
@@ -157,6 +155,12 @@ LogEventQueue::Result LogEventQueue::push(unique_ptr<LogEvent> item) {
         if (bucket != mLastReportedBucket) {
             ATRACE_INT(kQueueSizeCounterName, bucket);
             mLastReportedBucket = bucket;
+        }
+
+        if (flags::trigger_perfetto()) {
+            if (result.size > kTriggerPerfettoQueueSize) {
+                sRateLimitedPerfettoTrigger.trigger();
+            }
         }
     }
 
