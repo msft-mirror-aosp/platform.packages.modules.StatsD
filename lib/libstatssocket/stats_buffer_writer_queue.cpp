@@ -166,14 +166,12 @@ bool write_buffer_to_statsd_queue(const uint8_t* buffer, size_t size, AStatsEven
     return queue.write(buffer, size, atomId);
 }
 
-bool should_write_via_queue(AStatsEventAtomId atomId) {
+bool should_write_via_queue(uid_t appUid, AStatsEventAtomId atomId) {
     // bootstats is very short living process - queue does not have sufficient
     // time to be drained entirely so writing this atom straight to socket
     if (atomId == kBootTimeEventElapsedTimeAtomId) {
         return false;
     }
-
-    const uint32_t appUid = getuid();
 
     // hard-coded push all atoms to queue for the system user
     if (appUid == AID_SYSTEM) {
