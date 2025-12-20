@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_set>
 
 #include "utils.h"
