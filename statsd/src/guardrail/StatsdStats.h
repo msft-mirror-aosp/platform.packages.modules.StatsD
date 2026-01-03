@@ -297,23 +297,11 @@ public:
     // This should be updated once highest pushed atom id in atoms.proto approaches this value.
     static const int32_t kMaxPushedAtomId = 1500;
 
-    // Atom id that is the start of the pulled atoms.
-    static const int32_t kPullAtomStartTag = 10000;
-
-    // Atom id that is the start of vendor atoms.
-    static const int32_t kVendorAtomStartTag = 100000;
-
-    // Vendor pulled atom start id.
-    static const int32_t kVendorPulledAtomStartTag = 150000;
-
     // Beginning of range for timestamp truncation.
     static const int32_t kTimestampTruncationStartTag = 300000;
 
     // End of range for timestamp truncation.
     static const int32_t kTimestampTruncationEndTag = 304999;
-
-    // Max accepted atom id.
-    static const int32_t kMaxAtomTag = 200000;
 
     static const int32_t kMaxLoggedBucketDropEvents = 10;
 
