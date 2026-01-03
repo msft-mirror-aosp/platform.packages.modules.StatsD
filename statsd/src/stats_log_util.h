@@ -122,13 +122,7 @@ int64_t truncateTimestampIfNecessary(const LogEvent& event);
 // Checks permission for given pid and uid.
 bool checkPermissionForIds(const char* permission, pid_t pid, uid_t uid);
 
-inline bool isVendorPulledAtom(int atomId) {
-    return atomId >= StatsdStats::kVendorPulledAtomStartTag && atomId < StatsdStats::kMaxAtomTag;
-}
-
-inline bool isPulledAtom(int atomId) {
-    return atomId >= StatsdStats::kPullAtomStartTag && atomId < StatsdStats::kVendorAtomStartTag;
-}
+bool isPulledAtom(int atomId);
 
 void mapIsolatedUidsToHostUidInLogEvent(const sp<UidMap>& uidMap, LogEvent& event);
 
