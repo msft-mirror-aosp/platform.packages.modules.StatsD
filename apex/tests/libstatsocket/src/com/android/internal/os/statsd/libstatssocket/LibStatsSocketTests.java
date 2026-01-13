@@ -68,7 +68,9 @@ public class LibStatsSocketTests {
 
     private static final int STATSD_INIT_DELAY_MS = 90_000; // 90 seconds
 
-    private static final int LIBSTATSSOCKET_TTL_MS = 30_000; // 30 seconds
+    private static final int LIBSTATSSOCKET_TTL_MS = 2_000; // 2 seconds
+
+    private static final int CACHE_UPDATE_DELAY = 100; // 0.1 seconds
 
     private static final int ATOM_TAG = StatsdTestStatsLog.TEST_ATOM_REPORTED;
     private static final int UNUSED_ATOM_TAG = StatsdTestStatsLog.TEST_EXTENSION_ATOM_REPORTED;
@@ -112,20 +114,23 @@ public class LibStatsSocketTests {
 
         // to enforce logging control ttl timer to expire from any past atoms logs
         sleep(LIBSTATSSOCKET_TTL_MS + SHORT_WAIT);
-        // at this moment libstatssocket TTL (30 sec) of cache should be over and it
+        // at this moment libstatssocket TTL of cache should be over and it
         // will re-load list of atoms in use from file
 
+        // when cache is expired and sync is in progress all atoms are allowed
+        // cache update will be triggered by first atom write
+        // first atom will be allowed as well as all other while update is in progress
+        // adding explicit delay to allow cache update complete for seconds atom write
         writeTestAtom(appInfo);
+        sleep(CACHE_UPDATE_DELAY);
         writeExtensionTestAtom(appInfo);
-
-        sleep(SHORT_WAIT);
 
         // collect statsdstats to validate number of atoms logged via socket
         report = getStatsdStatsReport(statsManager);
         AtomStats currentAtomStats = getAtomStats(report, ATOM_TAG);
         AtomStats currentAtomNotInUseStats = getAtomStats(report, UNUSED_ATOM_TAG);
 
-        compareAtomStatsIncreased(prevAtomStats, currentAtomStats);
+        compareAtomStatsIncreased(prevAtomStats, currentAtomStats, true);
         compareAtomStatsEqual(prevAtomNotInUseStats, currentAtomNotInUseStats);
         prevAtomStats = currentAtomStats;
         prevAtomNotInUseStats = currentAtomNotInUseStats;
@@ -139,21 +144,21 @@ public class LibStatsSocketTests {
 
         sleep(LIBSTATSSOCKET_TTL_MS + SHORT_WAIT);
 
-        // at this moment libstatssocket TTL (30 sec) of cache should be over and it
+        // at this moment libstatssocket TTL of cache should be over and it
         // will re-load list of atoms in use from file
-        // now both atoms should become disabled
-
+        // now both atoms should become disabled but due to cache update is async
+        // first atom will be allowed as well as all other while update is in progress
+        // adding explicit delay to allow cache update complete for seconds atom write
         writeTestAtom(appInfo);
+        sleep(CACHE_UPDATE_DELAY);
         writeExtensionTestAtom(appInfo);
-
-        sleep(SHORT_WAIT);
 
         // collect statsdstats to validate number of atoms logged via socket
         report = getStatsdStatsReport(statsManager);
         currentAtomStats = getAtomStats(report, ATOM_TAG);
         currentAtomNotInUseStats = getAtomStats(report, UNUSED_ATOM_TAG);
 
-        compareAtomStatsEqual(prevAtomStats, currentAtomStats);
+        compareAtomStatsIncreased(prevAtomStats, currentAtomStats, false);
         compareAtomStatsEqual(prevAtomNotInUseStats, currentAtomNotInUseStats);
         prevAtomStats = currentAtomStats;
         prevAtomNotInUseStats = currentAtomNotInUseStats;
@@ -165,19 +170,19 @@ public class LibStatsSocketTests {
                         statsManager, new int[] {ATOM_TAG, UNUSED_ATOM_TAG});
 
         sleep(LIBSTATSSOCKET_TTL_MS + SHORT_WAIT);
-        // at this moment libstatssocket TTL (30 sec) of cache should be over and it
+        // at this moment libstatssocket TTL of cache should be over and it
         // will re-load list of atoms in use from file
-
+        // first atom will be allowed as well as all other while update is in progress
+        // adding explicit delay to allow cache update complete for seconds atom write
         writeTestAtom(appInfo);
+        sleep(CACHE_UPDATE_DELAY);
         writeExtensionTestAtom(appInfo);
-
-        sleep(SHORT_WAIT);
 
         report = getStatsdStatsReport(statsManager);
         currentAtomStats = getAtomStats(report, ATOM_TAG);
         currentAtomNotInUseStats = getAtomStats(report, UNUSED_ATOM_TAG);
-        compareAtomStatsIncreased(prevAtomStats, currentAtomStats);
-        compareAtomStatsIncreased(prevAtomNotInUseStats, currentAtomNotInUseStats);
+        compareAtomStatsIncreased(prevAtomStats, currentAtomStats, true);
+        compareAtomStatsIncreased(prevAtomNotInUseStats, currentAtomNotInUseStats, true);
 
         {
             ExtensionRegistryLite extensionRegistry = ExtensionRegistryLite.newInstance();
@@ -217,19 +222,21 @@ public class LibStatsSocketTests {
     }
 
     private void compareAtomStatsIncreased(
-            AtomStats prevAtomStats, AtomStats currentAtomStats) {
+            AtomStats prevAtomStats, AtomStats currentAtomStats, boolean isInUse) {
         assertThat(currentAtomStats).isNotNull();
+        final int skipDiff = isInUse ? 0 : 1;
         if (prevAtomStats == null) {
             assertThat(currentAtomStats.getCount()).isEqualTo(1);
             assertThat(currentAtomStats.getErrorCount()).isEqualTo(0);
             assertThat(currentAtomStats.getDroppedCount()).isEqualTo(0);
-            assertThat(currentAtomStats.getSkipCount()).isEqualTo(0);
+            assertThat(currentAtomStats.getSkipCount()).isEqualTo(skipDiff);
         } else {
             assertThat(currentAtomStats.getCount()).isEqualTo(prevAtomStats.getCount() + 1);
             assertThat(currentAtomStats.getErrorCount()).isEqualTo(prevAtomStats.getErrorCount());
             assertThat(currentAtomStats.getDroppedCount())
                     .isEqualTo(prevAtomStats.getDroppedCount());
-            assertThat(currentAtomStats.getSkipCount()).isEqualTo(prevAtomStats.getSkipCount());
+            assertThat(currentAtomStats.getSkipCount())
+                    .isEqualTo(prevAtomStats.getSkipCount() + skipDiff);
         }
     }
 
@@ -251,6 +258,7 @@ public class LibStatsSocketTests {
     }
 
     private StatsdStatsReport getStatsdStatsReport(StatsManager statsManager) {
+        sleep(SHORT_WAIT);
         StatsdStatsReport report = null;
         try {
             report = StatsdStatsReport.parser().parseFrom(statsManager.getStatsMetadata());
