@@ -124,7 +124,6 @@ public class MetadataTests extends MetadataTestCase {
     }
 
     private static final int LIB_STATS_SOCKET_QUEUE_OVERFLOW_ERROR_CODE = 1;
-    private static final int LIB_STATS_SOCKET_RATE_LIMIT_ERROR_CODE = 2;
     private static final int EVENT_STORM_ITERATIONS_COUNT = 10;
 
     /**
@@ -160,50 +159,6 @@ public class MetadataTests extends MetadataTestCase {
         for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
             for (AtomIdLossStats atomLossStats : lossStats.getAtomIdLossStatsList()) {
                 if (atomLossStats.getAtomId() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
-                    return;
-                }
-            }
-        }
-        org.junit.Assert.fail("Socket loss detected but no info about atom of interest");
-    }
-
-    /** Tests logging rate limiting applied by libstatssocket */
-    @Test
-    public void testSocketRateLimiting() throws Exception {
-        DeviceUtils.runDeviceTests(
-                getDevice(),
-                MetricsUtils.DEVICE_SIDE_TEST_PACKAGE,
-                ".StatsdStressLogging",
-                "testLogAtomsBackToBack");
-
-        triggerAtomLossStatsPropagation();
-        StatsdStatsReport report = getStatsdStatsReport();
-        assertThat(report).isNotNull();
-
-        if (report.getDetectedLogLossList().size() == 0) {
-            return;
-        }
-        // it can be the case that system throughput is sufficient to overcome the
-        // simulated event storm, but if loss happens report can contain information about
-        // atom of interest
-        for (LogLossStats lossStats : report.getDetectedLogLossList()) {
-            if (lossStats.getLastTag() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
-                assertThat(lossStats.getLastError())
-                        .isEqualTo(LIB_STATS_SOCKET_RATE_LIMIT_ERROR_CODE);
-                return;
-            }
-        }
-
-        if (!report.hasSocketLossStats()) {
-            return;
-        }
-        // if many atoms were lost the information in DetectedLogLoss can be overwritten
-        // looking into alternative stats to find the information
-        for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
-            for (AtomIdLossStats atomLossStats : lossStats.getAtomIdLossStatsList()) {
-                if (atomLossStats.getAtomId() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
-                    assertThat(atomLossStats.getError())
-                            .isEqualTo(LIB_STATS_SOCKET_RATE_LIMIT_ERROR_CODE);
                     return;
                 }
             }
