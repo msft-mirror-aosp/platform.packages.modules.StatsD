@@ -17,6 +17,7 @@
 #ifndef ANDROID_STATS_LOG_STATS_WRITER_H
 #define ANDROID_STATS_LOG_STATS_WRITER_H
 
+#include <sys/cdefs.h>
 #include <sys/socket.h>
 
 #include <atomic>
