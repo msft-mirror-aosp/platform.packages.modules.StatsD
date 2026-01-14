@@ -20,6 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/cdefs.h>
+#include <sys/user.h>
 
 #include "stats_event_type.h"
 
