@@ -29,6 +29,7 @@ import android.platform.test.annotations.RequiresFlagsEnabled;
 import android.platform.test.flag.junit.CheckFlagsRule;
 import android.platform.test.flag.junit.DeviceFlagsValueProvider;
 import android.util.Log;
+import android.util.StatsLog;
 import android.util.StatsdTestStatsLog;
 
 import androidx.test.filters.FlakyTest;
@@ -44,6 +45,9 @@ import com.android.internal.os.statsdutils.StatsConfigUtils;
 import com.android.os.AtomsProto.Atom;
 import com.android.os.StatsLog.StatsdStatsReport;
 import com.android.os.StatsLog.StatsdStatsReport.AtomStats;
+import com.android.os.StatsLog.StatsdStatsReport.LogLossStats;
+import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid;
+import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid.AtomIdLossStats;
 import com.android.os.statsd.StatsdExtensionAtoms;
 import com.android.os.statsd.flags.Flags;
 
@@ -68,7 +72,9 @@ public class LibStatsSocketTests {
 
     private static final int STATSD_INIT_DELAY_MS = 90_000; // 90 seconds
 
-    private static final int LIBSTATSSOCKET_TTL_MS = 30_000; // 30 seconds
+    private static final int LIBSTATSSOCKET_TTL_MS = 2_000; // 2 seconds
+
+    private static final int CACHE_UPDATE_DELAY = 100; // 0.1 seconds
 
     private static final int ATOM_TAG = StatsdTestStatsLog.TEST_ATOM_REPORTED;
     private static final int UNUSED_ATOM_TAG = StatsdTestStatsLog.TEST_EXTENSION_ATOM_REPORTED;
@@ -112,20 +118,23 @@ public class LibStatsSocketTests {
 
         // to enforce logging control ttl timer to expire from any past atoms logs
         sleep(LIBSTATSSOCKET_TTL_MS + SHORT_WAIT);
-        // at this moment libstatssocket TTL (30 sec) of cache should be over and it
+        // at this moment libstatssocket TTL of cache should be over and it
         // will re-load list of atoms in use from file
 
+        // when cache is expired and sync is in progress all atoms are allowed
+        // cache update will be triggered by first atom write
+        // first atom will be allowed as well as all other while update is in progress
+        // adding explicit delay to allow cache update complete for seconds atom write
         writeTestAtom(appInfo);
+        sleep(CACHE_UPDATE_DELAY);
         writeExtensionTestAtom(appInfo);
-
-        sleep(SHORT_WAIT);
 
         // collect statsdstats to validate number of atoms logged via socket
         report = getStatsdStatsReport(statsManager);
         AtomStats currentAtomStats = getAtomStats(report, ATOM_TAG);
         AtomStats currentAtomNotInUseStats = getAtomStats(report, UNUSED_ATOM_TAG);
 
-        compareAtomStatsIncreased(prevAtomStats, currentAtomStats);
+        compareAtomStatsIncreased(prevAtomStats, currentAtomStats, true);
         compareAtomStatsEqual(prevAtomNotInUseStats, currentAtomNotInUseStats);
         prevAtomStats = currentAtomStats;
         prevAtomNotInUseStats = currentAtomNotInUseStats;
@@ -139,21 +148,21 @@ public class LibStatsSocketTests {
 
         sleep(LIBSTATSSOCKET_TTL_MS + SHORT_WAIT);
 
-        // at this moment libstatssocket TTL (30 sec) of cache should be over and it
+        // at this moment libstatssocket TTL of cache should be over and it
         // will re-load list of atoms in use from file
-        // now both atoms should become disabled
-
+        // now both atoms should become disabled but due to cache update is async
+        // first atom will be allowed as well as all other while update is in progress
+        // adding explicit delay to allow cache update complete for seconds atom write
         writeTestAtom(appInfo);
+        sleep(CACHE_UPDATE_DELAY);
         writeExtensionTestAtom(appInfo);
-
-        sleep(SHORT_WAIT);
 
         // collect statsdstats to validate number of atoms logged via socket
         report = getStatsdStatsReport(statsManager);
         currentAtomStats = getAtomStats(report, ATOM_TAG);
         currentAtomNotInUseStats = getAtomStats(report, UNUSED_ATOM_TAG);
 
-        compareAtomStatsEqual(prevAtomStats, currentAtomStats);
+        compareAtomStatsIncreased(prevAtomStats, currentAtomStats, false);
         compareAtomStatsEqual(prevAtomNotInUseStats, currentAtomNotInUseStats);
         prevAtomStats = currentAtomStats;
         prevAtomNotInUseStats = currentAtomNotInUseStats;
@@ -165,19 +174,19 @@ public class LibStatsSocketTests {
                         statsManager, new int[] {ATOM_TAG, UNUSED_ATOM_TAG});
 
         sleep(LIBSTATSSOCKET_TTL_MS + SHORT_WAIT);
-        // at this moment libstatssocket TTL (30 sec) of cache should be over and it
+        // at this moment libstatssocket TTL of cache should be over and it
         // will re-load list of atoms in use from file
-
+        // first atom will be allowed as well as all other while update is in progress
+        // adding explicit delay to allow cache update complete for seconds atom write
         writeTestAtom(appInfo);
+        sleep(CACHE_UPDATE_DELAY);
         writeExtensionTestAtom(appInfo);
-
-        sleep(SHORT_WAIT);
 
         report = getStatsdStatsReport(statsManager);
         currentAtomStats = getAtomStats(report, ATOM_TAG);
         currentAtomNotInUseStats = getAtomStats(report, UNUSED_ATOM_TAG);
-        compareAtomStatsIncreased(prevAtomStats, currentAtomStats);
-        compareAtomStatsIncreased(prevAtomNotInUseStats, currentAtomNotInUseStats);
+        compareAtomStatsIncreased(prevAtomStats, currentAtomStats, true);
+        compareAtomStatsIncreased(prevAtomNotInUseStats, currentAtomNotInUseStats, true);
 
         {
             ExtensionRegistryLite extensionRegistry = ExtensionRegistryLite.newInstance();
@@ -191,6 +200,50 @@ public class LibStatsSocketTests {
                     .isNotNull();
         }
         statsManager.removeConfig(activeConfig);
+    }
+
+    private static final int LIB_STATS_SOCKET_RATE_LIMIT_ERROR_CODE = 2;
+
+    /** Tests logging rate limiting applied by libstatssocket */
+    @Test
+    public void testSocketRateLimiting() throws Exception {
+        logAtomsBackToBack();
+
+        triggerAtomLossStatsPropagation();
+
+        StatsManager statsManager = mContext.getSystemService(StatsManager.class);
+        StatsdStatsReport report = getStatsdStatsReport(statsManager);
+        assertThat(report).isNotNull();
+
+        if (report.getDetectedLogLossList().size() == 0) {
+            return;
+        }
+        // it can be the case that system throughput is sufficient to overcome the
+        // simulated event storm, but if loss happens report can contain information about
+        // atom of interest
+        for (LogLossStats lossStats : report.getDetectedLogLossList()) {
+            if (lossStats.getLastTag() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
+                assertThat(lossStats.getLastError())
+                        .isEqualTo(LIB_STATS_SOCKET_RATE_LIMIT_ERROR_CODE);
+                return;
+            }
+        }
+
+        if (!report.hasSocketLossStats()) {
+            return;
+        }
+        // if many atoms were lost the information in DetectedLogLoss can be overwritten
+        // looking into alternative stats to find the information
+        for (LossStatsPerUid lossStats : report.getSocketLossStats().getLossStatsPerUidList()) {
+            for (AtomIdLossStats atomLossStats : lossStats.getAtomIdLossStatsList()) {
+                if (atomLossStats.getAtomId() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
+                    assertThat(atomLossStats.getError())
+                            .isEqualTo(LIB_STATS_SOCKET_RATE_LIMIT_ERROR_CODE);
+                    return;
+                }
+            }
+        }
+        org.junit.Assert.fail("Socket loss detected but no info about atom of interest");
     }
 
     private static boolean waitForStatsServiceLoggingControl(long waitTime) throws Exception {
@@ -217,19 +270,21 @@ public class LibStatsSocketTests {
     }
 
     private void compareAtomStatsIncreased(
-            AtomStats prevAtomStats, AtomStats currentAtomStats) {
+            AtomStats prevAtomStats, AtomStats currentAtomStats, boolean isInUse) {
         assertThat(currentAtomStats).isNotNull();
+        final int skipDiff = isInUse ? 0 : 1;
         if (prevAtomStats == null) {
             assertThat(currentAtomStats.getCount()).isEqualTo(1);
             assertThat(currentAtomStats.getErrorCount()).isEqualTo(0);
             assertThat(currentAtomStats.getDroppedCount()).isEqualTo(0);
-            assertThat(currentAtomStats.getSkipCount()).isEqualTo(0);
+            assertThat(currentAtomStats.getSkipCount()).isEqualTo(skipDiff);
         } else {
             assertThat(currentAtomStats.getCount()).isEqualTo(prevAtomStats.getCount() + 1);
             assertThat(currentAtomStats.getErrorCount()).isEqualTo(prevAtomStats.getErrorCount());
             assertThat(currentAtomStats.getDroppedCount())
                     .isEqualTo(prevAtomStats.getDroppedCount());
-            assertThat(currentAtomStats.getSkipCount()).isEqualTo(prevAtomStats.getSkipCount());
+            assertThat(currentAtomStats.getSkipCount())
+                    .isEqualTo(prevAtomStats.getSkipCount() + skipDiff);
         }
     }
 
@@ -251,6 +306,7 @@ public class LibStatsSocketTests {
     }
 
     private StatsdStatsReport getStatsdStatsReport(StatsManager statsManager) {
+        sleep(SHORT_WAIT);
         StatsdStatsReport report = null;
         try {
             report = StatsdStatsReport.parser().parseFrom(statsManager.getStatsMetadata());
@@ -381,5 +437,52 @@ public class LibStatsSocketTests {
                 int32Array,
                 int32Array,
                 int32Array);
+    }
+
+    private static final int EVENT_STORM_ATOMS_COUNT = 50000;
+    private static final int RELAXED_LOGGING_ATOMS_COUNT = 10;
+    private static final int RECOMMENDED_LOGGING_INTERVAL_MS = 10;
+
+    private void logAtomsBackToBack() throws Exception {
+        // logging back to back many atoms to force socket overflow
+        logAtomsBackToBack(EVENT_STORM_ATOMS_COUNT, 0);
+
+        // Due to the nature of stress test there is some unpredictability aspect, repeating
+        // natural atom logging flow several times to have higher guaranty of atom delivery
+        // including recommended delay between logging atoms
+        for (int i = 0; i < RELAXED_LOGGING_ATOMS_COUNT; i++) {
+            sleep(RECOMMENDED_LOGGING_INTERVAL_MS);
+            // give chance for libstatssocket send loss stats to statsd triggering
+            // successful logging
+            logAtomsBackToBack(1, RECOMMENDED_LOGGING_INTERVAL_MS);
+        }
+    }
+
+    private void logAtomsBackToBack(int iterations, int loggingDelayMillis) throws Exception {
+        // single atom logging takes ~2us excluding JNI interactions
+        for (int i = 0; i < iterations; i++) {
+            StatsLog.logStart(i);
+            if (loggingDelayMillis > 0) {
+                sleep(loggingDelayMillis);
+            }
+            StatsLog.logStop(i);
+        }
+    }
+
+    private static final int STATS_SOCKET_LOSS_INFO_CACHE_TTL_MS = 60_000;
+
+    private void triggerAtomLossStatsPropagation() throws Exception {
+        // Delay to allow statsd socket recover after overflow
+        sleep(STATS_SOCKET_LOSS_INFO_CACHE_TTL_MS);
+
+        // There is some un-deterministic component in AtomLossStats propagation:
+        // - the dumpAtomsLossStats() from the libstatssocket happens ONLY after the
+        //   next successful atom write to socket.
+        // - to avoid socket flood there is also cooldown timer incorporated. If no new atoms -
+        //   loss info will not be propagated, which is intention by design.
+        // Log atoms into socket successfully to trigger libstatsocket dumpAtomsLossStats()
+        logAtomsBackToBack(1, 10);
+        // Delay to allow libstatssocket loss info to be propagated to statsdstats
+        sleep(SHORT_WAIT);
     }
 }

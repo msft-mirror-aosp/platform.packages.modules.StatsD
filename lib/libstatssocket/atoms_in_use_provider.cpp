@@ -25,6 +25,7 @@
 #include <android-base/properties.h>
 #include <android-base/stringprintf.h>
 #include <android-base/strings.h>
+#include <com_android_os_statsd_flags.h>
 
 #include <cerrno>
 #include <cinttypes>
@@ -34,12 +35,21 @@
 
 using namespace android::os::statsd;
 
+namespace flags = com::android::os::statsd::flags;
+
 template <typename Clock>
 AtomsInUseProvider<Clock>::AtomsInUseProvider(std::string fileName, std::string versionPropertyName,
                                               int64_t cacheTtlNanos)
     : mFileName(std::move(fileName)),
       mVersionPropertyName(std::move(versionPropertyName)),
       mCacheCooldownTimer(cacheTtlNanos) {
+}
+
+template <typename Clock>
+AtomsInUseProvider<Clock>::~AtomsInUseProvider() {
+    if (mSyncThread.joinable()) {
+        mSyncThread.join();
+    }
 }
 
 template <typename Clock>
@@ -52,16 +62,15 @@ bool AtomsInUseProvider<Clock>::isAtomInUse(int32_t atomId) {
     // also locking should not be held during atom in use cache update - so
     // atoms can be logged by other threads except the one which triggered the
     // cache update
+    if (updateCacheIfNeeded(nowNs)) {
+        // cache update is in progress or was invalidated
+        // all atoms are allowed in this case
+        return true;
+    }
+
     std::lock_guard<std::mutex> lock(mMutex);
-    return isAtomInUseLocked(atomId, nowNs);
-}
-
-template <typename Clock>
-bool AtomsInUseProvider<Clock>::isAtomInUseLocked(int32_t atomId, int64_t nowNs) {
-    updateCacheIfNeededLocked(nowNs);
-
     // if cache is empty it usually means config was not set or did not read properly
-    // by default all atoms are enabled in this case
+    // or list sync is in progress, and by default all atoms are enabled in this case
     if (mAtomsInUseCached.size() == 0) {
         return true;
     }
@@ -73,35 +82,51 @@ bool AtomsInUseProvider<Clock>::isAtomInUseLocked(int32_t atomId, int64_t nowNs)
 }
 
 template <typename Clock>
-void AtomsInUseProvider<Clock>::updateCacheIfNeededLocked(int64_t nowNs) {
-    if (!mCacheCooldownTimer.isExpired(nowNs)) {
-        VLOG("updateCacheIfNeededLocked: cooldown timer not expired");
-        return;
-    }
-    // whatever will go wrong below - keep delay before retry
-    mCacheCooldownTimer.start(nowNs);
-
+bool AtomsInUseProvider<Clock>::updateCacheIfNeeded(int64_t nowNs) {
     int64_t newVersion = 0;
-    if (!isSyncNeededLocked(newVersion)) {
-        VLOG("updateCacheIfNeededLocked: no sync needed");
-        return;
-    }
+    // determine if cache needs to be updated
+    {
+        std::lock_guard<std::mutex> lock(mMutex);
+        if (!mCacheCooldownTimer.isExpired(nowNs)) {
+            VLOG("updateCacheIfNeeded: cooldown timer is not expired yet");
+            return false;
+        }
+        // whatever will go wrong below - keep delay before retry
+        mCacheCooldownTimer.start(nowNs);
 
-    // if list was removed - need to clear cache
-    if (newVersion == 0) {
-        VLOG("updateCacheIfNeededLocked: list not defined");
+        if (!isSyncNeededLocked(newVersion)) {
+            VLOG("updateCacheIfNeeded: no sync needed");
+            return false;
+        }
+        // list sync is done asynchronously - clear cache while it is in progress
         mListVersion = 0;
         mAtomsInUseCached.clear();
-        return;
     }
 
-    // or populate with new version
-    if (syncAtomsList()) {
-        mListVersion = newVersion;
+    if (newVersion > 0) {
+        // populate with new version in async way allowing all atoms to be logged during update
+        // if something will go wrong - by default all atoms are in use
+        // cache version will be updated once async operation finished
+        updateCache(newVersion);
+    }
+
+    return true;
+}
+
+template <typename Clock>
+void AtomsInUseProvider<Clock>::updateCache(int64_t newVersion) {
+    if (flags::logging_control_sync_in_background()) {
+        // Only spawn one thread to manage requests
+        // mMutex must not be held at this point by the calling thread
+        if (mSyncThreadAlive.exchange(true)) {
+            return;
+        }
+        if (mSyncThread.joinable()) {
+            mSyncThread.join();
+        }
+        mSyncThread = std::thread(&AtomsInUseProvider::syncAtomsList, this, newVersion);
     } else {
-        VLOG("updateCacheIfNeededLocked: sync failed");
-        // if something went wrong - by default all atoms are in use
-        mAtomsInUseCached.clear();
+        syncAtomsList(newVersion);
     }
 }
 
@@ -122,28 +147,33 @@ bool AtomsInUseProvider<Clock>::isSyncNeededLocked(int64_t& newVersion) {
 }
 
 template <typename Clock>
-bool AtomsInUseProvider<Clock>::syncAtomsList() {
+void AtomsInUseProvider<Clock>::syncAtomsList(int64_t newVersion) {
+    VLOG("syncAtomsList: start");
     std::string buffer;
     if (!android::base::ReadFileToString(mFileName.c_str(), &buffer)) {
         VLOG("syncAtomsList: Error reading %s: %s", mFileName.c_str(), std::strerror(errno));
-        return false;
+        mSyncThreadAlive = false;
+        return;
     }
 
     if (buffer.size() < sizeof(FileHeader) + sizeof(BlockHeader) + sizeof(int32_t)) {
         VLOG("syncAtomsList: invalid file size");
-        return false;
+        mSyncThreadAlive = false;
+        return;
     }
 
     const char* ptr = buffer.data();
     const FileHeader* fileHeader = reinterpret_cast<const FileHeader*>(ptr);
     if (fileHeader->magic_number != kMagicNumber) {
         VLOG("syncAtomsList: invalid file header magic number");
-        return false;
+        mSyncThreadAlive = false;
+        return;
     }
 
     if (fileHeader->version != kFormatVersion1) {
         VLOG("syncAtomsList: invalid file header version");
-        return false;
+        mSyncThreadAlive = false;
+        return;
     }
 
     ptr += sizeof(FileHeader);
@@ -152,20 +182,26 @@ bool AtomsInUseProvider<Clock>::syncAtomsList() {
 
     if (atomIdsCount < 1) {
         VLOG("syncAtomsList: invalid file content");
-        return false;
+        mSyncThreadAlive = false;
+        return;
     }
 
     if (buffer.size() !=
         sizeof(FileHeader) + sizeof(BlockHeader) + sizeof(int32_t) * atomIdsCount) {
         VLOG("syncAtomsList: invalid file size");
-        return false;
+        mSyncThreadAlive = false;
+        return;
     }
 
     ptr += sizeof(BlockHeader);
 
     const int32_t* atomIdsArray = reinterpret_cast<const int32_t*>(ptr);
+
+    std::lock_guard<std::mutex> lock(mMutex);
     mAtomsInUseCached = {atomIdsArray, atomIdsArray + atomIdsCount};
-    return true;
+    mListVersion = newVersion;
+    mSyncThreadAlive = false;
+    VLOG("syncAtomsList: done");
 }
 
 template class AtomsInUseProvider<RealTimeClock>;
