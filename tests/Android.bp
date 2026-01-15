@@ -33,17 +33,17 @@ java_test_host {
         "mcts-statsd",
     ],
     libs: [
+        "compatibility-host-util",
         "cts-tradefed",
         "tradefed",
         "truth",
     ],
     static_libs: [
-        "compatibility-host-util",
-        "core_cts_test_resources",
-        "cts-statsd-atom-host-test-utils",
         "libprotobuf-java-full",
-        "perfetto_config-full",
         "platformprotos",
+        "core_cts_test_resources",
+        "perfetto_config-full",
+        "cts-statsd-atom-host-test-utils",
     ],
     data: [
         "**/*.pbtxt",
