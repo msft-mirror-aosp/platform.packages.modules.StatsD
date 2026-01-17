@@ -88,11 +88,17 @@ bool AtomsInUseProvider<Clock>::updateCacheIfNeeded(int64_t nowNs) {
     {
         std::lock_guard<std::mutex> lock(mMutex);
         if (!mCacheCooldownTimer.isExpired(nowNs)) {
-            VLOG("updateCacheIfNeeded: cooldown timer is not expired yet");
             return false;
         }
         // whatever will go wrong below - keep delay before retry
         mCacheCooldownTimer.start(nowNs);
+
+        // check access first & reset cache if it cannot be updated
+        if (!isAtomListAccessAllowed()) {
+            mListVersion = 0;
+            mAtomsInUseCached.clear();
+            return true;
+        }
 
         if (!isSyncNeededLocked(newVersion)) {
             VLOG("updateCacheIfNeeded: no sync needed");
@@ -110,6 +116,21 @@ bool AtomsInUseProvider<Clock>::updateCacheIfNeeded(int64_t nowNs) {
         updateCache(newVersion);
     }
 
+    return true;
+}
+
+template <typename Clock>
+bool AtomsInUseProvider<Clock>::isAtomListAccessAllowed() const {
+    static const std::string dirName = android::base::Dirname(mFileName);
+    if (access(dirName.c_str(), X_OK) != 0) {
+        // no access to the file -- return early.
+        // access to the file control by selinux policies per application or per domain
+        // the access rules can be changed in runtime and do not require application restart
+        // It is not sufficient to perform this check once,
+        // however that is a good option to consider.
+        VLOG("isAtomListAccessAllowed: not allowed");
+        return false;
+    }
     return true;
 }
 
@@ -149,6 +170,7 @@ bool AtomsInUseProvider<Clock>::isSyncNeededLocked(int64_t& newVersion) {
 template <typename Clock>
 void AtomsInUseProvider<Clock>::syncAtomsList(int64_t newVersion) {
     VLOG("syncAtomsList: start");
+
     std::string buffer;
     if (!android::base::ReadFileToString(mFileName.c_str(), &buffer)) {
         VLOG("syncAtomsList: Error reading %s: %s", mFileName.c_str(), std::strerror(errno));

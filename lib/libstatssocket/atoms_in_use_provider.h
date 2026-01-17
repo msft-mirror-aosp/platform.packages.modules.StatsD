@@ -43,6 +43,8 @@ public:
 private:
     bool updateCacheIfNeeded(int64_t nowNs);
 
+    bool isAtomListAccessAllowed() const;
+
     bool isSyncNeededLocked(int64_t& newVersion);
 
     void updateCache(int64_t newVersion);
