@@ -11,13 +11,3 @@ flag {
     purpose: PURPOSE_BUGFIX
   }
 }
-
-flag {
-  name: "logging_control_sync_in_background"
-  namespace: "statsd"
-  description: "Performs atoms in use list in background thread"
-  bug: "407064406"
-  metadata {
-    purpose: PURPOSE_BUGFIX
-  }
-}

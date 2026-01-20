@@ -65,7 +65,7 @@ int stats_log_is_closed() {
 
 AtomsInUseProvider<RealTimeClock>& get_atoms_in_use_provider() {
     using namespace android::os::statsd;
-    static constexpr int64_t kCacheUpdateCooldownNanos = 2'000'000'000LL;  // 2 s
+    static constexpr int64_t kCacheUpdateCooldownNanos = 10'000'000'000LL;  // 10 s
     static AtomsInUseProvider<RealTimeClock>* provider = new AtomsInUseProvider<RealTimeClock>(
             kAtomIdsFileName, kAtomIdsVersionName, kCacheUpdateCooldownNanos);
     return *provider;
