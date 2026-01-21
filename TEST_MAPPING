@@ -39,6 +39,9 @@
       "options": [
         {
           "include-filter": "android.cts.statsd.alarm.*"
+        },
+        {
+          "include-filter": "android.cts.statsd.alert.*"
         }
       ]
     }
