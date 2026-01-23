@@ -20,13 +20,10 @@
 #include <android-base/properties.h>
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <thread>
 #include <vector>
-
-using std::this_thread::sleep_for;
 
 // The implementation of the templated AtomsInUseProvider is in the .cpp file.
 // Including it here to allow for template instantiation with MockClock.
@@ -39,7 +36,6 @@ namespace {
 const std::string kTestFileName = "/data/local/tmp/atoms_in_use_provider_test.bin";
 const std::string kTestVersionProperty = "debug.statsd.atoms_in_use_provider_test.version";
 const int64_t kCacheTtlNanos = 100 * 1000 * 1000;  // 100ms
-const int64_t kCachePopulationLatencyMillis = 100;
 
 // Mock clock to control time in tests.
 struct MockClock {
@@ -170,9 +166,7 @@ TEST_F(AtomsInUseProviderTest, TestBasicFiltering) {
     EXPECT_TRUE(createAtomsFile(atoms));
     setVersionProperty(1);
 
-    // First call, cache population will be forced in async way - all atoms in use by default
-    EXPECT_TRUE(provider.isAtomInUse(10));
-    sleep_for(std::chrono::milliseconds(kCachePopulationLatencyMillis));
+    // First call, cache should be populated.
     EXPECT_TRUE(provider.isAtomInUse(10));
     EXPECT_TRUE(provider.isAtomInUse(20));
     EXPECT_TRUE(provider.isAtomInUse(30));
@@ -186,9 +180,7 @@ TEST_F(AtomsInUseProviderTest, TestCacheTtl) {
     EXPECT_TRUE(createAtomsFile(atoms1));
     setVersionProperty(1);
 
-    // First call, cache population will be forced in async way - all atoms in use by default
-    EXPECT_TRUE(provider.isAtomInUse(10));
-    sleep_for(std::chrono::milliseconds(kCachePopulationLatencyMillis));
+    // Populate cache.
     EXPECT_TRUE(provider.isAtomInUse(10));
     EXPECT_FALSE(provider.isAtomInUse(40));
 
@@ -204,10 +196,6 @@ TEST_F(AtomsInUseProviderTest, TestCacheTtl) {
     // Advance time past TTL.
     MockClock::advance(kCacheTtlNanos + 1);
 
-    // trigger cache async update/all atoms enabled by default
-    EXPECT_TRUE(provider.isAtomInUse(10));
-    sleep_for(std::chrono::milliseconds(kCachePopulationLatencyMillis));
-
     // Now it should re-read and use new values.
     EXPECT_FALSE(provider.isAtomInUse(10));
     EXPECT_TRUE(provider.isAtomInUse(40));
@@ -221,9 +209,7 @@ TEST_F(AtomsInUseProviderTest, TestNoVersionChange) {
     EXPECT_TRUE(createAtomsFile(atoms1));
     setVersionProperty(1);
 
-    // trigger cache async update/all atoms enabled by default
-    EXPECT_TRUE(provider.isAtomInUse(10));
-    sleep_for(std::chrono::milliseconds(kCachePopulationLatencyMillis));
+    // Populate cache.
     EXPECT_TRUE(provider.isAtomInUse(10));
     EXPECT_FALSE(provider.isAtomInUse(40));
 
@@ -245,9 +231,7 @@ TEST_F(AtomsInUseProviderTest, TestListReset) {
     EXPECT_TRUE(createAtomsFile(atoms));
     setVersionProperty(1);
 
-    // trigger cache async update/all atoms enabled by default
-    EXPECT_TRUE(provider.isAtomInUse(40));
-    sleep_for(std::chrono::milliseconds(kCachePopulationLatencyMillis));
+    // Populate cache.
     EXPECT_FALSE(provider.isAtomInUse(40));
 
     // Reset by removing file and clearing property.
@@ -260,9 +244,6 @@ TEST_F(AtomsInUseProviderTest, TestListReset) {
     // Should default to true now.
     EXPECT_TRUE(provider.isAtomInUse(40));
     EXPECT_TRUE(provider.isAtomInUse(10));
-    sleep_for(std::chrono::milliseconds(kCachePopulationLatencyMillis));
-    EXPECT_TRUE(provider.isAtomInUse(40));
-    EXPECT_TRUE(provider.isAtomInUse(10));
 }
 
 TEST_F(AtomsInUseProviderTest, TestEmptyList) {
@@ -272,9 +253,6 @@ TEST_F(AtomsInUseProviderTest, TestEmptyList) {
     setVersionProperty(1);
 
     // An empty cache means all atoms are allowed.
-    EXPECT_TRUE(provider.isAtomInUse(1));
-    EXPECT_TRUE(provider.isAtomInUse(100));
-    sleep_for(std::chrono::milliseconds(kCachePopulationLatencyMillis));
     EXPECT_TRUE(provider.isAtomInUse(1));
     EXPECT_TRUE(provider.isAtomInUse(100));
 }
@@ -296,9 +274,6 @@ TEST_F(AtomsInUseProviderTest, TestCorruptFileInvalidFormat) {
     setVersionProperty(1);
 
     // Sync should fail, so it should default to true (allow all).
-    EXPECT_TRUE(provider.isAtomInUse(1));
-    EXPECT_TRUE(provider.isAtomInUse(100));
-    sleep_for(std::chrono::milliseconds(kCachePopulationLatencyMillis));
     EXPECT_TRUE(provider.isAtomInUse(1));
     EXPECT_TRUE(provider.isAtomInUse(100));
 }

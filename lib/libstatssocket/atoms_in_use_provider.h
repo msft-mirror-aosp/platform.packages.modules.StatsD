@@ -17,12 +17,10 @@
 
 #pragma once
 
-#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <unordered_set>
 
 #include "utils.h"
@@ -38,18 +36,16 @@ public:
     // TODO: consider marking const to emphasize logic constness for thread-safety
     bool isAtomInUse(int32_t atomId);
 
-    ~AtomsInUseProvider();
-
 private:
-    bool updateCacheIfNeeded(int64_t nowNs);
+    bool isAtomInUseLocked(int32_t atomId, int64_t nowNs);
+
+    void updateCacheIfNeededLocked(int64_t nowNs);
 
     bool isAtomListAccessAllowed() const;
 
     bool isSyncNeededLocked(int64_t& newVersion);
 
-    void updateCache(int64_t newVersion);
-
-    void syncAtomsList(int64_t newVersion);
+    bool syncAtomsList();
 
     const std::string mFileName;
     const std::string mVersionPropertyName;
@@ -61,8 +57,4 @@ private:
     int64_t mListVersion = 0;
 
     std::unordered_set<int32_t> mAtomsInUseCached;
-
-    std::atomic_bool mSyncThreadAlive = false;
-
-    std::thread mSyncThread;
 };
