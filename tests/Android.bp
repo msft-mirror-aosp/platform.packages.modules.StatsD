@@ -27,10 +27,10 @@ java_test_host {
 
     // tag this module as a cts test artifact
     test_suites: [
-        "cts",
+        // "cts",           // b/474463178
         "general-tests",
-        "mts-statsd",
-        "mcts-statsd",
+        // "mts-statsd",    // b/474463178
+        // "mcts-statsd",   // b/474463178
     ],
     libs: [
         "compatibility-host-util",
