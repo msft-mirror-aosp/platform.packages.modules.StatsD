@@ -482,7 +482,7 @@ vector<int32_t> MetricsManager::getPullAtomUids(int32_t atomId) {
     return uids;
 }
 
-bool MetricsManager::useV2SoftMemoryCalculation() {
+bool MetricsManager::useV2SoftMemoryCalculation() const {
     return mUseV2SoftMemoryCalculation;
 }
 
@@ -752,8 +752,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
 void MetricsManager::onLogEventLost(const SocketLossInfo& socketLossInfo) {
     // socketLossInfo stores atomId per UID - to eliminate duplicates using set
-    const unordered_set<int> uniqueLostAtomIds(socketLossInfo.atomIds.begin(),
-                                               socketLossInfo.atomIds.end());
+    set<int32_t> uniqueLostAtomIds(socketLossInfo.atomIds.begin(), socketLossInfo.atomIds.end());
 
     // pass lost atom id to all relevant metrics
     for (const auto lostAtomId : uniqueLostAtomIds) {

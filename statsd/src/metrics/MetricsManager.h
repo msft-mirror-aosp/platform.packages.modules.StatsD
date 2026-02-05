@@ -79,7 +79,7 @@ public:
 
     std::vector<int32_t> getPullAtomUids(int32_t atomId) override;
 
-    bool useV2SoftMemoryCalculation() override;
+    bool useV2SoftMemoryCalculation() const override;
 
     bool shouldWriteToDisk() const {
         return mNoReportMetricIds.size() != mAllMetricProducers.size();
