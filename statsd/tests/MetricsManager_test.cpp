@@ -68,7 +68,7 @@ StatsdConfig buildEventConfig(bool isRestricted) {
     AtomMatcher* eventMatcher = config.add_atom_matcher();
     eventMatcher->set_id(StringToId("SCREEN_IS_ON"));
     SimpleAtomMatcher* simpleAtomMatcher = eventMatcher->mutable_simple_atom_matcher();
-    simpleAtomMatcher->set_atom_id(2 /*SCREEN_STATE_CHANGE*/);
+    simpleAtomMatcher->set_atom_id(util::SCREEN_STATE_CHANGED);
 
     EventMetric* metric = config.add_event_metric();
     metric->set_id(kMetricId);
@@ -580,12 +580,47 @@ TEST(MetricsManagerTest, TestInvalidEntitiesClearedOnConfigUpdate) {
     InvalidConfigReason invalidConfigReason =
             metricsManager.mInvalidEntities[{kMetricId, INVALID_ENTITY_TYPE_METRIC}];
     EXPECT_EQ(invalidConfigReason.reason, INVALID_CONFIG_REASON_METRIC_MATCHER_NOT_FOUND);
+    EXPECT_TRUE(metricsManager.isConfigValid());
 
     StatsdConfig newConfig = buildGoodEventConfig();
     metricsManager.updateConfig(newConfig, timeBaseSec, timeBaseSec, anomalyAlarmMonitor,
                                 periodicAlarmMonitor);
 
     EXPECT_EQ(metricsManager.mInvalidEntities.size(), 0);
+    EXPECT_TRUE(metricsManager.isConfigValid());
+}
+
+TEST(MetricsManagerTest, TestInvalidConfigByteSize) {
+    StatsdStats::getInstance().reset();
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+
+    StatsdConfig config = buildInvalidEventConfig();
+
+    auto metricsManager =
+            sp<MetricsManager>::make(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                     pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+    EXPECT_TRUE(metricsManager->isConfigValid());
+    EXPECT_EQ(metricsManager->byteSize(), 0L);
+}
+
+TEST(MetricsManagerTest, TestGoodConfigByteSize) {
+    StatsdStats::getInstance().reset();
+    sp<UidMap> uidMap;
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+
+    StatsdConfig config = buildGoodEventConfig();
+
+    auto metricsManager =
+            sp<MetricsManager>::make(kConfigKey, config, timeBaseSec, timeBaseSec, uidMap,
+                                     pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
+
+    EXPECT_TRUE(metricsManager->isConfigValid());
+    EXPECT_EQ(metricsManager->byteSize(), 0L);
 }
 
 }  // namespace statsd

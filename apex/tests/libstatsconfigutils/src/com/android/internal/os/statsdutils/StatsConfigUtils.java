@@ -97,7 +97,8 @@ public class StatsConfigUtils {
                 .build();
     }
 
-    static ConfigMetricsReport getConfigMetricsReport(StatsManager statsManager, long configId) {
+    public static ConfigMetricsReport getConfigMetricsReport(
+            StatsManager statsManager, long configId) {
         ExtensionRegistryLite extensionRegistry = ExtensionRegistryLite.newInstance();
         return getConfigMetricsReport(statsManager, configId, extensionRegistry);
     }
