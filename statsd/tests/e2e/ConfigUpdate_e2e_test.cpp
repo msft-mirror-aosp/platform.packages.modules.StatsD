@@ -59,8 +59,8 @@ sp<StatsLogProcessor> CreateStatsLogProcessor(
     EXPECT_CALL(*logEventFilter, setAtomIds(CreateAtomIdSetFromConfig(config), _))
             .Times(1)
             .After(initCall);
-    return CreateStatsLogProcessor(timeBaseNs, currentTimeNs, config, key, nullptr, 0, new UidMap(),
-                                   logEventFilter);
+    return CreateStatsLogProcessor(timeBaseNs, currentTimeNs, config, key,
+                                   {.logEventFilter = logEventFilter});
 }
 
 }  // Anonymous namespace.
@@ -994,8 +994,9 @@ TEST_F(ConfigUpdateE2eTest, TestGaugeMetric) {
             .After(initCall);
     sp<StatsLogProcessor> processor =
             CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key,
-                                    SharedRefBase::make<FakeSubsystemSleepCallback>(),
-                                    util::SUBSYSTEM_SLEEP_STATE, new UidMap(), mLogEventFilter);
+                                    {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                     .pullAtomId = util::SUBSYSTEM_SLEEP_STATE,
+                                     .logEventFilter = mLogEventFilter});
 
     int app1Uid = 123, app2Uid = 456;
 
@@ -1390,8 +1391,9 @@ TEST_F(ConfigUpdateE2eTest, TestValueMetric) {
     // Config creation triggers pull #1.
     sp<StatsLogProcessor> processor =
             CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, key,
-                                    SharedRefBase::make<FakeSubsystemSleepCallback>(),
-                                    util::SUBSYSTEM_SLEEP_STATE, new UidMap(), mLogEventFilter);
+                                    {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                     .pullAtomId = util::SUBSYSTEM_SLEEP_STATE,
+                                     .logEventFilter = mLogEventFilter});
 
     // Initialize log events before update.
     // ValuePushPersist and ValuePullPersist will skip the bucket due to condition unknown.

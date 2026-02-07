@@ -87,8 +87,8 @@ TEST(StringReplaceE2eTest, TestPushedDimension) {
     const int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            bucketStartTimeNs, bucketStartTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
 
     std::vector<std::unique_ptr<LogEvent>> events;
     events.push_back(CreateTestAtomReportedEventStringDim(bucketStartTimeNs + 20 * NS_PER_SEC,
@@ -184,8 +184,8 @@ TEST(StringReplaceE2eTest, TestPushedWhat) {
     const int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            bucketStartTimeNs, bucketStartTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
 
     std::vector<std::unique_ptr<LogEvent>> events;
     events.push_back(CreateTestAtomReportedEventStringDim(bucketStartTimeNs + 20 * NS_PER_SEC,
@@ -261,9 +261,10 @@ TEST(StringReplaceE2eTest, TestPulledDimension) {
     int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.gauge_metric(0).bucket()) * 1000000;
 
     ConfigKey cfgKey;
-    auto processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
-                                             SharedRefBase::make<FakeSubsystemSleepCallback>(),
-                                             util::SUBSYSTEM_SLEEP_STATE);
+    auto processor =
+            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
+                                    {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                     .pullAtomId = util::SUBSYSTEM_SLEEP_STATE});
     processor->mPullerManager->ForceClearPullerCache();
 
     // Pulling alarm arrives on time and reset the sequential pulling alarm.
@@ -324,9 +325,10 @@ TEST(StringReplaceE2eTest, TestPulledWhat) {
     int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.gauge_metric(0).bucket()) * 1000000;
 
     ConfigKey cfgKey;
-    auto processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
-                                             SharedRefBase::make<FakeSubsystemSleepCallback>(),
-                                             util::SUBSYSTEM_SLEEP_STATE);
+    auto processor =
+            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
+                                    {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                     .pullAtomId = util::SUBSYSTEM_SLEEP_STATE});
     processor->mPullerManager->ForceClearPullerCache();
 
     auto screenOffEvent =
@@ -401,8 +403,8 @@ TEST(StringReplaceE2eTest, TestCondition) {
     const int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            bucketStartTimeNs, bucketStartTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
 
     std::vector<std::unique_ptr<LogEvent>> events;
     events.push_back(CreateStartScheduledJobEvent(bucketStartTimeNs + 20 * NS_PER_SEC,
@@ -535,8 +537,8 @@ TEST(StringReplaceE2eTest, TestDurationMetric) {
     const int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            bucketStartTimeNs, bucketStartTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
 
     int appUid = 123;
     std::vector<int> attributionUids1 = {appUid};
@@ -646,9 +648,10 @@ TEST(StringReplaceE2eTest, TestMultipleMatchersForAtom) {
     int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.value_metric(0).bucket()) * 1000000;
 
     ConfigKey cfgKey;
-    auto processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
-                                             SharedRefBase::make<FakeSubsystemSleepCallback>(),
-                                             util::SUBSYSTEM_SLEEP_STATE);
+    auto processor =
+            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
+                                    {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                     .pullAtomId = util::SUBSYSTEM_SLEEP_STATE});
     processor->mPullerManager->ForceClearPullerCache();
 
     // Pulling alarm arrives on time and reset the sequential pulling alarm.

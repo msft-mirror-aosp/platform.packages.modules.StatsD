@@ -164,9 +164,9 @@ TEST(ValueMetricE2eTest, TestInitialConditionChanges) {
 
     ConfigKey cfgKey;
     int32_t tagId = util::SUBSYSTEM_SLEEP_STATE;
-    auto processor =
-            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
-                                    SharedRefBase::make<FakeSubsystemSleepCallback>(), tagId);
+    auto processor = CreateStatsLogProcessor(
+            baseTimeNs, configAddedTimeNs, config, cfgKey,
+            {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(), .pullAtomId = tagId});
 
     EXPECT_EQ(processor->mMetricsManagers.size(), 1u);
     sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
@@ -215,9 +215,10 @@ TEST(ValueMetricE2eTest, TestPulledEvents) {
     int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.value_metric(0).bucket()) * 1000000;
 
     ConfigKey cfgKey;
-    auto processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
-                                             SharedRefBase::make<FakeSubsystemSleepCallback>(),
-                                             util::SUBSYSTEM_SLEEP_STATE);
+    auto processor =
+            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
+                                    {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                     .pullAtomId = util::SUBSYSTEM_SLEEP_STATE});
     ASSERT_EQ(processor->mMetricsManagers.size(), 1u);
     EXPECT_TRUE(processor->mMetricsManagers.begin()->second->isConfigValid());
     processor->mPullerManager->ForceClearPullerCache();
@@ -338,9 +339,10 @@ TEST(ValueMetricE2eTest, TestPulledEvents_LateAlarm) {
     int64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(config.value_metric(0).bucket()) * 1000000;
 
     ConfigKey cfgKey;
-    auto processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
-                                             SharedRefBase::make<FakeSubsystemSleepCallback>(),
-                                             util::SUBSYSTEM_SLEEP_STATE);
+    auto processor =
+            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
+                                    {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                     .pullAtomId = util::SUBSYSTEM_SLEEP_STATE});
     ASSERT_EQ(processor->mMetricsManagers.size(), 1u);
     EXPECT_TRUE(processor->mMetricsManagers.begin()->second->isConfigValid());
     processor->mPullerManager->ForceClearPullerCache();
@@ -477,9 +479,10 @@ TEST(ValueMetricE2eTest, TestPulledEvents_WithActivation) {
     StatsdStats::getInstance().reset();
 
     ConfigKey cfgKey;
-    auto processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
-                                             SharedRefBase::make<FakeSubsystemSleepCallback>(),
-                                             util::SUBSYSTEM_SLEEP_STATE);
+    auto processor =
+            CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, cfgKey,
+                                    {.puller = SharedRefBase::make<FakeSubsystemSleepCallback>(),
+                                     .pullAtomId = util::SUBSYSTEM_SLEEP_STATE});
     ASSERT_EQ(processor->mMetricsManagers.size(), 1u);
     EXPECT_TRUE(processor->mMetricsManagers.begin()->second->isConfigValid());
     processor->mPullerManager->ForceClearPullerCache();
@@ -1033,7 +1036,8 @@ TEST_WITH_FLAGS(ValueMetricE2eTest, TestDimensionGuardrailHitWithZeroDefaultBase
 
     shared_ptr<Puller> puller = SharedRefBase::make<Puller>(atomData);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(baseTimeNs, bucketStartTimeNs, config, cfgKey, puller, atomId);
+            CreateStatsLogProcessor(baseTimeNs, bucketStartTimeNs, config, cfgKey,
+                                    {.puller = puller, .pullAtomId = atomId});
 
     processor->mPullerManager->ForceClearPullerCache();
     processor->informPullAlarmFired(baseTimeNs + bucketSizeNs * 2 + 1);
@@ -1183,7 +1187,8 @@ TEST_WITH_FLAGS(ValueMetricE2eTest,
     StateManager::getInstance().clear();
     shared_ptr<Puller> puller = SharedRefBase::make<Puller>(atomData);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(baseTimeNs, bucketStartTimeNs, config, cfgKey, puller, atomId);
+            CreateStatsLogProcessor(baseTimeNs, bucketStartTimeNs, config, cfgKey,
+                                    {.puller = puller, .pullAtomId = atomId});
 
     processor->mPullerManager->ForceClearPullerCache();
     unique_ptr<LogEvent> screenOffEvent = CreateScreenStateChangedEvent(

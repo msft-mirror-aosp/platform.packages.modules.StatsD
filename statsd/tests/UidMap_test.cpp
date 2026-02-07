@@ -748,7 +748,7 @@ protected:
 
     inline sp<StatsLogProcessor> createStatsLogProcessor(const StatsdConfig& config) const {
         return CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey,
-                                       /* puller */ nullptr, /* puller atomTag */ 0, uidMap);
+                                       {.uidMap = uidMap});
     }
 
     UidMapping getUidMapping(const sp<StatsLogProcessor>& processor) const {
@@ -967,7 +967,9 @@ TEST(UidMapTest, TestUsedUidsE2e) {
     ConfigKey key(123, 987);
     sp<StatsLogProcessor> p =
             CreateStatsLogProcessor(startTimeNs, startTimeNs, config, key,
-                                    SharedRefBase::make<FakePullAtomCallback>(), ATOM_5, uidMap);
+                                    {.puller = SharedRefBase::make<FakePullAtomCallback>(),
+                                     .pullAtomId = ATOM_5,
+                                     .uidMap = uidMap});
 
     const uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
     std::vector<std::shared_ptr<LogEvent>> events;
@@ -1133,7 +1135,9 @@ TEST(UidMapTest, TestUsedUidsFromMetricE2e) {
     ConfigKey key(123, 987);
     sp<StatsLogProcessor> p =
             CreateStatsLogProcessor(startTimeNs, startTimeNs, config, key,
-                                    SharedRefBase::make<FakePullAtomCallback>(), ATOM_5, uidMap);
+                                    {.puller = SharedRefBase::make<FakePullAtomCallback>(),
+                                     .pullAtomId = ATOM_5,
+                                     .uidMap = uidMap});
 
     const uint64_t bucketSizeNs = TimeUnitToBucketSizeInMillis(TEN_MINUTES) * 1000000LL;
     std::vector<std::shared_ptr<LogEvent>> events;

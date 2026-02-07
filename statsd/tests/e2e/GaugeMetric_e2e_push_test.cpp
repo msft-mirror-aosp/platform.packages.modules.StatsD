@@ -446,8 +446,8 @@ TEST_F(GaugeMetricE2ePushedTest, TestDimensionalSampling) {
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            configAddedTimeNs, configAddedTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configAddedTimeNs, configAddedTimeNs, config, cfgKey);
 
     int appUid1 = 1001;  // odd hash value
     int appUid2 = 1002;  // even hash value
@@ -534,8 +534,8 @@ TEST_F(GaugeMetricE2ePushedTest, TestPushedGaugeMetricSampling) {
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            configAddedTimeNs, configAddedTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configAddedTimeNs, configAddedTimeNs, config, cfgKey);
 
     std::vector<std::unique_ptr<LogEvent>> events;
     for (int i = 0; i < 10; i++) {
@@ -629,8 +629,8 @@ TEST_F(GaugeMetricE2ePushedTest, TestPushedGaugeMetricSamplingWithDimensionalSam
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            configAddedTimeNs, configAddedTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configAddedTimeNs, configAddedTimeNs, config, cfgKey);
 
     std::vector<std::unique_ptr<LogEvent>> events;
     for (int i = 0; i < 30; i++) {
@@ -703,8 +703,8 @@ TEST_F(GaugeMetricE2ePushedTest, TestPushedGaugeMetricSliceByStates) {
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            configAddedTimeNs, configAddedTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configAddedTimeNs, configAddedTimeNs, config, cfgKey);
 
     // Initialize log events.
     std::vector<int> attributionUids1 = {123};
@@ -803,8 +803,8 @@ TEST_F(GaugeMetricE2ePushedTest, TestSlicedStateWithMap) {
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            configAddedTimeNs, configAddedTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configAddedTimeNs, configAddedTimeNs, config, cfgKey);
 
     /*
     |     1     2     3     4(minutes)
@@ -946,8 +946,8 @@ TEST_F(GaugeMetricE2ePushedTest, TestSlicedStateWithPrimaryFields) {
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            configAddedTimeNs, configAddedTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configAddedTimeNs, configAddedTimeNs, config, cfgKey);
 
     /*
     NOTE: "1" or "2" represents the uid associated with the state/app crash event
