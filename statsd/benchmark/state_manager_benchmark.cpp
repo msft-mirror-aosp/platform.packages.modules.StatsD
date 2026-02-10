@@ -46,11 +46,9 @@ static void BM_StateManagerGetStateValue_Global(benchmark::State& state) {
     StateManager::getInstance().onLogEvent(*event);
 
     for (auto _ : state) {
-        FieldValue output;
-        bool result =
-                StateManager::getInstance().getStateValue(atomId, DEFAULT_DIMENSION_KEY, &output);
+        FieldValue output =
+                StateManager::getInstance().getStateValue(atomId, DEFAULT_DIMENSION_KEY);
         benchmark::DoNotOptimize(output);
-        benchmark::DoNotOptimize(result);
     }
 }
 BENCHMARK(BM_StateManagerGetStateValue_Global);
@@ -69,10 +67,8 @@ static void BM_StateManagerGetStateValue_Primary(benchmark::State& state) {
     filterPrimaryKey(event->getValues(), &primaryKey);
 
     for (auto _ : state) {
-        FieldValue output;
-        bool result = StateManager::getInstance().getStateValue(atomId, primaryKey, &output);
+        FieldValue output = StateManager::getInstance().getStateValue(atomId, primaryKey);
         benchmark::DoNotOptimize(output);
-        benchmark::DoNotOptimize(result);
     }
 }
 BENCHMARK(BM_StateManagerGetStateValue_Primary);
