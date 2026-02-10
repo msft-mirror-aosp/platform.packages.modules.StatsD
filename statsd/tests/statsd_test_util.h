@@ -936,7 +936,7 @@ StatsdConfig buildGoodConfig(int configId, int alertId);
 
 class MockConfigMetadataProvider : public ConfigMetadataProvider {
 public:
-    MOCK_METHOD(bool, useV2SoftMemoryCalculation, (), (override));
+    MOCK_METHOD(bool, useV2SoftMemoryCalculation, (), (const override));
 };
 
 sp<MockConfigMetadataProvider> makeMockConfigMetadataProvider(bool enabled);

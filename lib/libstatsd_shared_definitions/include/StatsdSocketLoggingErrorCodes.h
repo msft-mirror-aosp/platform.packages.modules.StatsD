@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024 The Android Open Source Project
+ * Copyright (C) 2026 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,21 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma once
 
-#include <utils/RefBase.h>
+#pragma once
 
 namespace android {
 namespace os {
 namespace statsd {
 
-class ConfigMetadataProvider : virtual public RefBase {
-public:
-    virtual ~ConfigMetadataProvider() {
-    }
-
-    virtual bool useV2SoftMemoryCalculation() const = 0;
-};
+constexpr int kQueueOverflowErrorCode = 1;
+constexpr int kLoggingRateLimitExceededErrorCode = 2;
+constexpr int kAtomNotInUseErrorCode = 3;
 
 }  // namespace statsd
 }  // namespace os

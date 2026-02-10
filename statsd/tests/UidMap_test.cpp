@@ -38,7 +38,6 @@ namespace statsd {
 
 using aidl::android::util::StatsEventParcel;
 using android::util::ProtoOutputStream;
-using android::util::ProtoReader;
 using ::ndk::SharedRefBase;
 using Change = UidMapping_Change;
 

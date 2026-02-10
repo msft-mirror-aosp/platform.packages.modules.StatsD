@@ -1637,7 +1637,8 @@ void StatsLogProcessor::processQueueOverflowStatsLocked() {
             continue;
         }
 
-        StateManager::getInstance().onLogEventLost(atomId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
+        StateManager::getInstance().notifyStateTrackersAboutLostAtom(
+                atomId, DATA_CORRUPTED_EVENT_QUEUE_OVERFLOW);
     }
     mQueueOverflowAtomsStats = std::move(queueOverflowStats);
 }

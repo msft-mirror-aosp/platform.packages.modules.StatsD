@@ -43,16 +43,19 @@ import com.android.internal.os.StatsdConfigProto.StatsdConfig;
 import com.android.internal.os.StatsdConfigProto.TimeUnit;
 import com.android.internal.os.statsdutils.StatsConfigUtils;
 import com.android.os.AtomsProto.Atom;
+import com.android.os.StatsLog.ConfigMetricsReport;
 import com.android.os.StatsLog.StatsdStatsReport;
 import com.android.os.StatsLog.StatsdStatsReport.AtomStats;
 import com.android.os.StatsLog.StatsdStatsReport.LogLossStats;
 import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid;
 import com.android.os.StatsLog.StatsdStatsReport.SocketLossStats.LossStatsPerUid.AtomIdLossStats;
+import com.android.os.StatsLogEnums.DataCorruptedReason;
 import com.android.os.statsd.StatsdExtensionAtoms;
 import com.android.os.statsd.flags.Flags;
 
 import com.google.protobuf.ExtensionRegistryLite;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -77,11 +80,28 @@ public class LibStatsSocketTests {
     private static final int ATOM_TAG = StatsdTestStatsLog.TEST_ATOM_REPORTED;
     private static final int UNUSED_ATOM_TAG = StatsdTestStatsLog.TEST_EXTENSION_ATOM_REPORTED;
 
+    private long activeConfig = 0;
+
     /** Test specific set up */
     @Before
-    public void setUp() {
+    public void setUp() throws Exception {
         assertThat(InstrumentationRegistry.getInstrumentation()).isNotNull();
         mContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+
+        StatsManager statsManager = mContext.getSystemService(StatsManager.class);
+        // add config with only one atom
+        activeConfig = createAndAddConfigPushedToStatsd(statsManager, new int[] {ATOM_TAG});
+        assertWithMessage("Error while setup test config").that(activeConfig).isGreaterThan(0);
+    }
+
+    /** Test specific set up */
+    @After
+    public void tearDown() throws Exception {
+        assertThat(InstrumentationRegistry.getInstrumentation()).isNotNull();
+        mContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+
+        StatsManager statsManager = mContext.getSystemService(StatsManager.class);
+        statsManager.removeConfig(activeConfig);
     }
 
     /**
@@ -106,9 +126,6 @@ public class LibStatsSocketTests {
         StatsdStatsReport report = getStatsdStatsReport(statsManager);
         AtomStats prevAtomStats = getAtomStats(report, ATOM_TAG);
         AtomStats prevAtomNotInUseStats = getAtomStats(report, UNUSED_ATOM_TAG);
-
-        // add config with only one atom
-        long activeConfig = createAndAddConfigPushedToStatsd(statsManager, new int[] {ATOM_TAG});
 
         assertWithMessage("StatsdLoggingControl.atoms_in_use_list_version() should be > 0")
                 .that(waitForStatsServiceLoggingControl(STATSD_INIT_DELAY_MS + SHORT_WAIT))
@@ -194,7 +211,6 @@ public class LibStatsSocketTests {
             assertThat(data.get(1).getExtension(StatsdExtensionAtoms.testExtensionAtomReported))
                     .isNotNull();
         }
-        statsManager.removeConfig(activeConfig);
     }
 
     private static final int LIB_STATS_SOCKET_RATE_LIMIT_ERROR_CODE = 2;
@@ -202,6 +218,7 @@ public class LibStatsSocketTests {
     /** Tests logging rate limiting applied by libstatssocket */
     @Test
     public void testSocketRateLimiting() throws Exception {
+
         logAtomsBackToBack();
 
         triggerAtomLossStatsPropagation();
@@ -214,12 +231,20 @@ public class LibStatsSocketTests {
             return;
         }
         // it can be the case that system throughput is sufficient to overcome the
-        // simulated event storm, but if loss happens report can contain information about
+        // simulated event storm, but if loss happened - report can contain information about
         // atom of interest
         for (LogLossStats lossStats : report.getDetectedLogLossList()) {
             if (lossStats.getLastTag() == Atom.APP_BREADCRUMB_REPORTED_FIELD_NUMBER) {
                 assertThat(lossStats.getLastError())
                         .isEqualTo(LIB_STATS_SOCKET_RATE_LIMIT_ERROR_CODE);
+
+                // log loss due to rate limit should not contribute to report level data corruption
+                // reason
+                ConfigMetricsReport metricsReport =
+                        StatsConfigUtils.getConfigMetricsReport(statsManager, activeConfig);
+                for (DataCorruptedReason reason : metricsReport.getDataCorruptedReasonList()) {
+                    assertThat(reason).isNotEqualTo(DataCorruptedReason.DATA_CORRUPTED_SOCKET_LOSS);
+                }
                 return;
             }
         }

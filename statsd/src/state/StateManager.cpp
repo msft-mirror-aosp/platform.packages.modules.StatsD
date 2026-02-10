@@ -22,12 +22,13 @@
 #include <private/android_filesystem_config.h>
 #include <statslog_statsd.h>
 
-#include <unordered_set>
+#include <set>
 
 namespace android {
 namespace os {
 namespace statsd {
 
+using std::set;
 using std::string;
 
 StateManager::StateManager()
@@ -57,7 +58,7 @@ void StateManager::onLogEvent(const LogEvent& event) {
             // Hard coded logic to handle socket loss info to highlight metric corruption reason
             const std::optional<SocketLossInfo>& lossInfo = toSocketLossInfo(event);
             if (lossInfo) {
-                handleSocketLossInfo(*lossInfo);
+                onLogEventLost(*lossInfo);
             }
         } else {
             auto stateTrackersForEvent = mStateTrackers.find(tagId);
@@ -68,18 +69,18 @@ void StateManager::onLogEvent(const LogEvent& event) {
     }
 }
 
-void StateManager::handleSocketLossInfo(const SocketLossInfo& socketLossInfo) {
+void StateManager::onLogEventLost(const SocketLossInfo& socketLossInfo) {
     // socketLossInfo stores atomId per UID - to eliminate duplicates using set
-    const std::unordered_set<int> uniqueLostAtomIds(socketLossInfo.atomIds.begin(),
-                                                    socketLossInfo.atomIds.end());
+    set<int32_t> uniqueLostAtomIds(socketLossInfo.atomIds.begin(), socketLossInfo.atomIds.end());
 
     // pass lost atom id to all relevant metrics
     for (const auto lostAtomId : uniqueLostAtomIds) {
-        onLogEventLost(lostAtomId, DATA_CORRUPTED_SOCKET_LOSS);
+        notifyStateTrackersAboutLostAtom(lostAtomId, DATA_CORRUPTED_SOCKET_LOSS);
     }
 }
 
-bool StateManager::onLogEventLost(int32_t lostAtomId, DataCorruptedReason reason) {
+bool StateManager::notifyStateTrackersAboutLostAtom(int32_t lostAtomId,
+                                                    DataCorruptedReason reason) {
     auto stateTrackersIt = mStateTrackers.find(lostAtomId);
     if (stateTrackersIt != mStateTrackers.end()) {
         stateTrackersIt->second->onLogEventLost(reason);

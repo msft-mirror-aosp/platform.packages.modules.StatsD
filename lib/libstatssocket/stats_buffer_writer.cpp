@@ -17,6 +17,7 @@
 #include "stats_buffer_writer.h"
 
 #include <StatsdLoggingControl.h>
+#include <StatsdSocketLoggingErrorCodes.h>
 #include <com_android_os_statsd_flags.h>
 #include <errno.h>
 #include <private/android_filesystem_config.h>
@@ -94,9 +95,7 @@ bool can_log_atom(AStatsEventAtomId atomId) {
 }
 
 int write_buffer_to_statsd(void* buffer, size_t size, AStatsEventAtomId atomId) {
-    constexpr int kQueueOverflowErrorCode = 1;
-    constexpr int kLoggingRateLimitExceededErrorCode = 2;
-    constexpr int kAtomNotInUseErrorCode = 3;
+    using namespace android::os::statsd;
 
     const uid_t appUid = getuid();
 
