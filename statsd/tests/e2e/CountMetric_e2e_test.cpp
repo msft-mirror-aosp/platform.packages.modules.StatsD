@@ -1964,8 +1964,8 @@ TEST(CountMetricE2eTest, TestDimensionalSampling) {
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            bucketStartTimeNs, bucketStartTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
 
     int appUid1 = 1001;  // odd hash value
     int appUid2 = 1002;  // even hash value

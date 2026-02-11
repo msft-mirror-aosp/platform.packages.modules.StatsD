@@ -631,11 +631,22 @@ std::unique_ptr<LogEvent> createSocketLossInfoLogEvent(int32_t uid, int32_t loss
         __INTRODUCED_IN(__ANDROID_API_T__);
 
 // Create a statsd log event processor upon the start time in seconds, config and key.
+struct StatsLogProcessorOptions {
+    sp<StatsPullerManager> pullerManager = sp<StatsPullerManager>::make();
+    std::shared_ptr<IPullAtomCallback> puller = nullptr;
+    int32_t pullAtomId = 0;
+    sp<UidMap> uidMap = sp<UidMap>::make();
+    std::shared_ptr<LogEventFilter> logEventFilter = std::make_shared<LogEventFilter>();
+    sp<AlarmMonitor> anomalyAlarmMonitor = sp<AlarmMonitor>::make(
+            1, [](const std::shared_ptr<IStatsCompanionService>&, int64_t) {},
+            [](const std::shared_ptr<IStatsCompanionService>&) {});
+    sp<AlarmMonitor> periodicAlarmMonitor = sp<AlarmMonitor>::make(
+            1, [](const std::shared_ptr<IStatsCompanionService>&, int64_t) {},
+            [](const std::shared_ptr<IStatsCompanionService>&) {});
+};
 sp<StatsLogProcessor> CreateStatsLogProcessor(
         const int64_t timeBaseNs, int64_t currentTimeNs, const StatsdConfig& config,
-        const ConfigKey& key, const std::shared_ptr<IPullAtomCallback>& puller = nullptr,
-        const int32_t atomTag = 0 /*for puller only*/, const sp<UidMap> = new UidMap(),
-        const std::shared_ptr<LogEventFilter>& logEventFilter = std::make_shared<LogEventFilter>());
+        const ConfigKey& key, const StatsLogProcessorOptions& options = StatsLogProcessorOptions{});
 
 sp<NumericValueMetricProducer> createNumericValueMetricProducer(
         sp<MockStatsPullerManager>& pullerManager, const ValueMetric& metric, const int atomId,

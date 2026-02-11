@@ -1866,7 +1866,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogHostUid) {
     ConfigKey cfgKey;
     StatsdConfig config = MakeConfig(false);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(1, 1, config, cfgKey, nullptr, 0, mockUidMap);
+            CreateStatsLogProcessor(1, 1, config, cfgKey, {.uidMap = mockUidMap});
 
     shared_ptr<LogEvent> logEvent = makeUidLogEvent(atomId, eventTimeNs, hostUid, field1, field2);
 
@@ -1891,7 +1891,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogIsolatedUid) {
     ConfigKey cfgKey;
     StatsdConfig config = MakeConfig(false);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(1, 1, config, cfgKey, nullptr, 0, mockUidMap);
+            CreateStatsLogProcessor(1, 1, config, cfgKey, {.uidMap = mockUidMap});
 
     shared_ptr<LogEvent> logEvent =
             makeUidLogEvent(atomId, eventTimeNs, isolatedUid, field1, field2);
@@ -1921,7 +1921,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogThreeIsolatedUids) {
     ConfigKey cfgKey;
     StatsdConfig config = MakeConfig(false);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(1, 1, config, cfgKey, nullptr, 0, mockUidMap);
+            CreateStatsLogProcessor(1, 1, config, cfgKey, {.uidMap = mockUidMap});
 
     shared_ptr<LogEvent> logEvent = makeExtraUidsLogEvent(atomId, eventTimeNs, isolatedUid, field1,
                                                           field2, {isolatedUid2, isolatedUid3});
@@ -1949,7 +1949,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogHostUidAttributionChain) 
     ConfigKey cfgKey;
     StatsdConfig config = MakeConfig(false);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(1, 1, config, cfgKey, nullptr, 0, mockUidMap);
+            CreateStatsLogProcessor(1, 1, config, cfgKey, {.uidMap = mockUidMap});
 
     shared_ptr<LogEvent> logEvent = makeAttributionLogEvent(atomId, eventTimeNs, {hostUid, 200},
                                                             {"tag1", "tag2"}, field1, field2);
@@ -1977,7 +1977,7 @@ TEST(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogIsolatedUidAttributionCha
     ConfigKey cfgKey;
     StatsdConfig config = MakeConfig(false);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(1, 1, config, cfgKey, nullptr, 0, mockUidMap);
+            CreateStatsLogProcessor(1, 1, config, cfgKey, {.uidMap = mockUidMap});
 
     shared_ptr<LogEvent> logEvent = makeAttributionLogEvent(atomId, eventTimeNs, {isolatedUid, 200},
                                                             {"tag1", "tag2"}, field1, field2);
@@ -2019,7 +2019,7 @@ TEST_GUARDED(StatsLogProcessorTest_mapIsolatedUidToHostUid, LogRepeatedUidField,
     ConfigKey cfgKey;
     StatsdConfig config = MakeConfig(false);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(1, 1, config, cfgKey, nullptr, 0, mockUidMap);
+            CreateStatsLogProcessor(1, 1, config, cfgKey, {.uidMap = mockUidMap});
 
     // Empty repeated uid field.
     shared_ptr<LogEvent> logEvent = makeRepeatedUidLogEvent(atomId, eventTimeNs, {});
@@ -2087,7 +2087,7 @@ TEST(StatsLogProcessorTest, TestDumpReportWithoutErasingDataDoesNotUpdateTimesta
 
     StatsdConfig config = MakeConfig(false);
     sp<StatsLogProcessor> processor =
-            CreateStatsLogProcessor(1, 1, config, key, nullptr, 0, mockUidMap);
+            CreateStatsLogProcessor(1, 1, config, key, {.uidMap = mockUidMap});
     vector<uint8_t> bytes;
 
     int64_t dumpTime1Ns = 1 * NS_PER_SEC;

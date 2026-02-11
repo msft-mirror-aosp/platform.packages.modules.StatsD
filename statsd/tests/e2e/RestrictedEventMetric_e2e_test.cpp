@@ -123,7 +123,7 @@ private:
                           /*installer=*/"", /*certificateHash=*/{});
 
         processor = CreateStatsLogProcessor(baseTimeNs, configAddedTimeNs, config, configKey,
-                                            /*puller=*/nullptr, /*atomTag=*/0, uidMap);
+                                            {.uidMap = uidMap});
     }
 
     void TearDown() override {
@@ -338,9 +338,8 @@ TEST_F(RestrictedEventMetricE2eTest, TestNewMetricSchemaAcrossReboot) {
                 ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
 
     // Create a new processor to simulate a reboot
-    auto processor2 =
-            CreateStatsLogProcessor(/*baseTimeNs=*/0, configAddedTimeNs, config, configKey,
-                                    /*puller=*/nullptr, /*atomTag=*/0, uidMap);
+    auto processor2 = CreateStatsLogProcessor(/*baseTimeNs=*/0, configAddedTimeNs, config,
+                                              configKey, {.uidMap = uidMap});
 
     // Create a restricted event with one extra field.
     AStatsEvent* statsEvent = AStatsEvent_obtain();
@@ -1124,9 +1123,8 @@ TEST_F(RestrictedEventMetricE2eTest, TestRestrictedMetricLoadsTtlFromDisk) {
     EXPECT_THAT(rows[0], ElementsAre(to_string(atomTag), to_string(originalEventElapsedTime),
                                      to_string(eightDaysAgo), _));
 
-    auto processor2 =
-            CreateStatsLogProcessor(/*baseTimeNs=*/0, configAddedTimeNs, config, configKey,
-                                    /*puller=*/nullptr, /*atomTag=*/0, uidMap);
+    auto processor2 = CreateStatsLogProcessor(/*baseTimeNs=*/0, configAddedTimeNs, config,
+                                              configKey, {.uidMap = uidMap});
     // 2 hours used here because the TTL check period is 1 hour.
     int64_t newEventElapsedTime = configAddedTimeNs + 2 * 3600 * NS_PER_SEC + 1;  // 2 hrs later
     processor2->LoadMetadataFromDisk(wallClockNs, newEventElapsedTime);

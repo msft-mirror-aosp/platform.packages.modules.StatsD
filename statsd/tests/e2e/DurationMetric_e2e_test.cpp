@@ -1787,8 +1787,8 @@ TEST(DurationMetricE2eTest, TestDimensionalSampling) {
     int64_t cfgId = 98765;
     ConfigKey cfgKey(uid, cfgId);
 
-    sp<StatsLogProcessor> processor = CreateStatsLogProcessor(
-            configAddedTimeNs, configAddedTimeNs, config, cfgKey, nullptr, 0, new UidMap());
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(configAddedTimeNs, configAddedTimeNs, config, cfgKey);
 
     int uid1 = 1001;  // odd hash value
     int uid2 = 1002;  // even hash value

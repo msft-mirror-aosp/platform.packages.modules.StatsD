@@ -1518,28 +1518,17 @@ unique_ptr<LogEvent> CreatePhoneSignalStrengthChangedEvent(int64_t timestampNs,
 
 sp<StatsLogProcessor> CreateStatsLogProcessor(const int64_t timeBaseNs, const int64_t currentTimeNs,
                                               const StatsdConfig& config, const ConfigKey& key,
-                                              const shared_ptr<IPullAtomCallback>& puller,
-                                              const int32_t atomTag, const sp<UidMap> uidMap,
-                                              const shared_ptr<LogEventFilter>& logEventFilter) {
-    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
-    StatsPuller::SetUidMap(uidMap);
-    if (puller != nullptr) {
-        pullerManager->RegisterPullAtomCallback(/*uid=*/0, atomTag, NS_PER_SEC, NS_PER_SEC * 10, {},
-                                                puller);
+                                              const StatsLogProcessorOptions& options) {
+    StatsPuller::SetUidMap(options.uidMap);
+    if (options.puller != nullptr) {
+        options.pullerManager->RegisterPullAtomCallback(/*uid=*/0, options.pullAtomId, NS_PER_SEC,
+                                                        NS_PER_SEC * 10, {}, options.puller);
     }
-    sp<AlarmMonitor> anomalyAlarmMonitor =
-        new AlarmMonitor(1,
-                         [](const shared_ptr<IStatsCompanionService>&, int64_t){},
-                         [](const shared_ptr<IStatsCompanionService>&){});
-    sp<AlarmMonitor> periodicAlarmMonitor =
-        new AlarmMonitor(1,
-                         [](const shared_ptr<IStatsCompanionService>&, int64_t){},
-                         [](const shared_ptr<IStatsCompanionService>&){});
     sp<StatsLogProcessor> processor = new StatsLogProcessor(
-            uidMap, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, timeBaseNs,
-            [](const ConfigKey&) { return true; },
+            options.uidMap, options.pullerManager, options.anomalyAlarmMonitor,
+            options.periodicAlarmMonitor, timeBaseNs, [](const ConfigKey&) { return true; },
             [](const int&, const vector<int64_t>&) { return true; },
-            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, logEventFilter);
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {}, options.logEventFilter);
 
     processor->OnConfigUpdated(currentTimeNs, key, config);
     return processor;
