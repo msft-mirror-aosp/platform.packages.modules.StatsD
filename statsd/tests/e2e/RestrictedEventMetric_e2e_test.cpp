@@ -65,6 +65,7 @@ protected:
     sp<StatsLogProcessor> processor;
     int32_t atomTag;
     int64_t restrictedMetricId;
+    int64_t restrictedMetricId2;
     int64_t configAddedTimeNs;
     StatsdConfig config;
 
@@ -106,6 +107,11 @@ private:
                 createEventMetric("RestrictedMetricLogged", restrictedAtomMatcher.id(), nullopt);
         *config.add_event_metric() = restrictedEventMetric;
         restrictedMetricId = restrictedEventMetric.id();
+
+        EventMetric restrictedEventMetric2 =
+                createEventMetric("RestrictedMetricLogged2", restrictedAtomMatcher.id(), nullopt);
+        *config.add_event_metric() = restrictedEventMetric2;
+        restrictedMetricId2 = restrictedEventMetric2.id();
 
         config.set_restricted_metrics_delegate_package_name(delegate_package_name.c_str());
 
@@ -757,7 +763,7 @@ TEST_F_WITH_FLAGS(RestrictedEventMetricE2eTest, TestInvalidConfigUpdateRestricte
 
     ASSERT_EQ(processor->mMetricsManagers.size(), 1);
     const sp<MetricsManager> metricsManager = processor->mMetricsManagers.begin()->second;
-    EXPECT_EQ(metricsManager->getNumMetrics(), 1);  // ValidRestrictedMetric added in setup()
+    EXPECT_EQ(metricsManager->getNumMetrics(), 2);  // ValidRestrictedMetric added in setup()
     auto& invalidEntities = metricsManager->mInvalidEntities;
     InvalidConfigReason reason = invalidEntities[InvalidEntityKey{metricWithoutMatcher.id(),
                                                                   INVALID_ENTITY_TYPE_METRIC}];
@@ -1076,7 +1082,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestRestrictedMetricSavesTtlToDisk) {
     EXPECT_EQ(statsMetadata.config_key().config_id(), configId);
     EXPECT_EQ(statsMetadata.config_key().uid(), config_app_uid);
 
-    ASSERT_EQ(statsMetadata.metric_metadata_size(), 1);
+    ASSERT_EQ(statsMetadata.metric_metadata_size(), 2);
     metadata::MetricMetadata metricMetadata = statsMetadata.metric_metadata(0);
     EXPECT_EQ(metricMetadata.metric_id(), restrictedMetricId);
     EXPECT_EQ(metricMetadata.restricted_category(), CATEGORY_UNKNOWN);
@@ -1091,7 +1097,7 @@ TEST_F(RestrictedEventMetricE2eTest, TestRestrictedMetricSavesTtlToDisk) {
     EXPECT_EQ(statsMetadata.config_key().config_id(), configId);
     EXPECT_EQ(statsMetadata.config_key().uid(), config_app_uid);
 
-    ASSERT_EQ(statsMetadata.metric_metadata_size(), 1);
+    ASSERT_EQ(statsMetadata.metric_metadata_size(), 2);
     metricMetadata = statsMetadata.metric_metadata(0);
     EXPECT_EQ(metricMetadata.metric_id(), restrictedMetricId);
     EXPECT_EQ(metricMetadata.restricted_category(), CATEGORY_DIAGNOSTIC);
@@ -1212,6 +1218,41 @@ TEST_F(RestrictedEventMetricE2eTest, TestDeviceInfoTableCreated) {
     EXPECT_THAT(columnTypesResult,
                 ElementsAre(SQLITE_INTEGER, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT,
                             SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT, SQLITE_TEXT));
+}
+
+TEST_F(RestrictedEventMetricE2eTest, TestQueryTwoMetrics) {
+    std::vector<std::unique_ptr<LogEvent>> events;
+
+    const int64_t eventTimestamp = configAddedTimeNs + 100;
+    events.push_back(CreateRestrictedLogEvent(atomTag, eventTimestamp));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    std::stringstream query;
+    query << "SELECT m1.atomId as atomId_1, m2.atomId as atomId_2, m1.field_1 as field_1_1, "
+             "m2.field_1 as field_1_2 FROM metric_"
+          << dbutils::reformatMetricId(restrictedMetricId) << " AS m1, metric_"
+          << dbutils::reformatMetricId(restrictedMetricId2)
+          << " AS m2 WHERE m1.elapsedTimestampNs = m2.elapsedTimestampNs";
+
+    processor->querySql(query.str(), /*minSqlClientVersion=*/0,
+                        /*policyConfig=*/{}, mockStatsQueryCallback,
+                        /*configKey=*/configId, /*configPackage=*/config_package_name,
+                        /*callingUid=*/delegate_uid);
+
+    EXPECT_EQ(rowCountResult, 1);
+    EXPECT_THAT(queryDataResult, ElementsAre(to_string(atomTag), to_string(atomTag),
+                                             _,  // field_1_1
+                                             _   // field_1_2
+                                             ));
+
+    EXPECT_THAT(columnNamesResult, ElementsAre("atomId_1", "atomId_2", "field_1_1", "field_1_2"));
+
+    EXPECT_THAT(columnTypesResult,
+                ElementsAre(SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER, SQLITE_INTEGER));
 }
 #else
 GTEST_LOG_(INFO) << "This test does nothing.\n";
