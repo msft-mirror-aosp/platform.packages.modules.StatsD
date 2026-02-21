@@ -59,8 +59,7 @@ public:
 };
 
 int getStateInt(StateManager& mgr, int atomId, const HashableDimensionKey& queryKey) {
-    FieldValue output;
-    mgr.getStateValue(atomId, queryKey, &output);
+    FieldValue output = mgr.getStateValue(atomId, queryKey);
     return output.mValue.get<int32_t>();
 }
 
@@ -303,8 +302,8 @@ TEST(StateTrackerTest, TestStateChangeReset) {
     ASSERT_EQ(1, listener->updates.size());
     EXPECT_EQ(1000, listener->updates[0].mKey.getValues()[0].mValue.get<int32_t>());
     EXPECT_EQ(BleScanStateChanged::ON, listener->updates[0].mState);
-    FieldValue stateFieldValue;
-    mgr.getStateValue(util::BLE_SCAN_STATE_CHANGED, listener->updates[0].mKey, &stateFieldValue);
+    FieldValue stateFieldValue =
+            mgr.getStateValue(util::BLE_SCAN_STATE_CHANGED, listener->updates[0].mKey);
     EXPECT_EQ(BleScanStateChanged::ON, stateFieldValue.mValue.get<int32_t>());
     listener->updates.clear();
 
@@ -315,7 +314,7 @@ TEST(StateTrackerTest, TestStateChangeReset) {
     ASSERT_EQ(1, listener->updates.size());
     EXPECT_EQ(2000, listener->updates[0].mKey.getValues()[0].mValue.get<int32_t>());
     EXPECT_EQ(BleScanStateChanged::ON, listener->updates[0].mState);
-    mgr.getStateValue(util::BLE_SCAN_STATE_CHANGED, listener->updates[0].mKey, &stateFieldValue);
+    stateFieldValue = mgr.getStateValue(util::BLE_SCAN_STATE_CHANGED, listener->updates[0].mKey);
     EXPECT_EQ(BleScanStateChanged::ON, stateFieldValue.mValue.get<int32_t>());
     listener->updates.clear();
 
@@ -327,7 +326,7 @@ TEST(StateTrackerTest, TestStateChangeReset) {
     for (const TestStateListener::Update& update : listener->updates) {
         EXPECT_EQ(BleScanStateChanged::OFF, update.mState);
 
-        mgr.getStateValue(util::BLE_SCAN_STATE_CHANGED, update.mKey, &stateFieldValue);
+        stateFieldValue = mgr.getStateValue(util::BLE_SCAN_STATE_CHANGED, update.mKey);
         EXPECT_EQ(BleScanStateChanged::OFF, stateFieldValue.mValue.get<int32_t>());
     }
 }
@@ -575,8 +574,8 @@ TEST(StateTrackerTest, TestMalformedStateEvent_ExistingStateValue) {
     mgr.onLogEvent(*event1);
     ASSERT_EQ(1, listener->updates.size());
     EXPECT_EQ(BatteryPluggedStateEnum::BATTERY_PLUGGED_USB, listener->updates[0].mState);
-    FieldValue stateFieldValue;
-    mgr.getStateValue(util::PLUGGED_STATE_CHANGED, listener->updates[0].mKey, &stateFieldValue);
+    FieldValue stateFieldValue =
+            mgr.getStateValue(util::PLUGGED_STATE_CHANGED, listener->updates[0].mKey);
     EXPECT_EQ(BatteryPluggedStateEnum::BATTERY_PLUGGED_USB, stateFieldValue.mValue.get<int32_t>());
     listener->updates.clear();
 
@@ -585,8 +584,7 @@ TEST(StateTrackerTest, TestMalformedStateEvent_ExistingStateValue) {
     mgr.onLogEvent(*event2);
     ASSERT_EQ(1, listener->updates.size());
     EXPECT_EQ(kStateUnknown, listener->updates[0].mState);
-    EXPECT_FALSE(mgr.getStateValue(util::PLUGGED_STATE_CHANGED, listener->updates[0].mKey,
-                                   &stateFieldValue));
+    stateFieldValue = mgr.getStateValue(util::PLUGGED_STATE_CHANGED, listener->updates[0].mKey);
     EXPECT_EQ(kStateUnknown, stateFieldValue.mValue.get<int32_t>());
     listener->updates.clear();
 }

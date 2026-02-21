@@ -62,12 +62,10 @@ public:
     // and removes the tracker if it no longer has any listeners.
     void unregisterListener(const int32_t atomId, const wp<StateListener>& listener);
 
-    // Returns true if the StateTracker exists and queries for the
-    // original state value mapped to the given query key. The state value is
-    // stored and output in a FieldValue class.
-    // Returns false if the StateTracker doesn't exist.
-    bool getStateValue(int32_t atomId, const HashableDimensionKey& queryKey,
-                       FieldValue* output) const;
+    // Returns FieldValue with state value mapped to the given query key if queryKey is found.
+    // Otherwise if queryKey is not found or StateTracker doesn't exist, FieldValue with
+    // kStateUnknonwn is returned.
+    FieldValue getStateValue(const int32_t atomId, const HashableDimensionKey& key) const;
 
     // Updates mAllowedLogSources with the latest uids for the packages that are allowed to log.
     void updateLogSources(const sp<UidMap>& uidMap);

@@ -504,8 +504,8 @@ protected:
     }
 
     // Query StateManager for original state value using the queryKey.
-    // The field and value are output.
-    void queryStateValue(int32_t atomId, const HashableDimensionKey& queryKey, FieldValue* value);
+    // Returns FieldValue with kStateUnknown if StateTracker doesn't exist or queryKey is not found.
+    FieldValue queryStateValue(int32_t atomId, const HashableDimensionKey& queryKey);
 
     // If a state map exists for the given atom, replace the original state
     // value with the group id mapped to the value.

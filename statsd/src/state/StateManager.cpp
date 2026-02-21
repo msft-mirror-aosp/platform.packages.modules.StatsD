@@ -121,14 +121,14 @@ void StateManager::unregisterListener(const int32_t atomId, const wp<StateListen
     lock.unlock();
 }
 
-bool StateManager::getStateValue(const int32_t atomId, const HashableDimensionKey& key,
-                                 FieldValue* output) const {
+FieldValue StateManager::getStateValue(const int32_t atomId,
+                                       const HashableDimensionKey& key) const {
     auto it = mStateTrackers.find(atomId);
     if (it != mStateTrackers.end()) {
-        return it->second->getStateValue(key, output);
+        return it->second->getStateValue(key);
     }
     ALOGE("StateManager cannot get state value, no StateTracker for atom %d", atomId);
-    return false;
+    return FieldValue(Field(atomId, 0), StateTracker::kStateUnknown);
 }
 
 void StateManager::updateLogSources(const sp<UidMap>& uidMap) {
