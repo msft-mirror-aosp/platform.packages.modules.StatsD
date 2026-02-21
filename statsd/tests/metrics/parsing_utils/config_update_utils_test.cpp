@@ -2299,9 +2299,8 @@ TEST_F(ConfigUpdateTest, TestUpdateCountMetrics) {
     oldMetricProducers.clear();
     // Ensure that the screen state StateTracker did not get deleted and replaced.
     EXPECT_EQ(StateManager::getInstance().getStateTrackersCount(), 2);
-    FieldValue screenState;
-    StateManager::getInstance().getStateValue(util::SCREEN_STATE_CHANGED, DEFAULT_DIMENSION_KEY,
-                                              &screenState);
+    FieldValue screenState = StateManager::getInstance().getStateValue(util::SCREEN_STATE_CHANGED,
+                                                                       DEFAULT_DIMENSION_KEY);
     EXPECT_EQ(screenState.mValue.get<int32_t>(), android::view::DisplayStateEnum::DISPLAY_STATE_ON);
 }
 
@@ -5063,9 +5062,8 @@ TEST_F(ConfigUpdateTest, TestUpdateCountMetricsHasInvalidMetrics) {
     oldMetricProducers.clear();
     // Ensure that the screen state StateTracker did not get deleted and replaced.
     EXPECT_EQ(StateManager::getInstance().getStateTrackersCount(), 1);
-    FieldValue screenState;
-    StateManager::getInstance().getStateValue(util::SCREEN_STATE_CHANGED, DEFAULT_DIMENSION_KEY,
-                                              &screenState);
+    FieldValue screenState = StateManager::getInstance().getStateValue(util::SCREEN_STATE_CHANGED,
+                                                                       DEFAULT_DIMENSION_KEY);
     EXPECT_EQ(screenState.mValue.get<int32_t>(), android::view::DisplayStateEnum::DISPLAY_STATE_ON);
 
     EXPECT_EQ(invalidEntities.size(), 3);

@@ -172,11 +172,11 @@ void MetricProducer::onMatchedLogEventLocked(const size_t matcherIndex, const Lo
         FieldValue value;
         if (statePrimaryKeys.find(atomId) != statePrimaryKeys.end()) {
             // found a primary key for this state, query using the key
-            queryStateValue(atomId, statePrimaryKeys[atomId], &value);
+            value = queryStateValue(atomId, statePrimaryKeys[atomId]);
         } else {
             // if no MetricStateLinks exist for this state atom,
             // query using the default dimension key (empty HashableDimensionKey)
-            queryStateValue(atomId, DEFAULT_DIMENSION_KEY, &value);
+            value = queryStateValue(atomId, DEFAULT_DIMENSION_KEY);
         }
         mapStateValue(atomId, &value);
         stateValuesKey.addValue(value);
@@ -355,12 +355,8 @@ void MetricProducer::writeActiveMetricToProtoOutputStream(
     }
 }
 
-void MetricProducer::queryStateValue(int32_t atomId, const HashableDimensionKey& queryKey,
-                                     FieldValue* value) {
-    if (!StateManager::getInstance().getStateValue(atomId, queryKey, value)) {
-        value->mValue = Value(StateTracker::kStateUnknown);
-        value->mField.setTag(atomId);
-    }
+FieldValue MetricProducer::queryStateValue(int32_t atomId, const HashableDimensionKey& queryKey) {
+    return StateManager::getInstance().getStateValue(atomId, queryKey);
 }
 
 void MetricProducer::mapStateValue(int32_t atomId, FieldValue* value) {
