@@ -42,6 +42,12 @@
         },
         {
           "include-filter": "android.cts.statsd.alert.*"
+        },
+        {
+          "include-filter": "android.cts.statsd.validation.*"
+        },
+        {
+          "include-filter": "android.cts.statsd.metadata.MetadataTests#testConfigTtl"
         }
       ]
     }
