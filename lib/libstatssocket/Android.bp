@@ -57,7 +57,7 @@ cc_defaults {
     ],
     min_sdk_version: "30",
     target: {
-        linux_glibc: {
+        host_linux: {
             shared_libs: [
                 "liblog",
             ],
