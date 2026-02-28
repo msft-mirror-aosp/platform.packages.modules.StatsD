@@ -104,6 +104,11 @@ cc_library_headers {
     // implementation detail of LL-NDK libraries
     vendor_available: false,
     host_supported: true,
+    target: {
+        windows: {
+            enabled: true,
+        },
+    },
 }
 
 filegroup {
@@ -226,4 +231,9 @@ cc_test_library {
     srcs: [
         "fake/libstatssocket.c",
     ],
+    target: {
+        windows: {
+            enabled: true,
+        },
+    },
 }
