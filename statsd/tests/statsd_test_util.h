@@ -125,6 +125,28 @@ public:
                 (override));
 };
 
+/**
+ * Test StateListener class for testing.
+ * Stores primary key and state pairs.
+ */
+class TestStateListener : public virtual StateListener {
+public:
+    struct Update {
+        HashableDimensionKey mKey;
+        int mState;
+    };
+
+    std::vector<Update> updates;
+
+    void onStateChanged(const int64_t eventTimeNs, const int32_t atomId,
+                        const HashableDimensionKey& primaryKey, const FieldValue& oldState,
+                        const FieldValue& newState) override {
+        updates.emplace_back(Update{primaryKey, newState.mValue.get<int32_t>()});
+    }
+};
+
+int getStateInt(const StateManager& mgr, int atomId, const HashableDimensionKey& queryKey);
+
 class StatsServiceConfigTest : public ::testing::Test {
 protected:
     std::shared_ptr<StatsService> service;

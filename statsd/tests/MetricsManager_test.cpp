@@ -309,7 +309,7 @@ INSTANTIATE_TEST_SUITE_P(
             return info.param.label;
         });
 
-TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom) {
+TEST(MetricsManagerTest, TestCheckLogCredentialsAllowlistedAtom) {
     sp<UidMap> uidMap;
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     sp<AlarmMonitor> anomalyAlarmMonitor;
@@ -334,7 +334,7 @@ TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom) {
     EXPECT_TRUE(metricsManager.checkLogCredentials(event));
 }
 
-TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker) {
+TEST(MetricsManagerTest, TestAllowlistedAtomStateTracker) {
     sp<UidMap> uidMap;
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();
     sp<AlarmMonitor> anomalyAlarmMonitor;

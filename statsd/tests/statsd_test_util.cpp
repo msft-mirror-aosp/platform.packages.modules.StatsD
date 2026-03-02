@@ -2560,6 +2560,11 @@ unique_ptr<LogEvent> createSocketLossInfoLogEvent(int32_t uid, int32_t lossAtomI
     return logEvent;
 }
 
+int getStateInt(const StateManager& mgr, int atomId, const HashableDimensionKey& queryKey) {
+    FieldValue output = mgr.getStateValue(atomId, queryKey);
+    return output.mValue.get<int32_t>();
+}
+
 void WaitableEvent::Notify() {
     std::unique_lock<std::mutex> lock(m_);
     notified_ = true;

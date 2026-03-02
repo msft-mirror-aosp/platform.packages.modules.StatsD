@@ -24,7 +24,6 @@
 
 #include "HashableDimensionKey.h"
 #include "logd/logevent_util.h"
-#include "packages/LogSourceHandler.h"
 #include "packages/UidMap.h"
 #include "socket/LogEventFilter.h"
 #include "state/StateListener.h"
@@ -68,11 +67,6 @@ public:
     // kStateUnknonwn is returned.
     FieldValue getStateValue(const int32_t atomId, const HashableDimensionKey& key) const;
 
-    // Updates mLogSourceHandler with the latest uids for the packages that are allowed to log.
-    void updateLogSources(const sp<UidMap>& uidMap);
-
-    void notifyAppChanged(const std::string& apk, const sp<UidMap>& uidMap);
-
     /**
      * @brief Update State Tracker depending on #lostAtomId that it was lost due to #reason
      * @return true if State Tracker was notified
@@ -101,9 +95,6 @@ private:
 
     // Maps state atom ids to StateTrackers
     std::unordered_map<int32_t, sp<StateTracker>> mStateTrackers;
-
-    // Handler for allowed log sources.
-    const sp<LogSourceHandler> mLogSourceHandler;
 };
 
 }  // namespace statsd

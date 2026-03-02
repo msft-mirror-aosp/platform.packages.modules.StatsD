@@ -127,6 +127,9 @@ StatsLogProcessor::StatsLogProcessor(
       mLastFlushRestrictedTime(0),
       mLastDbGuardrailEnforcementTime(0),
       mUidMap(uidMap),
+      mLogSourceHandler(sp<LogSourceHandler>::make(
+              /*allowedLogSources=*/std::vector<std::string>({"com.android.systemui"}),
+              /*allowlistedAtomIds=*/std::set<int32_t>(), uidMap)),
       mPullerManager(pullerManager),
       mAnomalyAlarmMonitor(anomalyAlarmMonitor),
       mPeriodicAlarmMonitor(periodicAlarmMonitor),
@@ -138,7 +141,6 @@ StatsLogProcessor::StatsLogProcessor(
       mLargestTimestampSeen(0),
       mLastTimestampSeen(0) {
     mPullerManager->ForceClearPullerCache();
-    StateManager::getInstance().updateLogSources(uidMap);
     // It is safe called locked version at constructor - no concurrent access possible
     updateAtomIdsInUseLocked();
 }
@@ -465,7 +467,9 @@ void StatsLogProcessor::OnLogEvent(LogEvent* event, int64_t elapsedRealtimeNs) {
         mapIsolatedUidToHostUidIfNecessaryLocked(event);
     }
 
-    StateManager::getInstance().onLogEvent(*event);
+    if (mLogSourceHandler->checkLogCredentials(event->GetUid(), event->GetTagId())) {
+        StateManager::getInstance().onLogEvent(*event);
+    }
 
     if (mMetricsManagers.empty()) {
         return;
@@ -1497,7 +1501,7 @@ void StatsLogProcessor::notifyAppUpgrade(const int64_t eventTimeNs, const string
     ATRACE_CALL();
     std::lock_guard lock(mMetricsMutex);
     VLOG("Received app upgrade");
-    StateManager::getInstance().notifyAppChanged(apk, mUidMap);
+    mLogSourceHandler->onAppChanged(apk);
     for (const auto& it : mMetricsManagers) {
         it.second->notifyAppUpgrade(eventTimeNs, apk, uid, version);
     }
@@ -1508,7 +1512,7 @@ void StatsLogProcessor::notifyAppRemoved(const int64_t eventTimeNs, const string
     ATRACE_CALL();
     std::lock_guard lock(mMetricsMutex);
     VLOG("Received app removed");
-    StateManager::getInstance().notifyAppChanged(apk, mUidMap);
+    mLogSourceHandler->onAppChanged(apk);
     for (const auto& it : mMetricsManagers) {
         it.second->notifyAppRemoved(eventTimeNs, apk, uid);
     }
@@ -1518,7 +1522,7 @@ void StatsLogProcessor::onUidMapReceived(const int64_t eventTimeNs) {
     ATRACE_CALL();
     std::lock_guard lock(mMetricsMutex);
     VLOG("Received uid map");
-    StateManager::getInstance().updateLogSources(mUidMap);
+    mLogSourceHandler->onUidMapUpdated();
     for (const auto& it : mMetricsManagers) {
         it.second->onUidMapReceived(eventTimeNs);
     }

@@ -57,7 +57,7 @@ TEST(LogSourceHandlerTest, TestPackages) {
     EXPECT_TRUE(handler.checkLogCredentials(10002, 100));
 }
 
-TEST(LogSourceHandlerTest, TestWhitelistedAtoms) {
+TEST(LogSourceHandlerTest, TestAllowlistedAtoms) {
     sp<UidMap> uidMap = sp<UidMap>::make();
     LogSourceHandler handler({}, {100}, uidMap);
 
@@ -70,7 +70,7 @@ TEST(LogSourceHandlerTest, TestCombined) {
     uidMap->updateApp(1, "pkg1", 10000, 1, "v1", "h1", {});
     LogSourceHandler handler({"AID_SHELL", "pkg1"}, {100}, uidMap);
 
-    // Whitelisted atom
+    // Allowlisted atom
     EXPECT_TRUE(handler.checkLogCredentials(40000, 100));
 
     // System UIDs
