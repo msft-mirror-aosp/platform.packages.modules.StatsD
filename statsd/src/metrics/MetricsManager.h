@@ -29,6 +29,7 @@
 #include "logd/LogEvent.h"
 #include "matchers/AtomMatchingTracker.h"
 #include "metrics/MetricProducer.h"
+#include "packages/LogSourceHandler.h"
 #include "packages/UidMap.h"
 #include "src/statsd_config.pb.h"
 #include "src/statsd_metadata.pb.h"
@@ -217,20 +218,10 @@ private:
 
     sp<StatsPullerManager> mPullerManager;
 
-    // The uid log sources from StatsdConfig.
-    std::vector<int32_t> mAllowedUid;
+    sp<LogSourceHandler> mLogSourceHandler;
 
-    // The pkg log sources from StatsdConfig.
-    std::vector<std::string> mAllowedPkg;
-
-    // The combined uid sources (after translating pkg name to uid).
-    // Logs from uids that are not in the list will be ignored to avoid spamming.
-    std::set<int32_t> mAllowedLogSources;
-
-    // To guard access to mAllowedLogSources
-    mutable std::mutex mAllowedLogSourcesMutex;
-
-    std::set<int32_t> mWhitelistedAtomIds;
+    // To guard access to mCombinedPullAtomUids
+    mutable std::mutex mCombinedPullAtomUidsMutex;
 
     // We can pull any atom from these uids.
     std::set<int32_t> mDefaultPullUids;
@@ -327,17 +318,13 @@ private:
     std::vector<int> mMetricIndexesWithActivation;
 
     inline bool checkLogCredentials(const LogEvent& event) const {
-        return checkLogCredentials(event.GetUid(), event.GetTagId());
+        return mLogSourceHandler->checkLogCredentials(event.GetUid(), event.GetTagId());
     }
-
-    bool checkLogCredentials(int32_t uid, int32_t atomId) const;
-
-    void initAllowedLogSources();
 
     void initPullAtomSources();
 
     // Only called on config creation/update to initialize log sources from the config.
-    // Calls initAllowedLogSources and initPullAtomSources. Sets up mInvalidConfigReason on
+    // Sets up mLogSourceHandler and calls initPullAtomSources. Sets up mInvalidConfigReason on
     // error.
     void createAllLogSourcesFromConfig(const StatsdConfig& config);
 

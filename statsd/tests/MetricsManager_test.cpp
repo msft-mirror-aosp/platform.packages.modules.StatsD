@@ -153,10 +153,14 @@ TEST(MetricsManagerTest, TestLogSources) {
                                   pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor);
     EXPECT_TRUE(metricsManager.isConfigValid());
 
-    EXPECT_THAT(metricsManager.mAllowedUid, ElementsAre(AID_SYSTEM));
-    EXPECT_THAT(metricsManager.mAllowedPkg, ElementsAre(app1));
-    EXPECT_THAT(metricsManager.mAllowedLogSources,
-                ContainerEq(unionSet(vector<set<int32_t>>({app1Uids, {AID_SYSTEM}}))));
+    EXPECT_TRUE(metricsManager.mLogSourceHandler->checkLogCredentials(AID_SYSTEM, 100));
+    EXPECT_THAT(app1Uids, Each(ResultOf(
+                                  [&metricsManager](int32_t uid) {
+                                      return metricsManager.mLogSourceHandler->checkLogCredentials(
+                                              uid, 100);
+                                  },
+                                  IsTrue())));
+    EXPECT_FALSE(metricsManager.mLogSourceHandler->checkLogCredentials(AID_NOBODY, 100));
     EXPECT_THAT(metricsManager.mDefaultPullUids, ContainerEq(defaultPullUids));
 
     vector<int32_t> atom1Uids = metricsManager.getPullAtomUids(atom1);
@@ -241,9 +245,18 @@ TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate) {
                                 periodicAlarmMonitor);
     EXPECT_TRUE(metricsManager.isConfigValid());
 
-    EXPECT_THAT(metricsManager.mAllowedPkg, ElementsAre(app2));
-    EXPECT_THAT(metricsManager.mAllowedLogSources,
-                ContainerEq(unionSet(vector<set<int32_t>>({app2Uids}))));
+    EXPECT_THAT(app2Uids, Each(ResultOf(
+                                  [&metricsManager](int32_t uid) {
+                                      return metricsManager.mLogSourceHandler->checkLogCredentials(
+                                              uid, 100);
+                                  },
+                                  IsTrue())));
+    EXPECT_THAT(app1Uids, Each(ResultOf(
+                                  [&metricsManager](int32_t uid) {
+                                      return metricsManager.mLogSourceHandler->checkLogCredentials(
+                                              uid, 100);
+                                  },
+                                  IsFalse())));
     const set<int32_t> defaultPullUids = {AID_SYSTEM, AID_STATSD};
     EXPECT_THAT(metricsManager.mDefaultPullUids, ContainerEq(defaultPullUids));
 
