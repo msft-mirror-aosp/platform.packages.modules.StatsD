@@ -33,7 +33,7 @@ namespace statsd {
 class LogSourceHandler : public virtual RefBase {
 public:
     LogSourceHandler(const std::vector<std::string>& allowedLogSources,
-                     const std::set<int32_t>& whitelistedAtomIds, const sp<UidMap>& uidMap);
+                     const std::set<int32_t>& allowlistedAtomIds, const sp<UidMap>& uidMap);
 
     virtual ~LogSourceHandler() = default;
 
@@ -51,8 +51,6 @@ public:
      * Callback for package changes inside UidMap.
      */
     void onAppChanged(const std::string& packageName);
-
-    void setUidMap(const sp<UidMap>& uidMap);
 
     void dumpStates(int out) const;
 
@@ -74,16 +72,16 @@ private:
      * are const) from a single pass over allowedLogSources.
      */
     LogSourceHandler(const std::vector<std::string>& allowedLogSources,
-                     const std::set<int32_t>& whitelistedAtomIds, const sp<UidMap>& uidMap,
+                     const std::set<int32_t>& allowlistedAtomIds, const sp<UidMap>& uidMap,
                      LogSources&& sources);
 
-    const std::set<int32_t> mWhitelistedAtomIds;
+    const std::set<int32_t> mAllowlistedAtomIds;
 
     // Derived from allowedLogSources in the constructor
     const std::vector<int32_t> mAllowedAids;
     const std::vector<std::string> mAllowedPkgs;
 
-    sp<UidMap> mUidMap;
+    const sp<UidMap> mUidMap;
 
     // Combined UIDs from mAllowedUids and resolved mAllowedPkgs.
     std::set<int32_t> mResolvedUids;
@@ -93,7 +91,7 @@ private:
     FRIEND_TEST(LogSourceHandlerTest, TestEmptyLogSource);
     FRIEND_TEST(LogSourceHandlerTest, TestAids);
     FRIEND_TEST(LogSourceHandlerTest, TestPackages);
-    FRIEND_TEST(LogSourceHandlerTest, TestWhitelistedAtoms);
+    FRIEND_TEST(LogSourceHandlerTest, TestAllowlistedAtoms);
 };
 
 }  // namespace statsd

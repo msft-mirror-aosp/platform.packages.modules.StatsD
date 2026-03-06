@@ -33,36 +33,6 @@ namespace statsd {
 const int32_t timestampNs = 1000;
 const int32_t kStateUnknown = -1;
 
-/**
- * Mock StateListener class for testing.
- * Stores primary key and state pairs.
- */
-class TestStateListener : public virtual StateListener {
-public:
-    TestStateListener(){};
-
-    virtual ~TestStateListener(){};
-
-    struct Update {
-        Update(const HashableDimensionKey& key, int state) : mKey(key), mState(state){};
-        HashableDimensionKey mKey;
-        int mState;
-    };
-
-    std::vector<Update> updates;
-
-    void onStateChanged(const int64_t eventTimeNs, const int32_t atomId,
-                        const HashableDimensionKey& primaryKey, const FieldValue& oldState,
-                        const FieldValue& newState) {
-        updates.emplace_back(primaryKey, newState.mValue.get<int32_t>());
-    }
-};
-
-int getStateInt(StateManager& mgr, int atomId, const HashableDimensionKey& queryKey) {
-    FieldValue output = mgr.getStateValue(atomId, queryKey);
-    return output.mValue.get<int32_t>();
-}
-
 // START: build event functions.
 // Incorrect event - missing fields
 std::unique_ptr<LogEvent> buildIncorrectOverlayEvent(int uid, const std::string& packageName,
@@ -120,7 +90,6 @@ TEST(StateManagerTest, TestOnLogEvent) {
     sp<MockUidMap> uidMap = makeMockUidMapForPackage("com.android.systemui", {10111});
     sp<TestStateListener> listener1 = new TestStateListener();
     StateManager mgr;
-    mgr.updateLogSources(uidMap);
     // Add StateTracker by registering a listener.
     mgr.registerListener(util::SCREEN_STATE_CHANGED, listener1);
 
@@ -140,16 +109,6 @@ TEST(StateManagerTest, TestOnLogEvent) {
     mgr.onLogEvent(*event);
 
     // check StateTracker was updated by querying for state
-    queryKey = DEFAULT_DIMENSION_KEY;
-    EXPECT_EQ(android::view::DisplayStateEnum::DISPLAY_STATE_OFF,
-              getStateInt(mgr, util::SCREEN_STATE_CHANGED, queryKey));
-
-    // log event using non-whitelisted uid
-    event = CreateScreenStateChangedEvent(timestampNs,
-                                          android::view::DisplayStateEnum::DISPLAY_STATE_ON, 10112);
-    mgr.onLogEvent(*event);
-
-    // check StateTracker was NOT updated by querying for state
     queryKey = DEFAULT_DIMENSION_KEY;
     EXPECT_EQ(android::view::DisplayStateEnum::DISPLAY_STATE_OFF,
               getStateInt(mgr, util::SCREEN_STATE_CHANGED, queryKey));

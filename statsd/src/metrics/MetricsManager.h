@@ -426,9 +426,9 @@ private:
     FRIEND_TEST(MetricActivationE2eTest, TestCountMetricWithTwoMetricsTwoDeactivations);
 
     FRIEND_TEST(MetricsManagerTest, TestLogSources);
-    FRIEND_TEST(MetricsManagerTest, TestCheckLogCredentialsWhitelistedAtom);
+    FRIEND_TEST(MetricsManagerTest, TestCheckLogCredentialsAllowlistedAtom);
     FRIEND_TEST(MetricsManagerTest, TestLogSourcesOnConfigUpdate);
-    FRIEND_TEST(MetricsManagerTest, TestWhitelistedAtomStateTracker);
+    FRIEND_TEST(MetricsManagerTest, TestAllowlistedAtomStateTracker);
     FRIEND_TEST(MetricsManagerTest, TestInvalidEntitiesClearedOnConfigUpdate);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfig);
     FRIEND_TEST(MetricsManagerTest_SPlus, TestRestrictedMetricsConfigUpdate);

@@ -28,16 +28,16 @@ namespace os {
 namespace statsd {
 
 LogSourceHandler::LogSourceHandler(const std::vector<std::string>& allowedLogSources,
-                                   const std::set<int32_t>& whitelistedAtomIds,
+                                   const std::set<int32_t>& allowlistedAtomIds,
                                    const sp<UidMap>& uidMap)
-    : LogSourceHandler(allowedLogSources, whitelistedAtomIds, uidMap,
+    : LogSourceHandler(allowedLogSources, allowlistedAtomIds, uidMap,
                        splitSources(allowedLogSources)) {
 }
 
 LogSourceHandler::LogSourceHandler(const std::vector<std::string>& allowedLogSources,
-                                   const std::set<int32_t>& whitelistedAtomIds,
+                                   const std::set<int32_t>& allowlistedAtomIds,
                                    const sp<UidMap>& uidMap, LogSources&& sources)
-    : mWhitelistedAtomIds(whitelistedAtomIds),
+    : mAllowlistedAtomIds(allowlistedAtomIds),
       mAllowedAids(std::move(sources.aids)),
       mAllowedPkgs(std::move(sources.pkgs)),
       mUidMap(uidMap) {
@@ -64,7 +64,7 @@ bool LogSourceHandler::checkLogCredentials(int32_t uid, int32_t atomId) const {
         return true;
     }
 
-    if (mWhitelistedAtomIds.find(atomId) != mWhitelistedAtomIds.end()) {
+    if (mAllowlistedAtomIds.find(atomId) != mAllowlistedAtomIds.end()) {
         return true;
     }
 
@@ -104,12 +104,6 @@ void LogSourceHandler::onAppChanged(const std::string& packageName) {
         std::lock_guard<std::mutex> lock(mMutex);
         updateResolvedUidsLocked();
     }
-}
-
-void LogSourceHandler::setUidMap(const sp<UidMap>& uidMap) {
-    std::lock_guard<std::mutex> lock(mMutex);
-    mUidMap = uidMap;
-    updateResolvedUidsLocked();
 }
 
 void LogSourceHandler::dumpStates(int out) const {
