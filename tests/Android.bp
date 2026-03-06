@@ -27,23 +27,23 @@ java_test_host {
 
     // tag this module as a cts test artifact
     test_suites: [
-        "cts",
+        // "cts",           // b/474463178
         "general-tests",
-        "mts-statsd",
-        "mcts-statsd",
+        // "mts-statsd",    // b/474463178
+        // "mcts-statsd",   // b/474463178
     ],
     libs: [
         "compatibility-host-util",
-        "core_cts_test_resources",
         "cts-tradefed",
         "tradefed",
         "truth",
     ],
     static_libs: [
-        "cts-statsd-atom-host-test-utils",
-        "host-libprotobuf-java-full",
-        "perfetto_config-full",
+        "libprotobuf-java-full",
         "platformprotos",
+        "core_cts_test_resources",
+        "perfetto_config-full",
+        "cts-statsd-atom-host-test-utils",
     ],
     data: [
         "**/*.pbtxt",
