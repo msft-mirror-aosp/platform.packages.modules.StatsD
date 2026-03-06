@@ -339,17 +339,14 @@ size_t UidMap::getBytesUsed() const {
 }
 
 void UidMap::writeUidMapSnapshot(int64_t timestamp, const UidMapOptions& options,
-                                 const std::set<int32_t>& interestingUids,
                                  map<string, int>* installerIndices, std::set<string>* str_set,
                                  ProtoOutputStream* proto) const {
     std::lock_guard lock(mMutex);
 
-    writeUidMapSnapshotLocked(timestamp, options, interestingUids, installerIndices, str_set,
-                              proto);
+    writeUidMapSnapshotLocked(timestamp, options, installerIndices, str_set, proto);
 }
 
 void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const UidMapOptions& options,
-                                       const std::set<int32_t>& interestingUids,
                                        map<string, int>* installerIndices,
                                        std::set<string>* str_set, ProtoOutputStream* proto) const {
     int curInstallerIndex = 0;
@@ -357,8 +354,7 @@ void UidMap::writeUidMapSnapshotLocked(const int64_t timestamp, const UidMapOpti
     proto->write(FIELD_TYPE_INT64 | FIELD_ID_SNAPSHOT_TIMESTAMP, (long long)timestamp);
     for (const auto& [keyPair, appData] : mMap) {
         const auto& [uid, packageName] = keyPair;
-        if (omitUid(uid, packageName, options) ||
-            (!interestingUids.empty() && interestingUids.find(uid) == interestingUids.end())) {
+        if (omitUid(uid, packageName, options)) {
             continue;
         }
         uint64_t token = proto->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED |
@@ -480,9 +476,7 @@ void UidMap::appendUidMap(const int64_t timestamp, const ConfigKey& key,
     // Write snapshot from current uid map state.
     uint64_t snapshotsToken =
             proto->start(FIELD_TYPE_MESSAGE | FIELD_COUNT_REPEATED | FIELD_ID_SNAPSHOTS);
-    writeUidMapSnapshotLocked(timestamp, options,
-                              std::set<int32_t>() /*empty uid set means including every uid*/,
-                              &installerIndices, str_set, proto);
+    writeUidMapSnapshotLocked(timestamp, options, &installerIndices, str_set, proto);
     proto->end(snapshotsToken);
 
     vector<string> installers(installerIndices.size(), "");

@@ -109,8 +109,9 @@ void getProtoData(const int64_t& rule_id, int64_t metricId, const MetricDimensio
         UidMap::getInstance()->writeUidMapSnapshot(
                 getElapsedRealtimeNs(),
                 {true, true,
-                 /*truncatedCertificateHashSize*/ 0, /*omitSystemUids*/ false},
-                uids, nullptr /*installerIndices*/, nullptr /*string set*/, &headerProto);
+                 /*truncatedCertificateHashSize*/ 0, /*omitSystemUids*/ false,
+                 /*omitUnusedUids*/ true, uids},
+                nullptr /*installerIndices*/, nullptr /*string set*/, &headerProto);
         headerProto.end(token);
     }
 
