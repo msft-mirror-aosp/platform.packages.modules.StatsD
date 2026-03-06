@@ -2316,7 +2316,6 @@ PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap) {
                                 {/* includeVersionStrings */ true,
                                  /* includeInstaller */ true, /* certificateHashSize */ UINT8_MAX,
                                  /* omitSystemUids */ false},
-                                /* interestingUids */ {},
                                 /* installerIndices */ nullptr, /* str_set */ nullptr,
                                 &protoOutputStream);
 
