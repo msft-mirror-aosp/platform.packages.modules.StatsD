@@ -828,6 +828,43 @@ TEST_F(UidMapTestAppendUidMapSystemUsedUids, testOmitSystemAndUnusedUids) {
     ASSERT_EQ(results.changes_size(), 0);
 }
 
+TEST_F(UidMapTestAppendUidMapSystemUsedUids, testOmitSystemAndUnusedUidsWithSandboxUids) {
+    config.mutable_statsd_config_options()->set_omit_system_uids_in_uidmap(true);
+    config.mutable_statsd_config_options()->set_omit_unused_uids_in_uidmap(true);
+
+    sp<StatsLogProcessor> processor = createStatsLogProcessor(config);
+
+    int32_t sandboxUid = AID_SDK_SANDBOX_PROCESS_START + 1;
+    auto event = CreateSyncStartEvent(bucketStartTimeNs + 1, {sandboxUid}, {"tag"}, "sync_name");
+    processor->OnLogEvent(event.get());
+
+    UidMapping results = getUidMapping(processor);
+
+    ASSERT_EQ(results.snapshots_size(), 1);
+    EXPECT_THAT(results.snapshots(0).package_info(),
+                UnorderedElementsAre(Property(&PackageInfo::uid, AID_APP_START + 1)));
+    ASSERT_EQ(results.changes_size(), 0);
+}
+
+TEST_F(UidMapTestAppendUidMapSystemUsedUids, testOmitSystemAndUnusedUidsWithPccComponentUids) {
+    config.mutable_statsd_config_options()->set_omit_system_uids_in_uidmap(true);
+    config.mutable_statsd_config_options()->set_omit_unused_uids_in_uidmap(true);
+
+    sp<StatsLogProcessor> processor = createStatsLogProcessor(config);
+
+    int32_t pccUid = AID_USER_OFFSET + AID_PCC_COMPONENT_PROCESS_START + 2;
+    auto event = CreateSyncStartEvent(bucketStartTimeNs + 1, {pccUid}, {"tag"}, "sync_name");
+    processor->OnLogEvent(event.get());
+
+    UidMapping results = getUidMapping(processor);
+
+    ASSERT_EQ(results.snapshots_size(), 1);
+    EXPECT_THAT(
+            results.snapshots(0).package_info(),
+            UnorderedElementsAre(Property(&PackageInfo::uid, AID_USER_OFFSET + AID_APP_START + 2)));
+    ASSERT_EQ(results.changes_size(), 0);
+}
+
 TEST_F(UidMapTestAppendUidMapSystemUsedUids, testOmitSystemAndUnusedUidsEmptyWithAllowlist) {
     config.mutable_statsd_config_options()->set_omit_system_uids_in_uidmap(true);
     config.mutable_statsd_config_options()->set_omit_unused_uids_in_uidmap(true);
