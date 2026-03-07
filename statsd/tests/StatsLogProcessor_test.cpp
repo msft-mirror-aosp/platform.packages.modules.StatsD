@@ -104,6 +104,53 @@ TEST(StatsLogProcessorTest, TestRateLimitByteSize) {
     p.flushIfNecessaryLocked(key, mockMetricsManager);
 }
 
+TEST(StatsLogProcessorTest, TestLogSources) {
+    sp<UidMap> m = new UidMap();
+    sp<StatsPullerManager> pullerManager = new StatsPullerManager();
+    sp<AlarmMonitor> anomalyAlarmMonitor;
+    sp<AlarmMonitor> periodicAlarmMonitor;
+    // Construct the processor with a no-op sendBroadcast function that does nothing.
+    StatsLogProcessor p(
+            m, pullerManager, anomalyAlarmMonitor, periodicAlarmMonitor, 0,
+            [](const ConfigKey& key) { return true; },
+            [](const int&, const vector<int64_t>&) { return true; },
+            [](const ConfigKey&, const string&, const vector<int64_t>&) {},
+            std::make_shared<LogEventFilter>());
+
+    StateManager::getInstance().clear();
+    sp<TestStateListener> listener = new TestStateListener();
+    int atomId = util::SCREEN_STATE_CHANGED;
+    StateManager::getInstance().registerListener(atomId, listener);
+
+    uint64_t timestampNs = 1000000;
+    // Log event from AID_ROOT.
+    std::unique_ptr<LogEvent> event = CreateScreenStateChangedEvent(
+            timestampNs, android::view::DisplayStateEnum::DISPLAY_STATE_ON, AID_ROOT);
+    p.OnLogEvent(event.get());
+    EXPECT_EQ(1, listener->updates.size());
+    EXPECT_EQ(android::view::DisplayStateEnum::DISPLAY_STATE_ON, listener->updates[0].mState);
+    listener->updates.clear();
+
+    // Log event from non-allowlisted UID.
+    event = CreateScreenStateChangedEvent(
+            timestampNs + 10, android::view::DisplayStateEnum::DISPLAY_STATE_OFF, 12345);
+    p.OnLogEvent(event.get());
+    EXPECT_EQ(0, listener->updates.size());
+
+    // Allowlist the UID.
+    m->updateApp(timestampNs + 20, "com.android.systemui", 12345, 1, "v1", "", {});
+    p.onUidMapReceived(timestampNs + 20);
+
+    // Log event from now-allowlisted UID.
+    event = CreateScreenStateChangedEvent(
+            timestampNs + 30, android::view::DisplayStateEnum::DISPLAY_STATE_OFF, 12345);
+    p.OnLogEvent(event.get());
+    EXPECT_EQ(1, listener->updates.size());
+    EXPECT_EQ(android::view::DisplayStateEnum::DISPLAY_STATE_OFF, listener->updates[0].mState);
+
+    StateManager::getInstance().unregisterListener(atomId, listener);
+}
+
 TEST(StatsLogProcessorTest, TestRateLimitBroadcast) {
     sp<UidMap> m = new UidMap();
     sp<StatsPullerManager> pullerManager = new StatsPullerManager();

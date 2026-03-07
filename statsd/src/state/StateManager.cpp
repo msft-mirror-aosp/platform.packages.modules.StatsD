@@ -31,10 +31,7 @@ namespace statsd {
 using std::set;
 using std::string;
 
-StateManager::StateManager()
-    : mAllowedPkg({
-              "com.android.systemui",
-      }) {
+StateManager::StateManager() {
 }
 
 StateManager& StateManager::getInstance() {
@@ -47,24 +44,17 @@ void StateManager::clear() {
 }
 
 void StateManager::onLogEvent(const LogEvent& event) {
-    // Only process state events from uids in AID_* and packages that are whitelisted in
-    // mAllowedPkg.
-    // Allowlisted AIDs are AID_ROOT and all AIDs in [1000, 2000) which is [AID_SYSTEM, AID_SHELL)
-    if (event.GetUid() == AID_ROOT ||
-        (event.GetUid() >= AID_SYSTEM && event.GetUid() < AID_SHELL) ||
-        mAllowedLogSources.find(event.GetUid()) != mAllowedLogSources.end()) {
-        const int tagId = event.GetTagId();
-        if (tagId == util::STATS_SOCKET_LOSS_REPORTED) {
-            // Hard coded logic to handle socket loss info to highlight metric corruption reason
-            const std::optional<SocketLossInfo>& lossInfo = toSocketLossInfo(event);
-            if (lossInfo) {
-                onLogEventLost(*lossInfo);
-            }
-        } else {
-            auto stateTrackersForEvent = mStateTrackers.find(tagId);
-            if (stateTrackersForEvent != mStateTrackers.end()) {
-                stateTrackersForEvent->second->onLogEvent(event);
-            }
+    const int tagId = event.GetTagId();
+    if (tagId == util::STATS_SOCKET_LOSS_REPORTED) {
+        // Hard coded logic to handle socket loss info to highlight metric corruption reason
+        const std::optional<SocketLossInfo>& lossInfo = toSocketLossInfo(event);
+        if (lossInfo) {
+            onLogEventLost(*lossInfo);
+        }
+    } else {
+        auto stateTrackersForEvent = mStateTrackers.find(tagId);
+        if (stateTrackersForEvent != mStateTrackers.end()) {
+            stateTrackersForEvent->second->onLogEvent(event);
         }
     }
 }
@@ -129,20 +119,6 @@ FieldValue StateManager::getStateValue(const int32_t atomId,
     }
     ALOGE("StateManager cannot get state value, no StateTracker for atom %d", atomId);
     return FieldValue(Field(atomId, 0), StateTracker::kStateUnknown);
-}
-
-void StateManager::updateLogSources(const sp<UidMap>& uidMap) {
-    mAllowedLogSources.clear();
-    for (const auto& pkg : mAllowedPkg) {
-        auto uids = uidMap->getAppUid(pkg);
-        mAllowedLogSources.insert(uids.begin(), uids.end());
-    }
-}
-
-void StateManager::notifyAppChanged(const string& apk, const sp<UidMap>& uidMap) {
-    if (mAllowedPkg.find(apk) != mAllowedPkg.end()) {
-        updateLogSources(uidMap);
-    }
 }
 
 void StateManager::addAllAtomIds(AtomsInUseChangeListener::AtomIdSet& allIds) const {

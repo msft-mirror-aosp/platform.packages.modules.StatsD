@@ -26,6 +26,7 @@
 #include "external/StatsPullerManager.h"
 #include "logd/LogEvent.h"
 #include "metrics/MetricsManager.h"
+#include "packages/LogSourceHandler.h"
 #include "packages/UidMap.h"
 #include "socket/AtomsInUseChangeListener.h"
 #include "src/statsd_config.pb.h"
@@ -214,6 +215,8 @@ private:
     std::set<ConfigKey> mOnDiskDataConfigs;
 
     sp<UidMap> mUidMap;  // Reference to the UidMap to lookup app name and version for each uid.
+
+    const sp<LogSourceHandler> mLogSourceHandler;
 
     sp<StatsPullerManager> mPullerManager;  // Reference to StatsPullerManager
 

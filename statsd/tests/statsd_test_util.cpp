@@ -2316,7 +2316,6 @@ PackageInfoSnapshot getPackageInfoSnapshot(const sp<UidMap> uidMap) {
                                 {/* includeVersionStrings */ true,
                                  /* includeInstaller */ true, /* certificateHashSize */ UINT8_MAX,
                                  /* omitSystemUids */ false},
-                                /* interestingUids */ {},
                                 /* installerIndices */ nullptr, /* str_set */ nullptr,
                                 &protoOutputStream);
 
@@ -2558,6 +2557,11 @@ unique_ptr<LogEvent> createSocketLossInfoLogEvent(int32_t uid, int32_t lossAtomI
     unique_ptr<LogEvent> logEvent = std::make_unique<LogEvent>(uid /* uid */, 0 /* pid */);
     parseStatsEventToLogEvent(statsEvent, logEvent.get());
     return logEvent;
+}
+
+int getStateInt(const StateManager& mgr, int atomId, const HashableDimensionKey& queryKey) {
+    FieldValue output = mgr.getStateValue(atomId, queryKey);
+    return output.mValue.get<int32_t>();
 }
 
 void WaitableEvent::Notify() {

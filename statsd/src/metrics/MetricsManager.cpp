@@ -90,8 +90,6 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
       mLastReportTimeNs(currentTimeNs),
       mLastReportWallClockNs(getWallClockNs()),
       mPullerManager(pullerManager),
-      mWhitelistedAtomIds(config.whitelisted_atom_ids().begin(),
-                          config.whitelisted_atom_ids().end()),
       mShouldPersistHistory(config.persist_locally()),
       mUseV2SoftMemoryCalculation(config.statsd_config_options().use_v2_soft_memory_limit()),
       mOmitSystemUidsInUidMap(config.statsd_config_options().omit_system_uids_in_uidmap()),
@@ -207,9 +205,6 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
     mHashStringsInReport = config.hash_strings_in_metric_report();
     mVersionStringsInReport = config.version_strings_in_metric_report();
     mInstallerInReport = config.installer_in_metric_report();
-    mWhitelistedAtomIds.clear();
-    mWhitelistedAtomIds.insert(config.whitelisted_atom_ids().begin(),
-                               config.whitelisted_atom_ids().end());
     mShouldPersistHistory = config.persist_locally();
     mPackageCertificateHashSizeBytes = config.package_certificate_hash_size_bytes();
     mUseV2SoftMemoryCalculation = config.statsd_config_options().use_v2_soft_memory_limit();
@@ -225,8 +220,6 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
         mAnnotations.emplace_back(annotation.field_int64(), annotation.field_int32());
     }
 
-    mAllowedUid.clear();
-    mAllowedPkg.clear();
     mDefaultPullUids.clear();
     mPullAtomUids.clear();
     mPullAtomPackages.clear();
@@ -240,22 +233,17 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 }
 
 void MetricsManager::createAllLogSourcesFromConfig(const StatsdConfig& config) {
-    // Init allowed pushed atom uids.
-    for (const auto& source : config.allowed_log_source()) {
-        auto it = UidMap::sAidToUidMapping.find(source);
-        if (it != UidMap::sAidToUidMapping.end()) {
-            mAllowedUid.push_back(it->second);
-        } else {
-            mAllowedPkg.push_back(source);
-        }
-    }
-
-    if (mAllowedUid.size() + mAllowedPkg.size() > StatsdStats::kMaxLogSourceCount) {
+    if (config.allowed_log_source_size() > StatsdStats::kMaxLogSourceCount) {
         ALOGE("Too many log sources. This is likely to be an error in the config.");
         mInvalidEntities[{mConfigKey.GetId(), INVALID_ENTITY_TYPE_CONFIG}] =
                 InvalidConfigReason(INVALID_CONFIG_REASON_TOO_MANY_LOG_SOURCES);
     } else {
-        initAllowedLogSources();
+        mLogSourceHandler =
+                sp<LogSourceHandler>::make(vector<string>(config.allowed_log_source().begin(),
+                                                          config.allowed_log_source().end()),
+                                           set<int32_t>(config.whitelisted_atom_ids().begin(),
+                                                        config.whitelisted_atom_ids().end()),
+                                           mUidMap);
     }
 
     // Init default allowed pull atom uids.
@@ -363,24 +351,8 @@ void MetricsManager::initializeConfigActiveStatus() {
     VLOG("mIsActive is initialized to %d", mIsActive);
 }
 
-void MetricsManager::initAllowedLogSources() {
-    std::lock_guard lock(mAllowedLogSourcesMutex);
-    mAllowedLogSources.clear();
-    mAllowedLogSources.insert(mAllowedUid.begin(), mAllowedUid.end());
-
-    for (const auto& pkg : mAllowedPkg) {
-        auto uids = mUidMap->getAppUid(pkg);
-        mAllowedLogSources.insert(uids.begin(), uids.end());
-    }
-    if (STATSD_DEBUG) {
-        for (const auto& uid : mAllowedLogSources) {
-            VLOG("Allowed uid %d", uid);
-        }
-    }
-}
-
 void MetricsManager::initPullAtomSources() {
-    std::lock_guard lock(mAllowedLogSourcesMutex);
+    std::lock_guard lock(mCombinedPullAtomUidsMutex);
     mCombinedPullAtomUids.clear();
     for (const auto& [atomId, uids] : mPullAtomUids) {
         mCombinedPullAtomUids[atomId].insert(uids.begin(), uids.end());
@@ -410,12 +382,7 @@ void MetricsManager::notifyAppUpgrade(const int64_t eventTimeNs, const string& a
     for (const auto& it : mAllMetricProducers) {
         it->notifyAppUpgrade(eventTimeNs);
     }
-    // check if we care this package
-    if (std::find(mAllowedPkg.begin(), mAllowedPkg.end(), apk) != mAllowedPkg.end()) {
-        // We will re-initialize the whole list because we don't want to keep the multi mapping of
-        // UID<->pkg inside MetricsManager to reduce the memory usage.
-        initAllowedLogSources();
-    }
+    mLogSourceHandler->onAppChanged(apk);
 
     for (const auto& it : mPullAtomPackages) {
         if (it.second.find(apk) != it.second.end()) {
@@ -430,12 +397,7 @@ void MetricsManager::notifyAppRemoved(const int64_t eventTimeNs, const string& a
     for (const auto& it : mAllMetricProducers) {
         it->notifyAppRemoved(eventTimeNs);
     }
-    // check if we care this package
-    if (std::find(mAllowedPkg.begin(), mAllowedPkg.end(), apk) != mAllowedPkg.end()) {
-        // We will re-initialize the whole list because we don't want to keep the multi mapping of
-        // UID<->pkg inside MetricsManager to reduce the memory usage.
-        initAllowedLogSources();
-    }
+    mLogSourceHandler->onAppChanged(apk);
 
     for (const auto& it : mPullAtomPackages) {
         if (it.second.find(apk) != it.second.end()) {
@@ -451,10 +413,7 @@ void MetricsManager::onUidMapReceived(const int64_t eventTimeNs) {
     // This occurs if a new user is added/removed or statsd crashes.
     initPullAtomSources();
 
-    if (mAllowedPkg.size() == 0) {
-        return;
-    }
-    initAllowedLogSources();
+    mLogSourceHandler->onUidMapUpdated();
 }
 
 void MetricsManager::onStatsdInitCompleted(const int64_t eventTimeNs) {
@@ -472,7 +431,7 @@ void MetricsManager::init() {
 }
 
 vector<int32_t> MetricsManager::getPullAtomUids(int32_t atomId) {
-    std::lock_guard lock(mAllowedLogSourcesMutex);
+    std::lock_guard lock(mCombinedPullAtomUidsMutex);
     vector<int32_t> uids;
     const auto& it = mCombinedPullAtomUids.find(atomId);
     if (it != mCombinedPullAtomUids.end()) {
@@ -488,12 +447,7 @@ bool MetricsManager::useV2SoftMemoryCalculation() const {
 
 void MetricsManager::dumpStates(int out, bool verbose) {
     dprintf(out, "ConfigKey %s, allowed source:", mConfigKey.ToString().c_str());
-    {
-        std::lock_guard lock(mAllowedLogSourcesMutex);
-        for (const auto& source : mAllowedLogSources) {
-            dprintf(out, "%d ", source);
-        }
-    }
+    mLogSourceHandler->dumpStates(out);
     dprintf(out, "\n");
     for (const auto& producer : mAllMetricProducers) {
         producer->dumpStates(out, verbose);
@@ -552,24 +506,6 @@ void MetricsManager::onDumpReport(const int64_t dumpTimeStampNs, const int64_t w
         mLastReportWallClockNs = wallClockNs;
     }
     VLOG("=========================Metric Reports End==========================");
-}
-
-bool MetricsManager::checkLogCredentials(const int32_t uid, const int32_t atomId) const {
-    if (mWhitelistedAtomIds.find(atomId) != mWhitelistedAtomIds.end()) {
-        return true;
-    }
-
-    if (uid == AID_ROOT || (uid >= AID_SYSTEM && uid < AID_SHELL)) {
-        // enable atoms logged from pre-installed Android system services
-        return true;
-    }
-
-    std::lock_guard lock(mAllowedLogSourcesMutex);
-    if (mAllowedLogSources.find(uid) == mAllowedLogSources.end()) {
-        VLOG("For atom %d log source %d not on the whitelist", atomId, uid);
-        return false;
-    }
-    return true;
 }
 
 // Consume the stats log if it's interesting to this metric.
@@ -768,7 +704,7 @@ void MetricsManager::onLogEventLost(const SocketLossInfo& socketLossInfo) {
          *   uniqueLostAtomIds) is in the allowed log sources - count this atom as lost
          */
 
-        if (!checkLogCredentials(socketLossInfo.uid, lostAtomId)) {
+        if (!mLogSourceHandler->checkLogCredentials(socketLossInfo.uid, lostAtomId)) {
             continue;
         }
 

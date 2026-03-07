@@ -67,11 +67,6 @@ public:
     // kStateUnknonwn is returned.
     FieldValue getStateValue(const int32_t atomId, const HashableDimensionKey& key) const;
 
-    // Updates mAllowedLogSources with the latest uids for the packages that are allowed to log.
-    void updateLogSources(const sp<UidMap>& uidMap);
-
-    void notifyAppChanged(const std::string& apk, const sp<UidMap>& uidMap);
-
     /**
      * @brief Update State Tracker depending on #lostAtomId that it was lost due to #reason
      * @return true if State Tracker was notified
@@ -100,13 +95,6 @@ private:
 
     // Maps state atom ids to StateTrackers
     std::unordered_map<int32_t, sp<StateTracker>> mStateTrackers;
-
-    // The package names that can log state events.
-    const std::set<std::string> mAllowedPkg;
-
-    // The combined uid sources (after translating pkg name to uid).
-    // State events from uids that are not in the list will be ignored to avoid state pollution.
-    std::set<int32_t> mAllowedLogSources;
 };
 
 }  // namespace statsd
