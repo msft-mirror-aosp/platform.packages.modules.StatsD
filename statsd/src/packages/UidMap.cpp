@@ -89,8 +89,31 @@ bool omitUid(int32_t uid, const string& packageName, const UidMapOptions& option
     if (options.omitSystemUids && uid >= 0 && uid % AID_USER_OFFSET < AID_APP_START) {
         return true;
     }
-    // If omitUnusedUids is true, omit the uid unless it is in the used set.
-    return options.omitUnusedUids && !options.usedUids.contains(uid);
+
+    // If omitUnusedUids is false, then we should not omit other uids.
+    if (!options.omitUnusedUids) {
+        return false;
+    }
+
+    // If the uid is used, then we should not omit it.
+    if (options.usedUids.contains(uid)) {
+        return false;
+    }
+
+    // If the uid is an app uid, then we should check if the sdk sandbox or pcc component uid is
+    // used. If so, then we should not omit the app uid.
+    if (uid >= 0) {
+        const int appId = uid % AID_USER_OFFSET;
+        if (appId >= AID_APP_START && appId <= AID_APP_END) {
+            const int32_t sdkSandboxUid = uid + (AID_SDK_SANDBOX_PROCESS_START - AID_APP_START);
+            const int32_t pccComponentUid = uid + (AID_PCC_COMPONENT_PROCESS_START - AID_APP_START);
+            if (options.usedUids.contains(sdkSandboxUid) ||
+                options.usedUids.contains(pccComponentUid)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 }  // namespace
