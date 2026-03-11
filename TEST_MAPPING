@@ -42,6 +42,27 @@
         },
         {
           "include-filter": "android.cts.statsd.alert.*"
+        },
+        {
+          "include-filter": "android.cts.statsd.validation.*"
+        },
+        {
+          "include-filter": "android.cts.statsd.uidmap.*"
+        },
+        {
+          "include-filter": "android.cts.statsd.subscriber.*"
+        },
+        {
+          "include-filter": "android.cts.statsd.metric.ValueMetricsTests#testValueMetricWithConditionAndActivation"
+        },
+        {
+          "include-filter": "android.cts.statsd.metric.ValueMetricsTests#testValueMetric"
+        },
+        {
+          "include-filter": "android.cts.statsd.metric.MetricActivationTests#testCancellation"
+        },
+        {
+          "include-filter": "android.cts.statsd.metadata.MetadataTests#testConfigTtl"
         }
       ]
     }
