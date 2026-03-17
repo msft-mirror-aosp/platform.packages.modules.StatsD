@@ -31,6 +31,7 @@ class BufferWriterQueue {
 public:
     constexpr static int kDelayOnFailedWriteMs = 5;
     constexpr static int kQueueMaxSizeLimit = 4800;  // 2X max_dgram_qlen
+    constexpr static int kQueueRetryCount = 10;
 
     BufferWriterQueue();
     virtual ~BufferWriterQueue();
@@ -47,7 +48,7 @@ public:
         int size = 0;
     };
 
-    virtual bool handleCommand(const Cmd& cmd) const;
+    virtual bool handleCommand(const Cmd& cmd, bool doNoteDrop) const;
 
 private:
     std::condition_variable mCondition;
