@@ -111,8 +111,10 @@ void BufferWriterQueue::drainQueue() {
 
 void BufferWriterQueue::processCommands() {
     prctl(PR_SET_NAME, "socket_writer_queue");
+    int retryCount = 0;
+
     while (true) {
-        // temporary local thread copy
+        // temporary thread-local copy
         Cmd cmd;
         {
             std::unique_lock<std::mutex> lock(mMutex);
@@ -127,10 +129,13 @@ void BufferWriterQueue::processCommands() {
             return;
         }
 
-        const bool writeSuccess = handleCommand(cmd);
-        if (writeSuccess) {
-            // no event drop is observed otherwise command remains in the queue
-            // and worker thread will try to log later on
+        // for the final retry if it is failed - the log drop will be noted
+        const bool isFinalRetry = ++retryCount >= kQueueRetryCount;
+        const bool writeSuccess = handleCommand(cmd, isFinalRetry);
+        // when write fails, command remains in the queue and worker thread will
+        // try to write it later, until it reaches kQueueRetryCount attempts
+        if (writeSuccess || isFinalRetry) {
+            retryCount = 0;
 
             // call free() explicitly here to free memory before the mutex lock
             free(cmd.buffer);
@@ -141,7 +146,6 @@ void BufferWriterQueue::processCommands() {
                 mCmdQueue.pop();
             }
         }
-        // TODO (b/258003151): add logging info about retry count
 
         if (mDoTerminate) {
             return;
@@ -156,9 +160,9 @@ void BufferWriterQueue::processCommands() {
     }
 }
 
-bool BufferWriterQueue::handleCommand(const Cmd& cmd) const {
+bool BufferWriterQueue::handleCommand(const Cmd& cmd, bool doNoteDrop) const {
     // skip log drop if occurs, since the atom remains in the queue and write will be retried
-    return write_buffer_to_statsd_impl(cmd.buffer, cmd.size, cmd.atomId, /*doNoteDrop*/ false) > 0;
+    return write_buffer_to_statsd_impl(cmd.buffer, cmd.size, cmd.atomId, doNoteDrop) > 0;
 }
 
 bool write_buffer_to_statsd_queue(const uint8_t* buffer, size_t size, AStatsEventAtomId atomId) {

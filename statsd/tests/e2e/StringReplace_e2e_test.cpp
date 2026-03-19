@@ -158,6 +158,84 @@ TEST(StringReplaceE2eTest, TestPushedDimension) {
     EXPECT_EQ(3, data.bucket_info(0).count());
 }
 
+TEST(StringReplaceE2eTest, TestMultipleStringReplace) {
+    StatsdConfig config = CreateStatsdConfig();
+    *config.add_atom_matcher() =
+            CreateSimpleAtomMatcher("TestAtomMatcher", util::TEST_ATOM_REPORTED);
+    FieldValueMatcher* fvm = config.mutable_atom_matcher(0)
+                                     ->mutable_simple_atom_matcher()
+                                     ->add_field_value_matcher();
+    fvm->set_field(TEST_ATOM_REPORTED_STRING_FIELD_ID);
+    StringListMatcher* eqWildcardStrList = fvm->mutable_eq_any_wildcard_string();
+    eqWildcardStrList->add_str_value("system*");
+    eqWildcardStrList->add_str_value("vendor*");
+    fvm = config.mutable_atom_matcher(0)->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(TEST_ATOM_REPORTED_STRING_FIELD_ID);
+    StringReplacer* stringReplacer = fvm->mutable_replace_string();
+    stringReplacer->set_regex(R"([0-9]+$)");  // match trailing digits, example "42" in "foo42".
+    stringReplacer->set_replacement("");
+    fvm = config.mutable_atom_matcher(0)->mutable_simple_atom_matcher()->add_field_value_matcher();
+    fvm->set_field(TEST_ATOM_REPORTED_STRING_FIELD_ID);
+    stringReplacer = fvm->mutable_replace_string();
+    stringReplacer->set_regex(R"(foo)");
+    stringReplacer->set_replacement("bar");
+    *config.add_event_metric() = createEventMetric(
+            "TestEventMetric", config.atom_matcher(0).id() /* what */, nullopt /* condition */);
+
+    // Initialize StatsLogProcessor.
+    const uint64_t bucketStartTimeNs = 10000000000;  // 0:10
+    const int uid = 12345;
+    const int64_t cfgId = 98765;
+    ConfigKey cfgKey(uid, cfgId);
+
+    sp<StatsLogProcessor> processor =
+            CreateStatsLogProcessor(bucketStartTimeNs, bucketStartTimeNs, config, cfgKey);
+
+    std::vector<std::unique_ptr<LogEvent>> events;
+    events.push_back(CreateTestAtomReportedEventStringDim(bucketStartTimeNs + 10 * NS_PER_SEC,
+                                                          "system123" /* stringField */));
+    events.push_back(CreateTestAtomReportedEventStringDim(bucketStartTimeNs + 20 * NS_PER_SEC,
+                                                          "vendor_foo_456" /* stringField */));
+    events.push_back(CreateTestAtomReportedEventStringDim(bucketStartTimeNs + 30 * NS_PER_SEC,
+                                                          "other123" /* stringField */));
+    events.push_back(CreateTestAtomReportedEventStringDim(bucketStartTimeNs + 40 * NS_PER_SEC,
+                                                          "system_foo" /* stringField */));
+    events.push_back(CreateTestAtomReportedEventStringDim(bucketStartTimeNs + 50 * NS_PER_SEC,
+                                                          "vendorfoo789" /* stringField */));
+    events.push_back(CreateTestAtomReportedEventStringDim(bucketStartTimeNs + 60 * NS_PER_SEC,
+                                                          "system" /* stringField */));
+
+    // Send log events to StatsLogProcessor.
+    for (auto& event : events) {
+        processor->OnLogEvent(event.get());
+    }
+
+    // Check dump report.
+    std::vector<uint8_t> buffer;
+    ConfigMetricsReportList reports;
+    processor->onDumpReport(cfgKey, bucketStartTimeNs + 70 * NS_PER_SEC + 1, false, true, ADB_DUMP,
+                            FAST, &buffer);
+    ASSERT_GT(buffer.size(), 0);
+    EXPECT_TRUE(reports.ParseFromArray(&buffer[0], buffer.size()));
+    backfillDimensionPath(&reports);
+    backfillStringInReport(&reports);
+    backfillStartEndTimestamp(&reports);
+    backfillAggregatedAtoms(&reports);
+
+    ASSERT_EQ(1, reports.reports_size());
+    ASSERT_EQ(1, reports.reports(0).metrics_size());
+    EXPECT_TRUE(reports.reports(0).metrics(0).has_event_metrics());
+    StatsLogReport::EventMetricDataWrapper eventMetrics =
+            reports.reports(0).metrics(0).event_metrics();
+    ASSERT_EQ(5, eventMetrics.data_size());
+
+    EXPECT_EQ("system", eventMetrics.data(0).atom().test_atom_reported().string_field());
+    EXPECT_EQ("vendor_bar_", eventMetrics.data(1).atom().test_atom_reported().string_field());
+    EXPECT_EQ("system_bar", eventMetrics.data(2).atom().test_atom_reported().string_field());
+    EXPECT_EQ("vendorbar", eventMetrics.data(3).atom().test_atom_reported().string_field());
+    EXPECT_EQ("system", eventMetrics.data(4).atom().test_atom_reported().string_field());
+}
+
 TEST(StringReplaceE2eTest, TestPushedWhat) {
     StatsdConfig config = CreateStatsdConfig();
 
