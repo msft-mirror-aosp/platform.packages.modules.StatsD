@@ -131,6 +131,8 @@ MetricsManager::MetricsManager(const ConfigKey& key, const StatsdConfig& config,
     }
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
+
+    mLogEventCache.init(mAllAtomMatchingTrackers.size(), mAllConditionTrackers.size());
 }
 
 MetricsManager::~MetricsManager() {
@@ -229,6 +231,8 @@ bool MetricsManager::updateConfig(const StatsdConfig& config, const int64_t time
 
     verifyGuardrailsAndUpdateStatsdStats();
     initializeConfigActiveStatus();
+
+    mLogEventCache.init(mAllAtomMatchingTrackers.size(), mAllConditionTrackers.size());
     return isConfigValid();
 }
 
@@ -565,14 +569,12 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
         return;
     }
 
-    vector<MatchingState> matcherCache(mAllAtomMatchingTrackers.size(),
-                                       MatchingState::kNotComputed);
-    vector<shared_ptr<LogEvent>> matcherTransformations(matcherCache.size(), nullptr);
+    mLogEventCache.reset();
 
     for (const auto& matcherIndex : matchersIt->second) {
-        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(event, matcherIndex,
-                                                           mAllAtomMatchingTrackers, matcherCache,
-                                                           matcherTransformations);
+        mAllAtomMatchingTrackers[matcherIndex]->onLogEvent(
+                event, matcherIndex, mAllAtomMatchingTrackers, mLogEventCache.matcherCache,
+                mLogEventCache.matcherTransformations);
     }
 
     // Set of metrics that received an activation cancellation.
@@ -580,7 +582,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     // Determine which metric activations received a cancellation and cancel them.
     for (const auto& it : mDeactivationAtomTrackerToMetricMap) {
-        if (matcherCache[it.first] == MatchingState::kMatched) {
+        if (mLogEventCache.matcherCache[it.first] == MatchingState::kMatched) {
             for (int metricIndex : it.second) {
                 mAllMetricProducers[metricIndex]->cancelEventActivation(it.first);
                 metricIndicesWithCanceledActivations.insert(metricIndex);
@@ -601,7 +603,7 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     // Determine which metric activations should be turned on and turn them on
     for (const auto& it : mActivationAtomTrackerToMetricMap) {
-        if (matcherCache[it.first] == MatchingState::kMatched) {
+        if (mLogEventCache.matcherCache[it.first] == MatchingState::kMatched) {
             for (int metricIndex : it.second) {
                 mAllMetricProducers[metricIndex]->activate(it.first, eventTimeNs);
                 isActive |= mAllMetricProducers[metricIndex]->isActive();
@@ -611,39 +613,32 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
 
     mIsActive = isActive;
 
-    // A bitmap to see which ConditionTracker needs to be re-evaluated.
-    vector<uint8_t> conditionToBeEvaluated(mAllConditionTrackers.size(), false);
-    vector<shared_ptr<LogEvent>> conditionToTransformedLogEvents(mAllConditionTrackers.size(),
-                                                                 nullptr);
-
     for (const auto& [matcherIndex, conditionList] : mTrackerToConditionMap) {
-        if (matcherCache[matcherIndex] == MatchingState::kMatched) {
+        if (mLogEventCache.matcherCache[matcherIndex] == MatchingState::kMatched) {
             for (const int conditionIndex : conditionList) {
-                conditionToBeEvaluated[conditionIndex] = true;
-                conditionToTransformedLogEvents[conditionIndex] =
-                        matcherTransformations[matcherIndex];
+                mLogEventCache.conditionToBeEvaluated[conditionIndex] = true;
+                mLogEventCache.conditionToTransformedLogEvents[conditionIndex] =
+                        mLogEventCache.matcherTransformations[matcherIndex];
             }
         }
     }
 
-    vector<ConditionState> conditionCache(mAllConditionTrackers.size(),
-                                          ConditionState::kNotEvaluated);
-    // A bitmap to track if a condition has changed value.
-    vector<uint8_t> changedCache(mAllConditionTrackers.size(), false);
     for (size_t i = 0; i < mAllConditionTrackers.size(); i++) {
-        if (!conditionToBeEvaluated[i]) {
+        if (!mLogEventCache.conditionToBeEvaluated[i]) {
             continue;
         }
         sp<ConditionTracker>& condition = mAllConditionTrackers[i];
-        const LogEvent& conditionEvent = conditionToTransformedLogEvents[i] == nullptr
-                                                 ? event
-                                                 : *conditionToTransformedLogEvents[i];
-        condition->evaluateCondition(conditionEvent, matcherCache, mAllConditionTrackers,
-                                     conditionCache, changedCache);
+        const LogEvent& conditionEvent =
+                mLogEventCache.conditionToTransformedLogEvents[i] == nullptr
+                        ? event
+                        : *mLogEventCache.conditionToTransformedLogEvents[i];
+        condition->evaluateCondition(conditionEvent, mLogEventCache.matcherCache,
+                                     mAllConditionTrackers, mLogEventCache.conditionCache,
+                                     mLogEventCache.changedCache);
     }
 
     for (size_t i = 0; i < mAllConditionTrackers.size(); i++) {
-        if (!changedCache[i]) {
+        if (!mLogEventCache.changedCache[i]) {
             continue;
         }
         auto it = mConditionToMetricMap.find(i);
@@ -655,20 +650,20 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
             // Metric cares about non sliced condition, and it's changed.
             // Push the new condition to it directly.
             if (!mAllMetricProducers[metricIndex]->isConditionSliced()) {
-                mAllMetricProducers[metricIndex]->onConditionChanged(conditionCache[i],
-                                                                     eventTimeNs);
+                mAllMetricProducers[metricIndex]->onConditionChanged(
+                        mLogEventCache.conditionCache[i], eventTimeNs);
                 // Metric cares about sliced conditions, and it may have changed. Send
                 // notification, and the metric can query the sliced conditions that are
                 // interesting to it.
             } else {
-                mAllMetricProducers[metricIndex]->onSlicedConditionMayChange(conditionCache[i],
-                                                                             eventTimeNs);
+                mAllMetricProducers[metricIndex]->onSlicedConditionMayChange(
+                        mLogEventCache.conditionCache[i], eventTimeNs);
             }
         }
     }
     // For matched AtomMatchers, tell relevant metrics that a matched event has come.
     for (size_t i = 0; i < mAllAtomMatchingTrackers.size(); i++) {
-        if (matcherCache[i] == MatchingState::kMatched) {
+        if (mLogEventCache.matcherCache[i] == MatchingState::kMatched) {
             StatsdStats::getInstance().noteMatcherMatched(mConfigKey,
                                                           mAllAtomMatchingTrackers[i]->getId());
             auto it = mTrackerToMetricMap.find(i);
@@ -676,8 +671,9 @@ void MetricsManager::onLogEvent(const LogEvent& event) {
                 continue;
             }
             auto& metricList = it->second;
-            const LogEvent& metricEvent =
-                    matcherTransformations[i] == nullptr ? event : *matcherTransformations[i];
+            const LogEvent& metricEvent = mLogEventCache.matcherTransformations[i] == nullptr
+                                                  ? event
+                                                  : *mLogEventCache.matcherTransformations[i];
             for (const int metricIndex : metricList) {
                 // pushed metrics are never scheduled pulls
                 mAllMetricProducers[metricIndex]->onMatchedLogEvent(i, metricEvent);
