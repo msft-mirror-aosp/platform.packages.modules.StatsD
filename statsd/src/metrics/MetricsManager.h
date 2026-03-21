@@ -384,6 +384,36 @@ private:
     // The memory limit in bytes for triggering get data.
     size_t mTriggerGetDataBytes;
 
+    // Caches for onLogEvent. Used to avoid re-initializing vectors on every onLogEvent call.
+    struct LogEventFilterCache {
+        std::vector<MatchingState> matcherCache;
+        std::vector<std::shared_ptr<LogEvent>> matcherTransformations;
+        std::vector<uint8_t> conditionToBeEvaluated;
+        std::vector<std::shared_ptr<LogEvent>> conditionToTransformedLogEvents;
+        std::vector<ConditionState> conditionCache;
+        std::vector<uint8_t> changedCache;
+
+        void init(size_t matcherCount, size_t conditionCount) {
+            matcherCache.assign(matcherCount, MatchingState::kNotComputed);
+            matcherTransformations.assign(matcherCount, nullptr);
+            conditionToBeEvaluated.assign(conditionCount, false);
+            conditionToTransformedLogEvents.assign(conditionCount, nullptr);
+            conditionCache.assign(conditionCount, ConditionState::kNotEvaluated);
+            changedCache.assign(conditionCount, false);
+        }
+
+        void reset() {
+            std::fill(matcherCache.begin(), matcherCache.end(), MatchingState::kNotComputed);
+            std::fill(matcherTransformations.begin(), matcherTransformations.end(), nullptr);
+            std::fill(conditionToBeEvaluated.begin(), conditionToBeEvaluated.end(), false);
+            std::fill(conditionToTransformedLogEvents.begin(),
+                      conditionToTransformedLogEvents.end(), nullptr);
+            std::fill(conditionCache.begin(), conditionCache.end(), ConditionState::kNotEvaluated);
+            std::fill(changedCache.begin(), changedCache.end(), false);
+        }
+    };
+    LogEventFilterCache mLogEventCache;
+
     // Dropped atoms stats due to queue overflow observed up to latest dumpReport request
     // this map is not cleared during onDumpReport to preserve tracking information and avoid
     // repeated metric notification about past queue overflow lost event
