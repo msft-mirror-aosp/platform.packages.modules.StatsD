@@ -1,6 +1,5 @@
 // Signature format: 6.0
 // - style=java
-// - strip-java-lang-prefix=legacy
 // - type-argument-spacing=legacy
 package android.app {
 
@@ -140,7 +139,7 @@ package android.util {
     method @NonNull public android.util.StatsEvent.Builder writeFloatArray(@NonNull float[]);
     method @NonNull public android.util.StatsEvent.Builder writeInt(int);
     method @NonNull public android.util.StatsEvent.Builder writeIntArray(@NonNull int[]);
-    method @NonNull public android.util.StatsEvent.Builder writeKeyValuePairs(@Nullable android.util.SparseIntArray, @Nullable android.util.SparseLongArray, @Nullable android.util.SparseArray<java.lang.String>, @Nullable android.util.SparseArray<java.lang.Float>);
+    method @NonNull public android.util.StatsEvent.Builder writeKeyValuePairs(@Nullable android.util.SparseIntArray, @Nullable android.util.SparseLongArray, @Nullable android.util.SparseArray<String>, @Nullable android.util.SparseArray<Float>);
     method @NonNull public android.util.StatsEvent.Builder writeLong(long);
     method @NonNull public android.util.StatsEvent.Builder writeLongArray(@NonNull long[]);
     method @NonNull public android.util.StatsEvent.Builder writeString(@NonNull String);
